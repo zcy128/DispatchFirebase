@@ -1,0 +1,364 @@
+package archiver
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"time"
+
+	"cloud.google.com/go/bigquery"
+	"cloud.google.com/go/firestore"
+	"google.golang.org/api/iterator"
+)
+
+type Archiver struct {
+	fsClient  *firestore.Client
+	bqClient  *bigquery.Client
+	projectID string
+	datasetID string
+}
+
+type ArchiveRow struct {
+	ID           string    `bigquery:"id"`
+	DispatchDate string    `bigquery:"dispatch_date"`
+	Data         string    `bigquery:"data"`
+	UpdatedAt    time.Time `bigquery:"updated_at"`
+}
+
+type LogTableConfig struct {
+	Collection string
+	DateField  string
+}
+
+// HighFrequencyLogConfigs represents operational and audit logs (7-day hot retention in Firestore, weekly sync to BigQuery, 2-year BQ TTL)
+var HighFrequencyLogConfigs = []LogTableConfig{
+	{Collection: "dispatch_change_logs", DateField: "dispatchDate"},
+	{Collection: "route_change_logs", DateField: "timestamp"},
+	{Collection: "entity_operation_logs", DateField: "timestamp"},
+	{Collection: "payroll_operation_logs", DateField: "timestamp"},
+	{Collection: "operational_safety_logs", DateField: "timestamp"},
+	{Collection: "pretrip_inspections", DateField: "inspectionDate"},
+}
+
+// AnnualIncidentConfigs represents incident/safety records (~2000/year, retained per school year in Firestore)
+var AnnualIncidentConfigs = []LogTableConfig{
+	{Collection: "vehicle_defects", DateField: "defectDate"},
+	{Collection: "student_incidents", DateField: "incidentDate"},
+	{Collection: "hazard_reports", DateField: "hazardDate"},
+}
+
+func NewArchiver(fsClient *firestore.Client, bqClient *bigquery.Client, projectID, datasetID string) *Archiver {
+	if datasetID == "" {
+		datasetID = "firestore_export"
+	}
+	return &Archiver{
+		fsClient:  fsClient,
+		bqClient:  bqClient,
+		projectID: projectID,
+		datasetID: datasetID,
+	}
+}
+
+// EnsureTables creates dataset and required tables if they don't exist
+func (a *Archiver) EnsureTables(ctx context.Context) error {
+	if a.bqClient == nil {
+		return fmt.Errorf("bigquery client is nil")
+	}
+
+	ds := a.bqClient.Dataset(a.datasetID)
+	if _, err := ds.Metadata(ctx); err != nil {
+		log.Printf("[ARCHIVER] Creating BigQuery dataset: %s", a.datasetID)
+		if createErr := ds.Create(ctx, &bigquery.DatasetMetadata{
+			Location: "US",
+		}); createErr != nil {
+			return fmt.Errorf("failed to create dataset %s: %w", a.datasetID, createErr)
+		}
+	}
+
+	schema := bigquery.Schema{
+		{Name: "id", Type: bigquery.StringFieldType, Required: true},
+		{Name: "dispatch_date", Type: bigquery.StringFieldType, Required: true},
+		{Name: "data", Type: bigquery.StringFieldType, Required: true},
+		{Name: "updated_at", Type: bigquery.TimestampFieldType, Required: true},
+	}
+
+	// 1. Business tables (dispatch_shifts, dispatch_payrolls, payroll_logs)
+	bizTables := []string{"dispatch_shifts", "dispatch_payrolls", "payroll_logs"}
+	for _, tblName := range bizTables {
+		tbl := ds.Table(tblName)
+		if _, err := tbl.Metadata(ctx); err != nil {
+			log.Printf("[ARCHIVER] Creating BigQuery business table: %s.%s", a.datasetID, tblName)
+			err := tbl.Create(ctx, &bigquery.TableMetadata{
+				Schema: schema,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create table %s: %w", tblName, err)
+			}
+		}
+	}
+
+	// 2. High-Frequency Log tables (2-year partition expiration) and Annual Incident tables
+	allLogs := append(append([]LogTableConfig{}, HighFrequencyLogConfigs...), AnnualIncidentConfigs...)
+	twoYears := 730 * 24 * time.Hour
+	for _, cfg := range allLogs {
+		tbl := ds.Table(cfg.Collection)
+		if _, err := tbl.Metadata(ctx); err != nil {
+			log.Printf("[ARCHIVER] Creating BigQuery log/incident table with 2-year TTL: %s.%s", a.datasetID, cfg.Collection)
+			err := tbl.Create(ctx, &bigquery.TableMetadata{
+				Schema: schema,
+				TimePartitioning: &bigquery.TimePartitioning{
+					Type:       bigquery.DayPartitioningType,
+					Field:      "updated_at",
+					Expiration: twoYears, // Automatically expires partitions older than 2 years
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create log/incident table %s: %w", cfg.Collection, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// SyncWeeklyLogs syncs the 2 high-frequency operational logs for the past 7 days (called every Saturday)
+func (a *Archiver) SyncWeeklyLogs(ctx context.Context) error {
+	log.Printf("[ARCHIVER] Starting weekly sync for operational logs (dispatch_change_logs & pretrip_inspections, past 7 days)...")
+
+	for dayOffset := 1; dayOffset <= 7; dayOffset++ {
+		dateStr := time.Now().AddDate(0, 0, -dayOffset).Format("2006-01-02")
+		for _, cfg := range HighFrequencyLogConfigs {
+			if err := a.syncCollectionByDateField(ctx, cfg.Collection, cfg.DateField, dateStr); err != nil {
+				log.Printf("[ARCHIVER] Warning: syncing %s for %s failed: %v", cfg.Collection, dateStr, err)
+			}
+		}
+	}
+
+	log.Println("[ARCHIVER] Weekly operational log sync completed successfully.")
+	return nil
+}
+
+// CleanupLogsFirestore cleans up ONLY the high-frequency operational logs older than specified days (default 7)
+// NOTE: Vehicle defects, student incidents and hazard reports are KEPT in Firestore for the entire school year.
+func (a *Archiver) CleanupLogsFirestore(ctx context.Context, olderThanDays int) error {
+	if olderThanDays <= 0 {
+		olderThanDays = 7
+	}
+	cutoff := time.Now().AddDate(0, 0, -olderThanDays).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Starting cleanup of high-frequency operational logs older than %s (%d days)...", cutoff, olderThanDays)
+
+	for _, cfg := range HighFrequencyLogConfigs {
+		deletedCount := 0
+		var iter *firestore.DocumentIterator
+		if cfg.DateField == "timestamp" {
+			iter = a.fsClient.Collection(cfg.Collection).Where("timestamp", "<", cutoff+"T00:00:00").Documents(ctx)
+		} else {
+			iter = a.fsClient.Collection(cfg.Collection).Where(cfg.DateField, "<", cutoff).Documents(ctx)
+		}
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				iter.Stop()
+				return err
+			}
+			_, _ = doc.Ref.Delete(ctx)
+			deletedCount++
+		}
+		iter.Stop()
+		log.Printf("[ARCHIVER] Cleaned up %d documents from Firestore %s", deletedCount, cfg.Collection)
+	}
+	return nil
+}
+
+// SyncAnnualIncidents syncs safety/incident records for an entire school year or historical range
+func (a *Archiver) SyncAnnualIncidents(ctx context.Context, startDate, endDate string) error {
+	log.Printf("[ARCHIVER] Syncing annual incidents (defects, student incidents, hazards) from %s to %s...", startDate, endDate)
+	for _, cfg := range AnnualIncidentConfigs {
+		iter := a.fsClient.Collection(cfg.Collection).Where(cfg.DateField, ">=", startDate).Where(cfg.DateField, "<=", endDate).Documents(ctx)
+		var rows []*ArchiveRow
+		now := time.Now()
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				iter.Stop()
+				return err
+			}
+			dataBytes, _ := json.Marshal(doc.Data())
+			dateVal := ""
+			if d, ok := doc.Data()[cfg.DateField].(string); ok {
+				dateVal = d
+			}
+			rows = append(rows, &ArchiveRow{
+				ID:           doc.Ref.ID,
+				DispatchDate: dateVal,
+				Data:         string(dataBytes),
+				UpdatedAt:    now,
+			})
+		}
+		iter.Stop()
+
+		if len(rows) > 0 {
+			inserter := a.bqClient.Dataset(a.datasetID).Table(cfg.Collection).Inserter()
+			if err := inserter.Put(ctx, rows); err != nil {
+				log.Printf("[ARCHIVER] Warning: putting annual rows for %s: %v", cfg.Collection, err)
+			} else {
+				log.Printf("[ARCHIVER] Successfully archived %d annual records for %s to BigQuery", len(rows), cfg.Collection)
+			}
+		}
+	}
+	return nil
+}
+
+// SyncDate syncs dispatch_shifts, dispatch_payrolls, and payroll_logs for a specific date
+func (a *Archiver) SyncDate(ctx context.Context, date string) error {
+	log.Printf("[ARCHIVER] Syncing data for date %s to BigQuery...", date)
+
+	if err := a.syncCollectionDate(ctx, "dispatch_shifts", date); err != nil {
+		return fmt.Errorf("failed to sync dispatch_shifts for %s: %w", date, err)
+	}
+
+	if err := a.syncCollectionDate(ctx, "dispatch_payrolls", date); err != nil {
+		return fmt.Errorf("failed to sync dispatch_payrolls for %s: %w", date, err)
+	}
+
+	if err := a.syncCollectionDate(ctx, "payroll_logs", date); err != nil {
+		return fmt.Errorf("failed to sync payroll_logs for %s: %w", date, err)
+	}
+
+	// Also sync operational logs for this specific date
+	for _, cfg := range HighFrequencyLogConfigs {
+		if err := a.syncCollectionByDateField(ctx, cfg.Collection, cfg.DateField, date); err != nil {
+			log.Printf("[ARCHIVER] Warning: sync %s for date %s failed: %v", cfg.Collection, date, err)
+		}
+	}
+
+	log.Printf("[ARCHIVER] Successfully synced %s to BigQuery", date)
+	return nil
+}
+
+// SyncRolling syncs the past N days (e.g. 35 days) for shifts/payrolls to catch recent modifications
+func (a *Archiver) SyncRolling(ctx context.Context, days int) error {
+	if days <= 0 {
+		days = 35
+	}
+	log.Printf("[ARCHIVER] Starting rolling sync for the last %d days...", days)
+
+	for i := 1; i <= days; i++ {
+		dateStr := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
+		if err := a.SyncDate(ctx, dateStr); err != nil {
+			log.Printf("[ARCHIVER] Warning: sync failed for date %s: %v", dateStr, err)
+		}
+	}
+	return nil
+}
+
+// syncCollectionDate extracts from Firestore and upserts to BigQuery for a given date
+func (a *Archiver) syncCollectionDate(ctx context.Context, collName, date string) error {
+	return a.syncCollectionByDateField(ctx, collName, "dispatchDate", date)
+}
+
+func (a *Archiver) syncCollectionByDateField(ctx context.Context, collName, dateField, date string) error {
+	var iter *firestore.DocumentIterator
+	if dateField == "timestamp" {
+		iter = a.fsClient.Collection(collName).
+			Where("timestamp", ">=", date+"T00:00:00").
+			Where("timestamp", "<=", date+"T23:59:59.999Z").
+			Documents(ctx)
+	} else {
+		iter = a.fsClient.Collection(collName).Where(dateField, "==", date).Documents(ctx)
+	}
+	defer iter.Stop()
+
+	now := time.Now()
+	var rows []*ArchiveRow
+
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		dataBytes, err := json.Marshal(doc.Data())
+		if err != nil {
+			continue
+		}
+
+		rows = append(rows, &ArchiveRow{
+			ID:           doc.Ref.ID,
+			DispatchDate: date,
+			Data:         string(dataBytes),
+			UpdatedAt:    now,
+		})
+	}
+
+	if len(rows) == 0 {
+		return nil
+	}
+
+	// Delete existing records for this date in BigQuery to maintain idempotence
+	delSQL := fmt.Sprintf("DELETE FROM `%s.%s.%s` WHERE dispatch_date = @date", a.projectID, a.datasetID, collName)
+	q := a.bqClient.Query(delSQL)
+	q.Parameters = []bigquery.QueryParameter{
+		{Name: "date", Value: date},
+	}
+	job, err := q.Run(ctx)
+	if err == nil {
+		_, _ = job.Wait(ctx)
+	}
+
+	// Batch insert new records (chunks of 500)
+	inserter := a.bqClient.Dataset(a.datasetID).Table(collName).Inserter()
+	chunkSize := 500
+	for i := 0; i < len(rows); i += chunkSize {
+		end := i + chunkSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := inserter.Put(ctx, rows[i:end]); err != nil {
+			return fmt.Errorf("failed to insert rows into %s: %w", collName, err)
+		}
+	}
+
+	log.Printf("[ARCHIVER] Inserted %d rows into BigQuery %s for date %s", len(rows), collName, date)
+	return nil
+}
+
+// CleanupFirestore removes documents older than specified days (e.g. 60 or 90 days)
+func (a *Archiver) CleanupFirestore(ctx context.Context, olderThanDays int) error {
+	if olderThanDays < 60 {
+		olderThanDays = 60 // Safe guard
+	}
+	cutoff := time.Now().AddDate(0, 0, -olderThanDays).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Starting cleanup of Firestore documents older than %s (%d days)...", cutoff, olderThanDays)
+
+	collections := []string{"dispatch_shifts", "dispatch_payrolls", "payroll_logs"}
+	for _, coll := range collections {
+		deletedCount := 0
+		iter := a.fsClient.Collection(coll).Where("dispatchDate", "<", cutoff).Documents(ctx)
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				iter.Stop()
+				return err
+			}
+			_, _ = doc.Ref.Delete(ctx)
+			deletedCount++
+		}
+		iter.Stop()
+		log.Printf("[ARCHIVER] Cleaned up %d documents from Firestore %s", deletedCount, coll)
+	}
+	return nil
+}

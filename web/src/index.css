@@ -1,0 +1,202 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  img {
+    display: inline-block;
+  }
+}
+
+:root,
+html.dark {
+  color-scheme: dark;
+  --color-slate-950: 2 6 23;      /* #020617 */
+  --color-slate-900: 15 23 42;    /* #0f172a */
+  --color-slate-850: 23 32 54;    /* #172036 */
+  --color-slate-800: 30 41 59;    /* #1e293b */
+  --color-slate-750: 41 53 72;    /* #293548 */
+  --color-slate-700: 51 65 85;    /* #334155 */
+  --color-slate-600: 71 85 105;   /* #475569 */
+  --color-slate-500: 100 116 139; /* #64748b */
+  --color-slate-400: 148 163 184; /* #94a3b8 */
+  --color-slate-300: 203 213 225; /* #cbd5e1 */
+  --color-slate-200: 226 232 240; /* #e2e8f0 */
+  --color-slate-100: 241 245 249; /* #f1f5f9 */
+  --color-slate-50: 248 250 252;  /* #f8fafc */
+  --color-white: 255 255 255;
+  --body-bg: #020617;
+  --body-text: #f8fafc;
+}
+
+html.light {
+  color-scheme: light;
+  --color-slate-950: 248 250 252;  /* #f8fafc - light page background */
+  --color-slate-900: 255 255 255;  /* #ffffff - pure white cards, header, sidebar */
+  --color-slate-850: 241 245 249;  /* #f1f5f9 */
+  --color-slate-800: 241 245 249;  /* #f1f5f9 - light inputs and elevated elements */
+  --color-slate-750: 226 232 240;  /* #e2e8f0 */
+  --color-slate-700: 226 232 240;  /* #e2e8f0 - clean light borders */
+  --color-slate-600: 203 213 225;  /* #cbd5e1 */
+  --color-slate-500: 148 163 184;  /* #94a3b8 - muted labels */
+  --color-slate-400: 100 116 139;  /* #64748b - readable secondary text */
+  --color-slate-300: 71 85 105;    /* #475569 - medium text */
+  --color-slate-200: 30 41 59;     /* #1e293b - dark readable text */
+  --color-slate-100: 15 23 42;     /* #0f172a - deep charcoal primary text */
+  --color-slate-50: 2 6 23;        /* #020617 */
+  --color-white: 15 23 42;         /* text-white maps to primary dark text */
+  --body-bg: #f8fafc;
+  --body-text: #0f172a;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--body-bg, #020617);
+  color: var(--body-text, #f8fafc);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Ensure true white text on solid colored buttons & badges in light mode */
+html.light .bg-blue-500,
+html.light .bg-blue-600,
+html.light .bg-rose-500,
+html.light .bg-rose-600,
+html.light .bg-emerald-500,
+html.light .bg-emerald-600,
+html.light .bg-purple-500,
+html.light .bg-purple-600,
+html.light .bg-indigo-500,
+html.light .bg-indigo-600 {
+  --color-white: 255 255 255;
+}
+
+/* Modal dark overlay in light mode for focus and accessibility */
+html.light .fixed.inset-0[class*="bg-slate-950"] {
+  background-color: rgba(15, 23, 42, 0.6) !important;
+}
+
+/* Custom sleek scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+html.light ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+html.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Print optimization for School Calendar landscape poster and Reports */
+@media print {
+  @page {
+    size: landscape;
+    margin: 6mm;
+  }
+  
+  html, body {
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* When dedicated print portals are active, isolate them and hide the main web app #root */
+  body:has(#calendar-print-portal) #root,
+  body:has(#timeoff-print-portal) #root,
+  body:has(#timeoff-monthly-report-portal) #root,
+  body:has(#defect-print-portal) #root,
+  body:has(#defect-summary-print-portal) #root,
+  body:has(#student-incident-print-portal) #root,
+  body:has(#hazard-report-print-portal) #root,
+  body:has(#route-assessment-print-portal) #root {
+    display: none !important;
+  }
+
+  body:has(#calendar-print-portal),
+  body:has(#timeoff-print-portal),
+  body:has(#timeoff-monthly-report-portal),
+  body:has(#defect-print-portal),
+  body:has(#defect-summary-print-portal),
+  body:has(#student-incident-print-portal),
+  body:has(#hazard-report-print-portal),
+  body:has(#route-assessment-print-portal) {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  /* Display active print portal */
+  #calendar-print-portal,
+  #timeoff-print-portal,
+  #timeoff-monthly-report-portal,
+  #defect-print-portal,
+  #defect-summary-print-portal,
+  #student-incident-print-portal,
+  #hazard-report-print-portal,
+  #route-assessment-print-portal {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  #calendar-print-root {
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+    padding: 2mm !important;
+    border: none !important;
+    box-shadow: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* When printing directly inside #root without a portal */
+  body:not(:has(#calendar-print-portal)):not(:has(#timeoff-print-portal)):not(:has(#timeoff-monthly-report-portal)):not(:has(#defect-print-portal)):not(:has(#defect-summary-print-portal)):not(:has(#student-incident-print-portal)):not(:has(#hazard-report-print-portal)):not(:has(#route-assessment-print-portal)) {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  body:not(:has(#calendar-print-portal)):not(:has(#timeoff-print-portal)):not(:has(#timeoff-monthly-report-portal)):not(:has(#defect-print-portal)):not(:has(#defect-summary-print-portal)):not(:has(#student-incident-print-portal)):not(:has(#hazard-report-print-portal)):not(:has(#route-assessment-print-portal)) #root {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  header, aside, nav, .no-print {
+    display: none !important;
+  }
+
+  main, .min-h-screen, [class*="overflow-"] {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+}

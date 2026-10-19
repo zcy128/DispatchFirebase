@@ -1,0 +1,247 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Employee Master Collection
+    // CQRS Architecture:
+    // - READ: Open to dispatch clients via onSnapshot for real-time push
+    // - WRITE: Strictly PROHIBITED from browser clients. 
+    //          All creates/updates/deletes must go through the Go API Server (Cloud Run).
+    match /employees/{employeeId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Student Master Collection
+    match /students/{studentId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // School Master Collection
+    match /schools/{schoolId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // School Boards Collection
+    match /school_boards/{boardId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Route & Shift Collections (CQRS: onSnapshot client read, server write)
+    match /routes/{routeId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /route_shifts/{shiftId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Vehicle Fleet Collection
+    match /vehicles/{vehicleId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Yards Collection
+    match /yards/{yardId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Calendars Collection
+    match /calendars/{calendarId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Payroll Rates Collections
+    match /payroll_rates/{rateId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /payroll_base_rates/{rateId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /payroll_custom_rates/{rateId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Dispatch Workbench Shifts Collection
+    match /dispatch_shifts/{shiftId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Dispatch Change Logs
+    match /dispatch_change_logs/{logId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Route Audit & Change Logs (Tracks changes to route, shifts, stops, and students)
+    match /route_change_logs/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Entity Operation Logs (CRUD history for students and vehicles)
+    match /entity_operation_logs/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Payroll Operation Logs (Rate modifications, custom rules, approvals, finance sync)
+    match /payroll_operation_logs/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Operational & Safety Activity Logs (Time off, defects, hazards, incidents, signouts)
+    match /operational_safety_logs/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Confirmed Dispatch Payrolls
+    match /dispatch_payrolls/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Finance Department Payroll Logs
+    match /payroll_logs/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Temporary Route/Shift Assignments
+    match /temporary_assignments/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Route Openings & Bidding Postings
+    match /route_openings/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Time Off Requests Collection
+    match /time_off_requests/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // System configuration & audit logs
+    match /system/{doc} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // System settings & notifications configuration
+    match /system_settings/{doc} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Training Courses & Types Collections
+    match /training_courses/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /training_types/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Pre-Trip Vehicle Inspections
+    match /pretrip_inspections/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Vehicle Defect Reports & Fleet Assessment
+    match /vehicle_defects/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Student Incident Reports & Office Follow-up
+    match /student_incidents/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Expense Reimbursements & Categories
+    match /expense_reimbursements/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /expense_categories/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Hazard & Near-Miss Reports
+    match /hazard_reports/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // School Bus Route Safety Assessments
+    match /route_assessments/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Vehicle Sign-Out / Handover Records
+    match /vehicle_signouts/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Operations Chat & Instant Messaging
+    match /chat_channels/{channelId} {
+      allow read: if true;
+      allow write: if true;
+
+      match /messages/{messageId} {
+        allow read: if true;
+        allow write: if true;
+      }
+    }
+
+    // Vehicle Live GPS Telemetry for Parent App Tracking
+    match /vehicle_locations/{unitNumber} {
+      allow read: if true;
+      allow write: if true; // Updated by driver app / server
+    }
+
+    // Parent App User Profiles & Preferences
+    match /parent_users/{parentId} {
+      allow read: if true;
+      allow write: if false; // Must be managed via Go Server
+    }
+
+    match /parent_otp_sessions/{contact} {
+      allow read: if false; // Strictly private to Go Server
+      allow write: if false;
+    }
+
+    match /parent_preferences/{parentId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}

@@ -1,0 +1,82 @@
+# ==============================================================================
+# Monorepo Root .gitignore
+# ==============================================================================
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+**/.agent/
+**/.cursor/
+*.swp
+*.swo
+
+# Dependencies
+**/node_modules/
+**/vendor/
+**/.pub-cache/
+**/.pub/
+
+# Flutter / Dart Build Outputs & Tooling
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/build/
+**/dist/
+**/coverage/
+**/doc/api/
+.widget_preview/
+
+# Compiled Binaries & Executables
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/server/dispatch-server
+/server/seed
+/server/server
+
+# Server Uploads
+server/uploads/*
+!server/uploads/.gitkeep
+
+# Environment & Local Configuration
+**/.env
+**/.env.*
+!**/.env.example
+*.local
+
+# Keystores & Android/iOS Signing
+*.keystore
+*.jks
+*.p8
+*.p12
+*.pem
+*.key
+key.properties
+**/android/local.properties
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+
+# Firebase Secrets & Service Account Keys
+*adminsdk*.json
+*adminsdk*
+serviceAccountKey*.json
+schoolbusdispatchapp-*.json
+*.json.secret
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Client-side Firebase Configuration (Provided via .example templates)
+**/firebase_options.dart
+!**/firebase_options.dart.example
+**/web/firebase-messaging-sw.js
+!**/web/firebase-messaging-sw.js.example
+
+# Firebase CLI cache & Logs
+.firebase/
+*.log

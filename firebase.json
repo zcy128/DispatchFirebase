@@ -1,0 +1,45 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "hosting": {
+    "public": "web/dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "dispatch-api",
+          "region": "northamerica-northeast1"
+        }
+      },
+      {
+        "source": "/driver",
+        "destination": "/driver/index.html"
+      },
+      {
+        "source": "/driver/**",
+        "destination": "/driver/index.html"
+      },
+      {
+        "source": "/parent",
+        "destination": "/parent/index.html"
+      },
+      {
+        "source": "/parent/**",
+        "destination": "/parent/index.html"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}
