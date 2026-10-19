@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B132B"/>
+      <stop offset="50%" stop-color="#1C2541"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+
+    <!-- School Bus Amber Gold Gradient -->
+    <linearGradient id="busGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCD34D"/>
+      <stop offset="40%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+
+    <!-- Tech Cyan / Route Glow Gradient -->
+    <linearGradient id="routeGlow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#818CF8"/>
+    </linearGradient>
+
+    <!-- Shield Ambient Shadow -->
+    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+
+    <filter id="goldGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle Base Tile -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  <rect width="504" height="504" x="4" y="4" rx="108" fill="none" stroke="#334155" stroke-width="2" stroke-opacity="0.5"/>
+
+  <!-- Subtle Fleet Route Grid Lines in Background -->
+  <g opacity="0.12" stroke="#94A3B8" stroke-width="2" stroke-dasharray="6,6">
+    <path d="M 64 256 H 448"/>
+    <path d="M 256 64 V 448"/>
+    <circle cx="256" cy="256" r="160" fill="none"/>
+    <circle cx="256" cy="256" r="80" fill="none"/>
+  </g>
+
+  <!-- Main Emblem Group -->
+  <g filter="url(#dropShadow)" transform="translate(0, -6)">
+    
+    <!-- Left Side: Stylized School Bus Profile & Hood -->
+    <g fill="url(#busGold)">
+      <!-- Bus Cabin Roof -->
+      <path d="M 120 188 C 120 156, 144 140, 180 140 H 250 V 172 H 180 C 160 172, 150 180, 148 196 L 148 244 H 250 V 276 H 120 Z"/>
+      
+      <!-- Windshield Frame Accent -->
+      <path d="M 158 192 H 240 V 232 H 158 Z" fill="#0B132B" opacity="0.85"/>
+      <path d="M 166 200 H 232 V 224 H 166 Z" fill="url(#routeGlow)" opacity="0.9"/>
+
+      <!-- Bus Hood / Grille Body -->
+      <path d="M 112 284 C 112 268, 126 260, 144 260 H 250 V 372 H 144 C 126 372, 112 360, 112 344 Z"/>
+
+      <!-- Grille Horizontal Slats -->
+      <rect x="136" y="296" width="94" height="8" rx="4" fill="#0B132B" opacity="0.8"/>
+      <rect x="136" y="314" width="94" height="8" rx="4" fill="#0B132B" opacity="0.8"/>
+      <rect x="136" y="332" width="94" height="8" rx="4" fill="#0B132B" opacity="0.8"/>
+
+      <!-- Left Headlight (Glowing White/Amber) -->
+      <circle cx="132" cy="276" r="12" fill="#FEF3C7"/>
+      <circle cx="132" cy="276" r="7" fill="#F59E0B"/>
+
+      <!-- Bumper and Wheel -->
+      <rect x="100" y="360" width="150" height="18" rx="6" fill="#0F172A"/>
+      <rect x="120" y="378" width="48" height="22" rx="8" fill="#0F172A"/>
+      <rect x="130" y="386" width="28" height="14" rx="4" fill="#334155"/>
+    </g>
+
+    <!-- Right Side: Tech Safety Shield integrating 'P' Lettermark & Route Nodes -->
+    <g transform="translate(18, 0)">
+      <!-- Outer Shield Outline -->
+      <path d="M 256 128 L 376 172 C 376 270, 326 352, 256 392 C 220 371, 198 340, 190 320" 
+            fill="none" stroke="url(#busGold)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+
+      <!-- The 'P' Monogram Embedded in the Shield -->
+      <path d="M 234 176 H 312 C 344 176, 362 196, 362 226 C 362 256, 344 276, 312 276 H 268 V 348 H 234 Z" 
+            fill="url(#busGold)"/>
+      <path d="M 268 206 H 308 C 322 206, 330 214, 330 226 C 330 238, 322 246, 308 246 H 268 Z" 
+            fill="#0F172A"/>
+
+      <!-- Intelligent Route Nodes & Signal Wave Overlay -->
+      <g stroke="#38BDF8" stroke-width="6" stroke-linecap="round">
+        <!-- Route link connecting bus to safety shield -->
+        <line x1="268" y1="310" x2="330" y2="330"/>
+        <line x1="330" y1="330" x2="384" y2="280"/>
+        <line x1="384" y1="280" x2="396" y2="210"/>
+      </g>
+
+      <!-- GPS / IoT Network Pins -->
+      <circle cx="268" cy="310" r="8" fill="#38BDF8" stroke="#0F172A" stroke-width="3"/>
+      <circle cx="330" cy="330" r="10" fill="#FCD34D" stroke="#0F172A" stroke-width="3"/>
+      <circle cx="384" cy="280" r="8" fill="#38BDF8" stroke="#0F172A" stroke-width="3"/>
+      <circle cx="396" cy="210" r="6" fill="#FCD34D" stroke="#0F172A" stroke-width="2"/>
+    </g>
+
+  </g>
+
+  <!-- Modern Brand Signature 'PCY TECH' at Bottom -->
+  <text x="256" y="454" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="900" font-size="28" fill="#FFFFFF" letter-spacing="4">PCY TECH</text>
+  <text x="256" y="478" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="600" font-size="12" fill="#94A3B8" letter-spacing="6">FLEET CLOUD</text>
+</svg>

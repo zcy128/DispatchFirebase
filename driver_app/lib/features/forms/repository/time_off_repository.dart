@@ -1,0 +1,229 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:http/http.dart' as http;
+import '../../../core/api_config.dart';
+import '../../route/repository/route_repository.dart';
+import '../models/time_off_model.dart';
+
+class TimeOffRepository {
+  static const String boxName = 'driver_time_off_v1';
+  static String get serverBaseUrl => ApiConfig.baseUrl;
+
+  Box? _box;
+
+  bool get isFirestoreAvailable {
+    try {
+      return Firebase.apps.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> init() async {
+    if (!Hive.isBoxOpen(boxName)) {
+      _box = await Hive.openBox(boxName);
+    } else {
+      _box = Hive.box(boxName);
+    }
+  }
+
+  /// Streams real-time updates from Firestore for the given employee ID.
+  /// Seamlessly falls back to local Hive cache if offline or uninitialized.
+  Stream<List<TimeOffRequestModel>> watchTimeOffRequests(String employeeId) {
+    final controller = StreamController<List<TimeOffRequestModel>>.broadcast();
+
+    // 1. Emit cached records first for immediate UI display
+    final cached = getTimeOffRequests(employeeId: employeeId);
+    controller.add(cached);
+
+    if (!isFirestoreAvailable) {
+      return controller.stream;
+    }
+
+    StreamSubscription? sub;
+    try {
+      final normTargetId = RouteRepository.resolveEmployeeId(employeeId);
+      final coll = FirebaseFirestore.instance.collection('time_off_requests');
+
+      sub = coll.snapshots().listen(
+        (snapshot) {
+          final list = <TimeOffRequestModel>[];
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            final docEmpId = data['employeeId']?.toString() ?? '';
+            if (RouteRepository.matchesDriver(docEmpId, normTargetId) ||
+                RouteRepository.matchesDriver(docEmpId, employeeId)) {
+              list.add(TimeOffRequestModel.fromMap(data, doc.id));
+            }
+          }
+
+          list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+          // Cache updated items in Hive
+          _cacheRequests(list);
+
+          if (!controller.isClosed) {
+            controller.add(list);
+          }
+        },
+        onError: (err) {
+          debugPrint('Firestore watchTimeOffRequests notice: $err');
+          if (!controller.isClosed) {
+            controller.add(getTimeOffRequests(employeeId: employeeId));
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('Firestore initialization notice in watchTimeOffRequests: $e');
+    }
+
+    controller.onCancel = () {
+      sub?.cancel();
+    };
+
+    return controller.stream;
+  }
+
+  /// Returns cached time-off requests filtered by employeeId.
+  List<TimeOffRequestModel> getTimeOffRequests({String? employeeId}) {
+    if (_box == null) return [];
+    final list = <TimeOffRequestModel>[];
+    final normTarget = employeeId != null ? RouteRepository.resolveEmployeeId(employeeId) : null;
+
+    for (var key in _box!.keys) {
+      final raw = _box!.get(key);
+      if (raw is Map) {
+        final stringKeyMap = raw.map((k, v) => MapEntry(k.toString(), v));
+        final rec = TimeOffRequestModel.fromMap(stringKeyMap, key.toString());
+        if (normTarget == null ||
+            RouteRepository.matchesDriver(rec.employeeId, normTarget) ||
+            RouteRepository.matchesDriver(rec.employeeId, employeeId ?? '')) {
+          list.add(rec);
+        }
+      }
+    }
+
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  }
+
+  /// Creates a new time-off request in Firestore, notifies REST API, and caches locally.
+  Future<TimeOffRequestModel> createTimeOffRequest(TimeOffRequestModel request) async {
+    final nowStr = DateTime.now().toIso8601String();
+    final updated = request.copyWith(
+      createdAt: request.createdAt.isNotEmpty ? request.createdAt : nowStr,
+      updatedAt: nowStr,
+    );
+
+    // 1. Save to local Hive cache immediately
+    if (_box != null) {
+      await _box!.put(updated.id, updated.toMap());
+    }
+
+    // 2. Write to Firestore collection 'time_off_requests'
+    if (isFirestoreAvailable) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('time_off_requests')
+            .doc(updated.id)
+            .set(updated.toMap(), SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('Firestore time_off_requests set notice: $e');
+      }
+    }
+
+    // 3. Post to backend REST API
+    try {
+      final uri = Uri.parse('$serverBaseUrl/api/public/dispatch/time-off-requests');
+      final payload = {
+        'employeeId': updated.employeeId,
+        'employeeNumber': updated.employeeNumber,
+        'employeeName': updated.employeeName,
+        'leaveType': updated.leaveType.code,
+        'startDate': updated.startDate,
+        'endDate': updated.endDate,
+        'shiftType': updated.shiftType.code,
+        'comments': updated.comments,
+        'requestedByUserId': updated.requestedByUserId,
+        'requestedByName': updated.requestedByName,
+      };
+
+      await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 4));
+    } catch (e) {
+      debugPrint('REST API createTimeOffRequest notice: $e');
+    }
+
+    return updated;
+  }
+
+  /// Cancels an existing pending time-off request if submitted today.
+  Future<TimeOffRequestModel> cancelTimeOffRequest(String requestId) async {
+    final existing = getTimeOffRequestById(requestId);
+    if (existing == null) {
+      throw StateError('Request not found: $requestId');
+    }
+    if (!existing.isPending) {
+      throw StateError('Cannot cancel request: only pending requests can be cancelled.');
+    }
+    if (!existing.isCreatedToday) {
+      throw StateError('Cannot cancel request: leave requests can only be cancelled on the same day they were submitted. Please contact Dispatch.');
+    }
+
+    final cancelled = existing.copyWith(
+      status: TimeOffStatus.cancelled,
+      updatedAt: DateTime.now().toIso8601String(),
+    );
+
+    // 1. Update Hive
+    if (_box != null) {
+      await _box!.put(requestId, cancelled.toMap());
+    }
+
+    // 2. Update Firestore
+    if (isFirestoreAvailable) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('time_off_requests')
+            .doc(requestId)
+            .update({'status': 'cancelled', 'updatedAt': cancelled.updatedAt});
+      } catch (e) {
+        debugPrint('Firestore cancel time_off_request notice: $e');
+      }
+    }
+
+    // 3. Notify REST endpoint
+    try {
+      final uri = Uri.parse('$serverBaseUrl/api/public/dispatch/time-off-requests/$requestId/cancel');
+      await http.post(uri).timeout(const Duration(seconds: 4));
+    } catch (e) {
+      debugPrint('REST cancelTimeOffRequest notice: $e');
+    }
+
+    return cancelled;
+  }
+
+  TimeOffRequestModel? getTimeOffRequestById(String id) {
+    if (_box == null) return null;
+    final raw = _box!.get(id);
+    if (raw is Map) {
+      final stringKeyMap = raw.map((k, v) => MapEntry(k.toString(), v));
+      return TimeOffRequestModel.fromMap(stringKeyMap, id);
+    }
+    return null;
+  }
+
+  void _cacheRequests(List<TimeOffRequestModel> list) {
+    if (_box == null) return;
+    for (final item in list) {
+      _box!.put(item.id, item.toMap());
+    }
+  }
+}

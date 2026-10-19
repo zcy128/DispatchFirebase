@@ -1,0 +1,28 @@
+// ==============================================================================
+// TEMPLATE FILE: firebase-messaging-sw.js.example
+// Copy this file to firebase-messaging-sw.js and populate your Firebase credentials.
+// ==============================================================================
+
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: "YOUR_WEB_API_KEY",
+  authDomain: "your-firebase-project-id.firebaseapp.com",
+  projectId: "your-firebase-project-id",
+  storageBucket: "your-firebase-project-id.firebasestorage.app",
+  messagingSenderId: "000000000000",
+  appId: "1:000000000000:web:0000000000000000000000"
+});
+
+const messaging = firebase.messaging();
+
+messaging.onBackgroundMessage((payload) => {
+  const notificationTitle = payload.notification ? payload.notification.title : 'Dispatch Notice';
+  const notificationOptions = {
+    body: payload.notification ? payload.notification.body : '',
+    icon: '/icons/Icon-192.png'
+  };
+
+  self.registration.showNotification(notificationTitle, notificationOptions);
+});
