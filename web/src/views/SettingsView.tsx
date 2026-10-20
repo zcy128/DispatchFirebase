@@ -9,6 +9,7 @@ import { AICopilotStatus } from '../types/ai';
 import { CheckInReminderSettings, SimulationSettings, SimulationRunResult } from '../types/dispatch';
 import { RouteSettingsService, RouteOptimizationSettings } from '../services/routeSettingsService';
 import { useCompliance } from '../contexts/ComplianceContext';
+import { isDemoMode } from '../config/appMode';
 import { OperatingProvince, ProvinceComplianceConfig } from '../types/compliance';
 import {
   ShieldCheck,
@@ -1012,6 +1013,8 @@ export const SettingsView: React.FC = () => {
         </form>
       </div>
 
+      {isDemoMode && (
+      <>
       {/* Section: Automated Operations Simulation */}
       <div className={`bg-slate-900 border rounded-2xl p-6 space-y-5 transition ${
         simSettings.enabled
@@ -1464,6 +1467,8 @@ export const SettingsView: React.FC = () => {
           </button>
         </div>
       </div>
+      </>
+      )}
 
       {/* Section: Crew Check-in FCM Push Reminders */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">

@@ -9,18 +9,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"dispatch-server/internal/auth"
 	"dispatch-server/internal/models"
 	"dispatch-server/internal/repository"
+	"github.com/go-chi/chi/v5"
 )
 
 type DispatchHandler struct {
-	repo repository.DispatchRepository
+	repo      repository.DispatchRepository
+	allowDemo bool
 }
 
-func NewDispatchHandler(repo repository.DispatchRepository) *DispatchHandler {
-	return &DispatchHandler{repo: repo}
+func NewDispatchHandler(repo repository.DispatchRepository, allowDemo bool) *DispatchHandler {
+	return &DispatchHandler{repo: repo, allowDemo: allowDemo}
+}
+
+func (h *DispatchHandler) rejectSimulation(w http.ResponseWriter) bool {
+	if h.allowDemo {
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte(`{"error":"operations simulation is disabled when APP_MODE=production"}`))
+	return true
 }
 
 // CreateDay creates daily dispatch shifts for target date
@@ -412,12 +423,18 @@ func (h *DispatchHandler) GetSimulationSettings(w http.ResponseWriter, r *http.R
 		http.Error(w, `{"error":"failed to get simulation settings: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+	if !h.allowDemo && settings != nil {
+		settings.Enabled = false
+	}
 	json.NewEncoder(w).Encode(settings)
 }
 
 // SaveSimulationSettings updates the automated operations simulation settings
 func (h *DispatchHandler) SaveSimulationSettings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if h.rejectSimulation(w) {
+		return
+	}
 	var settings models.SimulationSettings
 	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
@@ -477,6 +494,9 @@ func (h *DispatchHandler) SaveSimulationSettings(w http.ResponseWriter, r *http.
 // RunSimulation executes the operations simulation on demand for a specified date (or today Ottawa time)
 func (h *DispatchHandler) RunSimulation(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if h.rejectSimulation(w) {
+		return
+	}
 	var req models.RunSimulationRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
@@ -1325,7 +1345,6 @@ func (h *DispatchHandler) UpdateTrainingType(w http.ResponseWriter, r *http.Requ
 	}
 	json.NewEncoder(w).Encode(updated)
 }
-
 
 // ─── Pre-Trip Inspections ───────────────────────────────────────────────────
 
@@ -2198,8 +2217,3 @@ func (h *DispatchHandler) DeleteVehicleSignout(w http.ResponseWriter, r *http.Re
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-
-
-
-
-

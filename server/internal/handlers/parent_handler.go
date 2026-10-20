@@ -84,7 +84,7 @@ func (h *ParentHandler) RequestOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(students) == 0 && isDemoContact(contact) {
+	if len(students) == 0 && h.allowsDemo() && isDemoContact(contact) {
 		students = getDemoStudents()
 		for _, s := range students {
 			_ = h.studentRepo.Create(r.Context(), s)
@@ -149,7 +149,7 @@ func (h *ParentHandler) RequestOTP(w http.ResponseWriter, r *http.Request) {
 		MatchedStudentsCount: len(students),
 	}
 	// In dev mode, return devCode for frictionless automated/manual testing
-	if h.cfg.IsDevelopment {
+	if h.allowsDemo() && h.cfg.IsDevelopment {
 		resp.DevCode = code
 	}
 
@@ -189,7 +189,7 @@ func (h *ParentHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if session.Code != code && !(h.cfg.IsDevelopment && code == "123456") {
+	if session.Code != code && !(h.allowsDemo() && h.cfg.IsDevelopment && code == "123456") {
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
@@ -309,7 +309,7 @@ func (h *ParentHandler) ListMyStudents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	students, err := h.studentRepo.FindStudentsByContact(r.Context(), contact)
-	if (err != nil || len(students) == 0) && isDemoContact(contact) {
+	if (err != nil || len(students) == 0) && h.allowsDemo() && isDemoContact(contact) {
 		students = getDemoStudents()
 	} else if err != nil {
 		http.Error(w, `{"error":"failed to fetch students"}`, http.StatusInternalServerError)
@@ -646,7 +646,7 @@ func (h *ParentHandler) aggregateStudentCommutes(ctx context.Context, studentIDs
 
 	for idx, sID := range studentIDs {
 		student, err := h.studentRepo.GetByID(ctx, sID)
-		if err != nil || student == nil {
+		if (err != nil || student == nil) && h.allowsDemo() {
 			for _, ds := range getDemoStudents() {
 				if ds.ID == sID {
 					student = ds
@@ -893,6 +893,10 @@ func generateSecureOTP() string {
 	return fmt.Sprintf("%06d", n.Int64()+100000)
 }
 
+func (h *ParentHandler) allowsDemo() bool {
+	return h.cfg == nil || h.cfg.AllowsDemo()
+}
+
 func isDemoContact(contact string) bool {
 	clean := strings.TrimSpace(contact)
 	if strings.EqualFold(clean, "parent@pcytech.ca") {
@@ -1016,4 +1020,3 @@ func getDemoStudents() []*models.Student {
 
 	return []*models.Student{s1, s2}
 }
-

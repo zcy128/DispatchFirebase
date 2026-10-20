@@ -33,10 +33,13 @@ import (
 
 func main() {
 	cfg := config.LoadConfig()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("[INIT] %v", err)
+	}
 	ctx := context.Background()
 
 	log.Printf("[INIT] Starting Dispatch API Server on port :%s", cfg.Port)
-	log.Printf("[INIT] Project ID: %s, DevMode: %v", cfg.ProjectID, cfg.IsDevelopment)
+	log.Printf("[INIT] Project ID: %s, AppMode: %s, DevMode: %v", cfg.ProjectID, cfg.AppMode, cfg.IsDevelopment)
 
 	var fsClient *firestore.Client
 	var bqClient *bigquery.Client
@@ -114,6 +117,9 @@ func main() {
 	}
 
 	if fsClient == nil {
+		if !cfg.AllowsDemo() {
+			log.Fatal("[INIT] Production mode requires Firestore. Refusing to start on the in-memory demo database.")
+		}
 		log.Println("[INIT] Using in-memory fallback repository.")
 		memRepo := repository.NewMemoryEmployeeRepository()
 		seedMemoryData(ctx, memRepo)
@@ -152,9 +158,9 @@ func main() {
 	}))
 
 	// Auth, Employee, School, Student, Route & Vehicle handlers
-	authenticator := auth.NewAuthenticator(authClient, cfg.IsDevelopment)
+	authenticator := auth.NewAuthenticator(authClient, cfg.AllowsDemo())
 	authHandler := handlers.NewAuthHandler(repo, authClient, cfg)
-	empHandler := handlers.NewEmployeeHandler(repo, authClient)
+	empHandler := handlers.NewEmployeeHandler(repo, authClient, cfg.AllowsDemo())
 	schoolHandler := handlers.NewSchoolHandler(schoolRepo, schoolBoardRepo)
 	studentHandler := handlers.NewStudentHandler(studentRepo)
 	routeHandler := handlers.NewRouteHandler(routeRepo)
@@ -162,7 +168,7 @@ func main() {
 	calendarHandler := handlers.NewCalendarHandler(calendarRepo)
 	payrollHandler := handlers.NewPayrollHandler(payrollRepo, schoolBoardRepo, routeRepo, repo)
 	yardHandler := handlers.NewYardHandler(yardRepo)
-	dispatchHandler := handlers.NewDispatchHandler(dispatchRepo)
+	dispatchHandler := handlers.NewDispatchHandler(dispatchRepo, cfg.AllowsDemo())
 
 	var chatRepo repository.ChatRepository
 	if fsClient != nil {
@@ -192,12 +198,17 @@ func main() {
 	// Health check for Cloud Run
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"healthy","time":"%s"}`, time.Now().Format(time.RFC3339))
+		fmt.Fprintf(w, `{"status":"healthy","mode":"%s","time":"%s"}`, cfg.AppMode, time.Now().Format(time.RFC3339))
 	})
 
-	// Public / Setup Auth Routes
-	r.Post("/api/auth/setup-admin", authHandler.SetupAdmin)
-	r.Post("/api/auth/sync-employee-users", authHandler.SyncEmployeeUsers)
+	// Demo keeps these open for the public walkthrough. Production requires the admin secret.
+	if cfg.AllowsDemo() {
+		r.Post("/api/auth/setup-admin", authHandler.SetupAdmin)
+		r.Post("/api/auth/sync-employee-users", authHandler.SyncEmployeeUsers)
+	} else {
+		r.With(adminSecretMiddleware(cfg.AdminAPISecret)).Post("/api/auth/setup-admin", authHandler.SetupAdmin)
+		r.With(adminSecretMiddleware(cfg.AdminAPISecret)).Post("/api/auth/sync-employee-users", authHandler.SyncEmployeeUsers)
+	}
 	r.Get("/api/auth/resolve-username", authHandler.ResolveUsername)
 
 	// File uploads & static file serving
@@ -1065,59 +1076,63 @@ func main() {
 		})
 	})
 
-	// Background Operations Simulation Scheduler (checks Ottawa time every 30s)
-	go func() {
-		checkAndRunSimulation := func() {
-			bgCtx := context.Background()
-			simSettings, err := dispatchRepo.GetSimulationSettings(bgCtx)
-			if err != nil || simSettings == nil || !simSettings.Enabled {
-				return
-			}
-			loc, errLoc := time.LoadLocation("America/Toronto")
-			if errLoc != nil {
-				loc = time.FixedZone("EDT", -4*3600)
-			}
-			nowOttawa := time.Now().In(loc)
-			todayStr := nowOttawa.Format("2006-01-02")
-
-			// 1. Ensure today's dispatches & simulation data are populated if not yet simulated today
-			if simSettings.LastSimulatedDate != todayStr {
-				log.Printf("[SIMULATION] Running automated operations simulation for today (%s)...", todayStr)
-				if res, errSim := dispatchRepo.RunSimulationForDate(bgCtx, todayStr, false); errSim == nil && res != nil {
-					log.Printf("[SIMULATION] %s", res.Message)
+	// Background Operations Simulation Scheduler (demo deployments only).
+	if cfg.AllowsDemo() {
+		go func() {
+			checkAndRunSimulation := func() {
+				bgCtx := context.Background()
+				simSettings, err := dispatchRepo.GetSimulationSettings(bgCtx)
+				if err != nil || simSettings == nil || !simSettings.Enabled {
+					return
 				}
-			}
+				loc, errLoc := time.LoadLocation("America/Toronto")
+				if errLoc != nil {
+					loc = time.FixedZone("EDT", -4*3600)
+				}
+				nowOttawa := time.Now().In(loc)
+				todayStr := nowOttawa.Format("2006-01-02")
 
-			// 2. At or after 14:00 (2:00 PM Ottawa time), automatically generate & simulate tomorrow's dispatches
-			autoGenTime := simSettings.AutoGenerateTime
-			if autoGenTime == "" {
-				autoGenTime = "14:00"
-			}
-			currentTimeHHMM := nowOttawa.Format("15:04")
-			tomorrowStr := nowOttawa.AddDate(0, 0, 1).Format("2006-01-02")
-			if currentTimeHHMM >= autoGenTime && simSettings.LastAutoGeneratedForDate != tomorrowStr {
-				log.Printf("[SIMULATION] Ottawa time is %s (>= %s). Auto-generating & simulating next day (%s)...", currentTimeHHMM, autoGenTime, tomorrowStr)
-				if res, errSim := dispatchRepo.RunSimulationForDate(bgCtx, tomorrowStr, false); errSim == nil && res != nil {
-					log.Printf("[SIMULATION] Next-day auto-generation complete: %s", res.Message)
-					latestSettings, _ := dispatchRepo.GetSimulationSettings(bgCtx)
-					if latestSettings != nil {
-						latestSettings.LastAutoGeneratedForDate = tomorrowStr
-						_, _ = dispatchRepo.SaveSimulationSettings(bgCtx, latestSettings)
+				// 1. Ensure today's dispatches & simulation data are populated if not yet simulated today
+				if simSettings.LastSimulatedDate != todayStr {
+					log.Printf("[SIMULATION] Running automated operations simulation for today (%s)...", todayStr)
+					if res, errSim := dispatchRepo.RunSimulationForDate(bgCtx, todayStr, false); errSim == nil && res != nil {
+						log.Printf("[SIMULATION] %s", res.Message)
+					}
+				}
+
+				// 2. At or after 14:00 (2:00 PM Ottawa time), automatically generate & simulate tomorrow's dispatches
+				autoGenTime := simSettings.AutoGenerateTime
+				if autoGenTime == "" {
+					autoGenTime = "14:00"
+				}
+				currentTimeHHMM := nowOttawa.Format("15:04")
+				tomorrowStr := nowOttawa.AddDate(0, 0, 1).Format("2006-01-02")
+				if currentTimeHHMM >= autoGenTime && simSettings.LastAutoGeneratedForDate != tomorrowStr {
+					log.Printf("[SIMULATION] Ottawa time is %s (>= %s). Auto-generating & simulating next day (%s)...", currentTimeHHMM, autoGenTime, tomorrowStr)
+					if res, errSim := dispatchRepo.RunSimulationForDate(bgCtx, tomorrowStr, false); errSim == nil && res != nil {
+						log.Printf("[SIMULATION] Next-day auto-generation complete: %s", res.Message)
+						latestSettings, _ := dispatchRepo.GetSimulationSettings(bgCtx)
+						if latestSettings != nil {
+							latestSettings.LastAutoGeneratedForDate = tomorrowStr
+							_, _ = dispatchRepo.SaveSimulationSettings(bgCtx, latestSettings)
+						}
 					}
 				}
 			}
-		}
 
-		// Initial check shortly after startup
-		time.Sleep(2 * time.Second)
-		checkAndRunSimulation()
-
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
+			// Initial check shortly after startup
+			time.Sleep(2 * time.Second)
 			checkAndRunSimulation()
-		}
-	}()
+
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for range ticker.C {
+				checkAndRunSimulation()
+			}
+		}()
+	} else {
+		log.Println("[INIT] Production mode: operations simulation scheduler is off.")
+	}
 
 	addr := ":" + cfg.Port
 	log.Printf("[READY] Dispatch API Server listening on %s", addr)
@@ -1611,4 +1626,3 @@ func seedMemoryParentAndStudentData(
 	}
 	log.Println("[INIT] Seeded test students (Emma & Lucas Watson) and OCDSB-001 AM/PM dispatch shifts.")
 }
-

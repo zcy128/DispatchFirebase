@@ -1,21 +1,23 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 )
 
 type Config struct {
-	Port              string
-	ProjectID         string
-	AllowedOrigins    string
-	AdminEmail        string
-	AdminPassword     string
-	IsDevelopment     bool
-	BigQueryDataset   string
-	BigQueryColdDays  int
-	AdminAPISecret    string
+	Port             string
+	ProjectID        string
+	AllowedOrigins   string
+	AdminEmail       string
+	AdminPassword    string
+	IsDevelopment    bool
+	AppMode          string
+	BigQueryDataset  string
+	BigQueryColdDays int
+	AdminAPISecret   string
 
 	// Amazon SES / SNS Inbound & Outbound Email settings
 	HRNotificationEmail     string
@@ -33,11 +35,11 @@ type Config struct {
 	ApprovalSecret          string
 
 	// Twilio & Parent App Settings
-	TwilioAccountSID     string
-	TwilioAuthToken      string
-	TwilioFromNumber     string
-	ParentAppBaseURL     string
-	ParentJWTSigningKey  string
+	TwilioAccountSID    string
+	TwilioAuthToken     string
+	TwilioFromNumber    string
+	ParentAppBaseURL    string
+	ParentJWTSigningKey string
 
 	// Google Maps Routes API (Server-side only, never leaked to clients)
 	GoogleMapsAPIKey string
@@ -62,13 +64,19 @@ func LoadConfig() *Config {
 		allowedOrigins = "*"
 	}
 
+	appMode := strings.ToLower(strings.TrimSpace(os.Getenv("APP_MODE")))
+	if appMode == "" {
+		appMode = "demo"
+	}
+	isProduction := appMode == "production"
+
 	adminEmail := os.Getenv("ADMIN_EMAIL")
 	if adminEmail == "" {
 		adminEmail = "admin@example.com"
 	}
 
 	adminPassword := os.Getenv("ADMIN_PASSWORD")
-	if adminPassword == "" {
+	if adminPassword == "" && !isProduction {
 		adminPassword = "dev_admin_password_change_in_production"
 	}
 
@@ -122,7 +130,7 @@ func LoadConfig() *Config {
 	}
 
 	approvalSecret := os.Getenv("APPROVAL_SECRET")
-	if approvalSecret == "" {
+	if approvalSecret == "" && !isProduction {
 		approvalSecret = "DevApprovalSecretChangeInProduction"
 	}
 
@@ -150,6 +158,7 @@ func LoadConfig() *Config {
 		AdminEmail:              adminEmail,
 		AdminPassword:           adminPassword,
 		IsDevelopment:           env == "development" || env == "",
+		AppMode:                 appMode,
 		BigQueryDataset:         bqDataset,
 		BigQueryColdDays:        bqColdDays,
 		AdminAPISecret:          adminAPISecret,
@@ -182,6 +191,62 @@ func getEnvFallback(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// AllowsDemo reports whether this process may serve demo login and simulated operations data.
+// An unset APP_MODE stays in demo so the current public site keeps working.
+func (c *Config) AllowsDemo() bool {
+	if c == nil {
+		return true
+	}
+	return !strings.EqualFold(strings.TrimSpace(c.AppMode), "production")
+}
+
+// Validate rejects a production process that is missing private secrets or uses a value published in the repo.
+func (c *Config) Validate() error {
+	mode := strings.ToLower(strings.TrimSpace(c.AppMode))
+	switch mode {
+	case "demo":
+		return nil
+	case "production":
+	default:
+		return fmt.Errorf("APP_MODE must be demo or production, got %q", c.AppMode)
+	}
+
+	var missing []string
+	if strings.TrimSpace(c.AdminPassword) == "" || isPublishedSecret(c.AdminPassword) {
+		missing = append(missing, "ADMIN_PASSWORD")
+	}
+	if strings.TrimSpace(c.AdminAPISecret) == "" || isPublishedSecret(c.AdminAPISecret) {
+		missing = append(missing, "ADMIN_API_SECRET")
+	}
+	if strings.TrimSpace(c.ApprovalSecret) == "" || isPublishedSecret(c.ApprovalSecret) {
+		missing = append(missing, "APPROVAL_SECRET")
+	}
+	if strings.TrimSpace(c.ParentJWTSigningKey) == "" || isPublishedSecret(c.ParentJWTSigningKey) {
+		missing = append(missing, "PARENT_JWT_SIGNING_KEY")
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("production mode refuses to start until private values are set for: %s", strings.Join(missing, ", "))
+}
+
+func isPublishedSecret(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "dev_admin_password_change_in_production",
+		"DevApprovalSecretChangeInProduction",
+		"Dispatch2026!",
+		"Admin@Dispatch2026!",
+		"password123",
+		"ChangeMeInProduction_Admin123!",
+		"ChangeMeInProduction_ArchiveSecret123!",
+		"ChangeMeInProduction_ApprovalSecret123!",
+		"ChangeMeInProduction_Secret123!":
+		return true
+	default:
+		return false
+	}
 }
 
 // GetForwardTargets returns the target forwarding emails for a specific recipient mailbox
@@ -278,4 +343,3 @@ func fileExists(filename string) bool {
 	}
 	return !info.IsDir()
 }
-

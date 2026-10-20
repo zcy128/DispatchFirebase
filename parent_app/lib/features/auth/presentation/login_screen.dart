@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/app_mode.dart';
 import '../../../core/theme.dart';
 import '../bloc/auth_bloc.dart';
 
@@ -154,7 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Quick Test Buttons
+                    if (AppMode.isDemo)
                     Row(
                       children: [
                         Expanded(

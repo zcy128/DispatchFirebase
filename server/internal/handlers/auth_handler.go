@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	firebaseAuth "firebase.google.com/go/v4/auth"
 	"dispatch-server/internal/auth"
 	"dispatch-server/internal/config"
 	"dispatch-server/internal/models"
 	"dispatch-server/internal/repository"
+	firebaseAuth "firebase.google.com/go/v4/auth"
 )
 
 type AuthHandler struct {
@@ -146,20 +146,20 @@ func (h *AuthHandler) SetupAdmin(w http.ResponseWriter, r *http.Request) {
 	// Create Employee record in master database
 	now := time.Now()
 	newAdmin := &models.Employee{
-		EmployeeNumber: "EMP-ADMIN-001",
-		FirstName:      req.FirstName,
-		LastName:       req.LastName,
-		WorkEmail:      req.Email,
-		MobilePhone:    req.MobilePhone,
-		JobPosition:    "Operations Director & System Admin",
-		DateHired:      &now,
-		IsActive:       true,
+		EmployeeNumber:  "EMP-ADMIN-001",
+		FirstName:       req.FirstName,
+		LastName:        req.LastName,
+		WorkEmail:       req.Email,
+		MobilePhone:     req.MobilePhone,
+		JobPosition:     "Operations Director & System Admin",
+		DateHired:       &now,
+		IsActive:        true,
 		PersonalAddress: "100 Fleet Operations Blvd, Suite 200",
-		YardID:         "HQ-Central",
-		FirebaseUID:    uid,
-		Role:           "admin",
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		YardID:          "HQ-Central",
+		FirebaseUID:     uid,
+		Role:            "admin",
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	newAdmin.ComputeComputedFields()
 
@@ -212,14 +212,15 @@ const (
 )
 
 type SyncedEmployeeInfo struct {
-	ID             string `json:"id"`
-	EmployeeNumber string `json:"employeeNumber"`
-	FullName       string `json:"fullName"`
-	Username       string `json:"username"`
-	AuthEmail      string `json:"authEmail"`
-	FirebaseUID    string `json:"firebaseUid"`
-	Role           string `json:"role"`
-	Status         string `json:"status"` // "created", "updated", "existing"
+	ID                string `json:"id"`
+	EmployeeNumber    string `json:"employeeNumber"`
+	FullName          string `json:"fullName"`
+	Username          string `json:"username"`
+	AuthEmail         string `json:"authEmail"`
+	FirebaseUID       string `json:"firebaseUid"`
+	Role              string `json:"role"`
+	Status            string `json:"status"` // "created", "updated", "existing"
+	TemporaryPassword string `json:"temporaryPassword,omitempty"`
 }
 
 // SyncEmployeeUsers generates usernames and Firebase Auth user accounts for all employees
@@ -253,6 +254,7 @@ func (h *AuthHandler) SyncEmployeeUsers(w http.ResponseWriter, r *http.Request) 
 		}
 
 		status := "existing"
+		var temporaryPassword string
 
 		// 2. Firebase Auth Account Provisioning
 		if h.authClient != nil {
@@ -262,10 +264,11 @@ func (h *AuthHandler) SyncEmployeeUsers(w http.ResponseWriter, r *http.Request) 
 				uid = existingUser.UID
 				status = "updated"
 			} else {
+				initialPassword := provisionPassword(h.cfg == nil || h.cfg.AllowsDemo())
 				// Create new user in Firebase Auth
 				params := (&firebaseAuth.UserToCreate{}).
 					Email(authEmail).
-					Password(DefaultInitialPassword).
+					Password(initialPassword).
 					DisplayName(emp.FullName).
 					EmailVerified(true)
 				if emp.MobilePhone != "" && strings.HasPrefix(emp.MobilePhone, "+") {
@@ -276,6 +279,9 @@ func (h *AuthHandler) SyncEmployeeUsers(w http.ResponseWriter, r *http.Request) 
 				if createErr == nil && newUser != nil {
 					uid = newUser.UID
 					status = "created"
+					if h.cfg != nil && !h.cfg.AllowsDemo() {
+						temporaryPassword = initialPassword
+					}
 				} else if newUser != nil {
 					uid = newUser.UID
 				}
@@ -302,24 +308,28 @@ func (h *AuthHandler) SyncEmployeeUsers(w http.ResponseWriter, r *http.Request) 
 		_ = h.repo.Update(ctx, emp)
 
 		syncedList = append(syncedList, SyncedEmployeeInfo{
-			ID:             emp.ID,
-			EmployeeNumber: emp.EmployeeNumber,
-			FullName:       emp.FullName,
-			Username:       emp.Username,
-			AuthEmail:      authEmail,
-			FirebaseUID:    emp.FirebaseUID,
-			Role:           emp.Role,
-			Status:         status,
+			ID:                emp.ID,
+			EmployeeNumber:    emp.EmployeeNumber,
+			FullName:          emp.FullName,
+			Username:          emp.Username,
+			AuthEmail:         authEmail,
+			FirebaseUID:       emp.FirebaseUID,
+			Role:              emp.Role,
+			Status:            status,
+			TemporaryPassword: temporaryPassword,
 		})
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	payload := map[string]interface{}{
 		"message":         "Employee accounts synced successfully",
 		"authEmailDomain": AuthEmailDomain,
-		"defaultPassword": DefaultInitialPassword,
 		"totalEmployees":  len(employees),
 		"synced":          syncedList,
-	})
+	}
+	if h.cfg == nil || h.cfg.AllowsDemo() {
+		payload["defaultPassword"] = DefaultInitialPassword
+	}
+	json.NewEncoder(w).Encode(payload)
 }
 
 // ResolveUsername takes a username (e.g. driver1d) and returns the corresponding auth login details
@@ -351,4 +361,3 @@ func (h *AuthHandler) ResolveUsername(w http.ResponseWriter, r *http.Request) {
 		"authEmail": authEmail,
 	})
 }
-
