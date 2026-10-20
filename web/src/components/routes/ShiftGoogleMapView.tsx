@@ -37,6 +37,8 @@ interface ShiftGoogleMapViewProps {
   onSelectStudent?: (student: Student) => void;
   onUpdateShift?: (updatedShift: BusRouteShift) => void;
   height?: string | number;
+  showAdjustStops?: boolean;
+  showBus?: boolean;
 }
 
 type MapLayerType = 'roadmap' | 'satellite' | 'terrain' | 'osm';
@@ -107,8 +109,11 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
   studentsMap = {},
   onSelectStudent: _onSelectStudent,
   onUpdateShift,
-  height = '540px'
+  height = '540px',
+  showAdjustStops = true,
+  showBus = true
 }) => {
+  const mapShellRef = useRef<HTMLDivElement>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
@@ -936,6 +941,61 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
     }
   };
 
+  const spreadOverlappingStopsRef = useRef<() => void>(() => {});
+  spreadOverlappingStopsRef.current = () => {
+    const map = mapInstanceRef.current;
+    const markers = markersRef.current;
+    if (!map || markers.length === 0) return;
+
+    const resetPin = (marker: L.Marker) => {
+      const inner = marker.getElement()?.querySelector(':scope > div') as HTMLElement | null;
+      if (inner) inner.style.transform = 'translate(-50%, -100%)';
+    };
+
+    markers.forEach(resetPin);
+    if (isEditPickupMode || markers.length < 2) return;
+
+    const points = markers.map((marker) => map.latLngToContainerPoint(marker.getLatLng()));
+    const parent = points.map((_, index) => index);
+    const find = (index: number): number => (parent[index] === index ? index : (parent[index] = find(parent[index])));
+    const unite = (a: number, b: number) => {
+      const rootA = find(a);
+      const rootB = find(b);
+      if (rootA !== rootB) parent[rootB] = rootA;
+    };
+
+    const overlapPx = 36;
+    for (let i = 0; i < points.length; i++) {
+      for (let j = i + 1; j < points.length; j++) {
+        const dx = points[i].x - points[j].x;
+        const dy = points[i].y - points[j].y;
+        if (dx * dx + dy * dy <= overlapPx * overlapPx) unite(i, j);
+      }
+    }
+
+    const groups = new Map<number, number[]>();
+    points.forEach((_, index) => {
+      const root = find(index);
+      const group = groups.get(root) || [];
+      group.push(index);
+      groups.set(root, group);
+    });
+
+    groups.forEach((group) => {
+      if (group.length < 2) return;
+      const radius = Math.min(20 + group.length * 6, 48);
+      group.forEach((markerIndex, slot) => {
+        const inner = markers[markerIndex].getElement()?.querySelector(':scope > div') as HTMLElement | null;
+        if (!inner) return;
+        const angle = -Math.PI / 2 + (2 * Math.PI * slot) / group.length;
+        const offsetX = Math.round(Math.cos(angle) * radius);
+        const offsetY = Math.round(Math.sin(angle) * radius);
+        inner.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-100% + ${offsetY}px))`;
+        markers[markerIndex].setZIndexOffset(500 + slot);
+      });
+    });
+  };
+
   // Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -968,6 +1028,7 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
       tileLayerRef.current = tileLayer;
 
       mapInstanceRef.current = map;
+      map.on('zoomend', () => spreadOverlappingStopsRef.current());
     }
 
     // Invalidate size on initial mount
@@ -1109,6 +1170,8 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
       }
     });
 
+    requestAnimationFrame(() => spreadOverlappingStopsRef.current());
+
     const stopHints: StopCoordinateHint[] = stopsWithCoords.map((s) => ({
       sequence: s.sequence || 1,
       title: s.isSchool ? (s.schoolName || s.stopLocation) : (s.stopLocation || `Stop #${s.sequence}`),
@@ -1167,11 +1230,19 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
             const durMin = Math.round(data.routes[0].duration / 60);
             setRouteInfo({ distanceKm: distKm, durationMin: durMin });
 
-            // Initialize GPS Telematics Simulator for this inspected route
-            const simulator = new GpsSimulator(rawCoords, stopHints, unitTitle, driverTitle);
-            simulator.setSpeedMultiplier(simSpeedMultiplier);
-            gpsSimulatorRef.current = simulator;
-            setVehicleState(simulator.getState());
+            if (showBus) {
+              const simulator = new GpsSimulator(rawCoords, stopHints, unitTitle, driverTitle);
+              simulator.setSpeedMultiplier(simSpeedMultiplier);
+              gpsSimulatorRef.current = simulator;
+              setVehicleState(simulator.getState());
+            } else {
+              gpsSimulatorRef.current = null;
+              setVehicleState(null);
+              if (vehicleMarkerRef.current) {
+                vehicleMarkerRef.current.remove();
+                vehicleMarkerRef.current = null;
+              }
+            }
           } else {
             throw new Error('No OSRM geometry found');
           }
@@ -1198,11 +1269,19 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
           polylineRef.current = mainPolyline;
           setRouteInfo(null);
 
-          // Initialize GPS Telematics Simulator with stop coordinates
-          const simulator = new GpsSimulator(stopCoords, stopHints, unitTitle, driverTitle);
-          simulator.setSpeedMultiplier(simSpeedMultiplier);
-          gpsSimulatorRef.current = simulator;
-          setVehicleState(simulator.getState());
+          if (showBus) {
+            const simulator = new GpsSimulator(stopCoords, stopHints, unitTitle, driverTitle);
+            simulator.setSpeedMultiplier(simSpeedMultiplier);
+            gpsSimulatorRef.current = simulator;
+            setVehicleState(simulator.getState());
+          } else {
+            gpsSimulatorRef.current = null;
+            setVehicleState(null);
+            if (vehicleMarkerRef.current) {
+              vehicleMarkerRef.current.remove();
+              vehicleMarkerRef.current = null;
+            }
+          }
         })
         .finally(() => {
           setIsRouting(false);
@@ -1218,7 +1297,7 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
         hasFittedBoundsForShiftRef.current = shift?.id || 'init';
       }
     }
-  }, [shift?.id, stopsWithCoords, isEditPickupMode, selectedStopIndex, handleSavePickupLocation]);
+  }, [shift?.id, stopsWithCoords, isEditPickupMode, selectedStopIndex, handleSavePickupLocation, showBus]);
 
   // Periodic Telematics Ticker: smoothly moves vehicle along route path and updates map marker
   useEffect(() => {
@@ -1281,12 +1360,81 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
     }
   }, [simSpeedMultiplier]);
 
-  // Handle Fullscreen resize
-  useEffect(() => {
-    const timer = setTimeout(() => {
+  const resizeMapAfterFullscreen = useCallback(() => {
+    const timer = window.setTimeout(() => {
       mapInstanceRef.current?.invalidateSize();
+      spreadOverlappingStopsRef.current();
     }, 200);
-    return () => clearTimeout(timer);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const onChange = () => {
+      setIsFullscreen(document.fullscreenElement === mapShellRef.current);
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (document.fullscreenElement) {
+        void document.exitFullscreen();
+      } else {
+        setIsFullscreen(false);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isFullscreen]);
+
+  // Native fullscreen covers the screen. If the browser blocks it, fall back to a
+  // fixed overlay and let ancestor overflow stop clipping the map.
+  useEffect(() => {
+    const shell = mapShellRef.current;
+    const native = !!shell && document.fullscreenElement === shell;
+    const clearSizeTimer = resizeMapAfterFullscreen();
+    if (!isFullscreen || native || !shell) {
+      return clearSizeTimer;
+    }
+
+    const touched: { node: HTMLElement; overflow: string }[] = [];
+    let node = shell.parentElement;
+    while (node && node !== document.body) {
+      touched.push({ node, overflow: node.style.overflow });
+      node.style.overflow = 'visible';
+      node = node.parentElement;
+    }
+
+    return () => {
+      clearSizeTimer();
+      touched.forEach(({ node: ancestor, overflow }) => {
+        ancestor.style.overflow = overflow;
+      });
+    };
+  }, [isFullscreen, resizeMapAfterFullscreen]);
+
+  const handleToggleFullscreen = useCallback(() => {
+    const shell = mapShellRef.current;
+    if (!shell) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+      return;
+    }
+    if (isFullscreen) {
+      setIsFullscreen(false);
+      return;
+    }
+    const request = shell.requestFullscreen?.bind(shell);
+    if (!request) {
+      setIsFullscreen(true);
+      return;
+    }
+    void request().catch(() => {
+      setIsFullscreen(true);
+    });
   }, [isFullscreen]);
 
   const opDaysStr = shift ? formatOpDays(shift.runDays) : 'MTWRF';
@@ -1313,15 +1461,36 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
     return stopsWithCoords.filter((s) => s.isRelocated && !s.isSchool).length;
   }, [stopsWithCoords]);
 
+  const nativeFullscreen = isFullscreen && document.fullscreenElement === mapShellRef.current;
+
   return (
     <div
-      className={`relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 flex flex-col shadow-2xl transition-all ${
-        isFullscreen ? 'fixed inset-3 z-50 shadow-2xl border-amber-500/50' : ''
+      ref={mapShellRef}
+      className={`overflow-hidden bg-slate-950 flex flex-col shadow-2xl ${
+        isFullscreen && !nativeFullscreen
+          ? 'fixed inset-0 z-[200] h-screen w-screen max-w-none shrink-0 rounded-none border-0'
+          : isFullscreen
+            ? 'h-screen w-screen max-w-none rounded-none border-0'
+            : 'relative rounded-2xl border border-slate-800'
       }`}
-      style={{ height: isFullscreen ? 'calc(100vh - 24px)' : height }}
+      style={isFullscreen ? undefined : { height }}
     >
       {/* 1. Header Toolbar Overlay Container */}
-      <div className="absolute top-3 left-3 right-14 z-[400] flex flex-col gap-2 pointer-events-none">
+      <button
+        type="button"
+        onClick={handleToggleFullscreen}
+        title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen Map'}
+        className={`absolute top-3 right-3 z-[500] px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xl border pointer-events-auto whitespace-nowrap ${
+          isFullscreen
+            ? 'bg-slate-900 text-amber-300 border-amber-400'
+            : 'bg-amber-500 text-slate-950 border-amber-300 hover:bg-amber-400'
+        }`}
+      >
+        {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+        <span>{isFullscreen ? 'Exit' : 'Fullscreen'}</span>
+      </button>
+
+      <div className="absolute top-3 left-3 right-36 z-[400] flex flex-col gap-2 pointer-events-none">
         {/* Top Control Bar: Left Info + Right Action Buttons */}
         <div className="flex flex-wrap items-center justify-between gap-2 pointer-events-none">
           {/* Left: Shift Information Badge + Distinction Legend */}
@@ -1405,7 +1574,7 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
 
           {/* Right: Map Control Buttons */}
           <div className="flex items-center space-x-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-1 shadow-xl pointer-events-auto">
-            {/* Draggable stop repositioning toggle */}
+            {showAdjustStops && (
             <button
               type="button"
               onClick={() => setIsEditPickupMode(!isEditPickupMode)}
@@ -1423,6 +1592,7 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
               <Move className={`w-3.5 h-3.5 ${isEditPickupMode ? 'text-slate-950' : 'text-emerald-400'}`} />
               <span>{isEditPickupMode ? 'Done Adjusting' : 'Adjust Stops'}</span>
             </button>
+            )}
 
             {/* Stop Sequence Optimization Button */}
             <button
@@ -1500,14 +1670,6 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              title={isFullscreen ? 'Exit Fullscreen' : 'Open Fullscreen'}
-              className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition"
-            >
-              {isFullscreen ? <Minimize2 className="w-4 h-4 text-amber-400" /> : <Maximize2 className="w-4 h-4" />}
-            </button>
           </div>
         </div>
 
@@ -1580,7 +1742,7 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
 
       {/* 2. Main Map Canvas Container */}
       <div className="relative flex-1 w-full bg-slate-950">
-        <div ref={mapContainerRef} className="w-full h-full z-0" />
+        <div ref={mapContainerRef} className="w-full h-full z-0 [&_.leaflet-top.leaflet-right]:!top-14" />
       </div>
 
       {/* 3. Interactive Bottom Stops Carousel */}
@@ -1597,8 +1759,12 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
           </div>
 
           <div className="flex items-center space-x-2 text-[11px] text-slate-400 font-mono">
-            <span>Bus #{route.unitNumber || '1001'}</span>
-            <span>•</span>
+            {showBus && (
+              <>
+                <span>Bus #{route.unitNumber || '1001'}</span>
+                <span>•</span>
+              </>
+            )}
             <span>Driver: {route.driverName || 'Robert Smith'}</span>
           </div>
         </div>

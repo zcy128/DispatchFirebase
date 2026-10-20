@@ -547,11 +547,6 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                                 <User className="w-3.5 h-3.5 text-amber-400" />
                                 <span>{r.driverName || 'Unassigned'}</span>
                               </div>
-                              {r.unitNumber && (
-                                <div className="text-[11px] text-slate-400 font-mono">
-                                  Bus #{r.unitNumber} ({r.vehicleCapacity || 67} seats)
-                                </div>
-                              )}
                               {r.attendantName && (
                                 <div className="text-[10px] text-indigo-300 flex items-center space-x-1">
                                   <Shield className="w-3 h-3 text-indigo-400" />
@@ -794,8 +789,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                           <span className="truncate">{r.driverName || 'No Driver Assigned'}</span>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-slate-400">
-                          {r.unitNumber ? <span>Bus #{r.unitNumber}</span> : <span>No Bus</span>}
-                          {r.attendantName && <span>• Monitor: {r.attendantName}</span>}
+                          {r.attendantName && <span>Monitor: {r.attendantName}</span>}
                           {r.driverPhone && (
                             <a
                               href={`tel:${r.driverPhone}`}
