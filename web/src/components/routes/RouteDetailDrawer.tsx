@@ -354,22 +354,6 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
                   </div>
                 </div>
 
-                {/* Vehicle */}
-                <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 shrink-0">
-                    <Bus className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[10px] uppercase font-bold text-slate-500">Vehicle</div>
-                    <div className="font-bold text-white text-xs sm:text-sm truncate">
-                      {route.unitNumber ? `Bus #${route.unitNumber}` : 'Unassigned'}
-                    </div>
-                    <div className="text-slate-400 text-[11px] mt-0.5 truncate">
-                      {route.plateNumber || 'No Plate'} • Cap {route.vehicleCapacity || 67}
-                    </div>
-                  </div>
-                </div>
-
                 {/* Attendant */}
                 <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 flex items-center space-x-3">
                   <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
@@ -485,7 +469,7 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
                       Shift Specific Crew
                     </span>
                     <span>
-                      Driver: <strong className="text-white">{currentShift.driverName || 'Unassigned'}</strong> • Bus: <strong className="text-white">#{currentShift.unitNumber || 'None'}</strong>
+                      Driver: <strong className="text-white">{currentShift.driverName || 'Unassigned'}</strong>
                       {currentShift.attendantName ? ` • Monitor: ${currentShift.attendantName}` : ''}
                     </span>
                   </div>
@@ -540,6 +524,7 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
                   shift={currentShift}
                   route={route}
                   studentsMap={studentsMap}
+                  showBus={false}
                   onSelectStudent={onSelectStudent}
                   onUpdateShift={(updatedShift) => {
                     if (updatedShift) {

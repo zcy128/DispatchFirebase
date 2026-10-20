@@ -246,6 +246,7 @@ export const DispatchStopModal: React.FC<DispatchStopModalProps> = ({
               route={route}
               studentsMap={studentsMap}
               height="100%"
+              showAdjustStops={false}
             />
           </div>
         ) : (

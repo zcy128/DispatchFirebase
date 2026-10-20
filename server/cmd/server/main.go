@@ -169,6 +169,8 @@ func main() {
 	payrollHandler := handlers.NewPayrollHandler(payrollRepo, schoolBoardRepo, routeRepo, repo)
 	yardHandler := handlers.NewYardHandler(yardRepo)
 	dispatchHandler := handlers.NewDispatchHandler(dispatchRepo, cfg.AllowsDemo())
+	bambooSvc := services.NewBambooHRService(services.NewBambooHRStore(fsClient))
+	bambooHandler := handlers.NewBambooHRHandler(bambooSvc)
 
 	var chatRepo repository.ChatRepository
 	if fsClient != nil {
@@ -258,6 +260,9 @@ func main() {
 
 	// Twilio Two-Way Inbound SMS Webhook
 	r.Post("/api/integrations/twilio/sms-inbound", twilioWebhookHandler.HandleTwilioInboundSMS)
+
+	// BambooHR employee-change webhook. The path key is not the BambooHR API key.
+	r.Post("/api/bamboohr/webhook/{apikey}", bambooHandler.ReceiveWebhook)
 
 	// Parent App API Routes
 	r.Route("/api/parent", func(parentRouter chi.Router) {
@@ -379,6 +384,10 @@ func main() {
 		protected.Get("/api/dispatch/simulation-settings", dispatchHandler.GetSimulationSettings)
 		protected.Put("/api/dispatch/simulation-settings", dispatchHandler.SaveSimulationSettings)
 		protected.Post("/api/dispatch/simulation/run", dispatchHandler.RunSimulation)
+		protected.With(auth.RequireRole("admin")).Get("/api/bamboohr/settings", bambooHandler.GetSettings)
+		protected.With(auth.RequireRole("admin")).Put("/api/bamboohr/settings", bambooHandler.SaveSettings)
+		protected.With(auth.RequireRole("admin")).Post("/api/bamboohr/test", bambooHandler.TestSync)
+		protected.With(auth.RequireRole("admin")).Get("/api/bamboohr/webhook-events", bambooHandler.ListWebhookEvents)
 		protected.Get("/api/dispatch/change-logs", dispatchHandler.ListChangeLogs)
 		protected.Post("/api/dispatch/change-logs", dispatchHandler.CreateChangeLog)
 		protected.Get("/api/dispatch/audit-logs", dispatchHandler.ListSystemAuditLogs)
@@ -1133,6 +1142,18 @@ func main() {
 	} else {
 		log.Println("[INIT] Production mode: operations simulation scheduler is off.")
 	}
+
+	// BambooHR daily directory read. It does not write employees into dispatch storage.
+	go func() {
+		run := func() { bambooSvc.RunScheduledSync(context.Background()) }
+		time.Sleep(2 * time.Second)
+		run()
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	}()
 
 	addr := ":" + cfg.Port
 	log.Printf("[READY] Dispatch API Server listening on %s", addr)

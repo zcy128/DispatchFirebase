@@ -686,6 +686,7 @@ export const RouteInlineDetail: React.FC<RouteInlineDetailProps> = ({
           shift={activeShift}
           route={route}
           studentsMap={studentsMap}
+          showBus={false}
           onSelectStudent={onSelectStudent}
           onUpdateShift={(updatedShift) => {
             if (updatedShift) {

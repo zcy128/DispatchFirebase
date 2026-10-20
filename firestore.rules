@@ -243,5 +243,11 @@ service cloud.firestore {
       allow read: if true;
       allow write: if true;
     }
+
+    // BambooHR API key. Server admin SDK only. Never readable from the browser.
+    match /bamboohr_secrets/{doc} {
+      allow read: if false;
+      allow write: if false;
+    }
   }
 }
