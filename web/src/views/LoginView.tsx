@@ -3,13 +3,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { ShieldAlert, KeyRound, ArrowRight, Globe, Sun, Moon } from 'lucide-react';
+import { isDemoMode } from '../config/appMode';
 
 export const LoginView: React.FC = () => {
   const { loginWithFirebase, loginAsMockAdmin } = useAuth();
   const { lang, setLang, t } = useI18n();
   const { theme, toggleTheme } = useTheme();
   const [identifier, setIdentifier] = useState('admin@dispatch.pcy.ca');
-  const [password, setPassword] = useState('Dispatch2026!');
+  const [password, setPassword] = useState(isDemoMode ? 'Dispatch2026!' : '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -132,9 +133,11 @@ export const LoginView: React.FC = () => {
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500 transition"
                 placeholder={t.login.passwordPlaceholder}
               />
-              <p className="text-[10px] text-slate-400 mt-1">
-                Default initial password: <span className="text-amber-400 font-mono font-semibold">Dispatch2026!</span>
-              </p>
+              {isDemoMode && (
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Default initial password: <span className="text-amber-400 font-mono font-semibold">Dispatch2026!</span>
+                </p>
+              )}
             </div>
 
             <button
@@ -147,7 +150,7 @@ export const LoginView: React.FC = () => {
             </button>
           </form>
 
-          {/* Instant Quick Demo Admin Mode */}
+          {isDemoMode && (
           <div className="pt-4 border-t border-slate-800">
             <div className="text-center mb-3">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
@@ -166,6 +169,7 @@ export const LoginView: React.FC = () => {
               {t.login.secureNotice}
             </p>
           </div>
+          )}
         </div>
       </div>
     </div>

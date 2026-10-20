@@ -34,7 +34,7 @@ func setupTestEnvironment() (*handlers.ParentHandler, *handlers.TwilioWebhookHan
 	emailService := services.NewEmailService(cfg)
 	etaService := services.NewETAService()
 
-	parentHandler := handlers.NewParentHandler(cfg, studentRepo, parentRepo, dispatchRepo, routeRepo, twilioService, emailService, etaService)
+	parentHandler := handlers.NewParentHandler(cfg, studentRepo, parentRepo, dispatchRepo, routeRepo, twilioService, emailService, etaService, nil)
 	twilioWebhookHandler := handlers.NewTwilioWebhookHandler(cfg, studentRepo, dispatchRepo, parentRepo, twilioService, etaService)
 
 	// Seed test student

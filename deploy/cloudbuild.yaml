@@ -32,8 +32,11 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      # This pipeline is the public demo. Do not set APP_MODE=production here.
+      # A production install is a separate Cloud Run service with APP_MODE=production
+      # plus private ADMIN_PASSWORD, ADMIN_API_SECRET, APPROVAL_SECRET, and PARENT_JWT_SIGNING_KEY.
       - '--set-env-vars'
-      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID'
+      - 'ENV=production,GCP_PROJECT_ID=$PROJECT_ID,APP_MODE=demo'
 
 images:
   - 'gcr.io/$PROJECT_ID/dispatch-api:$COMMIT_SHA'

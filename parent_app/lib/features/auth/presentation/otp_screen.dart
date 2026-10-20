@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/app_mode.dart';
 import '../../../core/theme.dart';
 import '../bloc/auth_bloc.dart';
 
@@ -25,7 +26,7 @@ class _OtpScreenState extends State<OtpScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.devCode != null && widget.devCode!.isNotEmpty) {
+    if (AppMode.isDemo && widget.devCode != null && widget.devCode!.isNotEmpty) {
       _codeController.text = widget.devCode!;
     }
   }
@@ -108,7 +109,7 @@ class _OtpScreenState extends State<OtpScreen> {
                   const SizedBox(height: 24),
 
                   // Dev Code helper if available
-                  if (widget.devCode != null && widget.devCode!.isNotEmpty)
+                  if (AppMode.isDemo && widget.devCode != null && widget.devCode!.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
                       child: InkWell(

@@ -7,19 +7,20 @@ import (
 	"strings"
 	"time"
 
-	firebaseAuth "firebase.google.com/go/v4/auth"
-	"github.com/go-chi/chi/v5"
 	"dispatch-server/internal/models"
 	"dispatch-server/internal/repository"
+	firebaseAuth "firebase.google.com/go/v4/auth"
+	"github.com/go-chi/chi/v5"
 )
 
 type EmployeeHandler struct {
 	repo       repository.EmployeeRepository
 	authClient *firebaseAuth.Client
+	allowDemo  bool
 }
 
-func NewEmployeeHandler(repo repository.EmployeeRepository, authClient *firebaseAuth.Client) *EmployeeHandler {
-	return &EmployeeHandler{repo: repo, authClient: authClient}
+func NewEmployeeHandler(repo repository.EmployeeRepository, authClient *firebaseAuth.Client, allowDemo bool) *EmployeeHandler {
+	return &EmployeeHandler{repo: repo, authClient: authClient, allowDemo: allowDemo}
 }
 
 // List returns a filtered list of employees
@@ -103,15 +104,20 @@ func (h *EmployeeHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	emp.ComputeComputedFields()
 
+	temporaryPassword := ""
 	// Automatically provision Firebase Auth user account for employee
 	if h.authClient != nil {
 		authEmail := emp.Username + "@dispatch.pcy.ca"
+		initialPassword := provisionPassword(h.allowDemo)
 		params := (&firebaseAuth.UserToCreate{}).
 			Email(authEmail).
-			Password("Dispatch2026!").
+			Password(initialPassword).
 			DisplayName(emp.FullName).
 			EmailVerified(true)
 		if u, err := h.authClient.CreateUser(r.Context(), params); err == nil && u != nil {
+			if !h.allowDemo {
+				temporaryPassword = initialPassword
+			}
 			_ = h.authClient.SetCustomUserClaims(r.Context(), u.UID, map[string]interface{}{
 				"role":       emp.Role,
 				"employeeId": emp.EmployeeNumber,
@@ -131,7 +137,14 @@ func (h *EmployeeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(emp)
+	if temporaryPassword == "" {
+		json.NewEncoder(w).Encode(emp)
+		return
+	}
+	json.NewEncoder(w).Encode(struct {
+		*models.Employee
+		TemporaryPassword string `json:"temporaryPassword,omitempty"`
+	}{Employee: &emp, TemporaryPassword: temporaryPassword})
 }
 
 // Update modifies an existing employee
@@ -214,10 +227,10 @@ func (h *EmployeeHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// Keep Firebase Auth custom claims in sync
 	if h.authClient != nil && existing.FirebaseUID != "" {
 		claims := map[string]interface{}{
-			"role":            existing.Role,
-			"employeeId":      existing.EmployeeNumber,
-			"username":        existing.Username,
-			"yardId":          existing.YardID,
+			"role":       existing.Role,
+			"employeeId": existing.EmployeeNumber,
+			"username":   existing.Username,
+			"yardId":     existing.YardID,
 		}
 		_ = h.authClient.SetCustomUserClaims(r.Context(), existing.FirebaseUID, claims)
 	}
@@ -294,12 +307,12 @@ func (h *EmployeeHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stats := map[string]interface{}{
-		"totalEmployees":       total,
-		"activeEmployees":      activeCount,
-		"totalDrivers":         driverCount,
-		"licenseExpiringSoon":  licenseExpiringCount,
-		"yardDistribution":     yardDistribution,
-		"timestamp":            time.Now(),
+		"totalEmployees":      total,
+		"activeEmployees":     activeCount,
+		"totalDrivers":        driverCount,
+		"licenseExpiringSoon": licenseExpiringCount,
+		"yardDistribution":    yardDistribution,
+		"timestamp":           time.Now(),
 	}
 
 	json.NewEncoder(w).Encode(stats)

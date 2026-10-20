@@ -23,14 +23,14 @@ type AuthUser struct {
 }
 
 type Authenticator struct {
-	client        *firebaseAuth.Client
-	isDevelopment bool
+	client    *firebaseAuth.Client
+	allowDemo bool
 }
 
-func NewAuthenticator(client *firebaseAuth.Client, isDevelopment bool) *Authenticator {
+func NewAuthenticator(client *firebaseAuth.Client, allowDemo bool) *Authenticator {
 	return &Authenticator{
-		client:        client,
-		isDevelopment: isDevelopment,
+		client:    client,
+		allowDemo: allowDemo,
 	}
 }
 
@@ -52,8 +52,8 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 
 		tokenStr := parts[1]
 
-		// Support mock admin token (for local development, demo mode, and 1-click admin launch)
-		if strings.HasPrefix(tokenStr, "mock-admin-token") {
+		// Demo deployments accept the published mock tokens. Production does not.
+		if a.allowDemo && strings.HasPrefix(tokenStr, "mock-admin-token") {
 			role := "admin"
 			if rRole := r.Header.Get("X-User-Role"); rRole != "" {
 				role = rRole
@@ -72,8 +72,7 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Support mock token for custom username
-		if strings.HasPrefix(tokenStr, "mock-token-") {
+		if a.allowDemo && strings.HasPrefix(tokenStr, "mock-token-") {
 			username := strings.TrimPrefix(tokenStr, "mock-token-")
 			role := "driver"
 			if rRole := r.Header.Get("X-User-Role"); rRole != "" {

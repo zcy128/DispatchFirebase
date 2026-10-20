@@ -3,6 +3,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/app_mode.dart';
 import '../../core/services/device_token_service.dart';
 import '../../core/theme.dart';
 import '../home/driver_home_page.dart';
@@ -187,15 +188,6 @@ class _LoginPageState extends State<LoginPage> {
         ),
       ),
     );
-  }
-
-  void _fillDemoCredentials() {
-    setState(() {
-      _emailController.text = 'driver@example.com';
-      _passwordController.text = 'password123';
-      _selectedRole = 'Driver';
-      _errorMessage = null;
-    });
   }
 
   @override
@@ -566,25 +558,32 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-
-                    // Quick Demo Credentials Button
-                    OutlinedButton.icon(
-                      onPressed: _fillDemoCredentials,
-                      icon: const Icon(Icons.bolt_rounded, size: 18, color: AppColors.primary),
-                      label: const Text(
-                        'Fill Demo Driver Account',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 44),
-                        side: BorderSide(
-                          color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+                    if (AppMode.isDemo) ...[
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _emailController.text = 'driver@example.com';
+                            _passwordController.text = 'password123';
+                            _selectedRole = 'Driver';
+                            _errorMessage = null;
+                          });
+                        },
+                        icon: const Icon(Icons.bolt_rounded, size: 18, color: AppColors.primary),
+                        label: const Text(
+                          'Fill Demo Driver Account',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                         ),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        foregroundColor: isDark ? Colors.white70 : Colors.black87,
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 44),
+                          side: BorderSide(
+                            color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          foregroundColor: isDark ? Colors.white70 : Colors.black87,
+                        ),
                       ),
-                    ),
+                    ],
                     const SizedBox(height: 36),
 
                     // App Version Display

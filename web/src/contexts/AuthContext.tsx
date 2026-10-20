@@ -3,6 +3,7 @@ import { onAuthStateChanged, User, signInWithEmailAndPassword, signOut as fbSign
 import { auth } from '../services/firebase';
 import { AuthUser } from '../types/employee';
 import { LoginLogService } from '../services/loginLogService';
+import { isDemoMode } from '../config/appMode';
 
 interface AuthContextType {
   currentUser: AuthUser | null;
@@ -22,6 +23,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isMockMode, setIsMockMode] = useState<boolean>(false);
 
   useEffect(() => {
+    if (!isDemoMode) {
+      localStorage.removeItem('dispatch_mock_user');
+      localStorage.removeItem('dispatch_mock_token');
+    }
+
     if (!auth) {
       // Auto fallback to mock admin if Firebase SDK is unconfigured
       const storedMock = localStorage.getItem('dispatch_mock_user');
@@ -88,6 +94,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const loginAsMockAdmin = (customUser?: { username?: string; role?: string; displayName?: string }) => {
+    if (!isDemoMode) {
+      return;
+    }
     const uname = customUser?.username || 'admin';
     const role = customUser?.role || 'admin';
     const mockUser: AuthUser = {

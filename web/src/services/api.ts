@@ -1,4 +1,5 @@
 import { auth } from './firebase';
+import { isDemoMode } from '../config/appMode';
 
 // When running with Vite dev proxy, empty string calls same origin /api which proxies to :8080
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
@@ -20,8 +21,11 @@ export async function getAuthToken(): Promise<string> {
     return mockToken;
   }
 
-  // 3. Default dev admin token (ensures local API calls are always authenticated)
-  return 'mock-admin-token-secret-dev';
+  // 3. Demo deployments fall back to the mock admin token. Production builds do not.
+  if (isDemoMode) {
+    return 'mock-admin-token-secret-dev';
+  }
+  return '';
 }
 
 export async function apiRequest<T>(
