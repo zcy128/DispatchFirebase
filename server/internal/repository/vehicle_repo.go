@@ -415,6 +415,15 @@ func (r *InMemoryVehicleRepository) UpdateVehicle(_ context.Context, id string, 
 	if val, ok := updates["notes"].(string); ok {
 		v.Notes = val
 	}
+	if val, ok := updates["zonarFleet"].(string); ok {
+		v.ZonarFleet = val
+	}
+	if val, ok := updates["gpsSerial"].(string); ok {
+		v.GpsSerial = val
+	}
+	if val, ok := updates["zonarAssetId"].(int); ok {
+		v.ZonarAssetID = val
+	}
 	if val, ok := updates["active"].(bool); ok {
 		v.Active = val
 	}

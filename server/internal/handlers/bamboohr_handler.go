@@ -71,6 +71,24 @@ func (h *BambooHRHandler) TestSync(w http.ResponseWriter, r *http.Request) {
 	writeBambooJSON(w, http.StatusOK, report)
 }
 
+func (h *BambooHRHandler) SyncNow(w http.ResponseWriter, r *http.Request) {
+	if !adminRequest(r) {
+		writeBambooError(w, http.StatusForbidden, "admin role required")
+		return
+	}
+	report, err := h.svc.SyncNow(r.Context())
+	if err != nil {
+		status := http.StatusBadGateway
+		msg := err.Error()
+		if strings.Contains(msg, "turned off") || strings.Contains(msg, "not configured") || strings.Contains(msg, "required") {
+			status = http.StatusConflict
+		}
+		writeBambooError(w, status, msg)
+		return
+	}
+	writeBambooJSON(w, http.StatusOK, report)
+}
+
 func (h *BambooHRHandler) ListWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	if !adminRequest(r) {
 		writeBambooError(w, http.StatusForbidden, "admin role required")

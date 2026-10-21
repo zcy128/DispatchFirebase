@@ -38,11 +38,11 @@ type ParentRepository interface {
 }
 
 type FirestoreParentRepository struct {
-	client     *firestore.Client
-	otpColl    string
-	userColl   string
-	prefColl   string
-	locColl    string
+	client   *firestore.Client
+	otpColl  string
+	userColl string
+	prefColl string
+	locColl  string
 }
 
 func NewFirestoreParentRepository(client *firestore.Client) *FirestoreParentRepository {
@@ -124,6 +124,9 @@ func (r *FirestoreParentRepository) SaveNotificationPreferences(ctx context.Cont
 }
 
 func (r *FirestoreParentRepository) GetVehicleLiveLocation(ctx context.Context, unitNumber string) (*models.VehicleLiveLocation, error) {
+	if live := r.gpsLive(ctx, unitNumber); live != nil {
+		return live, nil
+	}
 	snap, err := r.client.Collection(r.locColl).Doc(strings.ToUpper(strings.TrimSpace(unitNumber))).Get(ctx)
 	if err != nil {
 		return nil, ErrVehicleLocNotFound
@@ -135,11 +138,49 @@ func (r *FirestoreParentRepository) GetVehicleLiveLocation(ctx context.Context, 
 	return &loc, nil
 }
 
+func (r *FirestoreParentRepository) gpsLive(ctx context.Context, unitNumber string) *models.VehicleLiveLocation {
+	unit := models.NormalizeFleetUnit(unitNumber)
+	if unit == "" {
+		return nil
+	}
+	snap, err := r.client.Collection(models.GpsCurrentCollection).Doc(unit).Get(ctx)
+	if err != nil {
+		return nil
+	}
+	var pos models.GpsCurrentPosition
+	if err := snap.DataTo(&pos); err != nil {
+		return nil
+	}
+	return pos.LiveLocation()
+}
+
 func (r *FirestoreParentRepository) ListVehicleLiveLocations(ctx context.Context) ([]*models.VehicleLiveLocation, error) {
+	current := map[string]*models.VehicleLiveLocation{}
+	gpsIter := r.client.Collection(models.GpsCurrentCollection).Documents(ctx)
+	for {
+		doc, err := gpsIter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			break
+		}
+		var pos models.GpsCurrentPosition
+		if err := doc.DataTo(&pos); err == nil {
+			current[models.NormalizeFleetUnit(pos.UnitNumber)] = pos.LiveLocation()
+		}
+	}
+	gpsIter.Stop()
+
 	iter := r.client.Collection(r.locColl).Documents(ctx)
 	defer iter.Stop()
 
 	var list []*models.VehicleLiveLocation
+	seen := map[string]bool{}
+	for _, live := range current {
+		list = append(list, live)
+		seen[models.NormalizeFleetUnit(live.UnitNumber)] = true
+	}
 	for {
 		doc, err := iter.Next()
 		if err == iterator.Done {
@@ -149,9 +190,13 @@ func (r *FirestoreParentRepository) ListVehicleLiveLocations(ctx context.Context
 			return nil, err
 		}
 		var loc models.VehicleLiveLocation
-		if err := doc.DataTo(&loc); err == nil {
-			list = append(list, &loc)
+		if err := doc.DataTo(&loc); err != nil {
+			continue
 		}
+		if seen[models.NormalizeFleetUnit(loc.UnitNumber)] {
+			continue
+		}
+		list = append(list, &loc)
 	}
 	return list, nil
 }

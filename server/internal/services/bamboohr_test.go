@@ -151,6 +151,46 @@ func TestScheduledSyncIncludesEveryoneOncePerDay(t *testing.T) {
 	}
 }
 
+func TestSyncNowRunsImmediatelyAndBlocksTheDailyRun(t *testing.T) {
+	const secret = "super-secret-bamboo-key"
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(`{"employees":[{"id":"1","displayName":"Ann Nurse"},{"id":"2","displayName":"Skip Driver"}]}`))
+	}))
+	defer srv.Close()
+
+	svc := NewBambooHRService(NewBambooHRStore(nil))
+	svc.baseURL = func(string) string { return srv.URL }
+	if _, err := svc.SaveSettings(context.Background(), BambooHRSave{
+		Enabled:       true,
+		CompanyDomain: "exampleco",
+		APIKey:        secret,
+		DailySyncTime: "23:00",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := svc.SyncNow(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Persisted || report.DirectoryCount != 2 || !strings.Contains(report.Message, "Not written") {
+		t.Fatalf("report = %+v", report)
+	}
+	raw, _ := json.Marshal(report)
+	if strings.Contains(string(raw), secret) {
+		t.Fatal("report leaked the api key")
+	}
+	loc, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.runScheduledSyncAt(context.Background(), time.Now().In(loc))
+	if calls != 1 {
+		t.Fatalf("directory calls = %d", calls)
+	}
+}
+
 func TestTestSyncRejectsWhenDisabled(t *testing.T) {
 	svc := NewBambooHRService(NewBambooHRStore(nil))
 	_, err := svc.SaveSettings(context.Background(), BambooHRSave{

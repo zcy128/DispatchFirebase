@@ -30,6 +30,13 @@ export interface BambooHRTestReport {
   message: string;
 }
 
+export interface BambooHRManualSync {
+  persisted: boolean;
+  directoryCount: number;
+  syncedAt: string;
+  message: string;
+}
+
 export interface BambooHRSavePayload {
   enabled: boolean;
   companyDomain: string;
@@ -64,6 +71,12 @@ export const BambooHRService = {
 
   testSync: () =>
     apiRequest<BambooHRTestReport>('/api/bamboohr/test', {
+      method: 'POST',
+      body: '{}',
+    }),
+
+  syncNow: () =>
+    apiRequest<BambooHRManualSync>('/api/bamboohr/sync', {
       method: 'POST',
       body: '{}',
     }),

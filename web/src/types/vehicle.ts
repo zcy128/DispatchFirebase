@@ -24,7 +24,10 @@ export interface Vehicle {
   assignedRouteId?: string; // "RT-001"
   assignedRouteNo?: string; // "OCDSB-001"
   assignedRouteName?: string;
-  notes?: string;
+	notes?: string;
+  zonarFleet?: string;
+  zonarAssetId?: number;
+  gpsSerial?: string;
   // Semi-annual safety inspection & regulatory compliance fields
   lastInspectionDate?: string; // YYYY-MM-DD
   nextInspectionDue?: string; // YYYY-MM-DD (typically 6 months)

@@ -249,5 +249,17 @@ service cloud.firestore {
       allow read: if false;
       allow write: if false;
     }
+
+    // Latest Zonar position for each vehicle. One document per unit number. Server writes only.
+    match /gps_current/{unitNumber} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Zonar password. Server admin SDK only. Never readable from the browser.
+    match /zonar_secrets/{doc} {
+      allow read: if false;
+      allow write: if false;
+    }
   }
 }

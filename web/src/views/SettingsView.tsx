@@ -11,6 +11,7 @@ import { RouteSettingsService, RouteOptimizationSettings } from '../services/rou
 import { useCompliance } from '../contexts/ComplianceContext';
 import { isDemoMode } from '../config/appMode';
 import { BambooHRService, BambooHRTestReport, BambooWebhookEvent } from '../services/bamboohrService';
+import { ZonarService, ZonarSerialReport, ZonarRouteWriteReport, ZonarTestReport } from '../services/zonarService';
 import { OperatingProvince, ProvinceComplianceConfig } from '../types/compliance';
 import {
   ShieldCheck,
@@ -87,9 +88,35 @@ export const SettingsView: React.FC = () => {
   const [bambooEvents, setBambooEvents] = useState<BambooWebhookEvent[]>([]);
   const [bambooSaving, setBambooSaving] = useState(false);
   const [bambooTesting, setBambooTesting] = useState(false);
+  const [bambooSyncing, setBambooSyncing] = useState(false);
   const [bambooStatus, setBambooStatus] = useState<string | null>(null);
   const [bambooError, setBambooError] = useState<string | null>(null);
   const [bambooReport, setBambooReport] = useState<BambooHRTestReport | null>(null);
+
+  const [zonarEnabled, setZonarEnabled] = useState(false);
+  const [zonarCustomer, setZonarCustomer] = useState('');
+  const [zonarUsername, setZonarUsername] = useState('');
+  const [zonarPassword, setZonarPassword] = useState('');
+  const [zonarPasswordSet, setZonarPasswordSet] = useState(false);
+  const [zonarBusyMinutes, setZonarBusyMinutes] = useState(1);
+  const [zonarIdleMinutes, setZonarIdleMinutes] = useState(10);
+  const [zonarSerialTime, setZonarSerialTime] = useState('03:00');
+  const [zonarLastSerialAt, setZonarLastSerialAt] = useState('');
+  const [zonarLastSerialCount, setZonarLastSerialCount] = useState(0);
+  const [zonarSerialRunning, setZonarSerialRunning] = useState(false);
+  const [zonarSerialReport, setZonarSerialReport] = useState<ZonarSerialReport | null>(null);
+  const [zonarRouteRunning, setZonarRouteRunning] = useState(false);
+  const [zonarRouteReport, setZonarRouteReport] = useState<ZonarRouteWriteReport | null>(null);
+  const [zonarLastRouteAt, setZonarLastRouteAt] = useState('');
+  const [zonarLastRouteCount, setZonarLastRouteCount] = useState(0);
+  const [zonarLastSyncAt, setZonarLastSyncAt] = useState('');
+  const [zonarLastSyncCount, setZonarLastSyncCount] = useState(0);
+  const [zonarLastSyncMode, setZonarLastSyncMode] = useState('');
+  const [zonarSaving, setZonarSaving] = useState(false);
+  const [zonarTesting, setZonarTesting] = useState(false);
+  const [zonarStatus, setZonarStatus] = useState<string | null>(null);
+  const [zonarError, setZonarError] = useState<string | null>(null);
+  const [zonarReport, setZonarReport] = useState<ZonarTestReport | null>(null);
 
   // Route Optimization & Dwell Time settings
   const [routeOptSettings, setRouteOptSettings] = useState<RouteOptimizationSettings>({
@@ -207,6 +234,26 @@ export const SettingsView: React.FC = () => {
     BambooHRService.listWebhookEvents()
       .then((res) => setBambooEvents(res.events || []))
       .catch((err) => console.error('Failed to load BambooHR webhook events:', err));
+
+    ZonarService.getSettings()
+      .then((s) => {
+        setZonarEnabled(!!s.enabled);
+        setZonarCustomer(s.customer || '');
+        setZonarUsername(s.username || '');
+        setZonarPasswordSet(!!s.passwordConfigured);
+        setZonarBusyMinutes(s.busyIntervalMinutes || 1);
+        setZonarIdleMinutes(s.idleIntervalMinutes || 10);
+        setZonarSerialTime(s.gpsSerialSyncTime || '03:00');
+        setZonarLastSerialAt(s.lastGpsSerialSyncAt || '');
+        setZonarLastSerialCount(s.lastGpsSerialCount || 0);
+        setZonarLastRouteAt(s.lastRoutePreviewAt || '');
+        setZonarLastRouteCount(s.lastRoutePreviewCount || 0);
+        setZonarLastSyncAt(s.lastSyncAt || '');
+        setZonarLastSyncCount(s.lastSyncCount || 0);
+        setZonarLastSyncMode(s.lastSyncMode || '');
+        setZonarPassword('');
+      })
+      .catch((err) => console.error('Failed to load Zonar settings:', err));
   }, []);
 
   const getOttawaDateStr = (offsetDays: number = 0): string => {
@@ -393,6 +440,113 @@ export const SettingsView: React.FC = () => {
       setBambooError(err.message || (isFrench ? 'Échec de l\'enregistrement' : 'Failed to save BambooHR settings'));
     } finally {
       setBambooSaving(false);
+    }
+  };
+
+  const handleSaveZonar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setZonarSaving(true);
+    setZonarStatus(null);
+    setZonarError(null);
+    try {
+      const saved = await ZonarService.saveSettings({
+        enabled: zonarEnabled,
+        customer: zonarCustomer.trim(),
+        username: zonarUsername.trim(),
+        password: zonarPassword.trim() || undefined,
+        busyIntervalMinutes: zonarBusyMinutes || 1,
+        idleIntervalMinutes: zonarIdleMinutes || 10,
+        gpsSerialSyncTime: zonarSerialTime || '03:00',
+      });
+      setZonarEnabled(!!saved.enabled);
+      setZonarCustomer(saved.customer || '');
+      setZonarUsername(saved.username || '');
+      setZonarPasswordSet(!!saved.passwordConfigured);
+      setZonarBusyMinutes(saved.busyIntervalMinutes || 1);
+      setZonarIdleMinutes(saved.idleIntervalMinutes || 10);
+      setZonarSerialTime(saved.gpsSerialSyncTime || '03:00');
+      setZonarLastSerialAt(saved.lastGpsSerialSyncAt || '');
+      setZonarLastSerialCount(saved.lastGpsSerialCount || 0);
+      setZonarLastSyncAt(saved.lastSyncAt || '');
+      setZonarLastSyncCount(saved.lastSyncCount || 0);
+      setZonarLastSyncMode(saved.lastSyncMode || '');
+      setZonarPassword('');
+      setZonarStatus(
+        isFrench
+          ? 'Paramètres GPS enregistrés. Le mot de passe reste sur le serveur.'
+          : 'GPS settings saved. The password stays on the server.'
+      );
+    } catch (err: any) {
+      setZonarError(err.message || (isFrench ? 'Échec de l\'enregistrement GPS' : 'Failed to save GPS settings'));
+    } finally {
+      setZonarSaving(false);
+    }
+  };
+
+  const handleSyncZonarSerials = async () => {
+    setZonarSerialRunning(true);
+    setZonarStatus(null);
+    setZonarError(null);
+    try {
+      const report = await ZonarService.syncSerials();
+      setZonarSerialReport(report);
+      setZonarLastSerialCount(report.updatedCount || 0);
+      setZonarStatus(report.message);
+    } catch (err: any) {
+      setZonarError(err.message || (isFrench ? 'La synchronisation du numero GPS a echoue' : 'GPS serial sync failed'));
+    } finally {
+      setZonarSerialRunning(false);
+    }
+  };
+
+  const handlePreviewZonarRoutes = async () => {
+    setZonarRouteRunning(true);
+    setZonarStatus(null);
+    setZonarError(null);
+    try {
+      const report = await ZonarService.previewRoutes();
+      setZonarRouteReport(report);
+      setZonarLastRouteCount(report.withRoute || 0);
+      setZonarStatus(report.message);
+    } catch (err: any) {
+      setZonarError(err.message || (isFrench ? 'La synchronisation des lignes a echoue' : 'Route sync failed'));
+    } finally {
+      setZonarRouteRunning(false);
+    }
+  };
+
+  const handleTestZonar = async () => {
+    setZonarTesting(true);
+    setZonarStatus(null);
+    setZonarError(null);
+    try {
+      const report = await ZonarService.testSync();
+      setZonarReport(report);
+      setZonarLastSyncCount(report.locatedCount || 0);
+      setZonarLastSyncMode(report.mode || '');
+      setZonarStatus(report.message);
+    } catch (err: any) {
+      setZonarError(err.message || (isFrench ? 'Le test GPS a échoué' : 'GPS test failed'));
+    } finally {
+      setZonarTesting(false);
+    }
+  };
+
+  const handleSyncBamboo = async () => {
+    setBambooSyncing(true);
+    setBambooStatus(null);
+    setBambooError(null);
+    try {
+      const report = await BambooHRService.syncNow();
+      setBambooLastSyncAt(report.syncedAt || '');
+      setBambooLastSyncCount(report.directoryCount || 0);
+      setBambooStatus(report.message);
+      const events = await BambooHRService.listWebhookEvents();
+      setBambooEvents(events.events || []);
+    } catch (err: any) {
+      setBambooError(err.message || (isFrench ? 'La synchronisation BambooHR a echoue' : 'BambooHR sync failed'));
+    } finally {
+      setBambooSyncing(false);
     }
   };
 
@@ -592,6 +746,20 @@ export const SettingsView: React.FC = () => {
               ? 'Tester la connexion'
               : 'Test connection'}
           </button>
+          <button
+            type="button"
+            onClick={handleSyncBamboo}
+            disabled={bambooSyncing || !bambooEnabled}
+            className="px-4 py-2 rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50"
+          >
+            {bambooSyncing
+              ? isFrench
+                ? 'Synchronisation...'
+                : 'Syncing...'
+              : isFrench
+              ? 'Synchroniser maintenant'
+              : 'Sync now'}
+          </button>
         </div>
 
         {bambooStatus && <p className="text-xs text-emerald-400">{bambooStatus}</p>}
@@ -630,6 +798,285 @@ export const SettingsView: React.FC = () => {
                 {bambooReport.preview.map((row) => (
                   <li key={row.id} className="font-mono text-[11px] text-slate-400">
                     {row.displayName} · {row.jobTitle} · {row.status}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </form>
+
+      <form
+        onSubmit={handleSaveZonar}
+        className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <h2 className="text-base font-bold text-white">
+              {isFrench ? 'Synchronisation GPS Zonar' : 'Zonar GPS Sync'}
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">
+              {isFrench
+                ? 'Chaque véhicule ne conserve que sa dernière position. L\'historique n\'est pas enregistré.'
+                : 'Each vehicle keeps only its latest position. History is not stored.'}
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer shrink-0">
+            <input
+              type="checkbox"
+              checked={zonarEnabled}
+              onChange={(e) => setZonarEnabled(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-12 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+            <span className="ml-2.5 text-xs font-bold text-white">
+              {zonarEnabled
+                ? isFrench
+                  ? 'Synchronisation activée'
+                  : 'Sync enabled'
+                : isFrench
+                ? 'Synchronisation désactivée'
+                : 'Sync disabled'}
+            </span>
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+              {isFrench ? 'Client Zonar' : 'Zonar customer'}
+            </label>
+            <input
+              type="text"
+              value={zonarCustomer}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => setZonarCustomer(e.target.value)}
+              placeholder="customer"
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+              {isFrench ? 'Nom d\'utilisateur' : 'Username'}
+            </label>
+            <input
+              type="text"
+              value={zonarUsername}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => setZonarUsername(e.target.value)}
+              placeholder="username"
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+              {isFrench ? 'Mot de passe' : 'Password'}
+            </label>
+            <input
+              type="password"
+              value={zonarPassword}
+              autoComplete="new-password"
+              spellCheck={false}
+              onChange={(e) => setZonarPassword(e.target.value)}
+              placeholder={
+                zonarPasswordSet
+                  ? isFrench
+                    ? 'Laisser vide pour conserver le mot de passe'
+                    : 'Leave blank to keep the saved password'
+                  : isFrench
+                  ? 'Mot de passe Zonar'
+                  : 'Zonar password'
+              }
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              {zonarPasswordSet
+                ? isFrench
+                  ? 'Un mot de passe est enregistré sur le serveur. Il n\'est pas renvoyé au navigateur.'
+                  : 'A password is stored on the server. It is not sent back to the browser.'
+                : isFrench
+                ? 'Le mot de passe n\'est enregistré que sur le serveur.'
+                : 'The password is stored only on the server.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+              {isFrench ? 'Intervalle chargé (minutes)' : 'Busy interval (minutes)'}
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={60}
+              value={zonarBusyMinutes}
+              onChange={(e) => setZonarBusyMinutes(Number(e.target.value))}
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              {isFrench
+                ? 'Jours de semaine, 6 h à 18 h, heure d\'Ottawa. Par défaut 1 minute.'
+                : 'Weekdays 6:00-18:00 Ottawa time. Default is 1 minute.'}
+            </p>
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+              {isFrench ? 'Intervalle calme (minutes)' : 'Idle interval (minutes)'}
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={180}
+              value={zonarIdleMinutes}
+              onChange={(e) => setZonarIdleMinutes(Number(e.target.value))}
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              {isFrench
+                ? 'Soirs et fins de semaine. Par défaut 10 minutes.'
+                : 'Evenings and weekends. Default is 10 minutes.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="max-w-xs">
+          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+            {isFrench ? 'Heure du numero de serie GPS' : 'GPS serial sync time'}
+          </label>
+          <input
+            type="time"
+            value={zonarSerialTime}
+            onChange={(e) => setZonarSerialTime(e.target.value)}
+            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+          />
+          <p className="text-[11px] text-slate-500 mt-1">
+            {isFrench
+              ? 'Une fois par jour, heure d\'Ottawa. Les numeros GPS sont copies sur les vehicules. Les numeros de ligne sont prepares pour Zonar a la meme heure, sans rien envoyer.'
+              : 'Once per day, Ottawa time. GPS serials are copied onto vehicles. Route numbers are prepared for Zonar on this same clock and are not sent.'}
+            {zonarLastSerialAt
+              ? ` ${isFrench ? 'Derniere execution' : 'Last run'}: ${zonarLastSerialAt}. ${zonarLastSerialCount} ${isFrench ? 'vehicules ont un numero GPS' : 'vehicles have a GPS serial'}.`
+              : ''}
+            {zonarLastRouteAt
+              ? ` ${isFrench ? 'Apercu des lignes' : 'Route preview'}: ${zonarLastRouteAt} (${zonarLastRouteCount}).`
+              : ''}
+          </p>
+        </div>
+
+        <p className="text-[11px] text-slate-500">
+          {isFrench
+            ? 'La dernière position de chaque véhicule est enregistrée et remplacée à la prochaine synchronisation. L\'affichage lit cette table.'
+            : 'The latest position for each vehicle is saved and replaced on the next sync. Vehicle location views read that table.'}
+          {zonarLastSyncAt
+            ? ` ${isFrench ? 'Dernière lecture' : 'Last read'}: ${zonarLastSyncAt} (${zonarLastSyncCount}${zonarLastSyncMode ? `, ${zonarLastSyncMode}` : ''}).`
+            : ''}
+        </p>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            disabled={zonarSaving}
+            className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
+          >
+            {zonarSaving
+              ? isFrench
+                ? 'Enregistrement...'
+                : 'Saving...'
+              : isFrench
+              ? 'Enregistrer GPS'
+              : 'Save GPS'}
+          </button>
+          <button
+            type="button"
+            onClick={handleTestZonar}
+            disabled={zonarTesting || !zonarEnabled}
+            className="px-4 py-2 rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50"
+          >
+            {zonarTesting
+              ? isFrench
+                ? 'Test en cours...'
+                : 'Testing...'
+              : isFrench
+              ? 'Tester la connexion'
+              : 'Test connection'}
+          </button>
+          <button
+            type="button"
+            onClick={handleSyncZonarSerials}
+            disabled={zonarSerialRunning || (!zonarEnabled && !zonarPasswordSet)}
+            className="px-4 py-2 rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50"
+          >
+            {zonarSerialRunning
+              ? isFrench
+                ? 'Synchronisation...'
+                : 'Syncing...'
+              : isFrench
+              ? 'Synchroniser les numeros GPS'
+              : 'Sync GPS serials'}
+          </button>
+          <button
+            type="button"
+            onClick={handlePreviewZonarRoutes}
+            disabled={zonarRouteRunning}
+            className="px-4 py-2 rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50"
+          >
+            {zonarRouteRunning
+              ? isFrench
+                ? 'Synchronisation...'
+                : 'Syncing...'
+              : isFrench
+              ? 'Synchroniser les lignes vers Zonar'
+              : 'Sync route to Zonar'}
+          </button>
+        </div>
+
+        {zonarStatus && <p className="text-xs text-emerald-400">{zonarStatus}</p>}
+        {zonarError && <p className="text-xs text-rose-400">{zonarError}</p>}
+
+        {zonarSerialReport && (
+          <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 space-y-2 text-xs text-slate-300">
+            <p className="text-amber-300 font-semibold">{zonarSerialReport.message}</p>
+            {zonarSerialReport.unmatched.length > 0 && (
+              <p className="font-mono text-[11px] text-slate-400">
+                {zonarSerialReport.unmatched.join(', ')}
+              </p>
+            )}
+          </div>
+        )}
+
+        {zonarRouteReport && (
+          <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 space-y-2 text-xs text-slate-300">
+            <p className="text-amber-300 font-semibold">{zonarRouteReport.message}</p>
+            {zonarRouteReport.preview.length > 0 && (
+              <ul className="space-y-1">
+                {zonarRouteReport.preview.map((row) => (
+                  <li key={`${row.assetId}-${row.unitNumber}`} className="font-mono text-[11px] text-slate-400">
+                    {row.unitNumber} · {row.fleet} · {row.routeNo || 'no route'} · {row.location}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {zonarReport && (
+          <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 space-y-2 text-xs text-slate-300">
+            <p className="text-amber-300 font-semibold">{zonarReport.message}</p>
+            <p>
+              {isFrench ? 'Actifs' : 'Assets'}: {zonarReport.assetCount}
+              {' · '}
+              {isFrench ? 'Positions' : 'Positions'}: {zonarReport.locatedCount}
+              {' · '}
+              {zonarReport.mode} / {zonarReport.intervalMinutes} min
+            </p>
+            {zonarReport.preview.length > 0 && (
+              <ul className="space-y-1">
+                {zonarReport.preview.map((row) => (
+                  <li key={`${row.id}-${row.fleet}`} className="font-mono text-[11px] text-slate-400">
+                    {row.fleet || row.id} · {row.latitude.toFixed(5)}, {row.longitude.toFixed(5)}
+                    {row.power ? ` · ${row.power}` : ''} · {row.observedAt}
                   </li>
                 ))}
               </ul>
