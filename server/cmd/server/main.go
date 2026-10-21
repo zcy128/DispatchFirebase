@@ -171,6 +171,27 @@ func main() {
 	dispatchHandler := handlers.NewDispatchHandler(dispatchRepo, cfg.AllowsDemo())
 	bambooSvc := services.NewBambooHRService(services.NewBambooHRStore(fsClient))
 	bambooHandler := handlers.NewBambooHRHandler(bambooSvc)
+	zonarSvc := services.NewZonarService(services.NewZonarStore(fsClient))
+	zonarSvc.UseVehicles(vehicleRepo)
+	zonarSvc.UseRoutes(func(ctx context.Context, day string) (map[string]string, error) {
+		shifts, err := dispatchRepo.ListShifts(ctx, day, repository.DispatchFilter{})
+		if err != nil {
+			return nil, err
+		}
+		routes := map[string]string{}
+		for _, shift := range shifts {
+			unit := models.NormalizeFleetUnit(shift.UnitNumber)
+			routeNo := strings.ToUpper(strings.TrimSpace(shift.RouteNo))
+			if unit == "" || routeNo == "" {
+				continue
+			}
+			if _, exists := routes[unit]; !exists {
+				routes[unit] = routeNo
+			}
+		}
+		return routes, nil
+	})
+	zonarHandler := handlers.NewZonarHandler(zonarSvc)
 
 	var chatRepo repository.ChatRepository
 	if fsClient != nil {
@@ -387,7 +408,14 @@ func main() {
 		protected.With(auth.RequireRole("admin")).Get("/api/bamboohr/settings", bambooHandler.GetSettings)
 		protected.With(auth.RequireRole("admin")).Put("/api/bamboohr/settings", bambooHandler.SaveSettings)
 		protected.With(auth.RequireRole("admin")).Post("/api/bamboohr/test", bambooHandler.TestSync)
+		protected.With(auth.RequireRole("admin")).Post("/api/bamboohr/sync", bambooHandler.SyncNow)
 		protected.With(auth.RequireRole("admin")).Get("/api/bamboohr/webhook-events", bambooHandler.ListWebhookEvents)
+		protected.With(auth.RequireRole("admin")).Get("/api/zonar/settings", zonarHandler.GetSettings)
+		protected.With(auth.RequireRole("admin")).Put("/api/zonar/settings", zonarHandler.SaveSettings)
+		protected.With(auth.RequireRole("admin")).Post("/api/zonar/test", zonarHandler.TestSync)
+		protected.With(auth.RequireRole("admin")).Post("/api/zonar/sync-serials", zonarHandler.SyncSerials)
+		protected.With(auth.RequireRole("admin")).Post("/api/zonar/route-preview", zonarHandler.PreviewRouteWriteBack)
+		protected.With(auth.RequireRole("admin")).Get("/api/zonar/positions/{unitNumber}", zonarHandler.GetPosition)
 		protected.Get("/api/dispatch/change-logs", dispatchHandler.ListChangeLogs)
 		protected.Post("/api/dispatch/change-logs", dispatchHandler.CreateChangeLog)
 		protected.Get("/api/dispatch/audit-logs", dispatchHandler.ListSystemAuditLogs)
@@ -1149,6 +1177,23 @@ func main() {
 		time.Sleep(2 * time.Second)
 		run()
 		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	}()
+
+	// Zonar current-position read. Busy weekdays poll on the short interval; evenings and weekends use the idle interval.
+	// Positions are not written into dispatch storage.
+	go func() {
+		run := func() {
+			zonarSvc.RunScheduledSync(context.Background())
+			zonarSvc.RunScheduledSerialSync(context.Background())
+			zonarSvc.RunScheduledRoutePreview(context.Background())
+		}
+		time.Sleep(2 * time.Second)
+		run()
+		ticker := time.NewTicker(20 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			run()

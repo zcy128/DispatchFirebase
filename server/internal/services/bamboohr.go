@@ -19,8 +19,8 @@ var companyDomainPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-
 
 // BambooHRSettings is the admin-facing view. The API key is never included.
 type BambooHRSettings struct {
-	Enabled           bool   `json:"enabled"`
-	CompanyDomain     string `json:"companyDomain"`
+	Enabled              bool   `json:"enabled"`
+	CompanyDomain        string `json:"companyDomain"`
 	APIKeyConfigured     bool   `json:"apiKeyConfigured"`
 	WebhookKeyConfigured bool   `json:"webhookKeyConfigured"`
 	DailySyncTime        string `json:"dailySyncTime"`
@@ -31,13 +31,13 @@ type BambooHRSettings struct {
 
 // BambooHRSave is the write payload. An empty APIKey keeps the stored key.
 type BambooHRSave struct {
-	Enabled       bool   `json:"enabled"`
-	CompanyDomain string `json:"companyDomain"`
-	APIKey           string `json:"apiKey"`
-	ClearAPIKey      bool   `json:"clearApiKey"`
-	WebhookKey       string `json:"webhookKey"`
-	ClearWebhookKey  bool   `json:"clearWebhookKey"`
-	DailySyncTime    string `json:"dailySyncTime"`
+	Enabled         bool   `json:"enabled"`
+	CompanyDomain   string `json:"companyDomain"`
+	APIKey          string `json:"apiKey"`
+	ClearAPIKey     bool   `json:"clearApiKey"`
+	WebhookKey      string `json:"webhookKey"`
+	ClearWebhookKey bool   `json:"clearWebhookKey"`
+	DailySyncTime   string `json:"dailySyncTime"`
 }
 
 // BambooHRPreview is a directory row that would be considered for sync.
@@ -51,21 +51,21 @@ type BambooHRPreview struct {
 
 // BambooHRTestReport is a dry run. It never writes employees into dispatch storage.
 type BambooHRTestReport struct {
-	DryRun            bool              `json:"dryRun"`
-	Persisted         bool              `json:"persisted"`
-	CompanyDomain     string            `json:"companyDomain"`
-	FieldCount        int               `json:"fieldCount"`
-	UserCount         int               `json:"userCount"`
-	DirectoryCount    int               `json:"directoryCount"`
-	MatchedCount      int               `json:"matchedCount"`
-	Preview           []BambooHRPreview `json:"preview"`
-	Message           string            `json:"message"`
+	DryRun         bool              `json:"dryRun"`
+	Persisted      bool              `json:"persisted"`
+	CompanyDomain  string            `json:"companyDomain"`
+	FieldCount     int               `json:"fieldCount"`
+	UserCount      int               `json:"userCount"`
+	DirectoryCount int               `json:"directoryCount"`
+	MatchedCount   int               `json:"matchedCount"`
+	Preview        []BambooHRPreview `json:"preview"`
+	Message        string            `json:"message"`
 }
 
 type bambooSecret struct {
-	Enabled       bool   `json:"-" firestore:"enabled"`
-	CompanyDomain string `json:"-" firestore:"companyDomain"`
-	APIKey        string `json:"-" firestore:"apiKey"`
+	Enabled            bool   `json:"-" firestore:"enabled"`
+	CompanyDomain      string `json:"-" firestore:"companyDomain"`
+	APIKey             string `json:"-" firestore:"apiKey"`
 	WebhookKey         string `json:"-" firestore:"webhookKey"`
 	DailySyncTime      string `json:"-" firestore:"dailySyncTime"`
 	LastDailySyncDate  string `json:"-" firestore:"lastDailySyncDate"`
@@ -76,8 +76,8 @@ type bambooSecret struct {
 
 func (s bambooSecret) public() BambooHRSettings {
 	return BambooHRSettings{
-		Enabled:          s.Enabled,
-		CompanyDomain:    s.CompanyDomain,
+		Enabled:              s.Enabled,
+		CompanyDomain:        s.CompanyDomain,
 		APIKeyConfigured:     strings.TrimSpace(s.APIKey) != "",
 		WebhookKeyConfigured: strings.TrimSpace(s.WebhookKey) != "",
 		DailySyncTime:        normalizeStoredDailySyncTime(s.DailySyncTime),
@@ -204,13 +204,13 @@ func (s *BambooHRService) TestSync(ctx context.Context) (*BambooHRTestReport, er
 	}
 
 	report := &BambooHRTestReport{
-		DryRun:         true,
-		Persisted:      false,
-		CompanyDomain:  secret.CompanyDomain,
-		FieldCount:     countFields(fields),
-		UserCount:      countUsers(users),
-		Preview:        []BambooHRPreview{},
-		Message:        "Dry run only. No employees were written to the dispatch database.",
+		DryRun:        true,
+		Persisted:     false,
+		CompanyDomain: secret.CompanyDomain,
+		FieldCount:    countFields(fields),
+		UserCount:     countUsers(users),
+		Preview:       []BambooHRPreview{},
+		Message:       "Dry run only. No employees were written to the dispatch database.",
 	}
 	employees := directoryEmployees(directory)
 	report.DirectoryCount = len(employees)
@@ -227,6 +227,24 @@ func (s *BambooHRService) TestSync(ctx context.Context) (*BambooHRTestReport, er
 		})
 	}
 	return report, nil
+}
+
+// BambooHRManualSync is an on-demand directory read. Employees are not written.
+type BambooHRManualSync struct {
+	Persisted      bool   `json:"persisted"`
+	DirectoryCount int    `json:"directoryCount"`
+	SyncedAt       string `json:"syncedAt"`
+	Message        string `json:"message"`
+}
+
+// SyncNow reads the full directory immediately and records it as today's sync.
+// It does not write employees into the dispatch database.
+func (s *BambooHRService) SyncNow(ctx context.Context) (*BambooHRManualSync, error) {
+	loc, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		loc = time.FixedZone("EDT", -4*3600)
+	}
+	return s.syncDirectory(ctx, time.Now().In(loc))
 }
 
 // RunScheduledSync reads the full BambooHR directory once per day at the configured Ottawa time.
@@ -252,25 +270,48 @@ func (s *BambooHRService) runScheduledSyncAt(ctx context.Context, now time.Time)
 	if secret.LastDailySyncDate == today {
 		return
 	}
+	_, _ = s.syncDirectory(ctx, now)
+}
 
+func (s *BambooHRService) syncDirectory(ctx context.Context, now time.Time) (*BambooHRManualSync, error) {
+	secret, err := s.store.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !secret.Enabled {
+		return nil, fmt.Errorf("BambooHR sync is turned off")
+	}
+	if strings.TrimSpace(secret.APIKey) == "" {
+		return nil, fmt.Errorf("BambooHR API key is not configured")
+	}
+	if secret.CompanyDomain == "" {
+		return nil, fmt.Errorf("BambooHR company domain is not configured")
+	}
 	directory, err := s.getJSON(ctx, s.baseURL(secret.CompanyDomain)+"/employees/directory", secret.APIKey)
 	if err != nil {
-		return
+		return nil, err
 	}
 	employees := directoryEmployees(directory)
-	secret.LastDailySyncDate = today
+	secret.LastDailySyncDate = now.Format("2006-01-02")
 	secret.LastDailySyncAt = now.Format(time.RFC3339)
 	secret.LastDailySyncCount = len(employees)
-	secret.DailySyncTime = syncTime
+	secret.DailySyncTime = normalizeStoredDailySyncTime(secret.DailySyncTime)
 	if err := s.store.Save(ctx, secret); err != nil {
-		return
+		return nil, err
 	}
+	note := fmt.Sprintf("Read %d employees from BambooHR. Not written to the dispatch database.", len(employees))
 	_ = s.store.AppendWebhookEvents(ctx, []BambooWebhookEvent{{
 		ReceivedAt: secret.LastDailySyncAt,
 		Action:     "DailySync",
-		Note:       fmt.Sprintf("Read %d employees from BambooHR. Not written to the dispatch database.", len(employees)),
+		Note:       note,
 		Persisted:  false,
 	}})
+	return &BambooHRManualSync{
+		Persisted:      false,
+		DirectoryCount: len(employees),
+		SyncedAt:       secret.LastDailySyncAt,
+		Message:        note,
+	}, nil
 }
 
 func (s *BambooHRService) getJSON(ctx context.Context, rawURL, apiKey string) (any, error) {
