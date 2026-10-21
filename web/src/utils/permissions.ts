@@ -13,6 +13,7 @@ export const SYSTEM_PAGES: PageDefinition[] = [
   { id: 'dashboard', label: 'Fleet Pulse / Dashboard', category: 'operations', description: 'Real-time operational dashboard & live metrics' },
   { id: 'dispatch', label: 'Dispatch Workbench', category: 'operations', description: 'Daily route dispatch assignment & bus allocations' },
   { id: 'routes', label: 'Route Network', category: 'operations', description: 'Route paths, runs, stops and schedules' },
+  { id: 'staging_routes', label: 'Staging Routes', category: 'operations', description: 'BusPlanner staging routes, shifts, stops, and students. No crew assignment.' },
   { id: 'dispatch_payroll', label: 'Daily Dispatch Payroll', category: 'operations', description: 'Daily dispatch shift payroll review, driver shift adjustments and finance approvals' },
   { id: 'dispatch_log', label: 'Dispatch Change Log', category: 'operations', description: 'Audit trail of dispatcher changes & cover assignments' },
   { id: 'temporary_assignments', label: 'Route Openings & Coverage', category: 'operations', description: 'Route vacancy bidding board and temporary shift covers' },
@@ -46,6 +47,7 @@ export const SYSTEM_PAGES: PageDefinition[] = [
   { id: 'roles', label: 'Roles & Staff Allocation', category: 'system', description: 'Overview of staff assignments per role with permission management' },
   { id: 'login_logs', label: 'Login Audit Logs', category: 'system', description: 'Comprehensive audit trail of user and driver authentication attempts' },
   { id: 'audit_logs', label: 'System Audit Logs', category: 'system', description: 'Cross-functional audit query console across dispatch, routes, master records, payroll, and safety logs' },
+  { id: 'external_sync', label: 'External Data Sync', category: 'system', description: 'BambooHR and Zonar sync settings. Credentials stay on the server.' },
   { id: 'settings', label: 'System & Security Settings', category: 'system', description: 'Security identity credentials, administrator configuration' },
 ];
 
@@ -131,6 +133,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     temporary_assignments: 'readwrite',
     assignment_history: 'readwrite',
     routes: 'readwrite',
+    staging_routes: 'readwrite',
     route_assessments: 'readwrite',
     defects: 'readwrite',
     vehicle_signouts: 'readwrite',
@@ -156,6 +159,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'readwrite',
     audit_logs: 'readwrite',
     settings: 'readwrite',
+    external_sync: 'readwrite',
   },
 
   manager: {
@@ -166,6 +170,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     temporary_assignments: 'readonly',
     assignment_history: 'readonly',
     routes: 'readonly',
+    staging_routes: 'readonly',
     route_assessments: 'readonly',
     defects: 'readonly',
     vehicle_signouts: 'readonly',
@@ -191,6 +196,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'none',
     audit_logs: 'none',
     settings: 'none',
+    external_sync: 'none',
   },
 
   dispatcher: {
@@ -201,6 +207,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     temporary_assignments: 'readwrite',
     assignment_history: 'readwrite',
     routes: 'readwrite',
+    staging_routes: 'readwrite',
     route_assessments: 'readwrite',
     defects: 'readonly',
     vehicle_signouts: 'readonly',
@@ -226,6 +233,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'none',
     audit_logs: 'none',
     settings: 'none',
+    external_sync: 'none',
   },
 
   'office staff': {
@@ -236,6 +244,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     temporary_assignments: 'readonly',
     assignment_history: 'readonly',
     routes: 'readonly',
+    staging_routes: 'readonly',
     route_assessments: 'readonly',
     defects: 'readonly',
     vehicle_signouts: 'readonly',
@@ -261,6 +270,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'none',
     audit_logs: 'none',
     settings: 'none',
+    external_sync: 'none',
   },
 
   studentcare: {
@@ -271,6 +281,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     temporary_assignments: 'readonly',
     assignment_history: 'none',
     routes: 'readonly',
+    staging_routes: 'readonly',
     route_assessments: 'readonly',
     defects: 'readonly',
     vehicle_signouts: 'none',
@@ -296,6 +307,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'none',
     audit_logs: 'none',
     settings: 'none',
+    external_sync: 'none',
   },
 
   fleet: {
@@ -305,7 +317,8 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     dispatch_log: 'readonly',
     temporary_assignments: 'readonly',
     assignment_history: 'readwrite', // Can track vehicle & driver allocations
-    routes: 'readonly',             // Read-only routes
+    routes: 'readonly',
+    staging_routes: 'readonly',             // Read-only routes
     route_assessments: 'readonly',
     defects: 'readwrite',           // Read/write defects
     vehicle_signouts: 'readwrite',  // Read/write vehicle handovers
@@ -331,6 +344,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'none',
     audit_logs: 'none',
     settings: 'none',
+    external_sync: 'none',
   },
 
   supervisor: {
@@ -340,7 +354,8 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     dispatch_log: 'readonly',
     temporary_assignments: 'readonly',
     assignment_history: 'readonly',
-    routes: 'readonly',             // Read-only yard route shifts
+    routes: 'readonly',
+    staging_routes: 'readonly',             // Read-only yard route shifts
     route_assessments: 'readonly',
     defects: 'readonly',
     vehicle_signouts: 'readonly',
@@ -366,6 +381,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'none',
     audit_logs: 'none',
     settings: 'none',
+    external_sync: 'none',
   },
 
   HR: {
@@ -376,6 +392,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     temporary_assignments: 'readonly',
     assignment_history: 'readonly',
     routes: 'readonly',
+    staging_routes: 'readonly',
     route_assessments: 'readonly',
     defects: 'readonly',
     vehicle_signouts: 'none',
@@ -401,6 +418,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'none',
     audit_logs: 'none',
     settings: 'none',
+    external_sync: 'none',
   },
 
   payroll: {
@@ -411,6 +429,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     temporary_assignments: 'readonly',
     assignment_history: 'readonly',
     routes: 'readonly',
+    staging_routes: 'readonly',
     route_assessments: 'readonly',
     defects: 'readonly',
     vehicle_signouts: 'readonly',
@@ -436,6 +455,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'none',
     audit_logs: 'none',
     settings: 'none',
+    external_sync: 'none',
   },
 
   training: {
@@ -446,6 +466,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     temporary_assignments: 'readonly',
     assignment_history: 'readonly',
     routes: 'readonly',
+    staging_routes: 'readonly',
     route_assessments: 'readonly',
     defects: 'readonly',
     vehicle_signouts: 'none',
@@ -471,6 +492,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'none',
     audit_logs: 'none',
     settings: 'none',
+    external_sync: 'none',
   },
 
   driver: {
@@ -481,6 +503,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     temporary_assignments: 'readonly',
     assignment_history: 'none',
     routes: 'none',
+    staging_routes: 'none',
     route_assessments: 'none',
     defects: 'none',
     vehicle_signouts: 'none',
@@ -506,6 +529,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'none',
     audit_logs: 'none',
     settings: 'none',
+    external_sync: 'none',
   },
 
   helper: {
@@ -516,6 +540,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     temporary_assignments: 'readonly',
     assignment_history: 'none',
     routes: 'none',
+    staging_routes: 'none',
     route_assessments: 'none',
     defects: 'none',
     vehicle_signouts: 'none',
@@ -541,6 +566,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     login_logs: 'none',
     audit_logs: 'none',
     settings: 'none',
+    external_sync: 'none',
   },
 };
 

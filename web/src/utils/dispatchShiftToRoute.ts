@@ -51,7 +51,8 @@ export function convertDispatchShiftToRouteShift(ds: DispatchShift): {
     lastStopTime: ds.lastStopTime,
     stops,
     driverName: ds.driverName,
-    unitNumber: ds.unitNumber
+    unitNumber: ds.unitNumber,
+    vehicleId: ds.vehicleId
   };
 
   const route: BusRoute = {

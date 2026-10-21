@@ -37,7 +37,8 @@ import {
   FileText,
   FileSpreadsheet,
   BadgeDollarSign,
-  UserX
+  UserX,
+  RefreshCw
 } from 'lucide-react';
 
 interface MobileDrawerProps {
@@ -85,6 +86,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
       items: [
         { id: 'dispatch' as NavTab, label: (t.nav as any).dispatch || (isFrench ? 'Console de répartition' : 'Dispatch Workbench'), icon: Radio },
         { id: 'routes' as NavTab, label: t.nav.routeNetwork, icon: RouteIcon },
+        { id: 'staging_routes' as NavTab, label: isFrench ? 'Circuits staging' : 'Staging Routes', icon: RouteIcon },
         { id: 'dispatch_payroll' as NavTab, label: (t.nav as any).dispatchPayroll || (isFrench ? 'Paie de répartition' : 'Dispatch Payroll'), icon: BadgeDollarSign }
       ]
     },
@@ -153,6 +155,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
         { id: 'roles' as NavTab, label: isFrench ? 'Rôles et permissions' : 'Roles & Permissions', icon: ShieldCheck },
         { id: 'login_logs' as NavTab, label: isFrench ? 'Journaux de connexion' : 'Login Audit Logs', icon: History },
         { id: 'audit_logs' as NavTab, label: isFrench ? 'Journaux d\'audit système' : 'System Audit Logs', icon: FileText },
+        { id: 'external_sync' as NavTab, label: isFrench ? 'Synchronisation externe' : 'External Sync', icon: RefreshCw },
         { id: 'settings' as NavTab, label: t.nav.settings, icon: Settings }
       ]
     }

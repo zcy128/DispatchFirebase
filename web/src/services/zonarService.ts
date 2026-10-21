@@ -2,6 +2,7 @@ import { apiRequest } from './api';
 
 export interface ZonarSettings {
   enabled: boolean;
+  routeSyncEnabled: boolean;
   customer: string;
   username: string;
   passwordConfigured: boolean;
@@ -67,8 +68,40 @@ export interface ZonarRouteWriteReport {
   message: string;
 }
 
+export interface ZonarTracePoint {
+  lat: number;
+  lng: number;
+  observedAt: string;
+  speedKmh: number;
+  heading: number;
+}
+
+export interface ZonarTrace {
+  vehicleId: number;
+  unitNumber: string;
+  assetId: number;
+  persisted: boolean;
+  points: ZonarTracePoint[];
+}
+
+export interface ZonarIdleStop {
+  lat: number;
+  lng: number;
+  startTime: string;
+  endTime: string;
+  durationSeconds: number;
+}
+
+export interface ZonarIdleReport {
+  vehicleId: number;
+  unitNumber: string;
+  persisted: boolean;
+  stops: ZonarIdleStop[];
+}
+
 export interface ZonarSavePayload {
   enabled: boolean;
+  routeSyncEnabled?: boolean;
   customer: string;
   username: string;
   password?: string;
@@ -104,4 +137,16 @@ export const ZonarService = {
       method: 'POST',
       body: '{}',
     }),
+
+  syncEnabled: () => apiRequest<{ enabled: boolean }>('/api/zonar/enabled'),
+
+  vehicleTrace: (vehicleId: number, start: string, end: string) =>
+    apiRequest<ZonarTrace>(
+      `/api/zonar/vehicles/${vehicleId}/trace?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+    ),
+
+  vehicleIdles: (vehicleId: number, start: string, end: string) =>
+    apiRequest<ZonarIdleReport>(
+      `/api/zonar/vehicles/${vehicleId}/idles?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+    ),
 };

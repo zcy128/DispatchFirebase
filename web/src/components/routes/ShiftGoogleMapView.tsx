@@ -6,6 +6,7 @@ import { Student } from '../../types/student';
 import { resolveStopCoordinates, resolveHomeCoordinates } from '../../utils/geoUtils';
 import { diffMinutes } from '../../utils/dispatchDelayUtils';
 import { RouteService } from '../../services/routeService';
+import { ZonarIdleStop, ZonarService, ZonarTracePoint } from '../../services/zonarService';
 import { useI18n } from '../../contexts/I18nContext';
 import { OptimizeRouteModal } from './OptimizeRouteModal';
 import {
@@ -39,6 +40,9 @@ interface ShiftGoogleMapViewProps {
   height?: string | number;
   showAdjustStops?: boolean;
   showBus?: boolean;
+  allowZonarTrace?: boolean;
+  vehicleId?: number;
+  traceDate?: string;
 }
 
 type MapLayerType = 'roadmap' | 'satellite' | 'terrain' | 'osm';
@@ -103,6 +107,26 @@ const checkIsSchoolStop = (
   return false;
 };
 
+const traceClock = (date: string, clock: string, deltaMinutes: number): string => {
+  const [hourText, minuteText] = (clock || '00:00').split(':');
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const base = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(base.getTime()) || Number.isNaN(hour) || Number.isNaN(minute)) {
+    return '';
+  }
+  base.setHours(hour, minute + deltaMinutes, 0, 0);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}T${pad(base.getHours())}:${pad(base.getMinutes())}`;
+};
+
+const idleLabel = (stop: ZonarIdleStop): string => {
+  const minutes = Math.max(1, Math.round(stop.durationSeconds / 60));
+  const start = stop.startTime.slice(11, 16);
+  const end = stop.endTime.slice(11, 16);
+  return `Idle ${minutes} min<br/>${start} - ${end}`;
+};
+
 export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
   shift,
   route,
@@ -111,7 +135,10 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
   onUpdateShift,
   height = '540px',
   showAdjustStops = true,
-  showBus = true
+  showBus = true,
+  allowZonarTrace = false,
+  vehicleId,
+  traceDate
 }) => {
   const mapShellRef = useRef<HTMLDivElement>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -120,6 +147,8 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
   const markersRef = useRef<L.Marker[]>([]);
   const polylineRef = useRef<L.Polyline | null>(null);
   const polylineBorderRef = useRef<L.Polyline | null>(null);
+  const traceLineRef = useRef<L.Polyline | null>(null);
+  const idleMarkersRef = useRef<L.CircleMarker[]>([]);
 
   const { t } = useI18n();
   const [mapLayer, setMapLayer] = useState<MapLayerType>('roadmap');
@@ -146,6 +175,14 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
 
   // Local stops state to support instant visual update upon dragging
   const [localStops, setLocalStops] = useState<RouteStop[]>([]);
+  const [zonarSyncEnabled, setZonarSyncEnabled] = useState(false);
+  const [traceVisible, setTraceVisible] = useState(false);
+  const [traceLoading, setTraceLoading] = useState(false);
+  const [traceError, setTraceError] = useState<string | null>(null);
+  const [tracePoints, setTracePoints] = useState<ZonarTracePoint[]>([]);
+  const [idleStops, setIdleStops] = useState<ZonarIdleStop[]>([]);
+  const resolvedVehicleId = vehicleId || shift?.vehicleId || 0;
+  const showTraceButton = allowZonarTrace && zonarSyncEnabled && resolvedVehicleId > 0;
 
   // Keep localStops in sync with incoming shift
   useEffect(() => {
@@ -155,6 +192,100 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
       setLocalStops([]);
     }
   }, [shift]);
+
+  useEffect(() => {
+    if (!allowZonarTrace) {
+      setZonarSyncEnabled(false);
+      return;
+    }
+    let cancelled = false;
+    ZonarService.syncEnabled()
+      .then((status) => {
+        if (!cancelled) setZonarSyncEnabled(!!status.enabled);
+      })
+      .catch(() => {
+        if (!cancelled) setZonarSyncEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [allowZonarTrace]);
+
+  useEffect(() => {
+    setTraceVisible(false);
+    setTracePoints([]);
+    setIdleStops([]);
+    setTraceError(null);
+  }, [resolvedVehicleId, traceDate, shift?.id]);
+
+  const handleToggleTrace = useCallback(async () => {
+    if (traceVisible) {
+      setTraceVisible(false);
+      setTracePoints([]);
+      setIdleStops([]);
+      setTraceError(null);
+      return;
+    }
+    const day = traceDate || new Date().toISOString().slice(0, 10);
+    const start = traceClock(day, shift?.firstStopTime || '07:00', -30);
+    const end = traceClock(day, shift?.lastStopTime || '16:00', 120);
+    if (!start || !end || resolvedVehicleId <= 0) {
+      setTraceError('This shift has no vehicle id.');
+      return;
+    }
+    setTraceLoading(true);
+    setTraceError(null);
+    try {
+      const [trace, idles] = await Promise.all([
+        ZonarService.vehicleTrace(resolvedVehicleId, start, end),
+        ZonarService.vehicleIdles(resolvedVehicleId, start, end),
+      ]);
+      setTracePoints(trace.points || []);
+      setIdleStops(idles.stops || []);
+      setTraceVisible(true);
+      if ((trace.points || []).length === 0 && (idles.stops || []).length === 0) {
+        setTraceError('Zonar returned no trace for this vehicle.');
+      }
+    } catch (err: any) {
+      setTraceVisible(false);
+      setTracePoints([]);
+      setIdleStops([]);
+      setTraceError(err?.message || 'Could not read the Zonar trace.');
+    } finally {
+      setTraceLoading(false);
+    }
+  }, [traceVisible, traceDate, shift?.firstStopTime, shift?.lastStopTime, resolvedVehicleId]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    traceLineRef.current?.remove();
+    traceLineRef.current = null;
+    idleMarkersRef.current.forEach((marker) => marker.remove());
+    idleMarkersRef.current = [];
+    if (!map || !traceVisible) return;
+
+    if (tracePoints.length > 1) {
+      const latlngs = tracePoints.map((point) => [point.lat, point.lng] as [number, number]);
+      traceLineRef.current = L.polyline(latlngs, {
+        color: '#22d3ee',
+        weight: 4,
+        opacity: 0.9,
+      }).addTo(map);
+      map.fitBounds(L.latLngBounds(latlngs), { padding: [28, 28] });
+    }
+    idleStops.forEach((stop) => {
+      const marker = L.circleMarker([stop.lat, stop.lng], {
+        radius: 7,
+        color: '#7c2d12',
+        weight: 1,
+        fillColor: '#fb923c',
+        fillOpacity: 0.95,
+      })
+        .bindPopup(idleLabel(stop))
+        .addTo(map);
+      idleMarkersRef.current.push(marker);
+    });
+  }, [traceVisible, tracePoints, idleStops]);
 
   // Sorted stops for this shift
   const stops = useMemo(() => {
@@ -1574,6 +1705,22 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
 
           {/* Right: Map Control Buttons */}
           <div className="flex items-center space-x-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-1 shadow-xl pointer-events-auto">
+            {showTraceButton && (
+            <button
+              type="button"
+              onClick={handleToggleTrace}
+              disabled={traceLoading}
+              title="Read this vehicle's path and idle stops from Zonar. Nothing is stored."
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition ${
+                traceVisible
+                  ? 'bg-cyan-400 text-slate-950'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              <span>{traceLoading ? 'Loading trace...' : traceVisible ? 'Hide trace' : 'Show trace'}</span>
+            </button>
+            )}
             {showAdjustStops && (
             <button
               type="button"
@@ -1705,6 +1852,17 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
         )}
 
         {/* Repositioning Instructions Banner overlay when mode is active */}
+        {traceError && (
+          <div className="bg-slate-900/95 border border-rose-500/40 rounded-xl px-3 py-1.5 text-[11px] text-rose-200 shadow-xl pointer-events-auto">
+            {traceError}
+          </div>
+        )}
+        {traceVisible && !traceError && (
+          <div className="bg-slate-900/95 border border-cyan-500/40 rounded-xl px-3 py-1.5 text-[11px] text-cyan-100 shadow-xl pointer-events-auto flex items-center gap-3">
+            <span className="inline-flex items-center gap-1"><span className="w-3 h-0.5 bg-cyan-400 inline-block" /> Trace {tracePoints.length}</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-400 inline-block" /> Idle {idleStops.length}</span>
+          </div>
+        )}
         {isEditPickupMode && (
           <div className="bg-emerald-950/90 backdrop-blur border border-emerald-500/50 rounded-xl px-3.5 py-2 text-xs text-emerald-200 shadow-xl flex items-center justify-between gap-2 pointer-events-auto">
             <div className="flex items-center space-x-2">

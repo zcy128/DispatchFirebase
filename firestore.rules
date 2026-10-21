@@ -261,5 +261,37 @@ service cloud.firestore {
       allow read: if false;
       allow write: if false;
     }
+
+    // BusPlanner password. Server admin SDK only. Never readable from the browser.
+    match /busplanner_secrets/{doc} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // BusPlanner staging. Server writes only. Not the live route, school, or student records.
+    match /busplanner_staging_routes/{id} {
+      allow read: if false;
+      allow write: if false;
+    }
+    match /busplanner_staging_runs/{id} {
+      allow read: if false;
+      allow write: if false;
+    }
+    match /busplanner_staging_schools/{id} {
+      allow read: if false;
+      allow write: if false;
+    }
+    match /busplanner_staging_stops/{id} {
+      allow read: if false;
+      allow write: if false;
+    }
+    match /busplanner_staging_student_stops/{id} {
+      allow read: if false;
+      allow write: if false;
+    }
+    match /busplanner_staging_students/{id} {
+      allow read: if false;
+      allow write: if false;
+    }
   }
 }
