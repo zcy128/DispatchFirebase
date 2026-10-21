@@ -75,6 +75,17 @@ A fully interactive public demo environment is available online with zero setup 
 - Active operational records reside in Firestore for sub-second latency and real-time streaming.
 - Completed shifts, audit trails, and attendance logs are archived to Google BigQuery, ensuring long-term audit compliance, data security, and analytics without bloating database costs.
 
+### 12. BusPlanner Staging Routes
+- **Staging Routes** lists shifts, stops, and students pulled from BusPlanner. The page does not assign drivers, vehicles, or attendants.
+- A dispatcher with write access can copy one staging route into the live route. Existing crew assignments stay as they are.
+- Automatic copy runs only after BusPlanner sync is turned on. Each shift is applied at 9:00 AM America/Toronto on the weekday before its effective date. If that day is a weekend, the copy moves to Friday at 9:00 AM. The previous shift keeps running through the weekend and retires on the calendar day before the effective date.
+- While sync is off, demo mode recreates five sample staging routes every Monday at 9:00 AM. Those samples are not copied into live routes automatically. The default BusPlanner address is `https://school.mybusplanner.ca`.
+
+### 13. External Sync and Zonar Vehicle Trace
+- **External Data Sync** holds BambooHR, Zonar, and BusPlanner settings. Passwords and API keys stay on the server and are never returned to the browser.
+- BambooHR sync reads employees only. Zonar GPS polling and Zonar route write-back are separate switches. Route data is prepared locally and is not posted to Zonar until route sync is turned on.
+- On a dispatch stop, the map can draw that vehicle's Zonar path and idle stops for the shift day when Zonar sync is enabled.
+
 ---
 
 ## Core Architecture & Tech Stack
@@ -83,8 +94,8 @@ A fully interactive public demo environment is available online with zero setup 
 | :--- | :--- | :--- |
 | **Driver Mobile & Web App (`driver_app`)** | **Flutter (Android / iOS / Web)** | Shift scheduling, clock-in/out, Pre-trip inspections, student boarding & drop-off check-in via barcode/camera scan, real-time dispatch alerts |
 | **Parent Mobile & Web App (`parent_app`)** | **Flutter (Android / iOS / Web)** | Passwordless one-time passcode login, live school bus GPS tracking on OpenStreetMap, accurate arrival ETA, student absence reporting |
-| **Dispatch Office Web Console (`web`)** | **React + TypeScript + Vite + Tailwind CSS** | High-density operations dashboard, route scheduling, temporary driver/bus substitution, vehicle and driver compliance roster (PWA ready) |
-| **Backend API Service (`server`)** | **Go (Golang 1.24+) + Chi Router** | High-performance microservices (CQRS architecture, Twilio SMS gateway, ETA route calculation, real-time audit logging and authentication) |
+| **Dispatch Office Web Console (`web`)** | **React + TypeScript + Vite + Tailwind CSS** | High-density operations dashboard, route scheduling, BusPlanner staging, temporary driver/bus substitution, vehicle and driver compliance roster (PWA ready) |
+| **Backend API Service (`server`)** | **Go (Golang 1.24+) + Chi Router** | High-performance microservices (CQRS architecture, Twilio SMS gateway, BusPlanner staging, Zonar GPS, ETA route calculation, real-time audit logging and authentication) |
 | **Cloud Data & Event Streaming** | **Firebase / Firestore / Cloud Storage / Cloud Run** | Real-time push notifications, distributed event-driven state synchronization |
 | **Analytics & Cold Storage** | **Google BigQuery** | Long-term compliant shift archiving and historical reporting |
 
@@ -196,6 +207,7 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
 
 - **Credential Hygiene**: **Never** commit files containing actual private keys or secrets (`serviceAccountKey.json`, `firebase_options.dart`, `.env`). All such files are strictly excluded via `.gitignore`.
 - **Firestore Security Rules**: Before deploying to production or connecting to a live cloud database, ensure you tighten `firestore.rules` to enforce strict authorization controls.
+- **Integration secrets**: BusPlanner, Zonar, and BambooHR credentials, and the BusPlanner staging collections, are readable only by the API. Firestore rules deny browser access.
 
 ---
 
