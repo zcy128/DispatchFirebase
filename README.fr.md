@@ -75,6 +75,17 @@ Un environnement de démonstration public complet est directement accessible san
 - Les données opérationnelles courantes restent dans Firestore pour une latence minimale et une synchronisation en direct.
 - Les tournées terminées, journaux d'audit et relevés de présence sont archivés dans Google BigQuery, alliant conformité légale à long terme et sécurité des données sans surcharger les coûts de base de données.
 
+### 12. Lignes staging BusPlanner
+- **Staging Routes** affiche les services, arrêts et élèves importés depuis BusPlanner. Cette page n'affecte ni chauffeur, ni véhicule, ni accompagnateur.
+- Un régulateur autorisé en écriture peut copier une ligne staging vers la ligne en service. Les affectations déjà en place restent inchangées.
+- La copie automatique ne démarre qu'une fois la synchronisation BusPlanner activée. Chaque service est appliqué à 9 h, heure de Toronto, le jour ouvrable précédant sa date d'effet. Si ce jour tombe un week-end, la copie est avancée au vendredi à 9 h. L'ancien service continue pendant le week-end et se termine la veille calendaire de la date d'effet.
+- Lorsque la synchronisation est désactivée, le mode démo recrée cinq lignes staging d'exemple chaque lundi à 9 h. Ces exemples ne sont pas copiés automatiquement vers les lignes en service. L'adresse BusPlanner par défaut est `https://school.mybusplanner.ca`.
+
+### 13. Synchronisation externe et trace véhicule Zonar
+- **External Data Sync** regroupe les réglages BambooHR, Zonar et BusPlanner. Les mots de passe et clés d'API restent sur le serveur et ne sont jamais renvoyés au navigateur.
+- La synchronisation BambooHR lit uniquement les employés. Le relevé GPS Zonar et le renvoi des lignes vers Zonar sont deux interrupteurs distincts. Les données de ligne sont préparées localement et ne sont envoyées à Zonar qu'après activation du renvoi.
+- Sur un arrêt de dispatch, la carte peut tracer le parcours Zonar du véhicule et ses arrêts au ralenti pour la journée du service, lorsque la synchronisation Zonar est activée.
+
 ---
 
 ## Architecture & Technologies
@@ -83,8 +94,8 @@ Un environnement de démonstration public complet est directement accessible san
 | :--- | :--- | :--- |
 | **Application Chauffeur (`driver_app`)** | **Flutter (Android / iOS / Web)** | Consultation des plannings de tournée, pointage, inspection Pre-trip, embarquement/débarquement des élèves avec scan, alertes de dispatch en temps réel |
 | **Application Parent (`parent_app`)** | **Flutter (Android / iOS / Web)** | Connexion rapide sans mot de passe (code temporaire), suivi en direct de l'autobus sur carte OpenStreetMap, estimation d'arrivée (ETA), signalement d'absences |
-| **Console Web de Dispatch (`web`)** | **React + TypeScript + Vite + Tailwind CSS** | Tableau de bord haute densité, planification des tournées, affectations temporaires, conformité des véhicules et du personnel (PWA supporté) |
-| **Serveur d'API Backend (`server`)** | **Go (Golang 1.24+) + Chi Router** | Microservices haute performance (architecture CQRS, passerelle SMS Twilio, calcul d'itinéraires et ETA, audit et sécurité) |
+| **Console Web de Dispatch (`web`)** | **React + TypeScript + Vite + Tailwind CSS** | Tableau de bord haute densité, planification des tournées, staging BusPlanner, affectations temporaires, conformité des véhicules et du personnel (PWA supporté) |
+| **Serveur d'API Backend (`server`)** | **Go (Golang 1.24+) + Chi Router** | Microservices haute performance (architecture CQRS, passerelle SMS Twilio, staging BusPlanner, GPS Zonar, calcul d'itinéraires et ETA, audit et sécurité) |
 | **Données & Événements Cloud** | **Firebase / Firestore / Cloud Storage / Cloud Run** | Notifications push en temps réel, synchronisation d'événements distribués |
 | **Entrepôt de Données & Archivage** | **Google BigQuery** | Sauvegarde à long terme et analyses historiques conformes |
 
@@ -196,6 +207,7 @@ flutter build web --dart-define=API_BASE_URL=https://votre-domaine-api.com
 
 - **Protection des clés privées** : Ne validez **jamais** de fichiers contenant des clés privées réelles (`serviceAccountKey.json`, `firebase_options.dart`, `.env`). Ces fichiers sont strictement ignorés par `.gitignore`.
 - **Règles Firestore** : Avant tout déploiement en production ou connexion à une base de données active, veillez à restreindre les permissions dans `firestore.rules` selon vos exigences de contrôle d'accès.
+- **Secrets d'intégration** : les identifiants BusPlanner, Zonar et BambooHR, ainsi que les collections staging BusPlanner, ne sont lisibles que par l'API. Les règles Firestore refusent l'accès depuis le navigateur.
 
 ---
 
