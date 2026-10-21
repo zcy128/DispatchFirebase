@@ -3,3 +3,8 @@
 server.exe
 *.exe
 *.log
+.env
+.env.*
+serviceAccountKey*.json
+credentials.json
+*adminsdk*.json

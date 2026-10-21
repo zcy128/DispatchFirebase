@@ -30,7 +30,8 @@ import {
   FileText,
   FileSpreadsheet,
   BadgeDollarSign,
-  UserX
+  UserX,
+  RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { hasPageAccess } from '../../utils/permissions';
@@ -39,6 +40,7 @@ export type NavTab =
   | 'dashboard'
   | 'dispatch'
   | 'routes'
+  | 'staging_routes'
   | 'dispatch_payroll'
   | 'employees'
   | 'time_off'
@@ -67,6 +69,7 @@ export type NavTab =
   | 'roles'
   | 'login_logs'
   | 'audit_logs'
+  | 'external_sync'
   | 'settings';
 
 interface NavItemConfig {
@@ -124,6 +127,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {
           id: 'routes',
           label: t.nav.routeNetwork,
+          icon: RouteIcon,
+          badge: null
+        },
+        {
+          id: 'staging_routes',
+          label: isFrench ? 'Circuits staging' : 'Staging Routes',
           icon: RouteIcon,
           badge: null
         },
@@ -332,6 +341,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           badge: null
         },
         {
+          id: 'external_sync',
+          label: isFrench ? 'Synchronisation externe' : 'External Sync',
+          icon: RefreshCw,
+          badge: null
+        },
+        {
           id: 'settings',
           label: t.nav.settings,
           icon: Settings,
@@ -343,11 +358,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside
-      className={`hidden md:flex flex-col justify-between flex-shrink-0 bg-slate-900 border-r border-slate-800 transition-all duration-300 min-h-[calc(100vh-4rem)] z-20 ${
+      className={`hidden md:flex flex-col flex-shrink-0 h-full overflow-hidden bg-slate-900 border-r border-slate-800 transition-all duration-300 z-20 ${
         isCollapsed ? 'w-18' : 'w-64'
       }`}
     >
-      <div className="py-4 px-2 space-y-5">
+      <div className="flex-1 min-h-0 overflow-y-auto py-4 px-2 space-y-5">
         {groups.map((group, groupIdx) => {
           const visibleItems = group.items.filter((item) => hasPageAccess(currentUser, item.id));
           if (visibleItems.length === 0) return null;
@@ -406,7 +421,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </div>
 
       {/* Bottom Depot & Collapse Controls */}
-      <div className="p-3 border-t border-slate-800 space-y-2">
+      <div className="shrink-0 p-3 border-t border-slate-800 space-y-2">
         {!isCollapsed && (
           <div className="px-2 py-2 rounded-lg bg-slate-800/40 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
             <span className="flex items-center space-x-1.5 truncate">

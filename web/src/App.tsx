@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from './contexts/AuthContext';
 import { Header } from './components/common/Header';
 import { Sidebar, NavTab } from './components/common/Sidebar';
@@ -6,9 +6,11 @@ import { DashboardView } from './views/DashboardView';
 import { EmployeeListView } from './views/EmployeeListView';
 import { StudentListView } from './views/StudentListView';
 import { RouteListView } from './views/RouteListView';
+import { StagingRouteListView } from './views/StagingRouteListView';
 import { VehicleListView } from './views/VehicleListView';
 import { ComplianceView } from './views/ComplianceView';
 import { SettingsView } from './views/SettingsView';
+import { ExternalSyncView } from './views/ExternalSyncView';
 import { LoginView } from './views/LoginView';
 import { EmployeeDetailDrawer } from './components/employees/EmployeeDetailDrawer';
 import { EmployeeModal } from './components/employees/EmployeeModal';
@@ -76,6 +78,7 @@ export const AppContent: React.FC = () => {
   const { currentUser, loading: authLoading } = useAuth();
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
+  const mainRef = useRef<HTMLElement>(null);
   const [dispatchLogDate, setDispatchLogDate] = useState<string>(() => getLocalTodayString());
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
@@ -88,6 +91,10 @@ export const AppContent: React.FC = () => {
     setChatInitialParent(payload);
     setIsChatOpen(true);
   };
+
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [currentTab]);
 
   // Global shortcut (Ctrl+J / Cmd+J) to toggle AI Copilot
   useEffect(() => {
@@ -394,14 +401,14 @@ export const AppContent: React.FC = () => {
 
       if (!hasPageAccess(currentUser, currentTab)) {
         const allTabs: NavTab[] = [
-          'dashboard', 'dispatch', 'routes', 'dispatch_payroll',
+          'dashboard', 'dispatch', 'routes', 'staging_routes', 'dispatch_payroll',
           'employees', 'time_off', 'payroll', 'biweekly_payroll', 'payroll_dept_log',
           'temporary_assignments', 'dispatch_log', 'assignment_history',
           'vehicles', 'defects', 'vehicle_signouts', 'yards',
           'compliance', 'training', 'students', 'student_incidents',
           'hazards', 'route_assessments', 'schools', 'calendar',
           'expenses', 'company_contacts', 'roles', 'login_logs',
-          'audit_logs', 'settings'
+          'audit_logs', 'external_sync', 'settings'
         ];
         const allowedTab = allTabs.find((t) => hasPageAccess(currentUser, t));
         if (allowedTab) {
@@ -775,7 +782,7 @@ export const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col text-slate-100 font-sans">
+    <div className="h-screen overflow-hidden bg-slate-950 flex flex-col text-slate-100 font-sans">
       <Header
         onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
         onOpenChat={() => {
@@ -786,7 +793,7 @@ export const AppContent: React.FC = () => {
         onOpenAICopilot={() => setIsAICopilotOpen((prev) => !prev)}
       />
 
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="flex flex-1 min-h-0 overflow-hidden relative">
         <Sidebar
           currentTab={currentTab}
           onSelectTab={setCurrentTab}
@@ -795,7 +802,7 @@ export const AppContent: React.FC = () => {
           onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         />
 
-        <main className="flex-1 overflow-y-auto bg-slate-950/80 pb-20 md:pb-6">
+        <main ref={mainRef} className="flex-1 min-h-0 overflow-y-auto bg-slate-950/80 pb-20 md:pb-6">
           {currentTab === 'dashboard' && (
             <DashboardView
               stats={stats}
@@ -971,6 +978,8 @@ export const AppContent: React.FC = () => {
             <VehicleSignoutView />
           )}
 
+          {currentTab === 'staging_routes' && <StagingRouteListView />}
+
           {currentTab === 'routes' && (
             <RouteListView
               routes={routes}
@@ -1071,6 +1080,8 @@ export const AppContent: React.FC = () => {
           {currentTab === 'login_logs' && <LoginLogsView />}
 
           {currentTab === 'audit_logs' && <AuditLogsView />}
+
+          {currentTab === 'external_sync' && <ExternalSyncView />}
 
           {currentTab === 'settings' && <SettingsView />}
         </main>

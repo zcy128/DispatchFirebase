@@ -32,6 +32,7 @@ var zonarAccountPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 // ZonarSettings is the admin-facing view. The password is never included.
 type ZonarSettings struct {
 	Enabled               bool   `json:"enabled"`
+	RouteSyncEnabled      bool   `json:"routeSyncEnabled"`
 	Customer              string `json:"customer"`
 	Username              string `json:"username"`
 	PasswordConfigured    bool   `json:"passwordConfigured"`
@@ -52,6 +53,7 @@ type ZonarSettings struct {
 // ZonarSave is the write payload. An empty Password keeps the stored password.
 type ZonarSave struct {
 	Enabled             bool   `json:"enabled"`
+	RouteSyncEnabled    bool   `json:"routeSyncEnabled"`
 	Customer            string `json:"customer"`
 	Username            string `json:"username"`
 	Password            string `json:"password"`
@@ -116,6 +118,7 @@ type ZonarRouteWriteReport struct {
 
 type zonarSecret struct {
 	Enabled               bool   `json:"-" firestore:"enabled"`
+	RouteSyncEnabled      bool   `json:"-" firestore:"routeSyncEnabled"`
 	Customer              string `json:"-" firestore:"customer"`
 	Username              string `json:"-" firestore:"username"`
 	Password              string `json:"-" firestore:"password"`
@@ -139,6 +142,7 @@ func (s zonarSecret) public() ZonarSettings {
 	idle := storedInterval(s.IdleIntervalMinutes, defaultIdleInterval, maxIdleIntervalMinute)
 	return ZonarSettings{
 		Enabled:               s.Enabled,
+		RouteSyncEnabled:      s.RouteSyncEnabled,
 		Customer:              s.Customer,
 		Username:              s.Username,
 		PasswordConfigured:    strings.TrimSpace(s.Password) != "",
@@ -228,6 +232,7 @@ func (s *ZonarService) SaveSettings(ctx context.Context, in ZonarSave) (ZonarSet
 	}
 	next := current
 	next.Enabled = in.Enabled
+	next.RouteSyncEnabled = in.RouteSyncEnabled
 	next.Customer = customer
 	next.Username = username
 	next.BusyIntervalMinutes = busy
@@ -310,7 +315,7 @@ func (s *ZonarService) RunScheduledRoutePreview(ctx context.Context) {
 
 func (s *ZonarService) runScheduledRoutePreviewAt(ctx context.Context, now time.Time) {
 	secret, err := s.store.Load(ctx)
-	if err != nil || !secret.Enabled || s.vehicles == nil {
+	if err != nil || !secret.RouteSyncEnabled || s.vehicles == nil {
 		return
 	}
 	syncTime := storedClock(secret.GpsSerialSyncTime, "03:00")
@@ -332,6 +337,13 @@ func (s *ZonarService) PreviewRouteWriteBack(ctx context.Context) (*ZonarRouteWr
 func (s *ZonarService) previewRouteWriteBack(ctx context.Context, now time.Time, record bool) (*ZonarRouteWriteReport, error) {
 	if s.vehicles == nil {
 		return nil, fmt.Errorf("vehicle store is not configured")
+	}
+	current, err := s.store.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !current.RouteSyncEnabled {
+		return nil, fmt.Errorf("route sync to Zonar is turned off")
 	}
 	vehicles, err := s.vehicles.ListVehicles(ctx, repository.VehicleFilter{})
 	if err != nil {

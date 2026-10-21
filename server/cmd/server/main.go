@@ -172,6 +172,12 @@ func main() {
 	bambooSvc := services.NewBambooHRService(services.NewBambooHRStore(fsClient))
 	bambooHandler := handlers.NewBambooHRHandler(bambooSvc)
 	zonarSvc := services.NewZonarService(services.NewZonarStore(fsClient))
+	busplannerSvc := services.NewBusPlannerService(services.NewBusPlannerStore(fsClient))
+	if fsClient != nil {
+		busplannerSvc.SetLiveStore(services.NewFirestoreStagingLive(fsClient))
+	}
+	busplannerSvc.AllowStagingSimulation(cfg.AllowsDemo())
+	busplannerHandler := handlers.NewBusPlannerHandler(busplannerSvc)
 	zonarSvc.UseVehicles(vehicleRepo)
 	zonarSvc.UseRoutes(func(ctx context.Context, day string) (map[string]string, error) {
 		shifts, err := dispatchRepo.ListShifts(ctx, day, repository.DispatchFilter{})
@@ -405,6 +411,11 @@ func main() {
 		protected.Get("/api/dispatch/simulation-settings", dispatchHandler.GetSimulationSettings)
 		protected.Put("/api/dispatch/simulation-settings", dispatchHandler.SaveSimulationSettings)
 		protected.Post("/api/dispatch/simulation/run", dispatchHandler.RunSimulation)
+		protected.Get("/api/busplanner/staging/routes", busplannerHandler.ListStagingRoutes)
+		protected.Post("/api/busplanner/staging/routes/{id}/copy", busplannerHandler.CopyStagingRoute)
+		protected.With(auth.RequireRole("admin")).Get("/api/busplanner/settings", busplannerHandler.GetSettings)
+		protected.With(auth.RequireRole("admin")).Put("/api/busplanner/settings", busplannerHandler.SaveSettings)
+		protected.With(auth.RequireRole("admin")).Post("/api/busplanner/sync", busplannerHandler.SyncNow)
 		protected.With(auth.RequireRole("admin")).Get("/api/bamboohr/settings", bambooHandler.GetSettings)
 		protected.With(auth.RequireRole("admin")).Put("/api/bamboohr/settings", bambooHandler.SaveSettings)
 		protected.With(auth.RequireRole("admin")).Post("/api/bamboohr/test", bambooHandler.TestSync)
@@ -416,6 +427,9 @@ func main() {
 		protected.With(auth.RequireRole("admin")).Post("/api/zonar/sync-serials", zonarHandler.SyncSerials)
 		protected.With(auth.RequireRole("admin")).Post("/api/zonar/route-preview", zonarHandler.PreviewRouteWriteBack)
 		protected.With(auth.RequireRole("admin")).Get("/api/zonar/positions/{unitNumber}", zonarHandler.GetPosition)
+		protected.Get("/api/zonar/enabled", zonarHandler.GetSyncEnabled)
+		protected.Get("/api/zonar/vehicles/{vehicleId}/trace", zonarHandler.GetVehicleTrace)
+		protected.Get("/api/zonar/vehicles/{vehicleId}/idles", zonarHandler.GetVehicleIdles)
 		protected.Get("/api/dispatch/change-logs", dispatchHandler.ListChangeLogs)
 		protected.Post("/api/dispatch/change-logs", dispatchHandler.CreateChangeLog)
 		protected.Get("/api/dispatch/audit-logs", dispatchHandler.ListSystemAuditLogs)
@@ -1174,6 +1188,23 @@ func main() {
 	// BambooHR daily directory read. It does not write employees into dispatch storage.
 	go func() {
 		run := func() { bambooSvc.RunScheduledSync(context.Background()) }
+		time.Sleep(2 * time.Second)
+		run()
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	}()
+
+	// BusPlanner pull writes staging only. While sync is enabled, a shift is copied
+	// into the live route at 09:00 America/Toronto on the day before its effective date.
+	go func() {
+		run := func() {
+			busplannerSvc.RunScheduledSync(context.Background())
+			busplannerSvc.RunScheduledStagingSimulation(context.Background())
+			busplannerSvc.RunScheduledPublish(context.Background())
+		}
 		time.Sleep(2 * time.Second)
 		run()
 		ticker := time.NewTicker(30 * time.Second)

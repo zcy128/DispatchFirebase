@@ -247,6 +247,9 @@ export const DispatchStopModal: React.FC<DispatchStopModalProps> = ({
               studentsMap={studentsMap}
               height="100%"
               showAdjustStops={false}
+              allowZonarTrace
+              vehicleId={shift.vehicleId}
+              traceDate={shift.dispatchDate}
             />
           </div>
         ) : (

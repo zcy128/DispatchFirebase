@@ -281,10 +281,7 @@ func TestRouteWriteBackIsPreparedAndNotSent(t *testing.T) {
 	svc := NewZonarService(NewZonarStore(nil))
 	svc.endpoint = srv.URL
 	svc.UseVehicles(vehicles)
-	svc.UseRoutes(func(_ context.Context, day string) (map[string]string, error) {
-		if day != "2026-10-20" {
-			t.Fatalf("day = %s", day)
-		}
+	svc.UseRoutes(func(_ context.Context, _ string) (map[string]string, error) {
 		return map[string]string{"1003": "CEPEO-021"}, nil
 	})
 	if _, err := svc.SaveSettings(ctx, ZonarSave{
@@ -306,6 +303,24 @@ func TestRouteWriteBackIsPreparedAndNotSent(t *testing.T) {
 		t.Fatalf("zonar calls = %d", calls)
 	}
 	due := time.Date(2026, 10, 20, 9, 0, 0, 0, loc)
+	svc.runScheduledRoutePreviewAt(ctx, due)
+	off, err := svc.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if off.RouteSyncEnabled || off.LastRoutePreviewCount != 0 {
+		t.Fatalf("route sync should stay off by default: %+v", off)
+	}
+	if _, err := svc.SaveSettings(ctx, ZonarSave{
+		Enabled:           true,
+		RouteSyncEnabled:  true,
+		Customer:          "preview",
+		Username:          "preview",
+		Password:          "not-sent",
+		GpsSerialSyncTime: "03:00",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	svc.runScheduledRoutePreviewAt(ctx, due)
 	svc.runScheduledRoutePreviewAt(ctx, due.Add(time.Hour))
 	settings, err := svc.GetSettings(ctx)
