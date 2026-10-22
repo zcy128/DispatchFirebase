@@ -493,6 +493,7 @@ func (s *AIToolService) GetFleetSummary(ctx context.Context, date string, lang s
 	}
 
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
 
 	shifts, err := s.dispatchRepo.ListShifts(ctx, date, repository.DispatchFilter{})
 	if err != nil {
@@ -500,6 +501,9 @@ func (s *AIToolService) GetFleetSummary(ctx context.Context, date string, lang s
 	}
 
 	if len(shifts) == 0 {
+		if isZh {
+			return fmt.Sprintf("⚠️ **在 %s 暂无校车调度班次记录。**\n\n- 今日调度表尚未生成。\n- 您可以直接对我说：*“生成今日调度表”* 自动生成；\n- 也可以在上方的日期选择器中选择已排班日期查看。", date), nil
+		}
 		if isFr {
 			return fmt.Sprintf("Aucune donnée de quart trouvée pour la date du %s.", date), nil
 		}
@@ -523,6 +527,13 @@ func (s *AIToolService) GetFleetSummary(ctx context.Context, date string, lang s
 		}
 	}
 
+	if isZh {
+		return fmt.Sprintf(
+			"### 📊 **%s 校车运营调度总览**\n\n- **班次总计**：%d 个班次\n- **已安排司机**：%d 人在岗\n- **⚠️ 缺少司机班次**：%d 个未分配\n- **已完成班次**：%d\n- **延误班次**：%d",
+			date, total, total-unassigned, unassigned, completed, late,
+		), nil
+	}
+
 	if isFr {
 		return fmt.Sprintf(
 			"### 📊 Aperçu des opérations de régulation pour le %s\n\n- **Total des quarts** : %d\n- **Chauffeurs assignés** : %d\n- **⚠️ Quarts sans chauffeur** : %d\n- **Quarts complétés** : %d\n- **Quarts en retard** : %d",
@@ -539,6 +550,7 @@ func (s *AIToolService) GetFleetSummary(ctx context.Context, date string, lang s
 // GetVehicleSummary returns fleet vehicle statistics and vehicle_summary card
 func (s *AIToolService) GetVehicleSummary(ctx context.Context, lang string) (string, *models.AIActionCard, error) {
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
 
 	vehicles, err := s.vehicleRepo.ListVehicles(ctx, repository.VehicleFilter{})
 	if err != nil {
@@ -568,9 +580,16 @@ func (s *AIToolService) GetVehicleSummary(ctx context.Context, lang string) (str
 		}
 	}
 
+	cardTitle := "Fleet Vehicle Overview"
+	if isZh {
+		cardTitle = "车队车辆总览"
+	} else if isFr {
+		cardTitle = "État de la flotte de véhicules"
+	}
+
 	card := &models.AIActionCard{
 		Type:  "vehicle_summary",
-		Title: "Fleet Vehicle Overview",
+		Title: cardTitle,
 		Data: map[string]interface{}{
 			"totalVehicles": total,
 			"active":        active,
@@ -579,6 +598,20 @@ func (s *AIToolService) GetVehicleSummary(ctx context.Context, lang string) (str
 			"spare":         spare,
 			"wheelchair":    wheelchair,
 		},
+	}
+
+	if isZh {
+		return fmt.Sprintf(
+			"### 🚐 **车队车辆状态总览**\n\n"+
+				"- **在册车辆总数**：**%d** 辆\n"+
+				"- **正常在役/可用**：**%d** 辆\n"+
+				"- **备用车辆 (Spare)**：**%d** 辆\n"+
+				"- **维保检修中**：**%d** 辆\n"+
+				"- **停运故障**：**%d** 辆\n"+
+				"- **轮椅无障碍校车**：**%d** 辆\n\n"+
+				"您可以在 **车辆管理 (Vehicles)** 页面查看完整的车辆档案与点检记录。",
+			total, active, spare, inMaintenance, outOfService, wheelchair,
+		), card, nil
 	}
 
 	if isFr {
@@ -611,30 +644,35 @@ func (s *AIToolService) GetVehicleSummary(ctx context.Context, lang string) (str
 // GetVehicleDetails searches for a specific vehicle by unit number, plate, or VIN
 func (s *AIToolService) GetVehicleDetails(ctx context.Context, vehicleQuery string, date string, lang string) (string, *models.AIActionCard, error) {
 	isFr := strings.EqualFold(lang, "fr")
-
-	vehicles, err := s.vehicleRepo.ListVehicles(ctx, repository.VehicleFilter{})
-	if err != nil {
-		return "", nil, err
-	}
+	isZh := strings.EqualFold(lang, "zh")
 
 	cleanQuery := strings.ToLower(strings.TrimSpace(vehicleQuery))
 	for _, p := range []string{
 		"vehicle info for", "vehicle details for", "vehicle info", "vehicle details", "about vehicle",
-		"find vehicle", "bus info for", "bus info", "vehicle", "vehicule", "unit", "bus", "véhicule",
-		"info véhicule", "détails véhicule", "details vehicule", "车辆信息", "查询车辆", "车辆", "车号", "大巴", "校车", "查车",
+		"find vehicle", "bus info for", "bus info", "vehicle fleet status", "vehicle fleet", "fleet status",
+		"fleet inventory", "vehicle", "vehicule", "unit", "bus", "véhicule",
+		"info véhicule", "détails véhicule", "details vehicule", "车辆信息", "查询车辆", "车队状态", "车辆状态",
+		"车队车辆", "车辆总览", "车队总览", "车辆", "车号", "大巴", "校车", "查车",
 	} {
 		if strings.HasPrefix(cleanQuery, p) {
 			cleanQuery = strings.TrimSpace(strings.TrimPrefix(cleanQuery, p))
 		}
 	}
-	for _, sfx := range []string{" info", " details", " status", " 信息", " 详情"} {
+	for _, sfx := range []string{" status", " info", " details", " 状态", " 信息", " 详情"} {
 		if strings.HasSuffix(cleanQuery, sfx) {
 			cleanQuery = strings.TrimSpace(strings.TrimSuffix(cleanQuery, sfx))
 		}
 	}
 	cleanQuery = strings.Trim(cleanQuery, " ?:!.,;，。？！#号")
-	if cleanQuery == "" {
-		cleanQuery = strings.ToLower(strings.TrimSpace(vehicleQuery))
+
+	// If query was generic ("fleet", "vehicles", "flotte", "all", etc.), immediately return fleet summary
+	if cleanQuery == "fleet" || cleanQuery == "vehicles" || cleanQuery == "flotte" || cleanQuery == "all" || cleanQuery == "vehicle fleet" || cleanQuery == "车队" || cleanQuery == "全部车辆" || cleanQuery == "" {
+		return s.GetVehicleSummary(ctx, lang)
+	}
+
+	vehicles, err := s.vehicleRepo.ListVehicles(ctx, repository.VehicleFilter{})
+	if err != nil {
+		return "", nil, err
 	}
 
 	var matches []*models.Vehicle
@@ -652,6 +690,9 @@ func (s *AIToolService) GetVehicleDetails(ctx context.Context, vehicleQuery stri
 	}
 
 	if len(matches) == 0 {
+		if isZh {
+			return fmt.Sprintf("未找到车号或车牌包含 “**%s**” 的车辆。您可以前往【车队车辆】页面查看完整清单。", cleanQuery), nil, nil
+		}
 		if isFr {
 			return fmt.Sprintf("Aucun véhicule trouvé pour '%s'. Vous pouvez consulter la page **Véhicules**.", cleanQuery), nil, nil
 		}
@@ -686,7 +727,9 @@ func (s *AIToolService) GetVehicleDetails(ctx context.Context, vehicleQuery stri
 				if dName == "" {
 					dName = "Unassigned"
 				}
-				if isFr {
+				if isZh {
+					operationalShiftLines = append(operationalShiftLines, fmt.Sprintf("- **%s** 班次（路线 `%s`）：司机 **%s**", sh.ShiftType, sh.RouteNo, dName))
+				} else if isFr {
 					operationalShiftLines = append(operationalShiftLines, fmt.Sprintf("- Quart **%s** (Ligne `%s`) : Chauffeur **%s**", sh.ShiftType, sh.RouteNo, dName))
 				} else {
 					operationalShiftLines = append(operationalShiftLines, fmt.Sprintf("- **%s** Shift (Route `%s`): Driver **%s**", sh.ShiftType, sh.RouteNo, dName))
@@ -694,9 +737,16 @@ func (s *AIToolService) GetVehicleDetails(ctx context.Context, vehicleQuery stri
 			}
 		}
 
+		cardTitle := fmt.Sprintf("Vehicle %s", v.UnitNumber)
+		if isZh {
+			cardTitle = fmt.Sprintf("车辆详情：%s 号车", v.UnitNumber)
+		} else if isFr {
+			cardTitle = fmt.Sprintf("Véhicule %s", v.UnitNumber)
+		}
+
 		card := &models.AIActionCard{
 			Type:  "vehicle_details",
-			Title: fmt.Sprintf("Vehicle %s", v.UnitNumber),
+			Title: cardTitle,
 			Data: map[string]interface{}{
 				"unitNumber":     v.UnitNumber,
 				"plateNumber":    v.PlateNumber,
@@ -713,7 +763,25 @@ func (s *AIToolService) GetVehicleDetails(ctx context.Context, vehicleQuery stri
 		}
 
 		var reply string
-		if isFr {
+		if isZh {
+			reply = fmt.Sprintf(
+				"### 🚐 **车辆详情：%s 号车**\n\n"+
+					"- **运营状态**：%s\n"+
+					"- **车牌号码**：`%s`\n"+
+					"- **车型规格**：%s %s (%d 年款)\n"+
+					"- **车辆类别/燃油**：%s · %s\n"+
+					"- **核载容量**：%d 乘客座 · %d 轮椅位\n"+
+					"- **所属车场 (Yard)**：%s\n"+
+					"- **常驻司机**：**%s**\n"+
+					"- **常驻路线**：`%s`\n"+
+					"- **当前里程**：%d km\n",
+				v.UnitNumber, statusStr, v.PlateNumber, v.Manufacturer, v.Model, v.Year,
+				v.UnitType, v.FuelType, v.SeatCap, v.WheelchairCap, yardStr, driverStr, routeStr, v.Odometer,
+			)
+			if len(operationalShiftLines) > 0 {
+				reply += fmt.Sprintf("\n**%s 当天运营排班：**\n%s", date, strings.Join(operationalShiftLines, "\n"))
+			}
+		} else if isFr {
 			reply = fmt.Sprintf(
 				"### 🚐 Détails du véhicule `%s`\n\n"+
 					"- **Statut** : %s\n"+
@@ -756,7 +824,16 @@ func (s *AIToolService) GetVehicleDetails(ctx context.Context, vehicleQuery stri
 
 	// Multiple matches
 	var lines []string
-	if isFr {
+	if isZh {
+		lines = []string{fmt.Sprintf("找到 **%d** 辆匹配的车辆：", len(matches))}
+		for i, v := range matches {
+			if i >= 6 {
+				lines = append(lines, fmt.Sprintf("... 以及另外 %d 辆车。", len(matches)-6))
+				break
+			}
+			lines = append(lines, fmt.Sprintf("- **车辆 `%s`** (%s · %s) : 状态 %s · 车场 : %s", v.UnitNumber, v.PlateNumber, v.Model, v.Status, v.YardName))
+		}
+	} else if isFr {
 		lines = []string{fmt.Sprintf("Trouvé **%d** véhicules correspondants :", len(matches))}
 		for i, v := range matches {
 			if i >= 6 {
@@ -1321,7 +1398,12 @@ func (s *AIToolService) GetRouteSummary(ctx context.Context, lang string) (strin
 
 // GetAssignmentSummary provides daily dispatch shift and coverage overview for target date
 func (s *AIToolService) GetAssignmentSummary(ctx context.Context, date string, lang string) (string, *models.AIActionCard, error) {
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
 
 	shifts, err := s.dispatchRepo.ListShifts(ctx, date, repository.DispatchFilter{})
 	if err != nil {
@@ -1332,6 +1414,9 @@ func (s *AIToolService) GetAssignmentSummary(ctx context.Context, date string, l
 
 	totalShifts := len(shifts)
 	if totalShifts == 0 {
+		if isZh {
+			return fmt.Sprintf("⚠️ **在 %s 尚未生成校车调度排班表。**\n\n- 今日暂无已保存的运营班次记录。\n- 您可以直接对我说：*“生成今日调度表”* 自动生成；\n- 也可以在上方的日期选择器中切换至已排班的日期查看。", date), nil, nil
+		}
 		if isFr {
 			return fmt.Sprintf("⚠️ **Aucun quart de régulation n'a encore été créé pour le %s.**\n\nVous pouvez demander : *« Créer la feuille de régulation pour aujourd'hui »*.", date), nil, nil
 		}
@@ -1363,9 +1448,16 @@ func (s *AIToolService) GetAssignmentSummary(ctx context.Context, date string, l
 		coverageRate = float64(assignedShifts) / float64(totalShifts) * 100
 	}
 
+	cardTitle := fmt.Sprintf("Assignments for %s", date)
+	if isZh {
+		cardTitle = fmt.Sprintf("排班派班总览 (%s)", date)
+	} else if isFr {
+		cardTitle = fmt.Sprintf("Affectations du %s", date)
+	}
+
 	card := &models.AIActionCard{
 		Type:  "assignment_summary",
-		Title: fmt.Sprintf("Assignments for %s", date),
+		Title: cardTitle,
 		Data: map[string]interface{}{
 			"date":             date,
 			"totalShifts":      totalShifts,
@@ -1378,7 +1470,19 @@ func (s *AIToolService) GetAssignmentSummary(ctx context.Context, date string, l
 	}
 
 	var reply string
-	if isFr {
+	if isZh {
+		reply = fmt.Sprintf(
+			"### 📋 **%s 校车调度与班次排班总览**\n\n"+
+				"- **运营班次总数**：**%d** 个班次\n"+
+				"- **班次覆盖率**：**%0.1f%%** (%d 已分配司机，**%d 个空缺/缺少司机**)\n"+
+				"- **司机签到出车**：**%d** / %d 人已在岗\n"+
+				"- **临时顶班替班**：**%d** 人在岗\n",
+			date, totalShifts, coverageRate, assignedShifts, unassignedShifts, checkedInCount, assignedShifts, len(tempAssignments),
+		)
+		if len(unassignedList) > 0 {
+			reply += fmt.Sprintf("\n⚠️ **部分空缺班次示例**：%s\n*您可以直接对我说：“把 [司机姓名] 指派到路线 [路线号]” 填补空缺。*", strings.Join(unassignedList, ", "))
+		}
+	} else if isFr {
 		reply = fmt.Sprintf(
 			"### 📋 État des Affectations & Quarts pour le %s\n\n"+
 				"- **Total des quarts opérationnels** : **%d**\n"+
@@ -1719,8 +1823,12 @@ func (s *AIToolService) GetHRSummary(ctx context.Context, lang string) (string, 
 // GetPayrollSummary generates compensation and rate configuration overview with ActionCard
 func (s *AIToolService) GetPayrollSummary(ctx context.Context, lang string) (string, *models.AIActionCard, error) {
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
 
 	if s.payrollRepo == nil {
+		if isZh {
+			return "当前服务器未配置薪酬与费率服务模块。", nil, nil
+		}
 		if isFr {
 			return "Le service de paie n'est pas encore configuré sur ce serveur.", nil, nil
 		}
@@ -1755,7 +1863,9 @@ func (s *AIToolService) GetPayrollSummary(ctx context.Context, lang string) (str
 	}
 
 	cardTitle := "Payroll & Compensation Rates Overview"
-	if isFr {
+	if isZh {
+		cardTitle = "薪酬与费率配置总览"
+	} else if isFr {
 		cardTitle = "Synthèse des grilles de taux et rémunérations"
 	}
 
@@ -1773,7 +1883,21 @@ func (s *AIToolService) GetPayrollSummary(ctx context.Context, lang string) (str
 	}
 
 	var reply string
-	if isFr {
+	if isZh {
+		reply = fmt.Sprintf(
+			"### 💰 **薪酬与费率标准总览**\n\n"+
+				"- 📊 **已配置生效费率规则**：**%d** 条\n"+
+				"- 🏫 **教育局基准费率 (Tier 4)**：**%d** 条标准费率\n"+
+				"- ⚡ **自定义特殊费率 (Tier 1-3)**：**%d** 条特定规则\n"+
+				"  - *Tier 1（特定路线 + 特定司机）*：%d 条\n"+
+				"  - *Tier 2（特定司机通用费率）*：%d 条\n"+
+				"  - *Tier 3（特定路线基准费率）*：%d 条\n"+
+				"- ⏱️ **EI 工时自动核算**：已根据各班次类型自动同步\n"+
+				"- 🔒 **费率优先级裁决系统**：运转正常，严格遵循四级仲裁优先级\n\n"+
+				"您可以询问：“OCSB 教育局费率”、“路线 101 的薪酬费率” 或 “调度班次薪酬汇总”。",
+			totalRates, schoolBoardRatesCount, customCount, tier1Count, tier2Count, tier3Count,
+		)
+	} else if isFr {
 		reply = fmt.Sprintf(
 			"### 💰 **Synthèse du Module Paie & Rémunération**\n\n"+
 				"- 📊 **Grilles de taux enregistrées** : **%d** grilles actives\n"+
@@ -2128,6 +2252,7 @@ func (s *AIToolService) GetDispatchPayrollSummary(ctx context.Context, date stri
 // GetDispatchCreatorInfo queries dispatch_change_logs and shifts to determine who created/generated dispatch on target date
 func (s *AIToolService) GetDispatchCreatorInfo(ctx context.Context, date string, lang string) (string, *models.AIActionCard, error) {
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
 
 	// 1. Fetch change logs for target date
 	logs, err := s.dispatchRepo.ListChangeLogs(ctx, date)
@@ -2177,7 +2302,9 @@ func (s *AIToolService) GetDispatchCreatorInfo(ctx context.Context, date string,
 		}
 
 		cardTitle := fmt.Sprintf("Dispatch Created by %s", creator)
-		if isFr {
+		if isZh {
+			cardTitle = fmt.Sprintf("调度创建人：%s", creator)
+		} else if isFr {
 			cardTitle = fmt.Sprintf("Feuille créée par %s", creator)
 		}
 
@@ -2210,7 +2337,20 @@ func (s *AIToolService) GetDispatchCreatorInfo(ctx context.Context, date string,
 		}
 
 		var reply string
-		if isFr {
+		if isZh {
+			reply = fmt.Sprintf(
+				"### 📋 **%s 调度表创建与生成信息**\n\n"+
+					"- 👤 **初始创建人**：**%s**\n"+
+					"- 🕒 **创建时间**：`%s`\n"+
+					"- 📝 **生成详情**：%s\n"+
+					"- 🚌 **当前班次状态**：共 **%d** 个班次 (**%d** 个已分配，**%d** 个空缺未排)\n\n"+
+					"该操作已记录在调度审计日志 (`dispatch_change_logs`) 中。",
+				date, creator, createdTime, initialLog.Detail, totalShifts, assignedShifts, openShifts,
+			)
+			if len(genLogs) > 1 && latestLog.User != initialLog.User {
+				reply += fmt.Sprintf("\n\n*注：该日期后续曾由 **%s** 在 `%s` 重新生成同步。*", latestLog.User, latestTime)
+			}
+		} else if isFr {
 			reply = fmt.Sprintf(
 				"### 📋 Informations de création du dispatch pour le %s\n\n"+
 					"- 👤 **Créateur initial** : **%s**\n"+
@@ -2255,7 +2395,9 @@ func (s *AIToolService) GetDispatchCreatorInfo(ctx context.Context, date string,
 		}
 
 		cardTitle := "Active Dispatch Sheet Found"
-		if isFr {
+		if isZh {
+			cardTitle = "已找到有效调度表"
+		} else if isFr {
 			cardTitle = "Feuille de régulation active trouvée"
 		}
 
@@ -2284,7 +2426,16 @@ func (s *AIToolService) GetDispatchCreatorInfo(ctx context.Context, date string,
 		}
 
 		var reply string
-		if isFr {
+		if isZh {
+			reply = fmt.Sprintf(
+				"### 📋 **%s 调度表排班状态**\n\n"+
+					"- 🚌 **有效班次**：共 **%d** 个班次 (**%d** 个已分配司机，**%d** 个未分配)\n"+
+					"- ℹ️ **说明**：日志中未找到显式由调度员手动点击“生成调度表”的记录，班次可能已由预设排班模板或定时任务自动加载。\n"+
+					"- 👤 **最早记录操作人**：%s\n\n"+
+					"您可以在调度变更审计日志中查看所有历史操作记录。",
+				date, totalShifts, assignedShifts, openShifts, earliestUser,
+			)
+		} else if isFr {
 			reply = fmt.Sprintf(
 				"### 📋 Feuille de régulation pour le %s\n\n"+
 					"- 🚌 **Quarts actifs** : **%d** quarts générés (**%d** assignés, **%d** vacants)\n"+
@@ -2314,7 +2465,15 @@ func (s *AIToolService) GetDispatchCreatorInfo(ctx context.Context, date string,
 
 	// Case 3: No shifts exist for this date
 	var reply string
-	if isFr {
+	if isZh {
+		reply = fmt.Sprintf(
+			"⚠️ **在 %s 尚未创建校车调度表。**\n\n"+
+				"该日期的调度排班目前为空。\n\n"+
+				"如果您希望我现在从激活的路线自动生成今日排班，请直接说：\n"+
+				"👉 *“生成今日调度表”* 或 *“创建排班”*",
+			date,
+		)
+	} else if isFr {
 		reply = fmt.Sprintf(
 			"⚠️ **Aucune feuille de régulation n'a encore été créée pour le %s.**\n\n"+
 				"Le planning de régulation pour cette date est actuellement vide.\n\n"+
@@ -2342,6 +2501,7 @@ func (s *AIToolService) GetDispatchCreatorInfo(ctx context.Context, date string,
 // GetTimeOffSummary retrieves high-level metrics for time off requests
 func (s *AIToolService) GetTimeOffSummary(ctx context.Context, date string, lang string) (string, *models.AIActionCard, error) {
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
 	if date == "" {
 		date = time.Now().Format("2006-01-02")
 	}
@@ -2399,7 +2559,9 @@ func (s *AIToolService) GetTimeOffSummary(ctx context.Context, date string, lang
 	}
 
 	cardTitle := "Time Off Requests Summary"
-	if isFr {
+	if isZh {
+		cardTitle = "请假与休假申请汇总"
+	} else if isFr {
 		cardTitle = "Synthèse des demandes de congé"
 	}
 
@@ -2419,7 +2581,22 @@ func (s *AIToolService) GetTimeOffSummary(ctx context.Context, date string, lang
 	}
 
 	var reply string
-	if isFr {
+	if isZh {
+		reply = fmt.Sprintf(
+			"### 🏖️ **请假与休假申请汇总 (%s)**\n\n"+
+				"- ⏳ **待审核审批**：**%d** 条申请\n"+
+				"- 🌴 **今日休假在岗缺席 (%s)**：**%d** 人已获批休假\n"+
+				"- ✅ **累计已批准**：**%d** 条\n"+
+				"- ❌ **已驳回 / 已取消**：**%d** 条\n"+
+				"- 📋 **总申请记录数**：**%d** 条\n\n",
+			date, pendingCount, date, activeTodayCount, approvedCount, rejectedCount, totalCount,
+		)
+		if pendingCount > 0 {
+			reply += fmt.Sprintf("⚠️ 当前有 **%d** 条请假申请需要人事或主管审核，您可查阅请假管理页面进行批复。", pendingCount)
+		} else {
+			reply += "🎉 当前所有提交的请假申请均已处理完毕，暂无待审事项。"
+		}
+	} else if isFr {
 		reply = fmt.Sprintf(
 			"### 🏖️ **Synthèse des demandes de congé (%s)**\n\n"+
 				"- ⏳ **En attente d'approbation** : **%d** demande(s)\n"+
@@ -2699,6 +2876,7 @@ func (s *AIToolService) GetTimeOffDetails(ctx context.Context, query string, dat
 // GetExpenseSummary provides totals and counts for driver expense reimbursement claims
 func (s *AIToolService) GetExpenseSummary(ctx context.Context, lang string) (string, *models.AIActionCard, error) {
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
 
 	claims, err := s.dispatchRepo.ListExpenseClaims(ctx, "", "")
 	if err != nil {
@@ -2740,7 +2918,9 @@ func (s *AIToolService) GetExpenseSummary(ctx context.Context, lang string) (str
 	}
 
 	cardTitle := "Expense Claims & Reimbursement Summary"
-	if isFr {
+	if isZh {
+		cardTitle = "报销申请与费用报销总览"
+	} else if isFr {
 		cardTitle = "Synthèse des notes de frais & remboursements"
 	}
 
@@ -2760,7 +2940,21 @@ func (s *AIToolService) GetExpenseSummary(ctx context.Context, lang string) (str
 	}
 
 	var reply string
-	if isFr {
+	if isZh {
+		reply = fmt.Sprintf(
+			"### 💳 **报销申请与费用报销总览**\n\n"+
+				"- ⏳ **待审批报销**：**%d** 笔，总计 **$%.2f**\n"+
+				"- ✅ **已批准已结清**：**%d** 笔（**$%.2f**）\n"+
+				"- ❌ **已拒绝/已取消**：**%d** 笔\n"+
+				"- 📊 **累计报销申请**：**%d** 笔（共 **$%.2f**）\n\n",
+			pendingCount, pendingAmount, approvedCount, approvedAmount, rejectedCount, totalClaims, totalAmount,
+		)
+		if pendingCount > 0 {
+			reply += fmt.Sprintf("⚠️ 当前有 **%d** 笔待审核报销（$%.2f）等待审核。您可以问：“查看待审批报销” 获取详细列表。", pendingCount, pendingAmount)
+		} else {
+			reply += "🎉 所有报销申请已完成审核，目前没有待处理的报销项目。"
+		}
+	} else if isFr {
 		reply = fmt.Sprintf(
 			"### 💳 **Synthèse des notes de frais & remboursements**\n\n"+
 				"- ⏳ **En attente d'approbation** : **%d** réclamation(s) pour un montant de **$%.2f**\n"+
@@ -2796,6 +2990,7 @@ func (s *AIToolService) GetExpenseSummary(ctx context.Context, lang string) (str
 // GetExpenseDetails searches or details specific expense claims (e.g. pending claims, driver expense history)
 func (s *AIToolService) GetExpenseDetails(ctx context.Context, query string, lang string) (string, *models.AIActionCard, error) {
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
 	cleanQuery := strings.TrimSpace(query)
 	lowerQuery := strings.ToLower(cleanQuery)
 
@@ -2853,13 +3048,17 @@ func (s *AIToolService) GetExpenseDetails(ctx context.Context, query string, lan
 	if len(matched) == 0 {
 		var notFoundMsg string
 		if isPendingFilter {
-			if isFr {
+			if isZh {
+				notFoundMsg = "✅ **当前没有待审批的报销申请。** 所有报销已审核完毕。"
+			} else if isFr {
 				notFoundMsg = "✅ **Aucune note de frais en attente.** Toutes les demandes de remboursement ont été auditées."
 			} else {
 				notFoundMsg = "✅ **No pending expense claims.** All reimbursement requests have been audited."
 			}
 		} else {
-			if isFr {
+			if isZh {
+				notFoundMsg = fmt.Sprintf("⚠️ 未找到匹配 “**%s**” 的报销记录。", cleanQuery)
+			} else if isFr {
 				notFoundMsg = fmt.Sprintf("⚠️ Aucune note de frais trouvée correspondant à « **%s** ».", cleanQuery)
 			} else {
 				notFoundMsg = fmt.Sprintf("⚠️ No expense claims found matching “**%s**”.", cleanQuery)
@@ -2872,7 +3071,9 @@ func (s *AIToolService) GetExpenseDetails(ctx context.Context, query string, lan
 	if len(matched) == 1 {
 		c := matched[0]
 		cardTitle := fmt.Sprintf("Expense Claim: %s ($%.2f)", c.EmployeeName, c.TotalAmount)
-		if isFr {
+		if isZh {
+			cardTitle = fmt.Sprintf("报销详情：%s ($%.2f)", c.EmployeeName, c.TotalAmount)
+		} else if isFr {
 			cardTitle = fmt.Sprintf("Note de frais : %s ($%.2f)", c.EmployeeName, c.TotalAmount)
 		}
 
@@ -2903,7 +3104,31 @@ func (s *AIToolService) GetExpenseDetails(ctx context.Context, query string, lan
 		}
 
 		var reply string
-		if isFr {
+		if isZh {
+			reply = fmt.Sprintf(
+				"### 💳 **报销申请详情：%s**\n\n"+
+					"- **报销单号**：`%s`\n"+
+					"- **员工/司机**：**%s** (`%s`)\n"+
+					"- **申报日期**：`%s`\n"+
+					"- **关联路线**：`%s`\n"+
+					"- **报销总金额**：💵 **$%.2f**\n"+
+					"- **状态**：**%s**\n",
+				c.EmployeeName, c.ID, c.EmployeeName, c.EmployeeID, c.ClaimDate, c.RouteNo, c.TotalAmount, c.Status,
+			)
+			if len(c.Lines) > 0 {
+				reply += "\n**明细项列表：**\n"
+				for _, line := range c.Lines {
+					noteStr := ""
+					if line.Note != "" {
+						noteStr = fmt.Sprintf(" (%s)", line.Note)
+					}
+					reply += fmt.Sprintf("- %s : **$%.2f**%s\n", line.CategoryDisplayName, line.Amount, noteStr)
+				}
+			}
+			if c.ApprovedByName != "" {
+				reply += fmt.Sprintf("\n- **审核人**：%s\n", c.ApprovedByName)
+			}
+		} else if isFr {
 			reply = fmt.Sprintf(
 				"### 💳 **Note de frais : %s**\n\n"+
 					"- **Numéro de réclamation** : `%s`\n"+
@@ -2960,7 +3185,31 @@ func (s *AIToolService) GetExpenseDetails(ctx context.Context, query string, lan
 	items := make([]map[string]interface{}, 0, len(matched))
 	var lines []string
 
-	if isFr {
+	if isZh {
+		titleText := fmt.Sprintf("找到 **%d** 条报销记录：", len(matched))
+		if isPendingFilter {
+			titleText = fmt.Sprintf("⏳ 当前有 **%d** 笔待审批报销申请：", len(matched))
+		}
+		lines = []string{titleText}
+
+		for i, c := range matched {
+			if i >= 8 {
+				lines = append(lines, fmt.Sprintf("... 以及另外 %d 笔报销申请。", len(matched)-8))
+				break
+			}
+			lines = append(lines, fmt.Sprintf("- **%s** (`%s`)：日期 `%s` · 金额：**$%.2f** · 状态：**%s**",
+				c.EmployeeName, c.RouteNo, c.ClaimDate, c.TotalAmount, c.Status))
+
+			items = append(items, map[string]interface{}{
+				"id":           c.ID,
+				"employeeName": c.EmployeeName,
+				"claimDate":    c.ClaimDate,
+				"routeNo":      c.RouteNo,
+				"totalAmount":  c.TotalAmount,
+				"status":       c.Status,
+			})
+		}
+	} else if isFr {
 		titleText := fmt.Sprintf("Trouvé **%d** notes de frais :", len(matched))
 		if isPendingFilter {
 			titleText = fmt.Sprintf("⏳ Il y a **%d** note(s) de frais en attente d'approbation :", len(matched))
@@ -3010,9 +3259,15 @@ func (s *AIToolService) GetExpenseDetails(ctx context.Context, query string, lan
 		}
 	}
 
+	cardTitle := fmt.Sprintf("Expense Claims (%d)", len(matched))
+	if isZh {
+		cardTitle = fmt.Sprintf("报销申请列表 (%d)", len(matched))
+	} else if isFr {
+		cardTitle = fmt.Sprintf("Notes de frais (%d)", len(matched))
+	}
 	card := &models.AIActionCard{
 		Type:  "expense_details",
-		Title: fmt.Sprintf("Expense Claims (%d)", len(matched)),
+		Title: cardTitle,
 		Data: map[string]interface{}{
 			"count": len(matched),
 			"items": items,
@@ -3296,6 +3551,7 @@ func (s *AIToolService) GetTrainingDetails(ctx context.Context, query string, la
 
 func (s *AIToolService) GetStudentIncidentSummary(ctx context.Context, date string, lang string) (string, *models.AIActionCard, error) {
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
 
 	incidents, err := s.dispatchRepo.ListStudentIncidents(ctx, 0, "", "", "", false)
 	if err != nil {
@@ -3338,7 +3594,29 @@ func (s *AIToolService) GetStudentIncidentSummary(ctx context.Context, date stri
 	}
 
 	var reply string
-	if isFr {
+	if isZh {
+		reply = fmt.Sprintf("⚠️ **学生安全与行为违规事件汇总**：\n\n"+
+			"- **累计上报事件**：**%d** 件\n"+
+			"- **新上报待审核**：**%d** 件 🟡\n"+
+			"- **调查处理中**：**%d** 件 🔍\n"+
+			"- **已联络家长/学校**：**%d** 件 📞\n"+
+			"- **已结案归档**：**%d** 件 ✅\n"+
+			"- **需要紧急医疗救护**：**%d** 件 🚑\n"+
+			"- **从校车临时隔离移出**：**%d** 件 🛑\n",
+			total, submittedCount, investigatingCount, parentContactedCount+schoolNotifiedCount, closedCount, firstAidCount, removedCount)
+
+		if len(openIncidents) > 0 {
+			reply += "\n🚨 **近期需跟进的学生安全事件**：\n"
+			for i, inc := range openIncidents {
+				if i >= 5 {
+					reply += fmt.Sprintf("... 以及另外 %d 件事件。\n", len(openIncidents)-5)
+					break
+				}
+				reply += fmt.Sprintf("%d. **%s**（路线 `%s`）· 日期：`%s` · 学生：**%s** · 状态：`%s`\n",
+					i+1, inc.Description, inc.RouteNo, inc.IncidentDate, inc.StudentName, inc.Status)
+			}
+		}
+	} else if isFr {
 		reply = fmt.Sprintf("⚠️ **Synthèse des Incidents & Comportements d'Élèves** :\n\n"+
 			"- **Total des incidents signalés** : **%d**\n"+
 			"- **Nouveaux signalements (en attente)** : **%d** 🟡\n"+
@@ -3398,9 +3676,16 @@ func (s *AIToolService) GetStudentIncidentSummary(ctx context.Context, date stri
 		})
 	}
 
+	cardTitle := "Student Incident Summary"
+	if isZh {
+		cardTitle = "学生安全与违规事件总览"
+	} else if isFr {
+		cardTitle = "Synthèse des incidents élèves"
+	}
+
 	card := &models.AIActionCard{
 		Type:  "student_incident_summary",
-		Title: "Student Incident Summary",
+		Title: cardTitle,
 		Data: map[string]interface{}{
 			"total":              total,
 			"submittedCount":     submittedCount,
@@ -3417,7 +3702,30 @@ func (s *AIToolService) GetStudentIncidentSummary(ctx context.Context, date stri
 
 func (s *AIToolService) GetStudentIncidentDetails(ctx context.Context, query string, lang string) (string, *models.AIActionCard, error) {
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
 	q := strings.ToLower(strings.TrimSpace(query))
+
+	// Clean query to remove generic query noise
+	searchKey := q
+	fillerWords := []string{
+		"recent student safety incidents", "recent safety incidents", "recent student incidents",
+		"recent incidents", "student safety incidents", "student safety incident",
+		"student incident reports", "student incident report", "student incidents", "student incident",
+		"safety incidents", "safety incident", "incident report", "incident reports",
+		"incidents", "incident", "rapports d'incident", "rapport d'incident",
+		"incidents élèves", "incidents eleves", "recent", "safety", "student", "report", "reports",
+		"最近学生安全事件", "最近学生事件", "学生安全事件", "学生违规事件", "学生事件报告", "学生事故报告",
+		"学生事件", "学生事故", "安全事件", "事件报告", "事故报告", "最近", "安全", "事件", "事故", "报告",
+	}
+	for _, fw := range fillerWords {
+		searchKey = strings.ReplaceAll(searchKey, fw, "")
+	}
+	searchKey = strings.TrimSpace(searchKey)
+
+	// If query was purely generic ("Recent student safety incidents"), show summary
+	if searchKey == "" {
+		return s.GetStudentIncidentSummary(ctx, "", lang)
+	}
 
 	incidents, err := s.dispatchRepo.ListStudentIncidents(ctx, 0, "", "", "", false)
 	if err != nil {
@@ -3426,27 +3734,64 @@ func (s *AIToolService) GetStudentIncidentDetails(ctx context.Context, query str
 
 	var matched []*models.StudentIncident
 	for _, inc := range incidents {
-		if strings.Contains(strings.ToLower(inc.StudentName), q) ||
-			strings.Contains(strings.ToLower(inc.RouteNo), q) ||
-			strings.Contains(strings.ToLower(inc.DriverName), q) ||
-			strings.Contains(strings.ToLower(inc.SchoolName), q) ||
-			strings.Contains(strings.ToLower(inc.Description), q) ||
-			strings.Contains(strings.ToLower(inc.ID), q) {
+		if strings.Contains(strings.ToLower(inc.StudentName), searchKey) ||
+			strings.Contains(strings.ToLower(inc.RouteNo), searchKey) ||
+			strings.Contains(strings.ToLower(inc.DriverName), searchKey) ||
+			strings.Contains(strings.ToLower(inc.SchoolName), searchKey) ||
+			strings.Contains(strings.ToLower(inc.Description), searchKey) ||
+			strings.Contains(strings.ToLower(inc.ID), searchKey) {
 			matched = append(matched, inc)
 		}
 	}
 
 	if len(matched) == 0 {
-		if isFr {
-			return fmt.Sprintf("🔍 Aucun rapport d'incident élève trouvé correspondant à « **%s** ».", query), nil, nil
-		}
-		return fmt.Sprintf("🔍 No student incident reports found matching \"**%s**\".", query), nil, nil
+		// Fallback to general incident summary so the user gets actionable data instead of a dead-end
+		return s.GetStudentIncidentSummary(ctx, "", lang)
 	}
 
 	if len(matched) == 1 {
 		inc := matched[0]
+		cardTitle := fmt.Sprintf("Incident: %s", inc.StudentName)
+		if isZh {
+			cardTitle = fmt.Sprintf("学生事件记录：%s", inc.StudentName)
+		} else if isFr {
+			cardTitle = fmt.Sprintf("Rapport d'incident : %s", inc.StudentName)
+		}
+
 		var reply string
-		if isFr {
+		if isZh {
+			reply = fmt.Sprintf("📋 **学生事件记录：%s**\n\n"+
+				"- **事件编号**：`%s`\n"+
+				"- **涉事学生**：**%s**（年级：%s）· 学校：%s\n"+
+				"- **发生时间**：`%s %s`\n"+
+				"- **关联路线**：`%s`（%s）\n"+
+				"- **当班司机**：**%s**\n"+
+				"- **处理状态**：**%s**\n"+
+				"- **事件类型**：%s\n"+
+				"- **事件描述**：%s\n",
+				inc.StudentName, inc.ID, inc.StudentName, inc.Grade, inc.SchoolName,
+				inc.IncidentDate, inc.IncidentTime, inc.RouteNo, inc.ShiftType, inc.DriverName,
+				inc.Status, strings.Join(inc.IncidentTypes, ", "), inc.Description)
+
+			if inc.ImmediateActionTaken != "" {
+				reply += fmt.Sprintf("- **现场处置措施**：%s\n", inc.ImmediateActionTaken)
+			}
+			if inc.FirstAidRequired {
+				reply += "- 🚑 **需要紧急医疗救护**：是\n"
+			}
+			if inc.StudentRemovedFromBus {
+				reply += "- 🛑 **学生从校车隔离移出**：是\n"
+			}
+			if inc.ParentsNotified {
+				reply += fmt.Sprintf("- 📞 **已通知家长**：是（%s）\n", inc.ParentsNotificationDetail)
+			}
+			if inc.OfficeFollowUp != nil && inc.OfficeFollowUp.AdministratorName != "" {
+				reply += fmt.Sprintf("\n🏢 **办公室跟进处置（负责人：%s）**：\n- 处分措施：%s\n- 备注：%s\n",
+					inc.OfficeFollowUp.AdministratorName,
+					strings.Join(inc.OfficeFollowUp.DisciplinaryActions, ", "),
+					inc.OfficeFollowUp.OfficeNotes)
+			}
+		} else if isFr {
 			reply = fmt.Sprintf("📋 **Rapport d'Incident Élève : %s**\n\n"+
 				"- **Identifiant** : `%s`\n"+
 				"- **Élève** : **%s** (Classe : %s) · École : %s\n"+
@@ -3514,7 +3859,7 @@ func (s *AIToolService) GetStudentIncidentDetails(ctx context.Context, query str
 
 		card := &models.AIActionCard{
 			Type:  "student_incident_details",
-			Title: fmt.Sprintf("Incident: %s", inc.StudentName),
+			Title: cardTitle,
 			Data: map[string]interface{}{
 				"id":                    inc.ID,
 				"studentName":           inc.StudentName,
@@ -3538,7 +3883,24 @@ func (s *AIToolService) GetStudentIncidentDetails(ctx context.Context, query str
 	// Multiple matches list
 	items := make([]map[string]interface{}, 0, len(matched))
 	var lines []string
-	if isFr {
+	if isZh {
+		lines = []string{fmt.Sprintf("找到 **%d** 件学生事件记录：", len(matched))}
+		for i, inc := range matched {
+			if i >= 6 {
+				lines = append(lines, fmt.Sprintf("... 以及另外 %d 件记录。", len(matched)-6))
+				break
+			}
+			lines = append(lines, fmt.Sprintf("- **%s**（路线 `%s`）：日期 `%s` · 学生：**%s** · 状态：**%s**",
+				inc.ID, inc.RouteNo, inc.IncidentDate, inc.StudentName, inc.Status))
+			items = append(items, map[string]interface{}{
+				"id":           inc.ID,
+				"studentName":  inc.StudentName,
+				"routeNo":      inc.RouteNo,
+				"incidentDate": inc.IncidentDate,
+				"status":       inc.Status,
+			})
+		}
+	} else if isFr {
 		lines = []string{fmt.Sprintf("Trouvé **%d** rapports d'incident :", len(matched))}
 		for i, inc := range matched {
 			if i >= 6 {
@@ -3574,9 +3936,16 @@ func (s *AIToolService) GetStudentIncidentDetails(ctx context.Context, query str
 		}
 	}
 
+	cardTitle := fmt.Sprintf("Student Incidents (%d)", len(matched))
+	if isZh {
+		cardTitle = fmt.Sprintf("学生事件记录 (%d)", len(matched))
+	} else if isFr {
+		cardTitle = fmt.Sprintf("Incidents élèves (%d)", len(matched))
+	}
+
 	card := &models.AIActionCard{
 		Type:  "student_incident_summary",
-		Title: fmt.Sprintf("Student Incidents (%d)", len(matched)),
+		Title: cardTitle,
 		Data: map[string]interface{}{
 			"count": len(matched),
 			"items": items,

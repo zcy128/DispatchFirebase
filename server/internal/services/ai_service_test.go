@@ -18,6 +18,11 @@ type mockDispatchRepo struct {
 	timeOffRequests      []*models.TimeOffRequest
 	expenseClaims        []*models.ExpenseReimbursement
 	dispatchPayrolls     []*models.DispatchPayrollRecord
+	studentIncidents     []*models.StudentIncident
+}
+
+func (m *mockDispatchRepo) ListStudentIncidents(ctx context.Context, studentID int, routeNo string, driverID string, status string, needsFollowUp bool) ([]*models.StudentIncident, error) {
+	return m.studentIncidents, nil
 }
 
 func (m *mockDispatchRepo) ListShifts(ctx context.Context, date string, filter repository.DispatchFilter) ([]*models.DispatchShift, error) {
@@ -705,6 +710,25 @@ func TestAIService_RouteAndAssignmentFlows(t *testing.T) {
 	if respAssign2.ActionCards[0].Data["routeNo"] != "102" || respAssign2.ActionCards[0].Data["driverName"] != "Tom Driver" {
 		t.Errorf("expected route 102 and driver Tom Driver, got: %+v", respAssign2.ActionCards[0].Data)
 	}
+
+	// 7. Chinese Quick Prompt: "今日校车调度总览"
+	reqZhOverview := &models.AIChatRequest{
+		Message:      "今日校车调度总览",
+		UserRole:     "dispatcher",
+		OperatorName: "张调度",
+		Date:         today,
+		Lang:         "zh",
+	}
+	respZhOverview, err := aiService.ProcessChat(ctx, reqZhOverview)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(respZhOverview.ActionCards) == 0 || respZhOverview.ActionCards[0].Type != "assignment_summary" {
+		t.Fatalf("expected assignment_summary card for 今日校车调度总览, got: %+v", respZhOverview.ActionCards)
+	}
+	if !strings.Contains(respZhOverview.Reply, "校车调度与班次排班总览") {
+		t.Errorf("expected Chinese assignment summary reply, got: %s", respZhOverview.Reply)
+	}
 }
 
 func TestAIService_VehicleStudentEmployeeFlows(t *testing.T) {
@@ -1222,5 +1246,259 @@ func TestAIService_PayrollFeatures(t *testing.T) {
 		t.Errorf("expected Permission Denied for driver inquiring about payroll, got: %s", respDriver.Reply)
 	}
 }
+
+func TestAIService_DailyQuotaLimiter(t *testing.T) {
+	toolSvc := NewAIToolService(
+		&mockDispatchRepo{},
+		repository.NewMemoryEmployeeRepository(),
+		&mockRouteRepo{},
+		repository.NewInMemoryVehicleRepository(),
+		repository.NewMemoryPayrollRepository(),
+		repository.NewMemoryStudentRepository(),
+	)
+	aiService := NewAIService(toolSvc)
+	aiService.userDailyLimit = 2
+	aiService.globalDailyLimit = 3
+
+	// 1. Standard query matched by built-in engine consumes 0 quota
+	ctx := context.Background()
+	resp, err := aiService.ProcessChat(ctx, &models.AIChatRequest{
+		Message:    "Which shifts have no driver today?",
+		OperatorID: "user-1",
+		UserRole:   "dispatcher",
+		Date:       "2026-10-21",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.QuotaUsed != 0 || resp.QuotaRemaining != 2 {
+		t.Fatalf("expected 0 quota used for built-in query, got used=%d remaining=%d", resp.QuotaUsed, resp.QuotaRemaining)
+	}
+
+	// 2. Consume quota for user-1 up to limit (2 calls)
+	used1, _, rem1, ok1 := aiService.ConsumeQuota("user-1")
+	if !ok1 || used1 != 1 || rem1 != 1 {
+		t.Fatalf("expected 1st quota consumption to succeed, got ok=%v used=%d rem=%d", ok1, used1, rem1)
+	}
+	used2, _, rem2, ok2 := aiService.ConsumeQuota("user-1")
+	if !ok2 || used2 != 2 || rem2 != 0 {
+		t.Fatalf("expected 2nd quota consumption to succeed, got ok=%v used=%d rem=%d", ok2, used2, rem2)
+	}
+
+	// 3. 3rd call for user-1 must be blocked by per-user daily limit
+	_, _, _, ok3 := aiService.ConsumeQuota("user-1")
+	if ok3 {
+		t.Fatalf("expected 3rd call for user-1 to be blocked by per-user daily limit")
+	}
+
+	// 4. user-2 can consume 1 call (reaching global limit 3), then 2nd call blocked by global limit
+	_, _, _, okUser2First := aiService.ConsumeQuota("user-2")
+	if !okUser2First {
+		t.Fatalf("expected user-2 1st call to succeed within global limit")
+	}
+	_, _, _, okUser2Second := aiService.ConsumeQuota("user-2")
+	if okUser2Second {
+		t.Fatalf("expected user-2 2nd call to be blocked by global daily limit (3)")
+	}
+}
+
+func TestAIService_ChineseLanguage(t *testing.T) {
+	// Test resolveLanguage
+	if lang := resolveLanguage(&models.AIChatRequest{Message: "今天有哪些缺司机的路线？"}); lang != "zh" {
+		t.Fatalf("expected 'zh' for Chinese characters, got '%s'", lang)
+	}
+	if lang := resolveLanguage(&models.AIChatRequest{Lang: "zh-CN", Message: "hello"}); lang != "zh" {
+		t.Fatalf("expected 'zh' for lang='zh-CN', got '%s'", lang)
+	}
+
+	// Test built-in engine query in Chinese
+	dispatchRepo := &mockDispatchRepo{
+		shifts: []*models.DispatchShift{
+			{
+				ID:            "shift-1",
+				DispatchDate:  "2026-09-25",
+				RouteNo:       "101",
+				RouteName:     "Highland Park Route",
+				ShiftType:     "AM",
+				FirstStopTime: "07:30",
+				DriverID:      "",
+			},
+		},
+	}
+	toolService := NewAIToolService(
+		dispatchRepo,
+		repository.NewMemoryEmployeeRepository(),
+		&mockRouteRepo{},
+		repository.NewInMemoryVehicleRepository(),
+		repository.NewMemoryPayrollRepository(),
+		nil,
+	)
+	aiService := NewAIService(toolService)
+
+	resp, err := aiService.ProcessChat(context.Background(), &models.AIChatRequest{
+		Message:  "今天有哪些路线缺司机？",
+		Date:     "2026-09-25",
+		UserRole: "admin",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(resp.Reply, "未指派司机") && !strings.Contains(resp.Reply, "缺少司机") {
+		t.Fatalf("expected Chinese reply about unassigned shifts, got: %s", resp.Reply)
+	}
+}
+
+func TestAIService_StudentIncidentQueries(t *testing.T) {
+	ctx := context.Background()
+	today := time.Now().Format("2006-01-02")
+
+	mockDisp := &mockDispatchRepo{
+		studentIncidents: []*models.StudentIncident{
+			{
+				ID:           "INC-001",
+				StudentID:    101,
+				StudentName:  "Bobby Tables",
+				RouteNo:      "Route-101",
+				DriverName:   "Tom Driver",
+				IncidentDate: today,
+				Status:       "submitted",
+				Description:  "Refused to wear seatbelt and threw paper",
+			},
+		},
+	}
+
+	toolService := NewAIToolService(
+		mockDisp,
+		repository.NewMemoryEmployeeRepository(),
+		&mockRouteRepo{},
+		repository.NewInMemoryVehicleRepository(),
+		repository.NewMemoryPayrollRepository(),
+		nil,
+	)
+	aiService := NewAIService(toolService)
+
+	// 1. "Recent student safety incidents" - the exact query the user ran
+	req := &models.AIChatRequest{
+		Message:      "Recent student safety incidents",
+		UserRole:     "dispatcher",
+		OperatorName: "Dispatcher Alice",
+		Date:         today,
+		Lang:         "en",
+	}
+	resp, err := aiService.ProcessChat(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.ActionCards) == 0 || resp.ActionCards[0].Type != "student_incident_summary" {
+		t.Fatalf("expected student_incident_summary card, got: %+v", resp.ActionCards)
+	}
+	if !strings.Contains(resp.Reply, "Student Incidents") {
+		t.Errorf("expected Student Incidents in reply, got: %s", resp.Reply)
+	}
+	if strings.Contains(resp.Reply, "No student found matching") {
+		t.Fatalf("query was erroneously routed to student search: %s", resp.Reply)
+	}
+
+	// 2. Chinese query "最近学生安全事件"
+	reqZh := &models.AIChatRequest{
+		Message:      "最近学生安全事件",
+		UserRole:     "dispatcher",
+		OperatorName: "Dispatcher Alice",
+		Date:         today,
+		Lang:         "zh",
+	}
+	respZh, err := aiService.ProcessChat(ctx, reqZh)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(respZh.ActionCards) == 0 || respZh.ActionCards[0].Type != "student_incident_summary" {
+		t.Fatalf("expected student_incident_summary card, got: %+v", respZh.ActionCards)
+	}
+	if !strings.Contains(respZh.Reply, "学生安全与行为违规事件汇总") {
+		t.Errorf("expected Chinese reply, got: %s", respZh.Reply)
+	}
+}
+
+func TestAIService_VehicleFleetQueries(t *testing.T) {
+	ctx := context.Background()
+	today := time.Now().Format("2006-01-02")
+
+	vehRepo := repository.NewInMemoryVehicleRepository()
+	_, _ = vehRepo.CreateVehicle(ctx, &models.Vehicle{
+		ID:          "VEH-001",
+		UnitNumber:  "BUS-50",
+		PlateNumber: "ABC-123",
+		Status:      "Active",
+	})
+
+	toolService := NewAIToolService(
+		&mockDispatchRepo{},
+		repository.NewMemoryEmployeeRepository(),
+		&mockRouteRepo{},
+		vehRepo,
+		repository.NewMemoryPayrollRepository(),
+		nil,
+	)
+	aiService := NewAIService(toolService)
+
+	// 1. "Vehicle fleet status" - exact user query
+	req := &models.AIChatRequest{
+		Message:      "Vehicle fleet status",
+		UserRole:     "dispatcher",
+		OperatorName: "Dispatcher Alice",
+		Date:         today,
+		Lang:         "en",
+	}
+	resp, err := aiService.ProcessChat(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.ActionCards) == 0 || resp.ActionCards[0].Type != "vehicle_summary" {
+		t.Fatalf("expected vehicle_summary card, got: %+v", resp.ActionCards)
+	}
+	if strings.Contains(resp.Reply, "No vehicle found matching 'fleet'") {
+		t.Fatalf("erroneously routed to single vehicle details search: %s", resp.Reply)
+	}
+	if !strings.Contains(resp.Reply, "Fleet Vehicle Overview") {
+		t.Errorf("expected vehicle summary text, got: %s", resp.Reply)
+	}
+
+	// 2. Chinese query "查看车队车辆状态"
+	reqZh := &models.AIChatRequest{
+		Message:      "查看车队车辆状态",
+		UserRole:     "dispatcher",
+		OperatorName: "Dispatcher Alice",
+		Date:         today,
+		Lang:         "zh",
+	}
+	respZh, err := aiService.ProcessChat(ctx, reqZh)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(respZh.ActionCards) == 0 || respZh.ActionCards[0].Type != "vehicle_summary" {
+		t.Fatalf("expected vehicle_summary card, got: %+v", respZh.ActionCards)
+	}
+	if !strings.Contains(respZh.Reply, "车队车辆状态总览") {
+		t.Errorf("expected Chinese vehicle summary, got: %s", respZh.Reply)
+	}
+
+	// 3. Specific vehicle lookup: "vehicle BUS-50"
+	reqSpecific := &models.AIChatRequest{
+		Message:      "vehicle BUS-50",
+		UserRole:     "dispatcher",
+		OperatorName: "Dispatcher Alice",
+		Date:         today,
+		Lang:         "en",
+	}
+	respSpecific, err := aiService.ProcessChat(ctx, reqSpecific)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(respSpecific.ActionCards) == 0 || respSpecific.ActionCards[0].Type != "vehicle_details" {
+		t.Fatalf("expected vehicle_details card, got: %+v", respSpecific.ActionCards)
+	}
+}
+
+
 
 

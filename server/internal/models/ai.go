@@ -10,14 +10,14 @@ type AIChatMessage struct {
 
 // AIChatRequest represents the incoming chat request from dispatch
 type AIChatRequest struct {
-	Message      string          `json:"message"`
-	History      []AIChatMessage `json:"history,omitempty"`
-	Date         string          `json:"date,omitempty"` // Context date: YYYY-MM-DD
-	YardFilter   string          `json:"yardFilter,omitempty"`
-	ActionID        string          `json:"actionId,omitempty"`  // Action ID when confirming an operation
-	Confirmed       bool            `json:"confirmed,omitempty"` // True when user clicked "Confirm"
-	ConfirmActionID string          `json:"confirmActionId,omitempty"`
-	ConfirmAccepted *bool           `json:"confirmAccepted,omitempty"`
+	Message         string            `json:"message"`
+	History         []AIChatMessage   `json:"history,omitempty"`
+	Date            string            `json:"date,omitempty"` // Context date: YYYY-MM-DD
+	YardFilter      string            `json:"yardFilter,omitempty"`
+	ActionID        string            `json:"actionId,omitempty"`  // Action ID when confirming an operation
+	Confirmed       bool              `json:"confirmed,omitempty"` // True when user clicked "Confirm"
+	ConfirmActionID string            `json:"confirmActionId,omitempty"`
+	ConfirmAccepted *bool             `json:"confirmAccepted,omitempty"`
 	OperatorName    string            `json:"operatorName,omitempty"`
 	OperatorID      string            `json:"operatorId,omitempty"`
 	UserRole        string            `json:"userRole,omitempty"`
@@ -40,6 +40,10 @@ type AIChatResponse struct {
 	ActionCards        []AIActionCard `json:"actionCards,omitempty"`
 	SuggestedQuestions []string       `json:"suggestedQuestions,omitempty"`
 	Engine             string         `json:"engine,omitempty"` // "gemini" or "builtin"
+	QuotaUsed          int            `json:"quotaUsed,omitempty"`
+	QuotaLimit         int            `json:"quotaLimit,omitempty"`
+	QuotaRemaining     int            `json:"quotaRemaining,omitempty"`
+	QuotaExhausted     bool           `json:"quotaExhausted,omitempty"`
 }
 
 // PendingDispatchAction stores details of an action waiting for user confirmation

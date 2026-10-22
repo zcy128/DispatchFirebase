@@ -9,32 +9,137 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
 
 	"dispatch-server/internal/models"
 )
 
+const (
+	DefaultUserDailyGeminiLimit   = 15
+	DefaultGlobalDailyGeminiLimit = 150
+)
+
 type AIService struct {
-	toolService *AIToolService
-	httpClient  *http.Client
+	toolService      *AIToolService
+	httpClient       *http.Client
+	quotaMu          sync.Mutex
+	quotaDay         string
+	userQuotaUsage   map[string]int
+	globalQuotaUsage int
+	userDailyLimit   int
+	globalDailyLimit int
 }
 
 func NewAIService(toolService *AIToolService) *AIService {
+	userLim := DefaultUserDailyGeminiLimit
+	if v := strings.TrimSpace(os.Getenv("AI_DAILY_USER_LIMIT")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			userLim = n
+		}
+	}
+	globalLim := DefaultGlobalDailyGeminiLimit
+	if v := strings.TrimSpace(os.Getenv("AI_DAILY_GLOBAL_LIMIT")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			globalLim = n
+		}
+	}
 	return &AIService{
-		toolService: toolService,
-		httpClient:  &http.Client{Timeout: 30 * time.Second},
+		toolService:      toolService,
+		httpClient:       &http.Client{Timeout: 30 * time.Second},
+		quotaDay:         time.Now().UTC().Format("2006-01-02"),
+		userQuotaUsage:   make(map[string]int),
+		userDailyLimit:   userLim,
+		globalDailyLimit: globalLim,
 	}
 }
 
-// resolveLanguage determines whether to respond in French or English.
-// Strictly avoids Chinese.
+func (s *AIService) ensureQuotaDayLocked() {
+	today := time.Now().UTC().Format("2006-01-02")
+	if s.quotaDay != today {
+		s.quotaDay = today
+		s.userQuotaUsage = make(map[string]int)
+		s.globalQuotaUsage = 0
+	}
+}
+
+// GetQuotaStatus returns current daily Gemini usage for a user without incrementing counters.
+func (s *AIService) GetQuotaStatus(userKey string) (used int, limit int, remaining int, exhausted bool) {
+	s.quotaMu.Lock()
+	defer s.quotaMu.Unlock()
+	s.ensureQuotaDayLocked()
+
+	if userKey == "" {
+		userKey = "anonymous"
+	}
+	used = s.userQuotaUsage[userKey]
+	limit = s.userDailyLimit
+	remaining = limit - used
+	if remaining < 0 {
+		remaining = 0
+	}
+	globalRem := s.globalDailyLimit - s.globalQuotaUsage
+	if globalRem < remaining {
+		if globalRem < 0 {
+			remaining = 0
+		} else {
+			remaining = globalRem
+		}
+	}
+	exhausted = remaining <= 0
+	return
+}
+
+// ConsumeQuota checks if the user and global daily Gemini quota allow a call, and increments if allowed.
+func (s *AIService) ConsumeQuota(userKey string) (used int, limit int, remaining int, allowed bool) {
+	s.quotaMu.Lock()
+	defer s.quotaMu.Unlock()
+	s.ensureQuotaDayLocked()
+
+	if userKey == "" {
+		userKey = "anonymous"
+	}
+	limit = s.userDailyLimit
+	current := s.userQuotaUsage[userKey]
+	if current >= limit || s.globalQuotaUsage >= s.globalDailyLimit {
+		return current, limit, 0, false
+	}
+
+	current++
+	s.userQuotaUsage[userKey] = current
+	s.globalQuotaUsage++
+	rem := limit - current
+	if rem < 0 {
+		rem = 0
+	}
+	return current, limit, rem, true
+}
+
+func containsChinese(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveLanguage determines whether to respond in Chinese, French, or English.
 func resolveLanguage(req *models.AIChatRequest) string {
-	if strings.EqualFold(req.Lang, "fr") {
+	if strings.HasPrefix(strings.ToLower(req.Lang), "zh") {
+		return "zh"
+	}
+	if strings.HasPrefix(strings.ToLower(req.Lang), "fr") {
 		return "fr"
 	}
-	if strings.EqualFold(req.Lang, "en") {
+	if strings.HasPrefix(strings.ToLower(req.Lang), "en") {
 		return "en"
+	}
+	if containsChinese(req.Message) {
+		return "zh"
 	}
 	lower := strings.ToLower(req.Message)
 	frenchWords := []string{
@@ -59,6 +164,7 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 
 	lang := resolveLanguage(req)
 	isFr := lang == "fr"
+	isZh := lang == "zh"
 
 	// 1. Check if user is confirming or canceling a pending action
 	actID := req.ActionID
@@ -74,7 +180,9 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 		if confirmed {
 			if !CanModifyDispatchShifts(req.UserRole, req.PagePermissions) {
 				failTitle := "Permission Denied"
-				if isFr {
+				if isZh {
+					failTitle = "权限不足"
+				} else if isFr {
 					failTitle = "Accès refusé"
 				}
 				failMsg := BuildDispatchModificationDeniedMessage(req.UserRole, lang)
@@ -125,6 +233,16 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 						"Quels quarts n'ont pas de chauffeur aujourd'hui ?",
 						"Voir la vue d'ensemble du dispatch",
 					}
+				} else if isZh {
+					reply = fmt.Sprintf(
+						"✅ **已成功为 %s 创建每日调度表！**\n\n- **日期**：%s\n- 已从当前激活主路线自动生成排班数据并完成同步。\n\n该操作已记录在调度审计日志 (`dispatch_change_logs`) 中。",
+						action.Date, action.Date,
+					)
+					cardTitle = "调度表已创建"
+					suggested = []string{
+						"今天有哪些班次缺少司机？",
+						"查看今日调度总览",
+					}
 				} else {
 					reply = fmt.Sprintf(
 						"✅ **Daily Dispatch Sheet successfully created for %s!**\n\n- **Date**: %s\n- Daily shifts have been generated and synchronized from active master routes.\n\nThis operation has been recorded in the Dispatch Audit Log (`dispatch_change_logs`).",
@@ -154,7 +272,17 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 				}, nil
 			}
 
-			if isFr {
+			if isZh {
+				reply = fmt.Sprintf(
+					"✅ **调度指派操作已成功执行并保存！**\n\n- **路线**：%s (%s)\n- **日期**：%s (%s)\n- **指派司机**：%s (%s)\n\n该操作已记入调度变更审计日志 (`dispatch_change_logs`)。",
+					action.RouteNo, action.RouteName, action.Date, action.ShiftType, action.DriverName, action.DriverID,
+				)
+				cardTitle = "排班已更新"
+				suggested = []string{
+					"今天有哪些班次缺少司机？",
+					"查看今日调度总览",
+				}
+			} else if isFr {
 				reply = fmt.Sprintf(
 					"✅ **L'affectation de régulation a été exécutée et enregistrée avec succès !**\n\n- **Ligne** : %s (%s)\n- **Date** : %s (%s)\n- **Chauffeur assigné** : %s (%s)\n\nCette opération a été consignée dans le journal d'audit de régulation (`dispatch_change_logs`).",
 					action.RouteNo, action.RouteName, action.Date, action.ShiftType, action.DriverName, action.DriverID,
@@ -198,7 +326,10 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 		} else {
 			cancelReply := "Dispatch action cancelled. No changes have been made to the schedule."
 			cancelTitle := "Action Cancelled"
-			if isFr {
+			if isZh {
+				cancelReply = "调度操作已取消，未对排班计划做任何变更。"
+				cancelTitle = "操作已取消"
+			} else if isFr {
 				cancelReply = "L'opération de régulation a été annulée. Aucune modification n'a été apportée aux horaires."
 				cancelTitle = "Opération annulée"
 			}
@@ -222,7 +353,14 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 
 		switch roleNorm {
 		case "HR":
-			if isFr {
+			if isZh {
+				welcomeMsg = "您好！我是您的校车运营 AI 助手。作为 **人事 (HR)**，您可以查询员工档案、跟进驾驶证与资质合规，以及查看车队车辆状态。*(注：班次修改权限仅限调度员)*"
+				welcomeQuestions = []string{
+					"员工档案与资质合规概览",
+					"查看车队车辆状态",
+					"今日校车调度总览",
+				}
+			} else if isFr {
 				welcomeMsg = "Bonjour ! Je suis votre Copilote IA. En tant que **RH**, vous pouvez consulter l'annuaire du personnel, vérifier la conformité des permis de conduire et inspecter la flotte. *(Note : La modification des quarts de régulation est réservée aux régulateurs)*."
 				welcomeQuestions = []string{
 					"Résumé des employés et conformité RH",
@@ -238,7 +376,14 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 				}
 			}
 		case "payroll":
-			if isFr {
+			if isZh {
+				welcomeMsg = "您好！我是您的校车运营 AI 助手。作为 **薪酬/财务 (Payroll)**，您可以查询薪酬费率、路线计费标准与排班工时统计。*(注：班次修改权限仅限调度员)*"
+				welcomeQuestions = []string{
+					"薪资与排班工时汇总",
+					"今日校车调度总览",
+					"查看车队车辆状态",
+				}
+			} else if isFr {
 				welcomeMsg = "Bonjour ! Je suis votre Copilote IA. En tant que responsable **Paie**, vous pouvez consulter les grilles de taux, les barèmes des lignes et les statistiques opérationnelles. *(Note : La modification des quarts est réservée aux régulateurs)*."
 				welcomeQuestions = []string{
 					"Synthèse des taux de rémunération et de paie",
@@ -254,7 +399,14 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 				}
 			}
 		default:
-			if isFr {
+			if isZh {
+				welcomeMsg = "您好！我是您的校车调度 AI 助手。您可以向我询问空缺班次、司机排班，或者直接安排调度指派。"
+				welcomeQuestions = []string{
+					"今天有哪些班次缺少司机？",
+					"查看车队车辆状态",
+					"今日校车调度总览",
+				}
+			} else if isFr {
 				welcomeMsg = "Bonjour ! Je suis votre Copilote IA de régulation. Vous pouvez me poser des questions sur les quarts vacants, les horaires des chauffeurs ou m'ordonner d'assigner un chauffeur."
 				welcomeQuestions = []string{
 					"Quels quarts n'ont pas de chauffeur aujourd'hui ?",
@@ -277,30 +429,74 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 		}, nil
 	}
 
-	// 2. Check if GEMINI_API_KEY is available for LLM function calling
-	geminiKey := os.Getenv("GEMINI_API_KEY")
-	if geminiKey != "" {
-		resp, err := s.processWithGemini(ctx, req, geminiKey, lang)
-		if err == nil && resp != nil {
-			resp.Engine = "gemini"
-			return resp, nil
-		}
-	}
-
-	// 3. Built-in smart semantic parser
+	// 2. Smart Routing: First try the zero-cost Built-in Semantic Engine for structured Dispatch/Fleet/HR/Payroll queries
 	resp, err := s.processWithBuiltinEngine(ctx, req, lang)
 	if err != nil {
 		return nil, err
 	}
+
+	userQuotaKey := strings.TrimSpace(req.OperatorID)
+	if userQuotaKey == "" {
+		userQuotaKey = strings.TrimSpace(req.OperatorName)
+	}
+
+	// If the built-in engine matched a specific operational tool, return immediately (0 Gemini tokens used)
+	if resp.Engine != "builtin_fallback" {
+		used, limit, rem, exh := s.GetQuotaStatus(userQuotaKey)
+		resp.Engine = "builtin"
+		resp.QuotaUsed = used
+		resp.QuotaLimit = limit
+		resp.QuotaRemaining = rem
+		resp.QuotaExhausted = exh
+		return resp, nil
+	}
+
+	// 3. For unmatched/complex conversational prompts, invoke Gemini LLM if GEMINI_API_KEY is configured and user is authenticated
+	geminiKey := os.Getenv("GEMINI_API_KEY")
+	if geminiKey != "" && strings.TrimSpace(req.OperatorID) != "" {
+		used, limit, rem, allowed := s.ConsumeQuota(userQuotaKey)
+		if allowed {
+			geminiResp, gemErr := s.processWithGemini(ctx, req, geminiKey, lang)
+			if gemErr == nil && geminiResp != nil {
+				geminiResp.Engine = "gemini"
+				geminiResp.QuotaUsed = used
+				geminiResp.QuotaLimit = limit
+				geminiResp.QuotaRemaining = rem
+				geminiResp.QuotaExhausted = rem <= 0
+				return geminiResp, nil
+			}
+		} else {
+			resp.QuotaUsed = used
+			resp.QuotaLimit = limit
+			resp.QuotaRemaining = 0
+			resp.QuotaExhausted = true
+			if isZh {
+				resp.Reply += fmt.Sprintf("\n\n---\n⚡ *今日 Gemini AI 配额已达上限 (%d/%d 次)。已由内置免费语义引擎继续为您服务。*", used, limit)
+			} else if isFr {
+				resp.Reply += fmt.Sprintf("\n\n---\n⚡ *Quota quotidien Gemini IA atteint (%d/%d appels aujourd'hui). Réponse fournie par le moteur sémantique intégré gratuit.*", used, limit)
+			} else {
+				resp.Reply += fmt.Sprintf("\n\n---\n⚡ *Daily Gemini AI quota reached (%d/%d calls today). Answered via the free Built-in Semantic Engine.*", used, limit)
+			}
+			resp.Engine = "builtin"
+			return resp, nil
+		}
+	}
+
+	used, limit, rem, exh := s.GetQuotaStatus(userQuotaKey)
 	resp.Engine = "builtin"
+	resp.QuotaUsed = used
+	resp.QuotaLimit = limit
+	resp.QuotaRemaining = rem
+	resp.QuotaExhausted = exh
 	return resp, nil
 }
 
-// processWithBuiltinEngine provides high-accuracy zero-configuration parsing in English or French
+// processWithBuiltinEngine provides high-accuracy zero-configuration parsing in English, French or Chinese
 func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AIChatRequest, lang string) (*models.AIChatResponse, error) {
 	msg := strings.TrimSpace(req.Message)
 	date := req.Date
 	isFr := lang == "fr"
+	isZh := lang == "zh"
 
 	// Check if message explicitly mentions another date (e.g., "2026-09-25")
 	dateRegex := regexp.MustCompile(`(\d{4}-\d{2}-\d{2})`)
@@ -338,6 +534,15 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		}
 
 		if len(unassigned) == 0 {
+			if isZh {
+				return &models.AIChatResponse{
+					Reply: fmt.Sprintf("🎉 在 **%s**，所有班次均已安排司机，没有缺司机的空缺班次！", date),
+					SuggestedQuestions: []string{
+						"查看今日调度总览",
+						"查看车队车辆状态",
+					},
+				}, nil
+			}
 			if isFr {
 				return &models.AIChatResponse{
 					Reply: fmt.Sprintf("🎉 Pour la date du **%s**, tous les quarts ont un chauffeur assigné. Aucun quart vacant trouvé !", date),
@@ -358,6 +563,40 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 
 		cardList := make([]map[string]interface{}, 0, len(unassigned))
 		var lines []string
+
+		if isZh {
+			lines = []string{fmt.Sprintf("⚠️ 在 **%s**，共有 **%d** 个班次未指派司机：\n", date, len(unassigned))}
+			for i, sh := range unassigned {
+				lines = append(lines, fmt.Sprintf("%d. **路线 `%s`** (%s) · 班次 **%s** · 首站发车：`%s`", i+1, sh.RouteNo, sh.RouteName, sh.ShiftType, sh.FirstStopTime))
+				cardList = append(cardList, map[string]interface{}{
+					"shiftId":       sh.ID,
+					"routeNo":       sh.RouteNo,
+					"routeName":     sh.RouteName,
+					"shiftType":     sh.ShiftType,
+					"firstStopTime": sh.FirstStopTime,
+					"yardName":      sh.YardName,
+				})
+			}
+			lines = append(lines, "\n您可以直接对我说：*“把 Tom 指派到路线 "+unassigned[0].RouteNo+"”* 即可一键分配。")
+
+			return &models.AIChatResponse{
+				Reply: strings.Join(lines, "\n"),
+				ActionCards: []models.AIActionCard{
+					{
+						Type:  "unassigned_shifts",
+						Title: fmt.Sprintf("未分配班次 (%d)", len(unassigned)),
+						Data: map[string]interface{}{
+							"date":   date,
+							"shifts": cardList,
+						},
+					},
+				},
+				SuggestedQuestions: []string{
+					fmt.Sprintf("把 Tom 指派到路线 %s", unassigned[0].RouteNo),
+					"查看今日调度总览",
+				},
+			}, nil
+		}
 
 		if isFr {
 			lines = []string{fmt.Sprintf("⚠️ Le **%s**, **%d** quart(s) n'ont pas de chauffeur assigné :\n", date, len(unassigned))}
@@ -648,18 +887,27 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		strings.Contains(lowerMsg, "quarts assignés") ||
 		strings.Contains(lowerMsg, "état des affectations") ||
 		strings.Contains(lowerMsg, "etat des affectations") ||
+		strings.Contains(msg, "今日校车调度总览") ||
+		strings.Contains(msg, "校车调度总览") ||
+		strings.Contains(msg, "今日调度总览") ||
+		strings.Contains(msg, "调度总览") ||
+		strings.Contains(msg, "今日总览") ||
+		strings.Contains(msg, "排班总览") ||
 		strings.Contains(msg, "派班总览") ||
 		strings.Contains(msg, "派班情况") ||
 		strings.Contains(msg, "分配情况") ||
 		strings.Contains(msg, "今天派班") ||
 		strings.Contains(msg, "排班情况") ||
-		strings.Contains(msg, "班次分配")
+		strings.Contains(msg, "班次分配") ||
+		(strings.Contains(msg, "总览") && !strings.Contains(msg, "车") && !strings.Contains(msg, "假") && !strings.Contains(msg, "费") && !strings.Contains(msg, "报销") && !strings.Contains(msg, "薪") && !strings.Contains(msg, "工") && !strings.Contains(msg, "路线"))
 
 	if isAssignmentSummaryQuery {
 		reply, card, err := s.toolService.GetAssignmentSummary(ctx, date, lang)
 		if err != nil {
 			errPrefix := "⚠️ Failed to retrieve assignment overview:"
-			if isFr {
+			if isZh {
+				errPrefix = "⚠️ 获取排班派班总览失败："
+			} else if isFr {
 				errPrefix = "⚠️ Impossible de récupérer l'aperçu des affectations :"
 			}
 			return &models.AIChatResponse{
@@ -675,6 +923,8 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		suggested := []string{"Which shifts have no driver today?", "Temporary assignments"}
 		if isFr {
 			suggested = []string{"Quels quarts n'ont pas de chauffeur aujourd'hui ?", "Affectations temporaires"}
+		} else if isZh {
+			suggested = []string{"今天有哪些路线缺司机？", "查看车队车辆状态"}
 		}
 
 		return &models.AIChatResponse{
@@ -805,43 +1055,9 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		}
 	}
 
-	// Pattern D: Vehicle Query
-	isVehicleDetailsQuery := strings.Contains(lowerMsg, "vehicle info") ||
-		strings.Contains(lowerMsg, "bus info") ||
-		strings.Contains(lowerMsg, "unit info") ||
-		strings.Contains(lowerMsg, "about vehicle") ||
-		strings.Contains(lowerMsg, "about bus") ||
-		strings.Contains(lowerMsg, "find vehicle") ||
-		strings.Contains(lowerMsg, "find bus") ||
-		strings.Contains(lowerMsg, "info véhicule") ||
-		strings.Contains(lowerMsg, "détails véhicule") ||
-		strings.Contains(msg, "车辆信息") ||
-		strings.Contains(msg, "查询车辆") ||
-		strings.Contains(msg, "车号") ||
-		strings.Contains(msg, "查车") ||
-		regexp.MustCompile(`(?i)(?:vehicle|bus|unit|véhicule|vehicule)\s+[a-zA-Z0-9_\-]+`).MatchString(msg) ||
-		regexp.MustCompile(`[0-9]{3,5}号车`).MatchString(msg)
-
-	if isVehicleDetailsQuery {
-		vehReply, card, err := s.toolService.GetVehicleDetails(ctx, msg, date, lang)
-		if err == nil {
-			suggested := []string{"Vehicle fleet status", "Which shifts have no driver today?"}
-			if isFr {
-				suggested = []string{"Statut de la flotte de véhicules", "Quels quarts n'ont pas de chauffeur aujourd'hui ?"}
-			}
-			var cards []models.AIActionCard
-			if card != nil {
-				cards = append(cards, *card)
-			}
-			return &models.AIChatResponse{
-				Reply:              vehReply,
-				ActionCards:        cards,
-				SuggestedQuestions: suggested,
-			}, nil
-		}
-	}
-
+	// Pattern D0: Vehicle Fleet Summary
 	isVehicleSummaryQuery := strings.Contains(lowerMsg, "fleet status") ||
+		strings.Contains(lowerMsg, "vehicle fleet status") ||
 		strings.Contains(lowerMsg, "fleet inventory") ||
 		strings.Contains(lowerMsg, "vehicle fleet") ||
 		strings.Contains(lowerMsg, "vehicle summary") ||
@@ -855,7 +1071,9 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		strings.Contains(lowerMsg, "état de la flotte") ||
 		strings.Contains(lowerMsg, "etat de la flotte") ||
 		strings.Contains(msg, "车辆总览") ||
+		strings.Contains(msg, "车队车辆") ||
 		strings.Contains(msg, "车队状态") ||
+		strings.Contains(msg, "车辆状态") ||
 		strings.Contains(msg, "车辆概况") ||
 		strings.Contains(msg, "车队概况") ||
 		strings.Contains(msg, "多少辆车") ||
@@ -867,6 +1085,56 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 			suggested := []string{"Which shifts have no driver today?", "View today's dispatch overview"}
 			if isFr {
 				suggested = []string{"Quels quarts n'ont pas de chauffeur aujourd'hui ?", "Voir la vue d'ensemble du dispatch"}
+			} else if isZh {
+				suggested = []string{"今天有哪些路线缺司机？", "今日校车调度总览"}
+			}
+			var cards []models.AIActionCard
+			if card != nil {
+				cards = append(cards, *card)
+			}
+			return &models.AIChatResponse{
+				Reply:              vehReply,
+				ActionCards:        cards,
+				SuggestedQuestions: suggested,
+			}, nil
+		}
+	}
+
+	// Pattern D1: Specific Vehicle Query / Details
+	isVehicleDetailsQuery := (strings.Contains(lowerMsg, "vehicle info") ||
+		strings.Contains(lowerMsg, "bus info") ||
+		strings.Contains(lowerMsg, "unit info") ||
+		strings.Contains(lowerMsg, "about vehicle") ||
+		strings.Contains(lowerMsg, "about bus") ||
+		strings.Contains(lowerMsg, "find vehicle") ||
+		strings.Contains(lowerMsg, "find bus") ||
+		strings.Contains(lowerMsg, "info véhicule") ||
+		strings.Contains(lowerMsg, "détails véhicule") ||
+		strings.Contains(msg, "车辆信息") ||
+		strings.Contains(msg, "查询车辆") ||
+		strings.Contains(msg, "车号") ||
+		strings.Contains(msg, "查车") ||
+		regexp.MustCompile(`(?i)(?:vehicle|bus|unit|véhicule|vehicule)\s+[0-9a-zA-Z_\-]+`).MatchString(msg) ||
+		regexp.MustCompile(`[0-9]{3,5}号车`).MatchString(msg)) &&
+		!strings.Contains(lowerMsg, "fleet") &&
+		!strings.Contains(lowerMsg, "summary") &&
+		!strings.Contains(lowerMsg, "overview") &&
+		!strings.Contains(lowerMsg, "all") &&
+		!strings.Contains(lowerMsg, "flotte") &&
+		!strings.Contains(msg, "车队") &&
+		!strings.Contains(msg, "总览") &&
+		!strings.Contains(msg, "概况") &&
+		!strings.Contains(msg, "统计") &&
+		!strings.Contains(msg, "所有")
+
+	if isVehicleDetailsQuery {
+		vehReply, card, err := s.toolService.GetVehicleDetails(ctx, msg, date, lang)
+		if err == nil {
+			suggested := []string{"Vehicle fleet status", "Which shifts have no driver today?"}
+			if isFr {
+				suggested = []string{"Statut de la flotte de véhicules", "Quels quarts n'ont pas de chauffeur aujourd'hui ?"}
+			} else if isZh {
+				suggested = []string{"查看车队车辆状态", "今天有哪些路线缺司机？"}
 			}
 			var cards []models.AIActionCard
 			if card != nil {
@@ -972,6 +1240,8 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		strings.Contains(lowerMsg, "flotte") ||
 		strings.Contains(msg, "概况") ||
 		strings.Contains(msg, "统计") ||
+		strings.Contains(msg, "调度总览") ||
+		strings.Contains(msg, "总览") ||
 		strings.Contains(msg, "总体情况") ||
 		strings.Contains(msg, "出车情况")) &&
 		!strings.Contains(lowerMsg, "time off") &&
@@ -1011,6 +1281,8 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 			suggested := []string{"Which shifts have no driver today?"}
 			if isFr {
 				suggested = []string{"Quels quarts n'ont pas de chauffeur aujourd'hui ?"}
+			} else if isZh {
+				suggested = []string{"今天有哪些路线缺司机？"}
 			}
 			return &models.AIChatResponse{
 				Reply:              summary,
@@ -1137,46 +1409,16 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		}
 	}
 
-	// Pattern H: Employee & Staff Queries
-	isEmployeeDetailsQuery := strings.Contains(lowerMsg, "driver info") ||
-		strings.Contains(lowerMsg, "employee info") ||
-		strings.Contains(lowerMsg, "about driver") ||
-		strings.Contains(lowerMsg, "about employee") ||
-		strings.Contains(lowerMsg, "info chauffeur") ||
-		strings.Contains(lowerMsg, "détails chauffeur") ||
-		strings.Contains(msg, "司机信息") ||
-		strings.Contains(msg, "员工信息") ||
-		strings.Contains(msg, "查询司机") ||
-		strings.Contains(msg, "查询员工") ||
-		strings.Contains(msg, "查司机") ||
-		strings.Contains(msg, "查员工") ||
-		regexp.MustCompile(`(?i)(?:driver|employee|chauffeur|employé|employe)\s+[a-zA-Z0-9_\-\.\x{4e00}-\x{9fa5}]+`).MatchString(msg) ||
-		(strings.HasPrefix(lowerMsg, "contact for ") || strings.HasPrefix(lowerMsg, "phone for "))
-
-	if isEmployeeDetailsQuery {
-		empReply, card, err := s.toolService.GetEmployeeDetails(ctx, msg, date, lang)
-		if err == nil {
-			suggested := []string{"Which shifts have no driver today?", "View today's dispatch overview"}
-			if isFr {
-				suggested = []string{"Quels quarts n'ont pas de chauffeur aujourd'hui ?", "Voir la vue d'ensemble du dispatch"}
-			}
-			var cards []models.AIActionCard
-			if card != nil {
-				cards = append(cards, *card)
-			}
-			return &models.AIChatResponse{
-				Reply:              empReply,
-				ActionCards:        cards,
-				SuggestedQuestions: suggested,
-			}, nil
-		}
-	}
-
+	// Pattern H0: HR & Staff Directory Summary
 	isHRQuery := strings.Contains(lowerMsg, "hr ") ||
 		strings.Contains(lowerMsg, "human resource") ||
 		strings.Contains(lowerMsg, "staff directory") ||
 		strings.Contains(lowerMsg, "employee summary") ||
+		strings.Contains(lowerMsg, "employees summary") ||
 		strings.Contains(lowerMsg, "staff summary") ||
+		strings.Contains(lowerMsg, "all staff") ||
+		strings.Contains(lowerMsg, "all employees") ||
+		strings.Contains(lowerMsg, "all drivers") ||
 		strings.Contains(lowerMsg, "active employees") ||
 		strings.Contains(lowerMsg, "active staff") ||
 		strings.Contains(lowerMsg, "how many drivers") ||
@@ -1208,6 +1450,8 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 			suggested := []string{"Vehicle fleet status", "View today's dispatch overview"}
 			if isFr {
 				suggested = []string{"Statut de la flotte de véhicules", "Voir la vue d'ensemble du dispatch"}
+			} else if isZh {
+				suggested = []string{"查看车队车辆状态", "今日校车调度总览"}
 			}
 			var cards []models.AIActionCard
 			if card != nil {
@@ -1215,6 +1459,51 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 			}
 			return &models.AIChatResponse{
 				Reply:              hrReply,
+				ActionCards:        cards,
+				SuggestedQuestions: suggested,
+			}, nil
+		}
+	}
+
+	// Pattern H1: Employee & Staff Queries / Details
+	isEmployeeDetailsQuery := (strings.Contains(lowerMsg, "driver info") ||
+		strings.Contains(lowerMsg, "employee info") ||
+		strings.Contains(lowerMsg, "about driver") ||
+		strings.Contains(lowerMsg, "about employee") ||
+		strings.Contains(lowerMsg, "info chauffeur") ||
+		strings.Contains(lowerMsg, "détails chauffeur") ||
+		strings.Contains(msg, "司机信息") ||
+		strings.Contains(msg, "员工信息") ||
+		strings.Contains(msg, "查询司机") ||
+		strings.Contains(msg, "查询员工") ||
+		strings.Contains(msg, "查司机") ||
+		strings.Contains(msg, "查员工") ||
+		regexp.MustCompile(`(?i)(?:driver|employee|chauffeur|employé|employe)\s+[a-zA-Z0-9_\-\.\x{4e00}-\x{9fa5}]+`).MatchString(msg) ||
+		(strings.HasPrefix(lowerMsg, "contact for ") || strings.HasPrefix(lowerMsg, "phone for "))) &&
+		!strings.Contains(lowerMsg, "summary") &&
+		!strings.Contains(lowerMsg, "overview") &&
+		!strings.Contains(lowerMsg, "directory") &&
+		!strings.Contains(lowerMsg, "all") &&
+		!strings.Contains(msg, "总览") &&
+		!strings.Contains(msg, "概况") &&
+		!strings.Contains(msg, "统计") &&
+		!strings.Contains(msg, "全部")
+
+	if isEmployeeDetailsQuery {
+		empReply, card, err := s.toolService.GetEmployeeDetails(ctx, msg, date, lang)
+		if err == nil {
+			suggested := []string{"Which shifts have no driver today?", "View today's dispatch overview"}
+			if isFr {
+				suggested = []string{"Quels quarts n'ont pas de chauffeur aujourd'hui ?", "Voir la vue d'ensemble du dispatch"}
+			} else if isZh {
+				suggested = []string{"今天有哪些路线缺司机？", "今日校车调度总览"}
+			}
+			var cards []models.AIActionCard
+			if card != nil {
+				cards = append(cards, *card)
+			}
+			return &models.AIChatResponse{
+				Reply:              empReply,
 				ActionCards:        cards,
 				SuggestedQuestions: suggested,
 			}, nil
@@ -1254,7 +1543,7 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		}
 	}
 
-	isStudentInfoQuery := strings.Contains(lowerMsg, "student info") ||
+	isStudentInfoQuery := (strings.Contains(lowerMsg, "student info") ||
 		strings.Contains(lowerMsg, "about student") ||
 		strings.Contains(lowerMsg, "find student") ||
 		strings.Contains(lowerMsg, "student details") ||
@@ -1265,7 +1554,19 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		strings.Contains(msg, "查询学生") ||
 		strings.Contains(msg, "查学生") ||
 		regexp.MustCompile(`(?i)(?:student|élève|eleve|étudiant|etudiant)\s+[a-zA-Z0-9_\-\.\x{4e00}-\x{9fa5}]+`).MatchString(msg) ||
-		(strings.Contains(msg, "学生") && (strings.Contains(msg, "谁") || strings.Contains(msg, "哪条") || strings.Contains(msg, "路线") || strings.Contains(msg, "线路")))
+		(strings.Contains(msg, "学生") && (strings.Contains(msg, "谁") || strings.Contains(msg, "哪条") || strings.Contains(msg, "路线") || strings.Contains(msg, "线路")))) &&
+		!strings.Contains(lowerMsg, "incident") &&
+		!strings.Contains(lowerMsg, "safety") &&
+		!strings.Contains(lowerMsg, "hazard") &&
+		!strings.Contains(lowerMsg, "behavior") &&
+		!strings.Contains(lowerMsg, "discipline") &&
+		!strings.Contains(lowerMsg, "comportement") &&
+		!strings.Contains(msg, "事件") &&
+		!strings.Contains(msg, "事故") &&
+		!strings.Contains(msg, "安全") &&
+		!strings.Contains(msg, "隐患") &&
+		!strings.Contains(msg, "处分") &&
+		!strings.Contains(msg, "违规")
 
 	if isStudentInfoQuery {
 		stuReply, card, err := s.toolService.GetStudentDetails(ctx, msg, lang)
@@ -1299,6 +1600,9 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		strings.Contains(lowerMsg, "aperçu des congés") ||
 		strings.Contains(lowerMsg, "demandes de congé") ||
 		strings.Contains(lowerMsg, "demandes de conge") ||
+		strings.Contains(msg, "请假申请汇总") ||
+		strings.Contains(msg, "请假申请") ||
+		strings.Contains(msg, "请假汇总") ||
 		strings.Contains(msg, "请假总览") ||
 		strings.Contains(msg, "请假概况") ||
 		strings.Contains(msg, "请假统计") ||
@@ -1320,6 +1624,8 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 			suggested := []string{"Who is off today?", "Pending time off requests"}
 			if isFr {
 				suggested = []string{"Qui est en congé aujourd'hui ?", "Voir les congés en attente"}
+			} else if isZh {
+				suggested = []string{"今天谁请假？", "待审批请假"}
 			}
 			var cards []models.AIActionCard
 			if card != nil {
@@ -1395,6 +1701,9 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		strings.Contains(lowerMsg, "synthèse des notes de frais") ||
 		strings.Contains(lowerMsg, "synthese des notes de frais") ||
 		strings.Contains(lowerMsg, "remboursements de frais") ||
+		strings.Contains(msg, "报销申请汇总") ||
+		strings.Contains(msg, "报销申请") ||
+		strings.Contains(msg, "报销汇总") ||
 		strings.Contains(msg, "报销总览") ||
 		strings.Contains(msg, "报销概况") ||
 		strings.Contains(msg, "费用报销总览") ||
@@ -1414,6 +1723,8 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 			suggested := []string{"Pending expense claims", "Payroll & compensation rates summary"}
 			if isFr {
 				suggested = []string{"Voir les remboursements en attente", "Synthèse des taux de rémunération et de paie"}
+			} else if isZh {
+				suggested = []string{"查看待审批报销", "薪酬与费率汇总"}
 			}
 			var cards []models.AIActionCard
 			if card != nil {
@@ -1541,16 +1852,35 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		strings.Contains(lowerMsg, "incident summary") ||
 		strings.Contains(lowerMsg, "all student incidents") ||
 		strings.Contains(lowerMsg, "all incidents") ||
+		strings.Contains(lowerMsg, "recent student safety incidents") ||
+		strings.Contains(lowerMsg, "recent safety incidents") ||
+		strings.Contains(lowerMsg, "recent student incidents") ||
+		strings.Contains(lowerMsg, "recent incidents") ||
+		strings.Contains(lowerMsg, "student safety incidents") ||
+		strings.Contains(lowerMsg, "student safety incident") ||
+		strings.Contains(lowerMsg, "student safety") ||
+		strings.Contains(lowerMsg, "safety incidents") ||
+		strings.Contains(lowerMsg, "safety incident") ||
+		strings.Contains(lowerMsg, "student incidents") ||
+		strings.Contains(lowerMsg, "student incident") ||
 		strings.Contains(lowerMsg, "student behavior") ||
 		strings.Contains(lowerMsg, "student issues") ||
 		strings.Contains(lowerMsg, "incidents élèves") ||
 		strings.Contains(lowerMsg, "incidents eleves") ||
 		strings.Contains(lowerMsg, "résumé des incidents") ||
+		strings.Contains(lowerMsg, "incidents récents") ||
+		strings.Contains(lowerMsg, "incidents recents") ||
 		strings.Contains(msg, "学生事件总结") ||
 		strings.Contains(msg, "学生事故汇总") ||
 		strings.Contains(msg, "所有学生事件") ||
 		strings.Contains(msg, "学生违规汇总") ||
-		(strings.Contains(lowerMsg, "incident") && (strings.Contains(lowerMsg, "summary") || strings.Contains(lowerMsg, "all") || strings.Contains(lowerMsg, "list") || strings.Contains(lowerMsg, "open")))
+		strings.Contains(msg, "学生安全事件") ||
+		strings.Contains(msg, "最近学生安全事件") ||
+		strings.Contains(msg, "最近学生事件") ||
+		strings.Contains(msg, "学生事件") ||
+		strings.Contains(msg, "学生事故") ||
+		strings.Contains(msg, "安全事件") ||
+		(strings.Contains(lowerMsg, "incident") && (strings.Contains(lowerMsg, "summary") || strings.Contains(lowerMsg, "all") || strings.Contains(lowerMsg, "list") || strings.Contains(lowerMsg, "open") || strings.Contains(lowerMsg, "recent")))
 
 	if isStudentIncidentSummaryQuery {
 		incReply, card, err := s.toolService.GetStudentIncidentSummary(ctx, date, lang)
@@ -1558,6 +1888,8 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 			suggested := []string{"Recent student incidents", "View today's dispatch overview"}
 			if isFr {
 				suggested = []string{"Incidents récents d'élèves", "Voir la vue d'ensemble du dispatch"}
+			} else if isZh {
+				suggested = []string{"今日校车调度总览", "查看车队车辆状态"}
 			}
 			var cards []models.AIActionCard
 			if card != nil {
@@ -1579,10 +1911,13 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		strings.Contains(lowerMsg, "discipline") ||
 		strings.Contains(lowerMsg, "rapport d'incident") ||
 		strings.Contains(lowerMsg, "comportement") ||
+		strings.Contains(lowerMsg, "student safety") ||
+		strings.Contains(lowerMsg, "safety incident") ||
 		strings.Contains(msg, "学生事件") ||
 		strings.Contains(msg, "事故报告") ||
 		strings.Contains(msg, "违规报告") ||
-		strings.Contains(msg, "学生处分")
+		strings.Contains(msg, "学生处分") ||
+		strings.Contains(msg, "学生安全")
 
 	if isStudentIncidentDetailsQuery {
 		incReply, card, err := s.toolService.GetStudentIncidentDetails(ctx, msg, lang)
@@ -1590,6 +1925,8 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 			suggested := []string{"Student incident summary", "View today's dispatch overview"}
 			if isFr {
 				suggested = []string{"Synthèse des incidents élèves", "Voir la vue d'ensemble du dispatch"}
+			} else if isZh {
+				suggested = []string{"今日校车调度总览", "查看车队车辆状态"}
 			}
 			var cards []models.AIActionCard
 			if card != nil {
@@ -1783,6 +2120,47 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 		return &models.AIChatResponse{
 			Reply:              reply,
 			SuggestedQuestions: suggested,
+			Engine:             "builtin_fallback",
+		}, nil
+	}
+
+	if isZh {
+		var reply string
+		var suggested []string
+
+		switch roleNorm {
+		case "HR":
+			reply = "我是您的校车运营 AI 助手。作为 **人事 (HR)**，您可以查询员工档案、跟进驾驶证与合规资质、查看车队车辆状态等。*(注：班次修改权限仅限调度员)*"
+			suggested = []string{
+				"员工档案与资质合规概览",
+				"查看车队车辆状态",
+				"今日校车调度总览",
+			}
+		case "payroll":
+			reply = "我是您的校车运营 AI 助手。作为 **薪酬/财务 (Payroll)**，您可以查询薪酬费率、路线计费标准与排班工时统计。*(注：班次修改权限仅限调度员)*"
+			suggested = []string{
+				"薪资与排班工时汇总",
+				"今日校车调度总览",
+				"查看车队车辆状态",
+			}
+		default:
+			reply = "我是您的校车运营调度 AI 助手。您可以向我咨询调度与运营相关事务：\n" +
+				"- 🔍 **“今天有哪些班次缺少司机？”**\n" +
+				"- ⚡ **“帮我查询路线信息”**\n" +
+				"- 📅 **“查询司机的排班日历”**\n" +
+				"- 🚐 **“查看车队车辆状态”**\n" +
+				"- 📊 **“今日校车调度总览”**"
+			suggested = []string{
+				"今天有哪些班次缺少司机？",
+				"查看车队车辆状态",
+				"今日校车调度总览",
+			}
+		}
+
+		return &models.AIChatResponse{
+			Reply:              reply,
+			SuggestedQuestions: suggested,
+			Engine:             "builtin_fallback",
 		}, nil
 	}
 
@@ -1832,6 +2210,7 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 	return &models.AIChatResponse{
 		Reply:              replyEn,
 		SuggestedQuestions: suggestedEn,
+		Engine:             "builtin_fallback",
 	}, nil
 }
 
@@ -1839,6 +2218,7 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 func (s *AIService) processWithGemini(ctx context.Context, req *models.AIChatRequest, apiKey string, lang string) (*models.AIChatResponse, error) {
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=%s", apiKey)
 	isFr := lang == "fr"
+	isZh := lang == "zh"
 
 	normRole := NormalizeRole(req.UserRole)
 	canModifyDispatch := CanModifyDispatchShifts(req.UserRole, req.PagePermissions)
@@ -1846,14 +2226,24 @@ func (s *AIService) processWithGemini(ctx context.Context, req *models.AIChatReq
 	canAccessHR := CanAccessHR(req.UserRole, req.PagePermissions)
 
 	var systemPrompt string
-	if isFr {
+	if isZh {
+		systemPrompt = fmt.Sprintf(
+			"You are the AI Dispatch Copilot for School Bus Fleet Management. Today's date is %s. "+
+				"The authenticated user has role '%s'. Permissions: can_modify_dispatch=%t, can_access_payroll=%t, can_access_hr=%t. "+
+				"You can answer questions about bus routes, drivers, shifts, fleet vehicles, students, staff, payroll, time off requests, expense claims, driver training courses, student incidents, hazard safety reports, and route safety assessments. "+
+				"If can_modify_dispatch is false and user asks to assign a driver or modify shifts, DO NOT call assignment tool; politely refuse in Chinese explaining that only Dispatchers and Admins can modify shifts. "+
+				"If can_access_payroll is false and user asks about payroll or compensation, politely refuse in Chinese stating insufficient permissions. "+
+				"ALWAYS answer politely, clearly, and fluently in Chinese (中文). When assigning drivers, important actions MUST be confirmed before actual execution.",
+			req.Date, normRole, canModifyDispatch, canAccessPayroll, canAccessHR,
+		)
+	} else if isFr {
 		systemPrompt = fmt.Sprintf(
 			"You are the AI Dispatch Copilot for School Bus Fleet Management. Today's date is %s. "+
 				"The authenticated user has role '%s'. Permissions: can_modify_dispatch=%t, can_access_payroll=%t, can_access_hr=%t. "+
 				"You can answer questions about bus routes, drivers, shifts, fleet vehicles, students, staff, payroll, time off requests, expense claims, driver training courses, student incidents, hazard safety reports, and route safety assessments. "+
 				"If can_modify_dispatch is false and user asks to assign a driver or modify shifts, DO NOT call assignment tool; politely refuse in French explaining that only Dispatchers and Admins can modify shifts. "+
 				"If can_access_payroll is false and user asks about payroll or compensation, politely refuse in French stating insufficient permissions. "+
-				"Strictly DO NOT output Chinese. ALWAYS answer in French (Français). When assigning drivers, important actions MUST be confirmed before actual execution.",
+				"ALWAYS answer in French (Français). When assigning drivers, important actions MUST be confirmed before actual execution.",
 			req.Date, normRole, canModifyDispatch, canAccessPayroll, canAccessHR,
 		)
 	} else {
@@ -1863,7 +2253,7 @@ func (s *AIService) processWithGemini(ctx context.Context, req *models.AIChatReq
 				"You can answer questions about bus routes, drivers, shifts, fleet vehicles, students, staff, payroll, time off requests, expense claims, driver training courses, student incidents, hazard safety reports, and route safety assessments. "+
 				"If can_modify_dispatch is false and user asks to assign a driver or modify shifts, DO NOT call assignment tool; politely refuse in English explaining that only Dispatchers and Admins can modify shifts. "+
 				"If can_access_payroll is false and user asks about payroll or compensation, politely refuse in English stating insufficient permissions. "+
-				"Strictly DO NOT output Chinese. ALWAYS answer in English. When assigning drivers, important actions MUST be confirmed before actual execution.",
+				"ALWAYS answer in English. When assigning drivers, important actions MUST be confirmed before actual execution.",
 			req.Date, normRole, canModifyDispatch, canAccessPayroll, canAccessHR,
 		)
 	}
@@ -1921,7 +2311,9 @@ func (s *AIService) processWithGemini(ctx context.Context, req *models.AIChatReq
 	}
 
 	suggested := []string{"Which shifts have no driver today?", "View today's dispatch overview"}
-	if isFr {
+	if isZh {
+		suggested = []string{"今天有哪些班次缺少司机？", "查看今日调度总览", "查看车队车辆状态"}
+	} else if isFr {
 		suggested = []string{"Quels quarts n'ont pas de chauffeur aujourd'hui ?", "Voir la vue d'ensemble du dispatch"}
 	}
 

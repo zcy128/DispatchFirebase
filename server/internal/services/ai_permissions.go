@@ -41,6 +41,55 @@ func NormalizeRole(role string) string {
 	}
 }
 
+// CanViewDispatch checks if the role is allowed to query general dispatch shifts, routes, and vehicles.
+func CanViewDispatch(userRole string, pagePermissions map[string]string) bool {
+	norm := NormalizeRole(userRole)
+	if norm == "admin" {
+		return true
+	}
+
+	if pagePermissions != nil {
+		if val, exists := pagePermissions["dispatch"]; exists {
+			return strings.EqualFold(val, "readwrite") || strings.EqualFold(val, "readonly")
+		}
+	}
+
+	switch norm {
+	case "dispatcher", "manager", "supervisor", "office staff", "fleet", "studentcare", "HR", "payroll", "training":
+		return true
+	default:
+		return false
+	}
+}
+
+// CanAccessSafetyReports checks if the role is allowed to query student incidents, hazard reports, and route assessments.
+func CanAccessSafetyReports(userRole string, pagePermissions map[string]string) bool {
+	norm := NormalizeRole(userRole)
+	if norm == "admin" {
+		return true
+	}
+
+	if pagePermissions != nil {
+		for _, key := range []string{"safety", "incidents", "hazards", "dispatch"} {
+			if val, exists := pagePermissions[key]; exists {
+				if strings.EqualFold(val, "none") {
+					return false
+				}
+				if strings.EqualFold(val, "readwrite") || strings.EqualFold(val, "readonly") {
+					return true
+				}
+			}
+		}
+	}
+
+	switch norm {
+	case "dispatcher", "manager", "supervisor", "studentcare", "fleet", "HR", "training", "office staff":
+		return true
+	default:
+		return false
+	}
+}
+
 // CanModifyDispatchShifts checks if the role is allowed to assign drivers or alter dispatch shifts.
 // Strictly restricted to "admin" and "dispatcher" (unless explicit 'readwrite' override exists).
 // Roles like HR, Payroll, Fleet, Manager, etc. CANNOT modify dispatch shifts.
@@ -113,12 +162,20 @@ func CanModifyHR(userRole string, pagePermissions map[string]string) bool {
 func BuildDispatchModificationDeniedMessage(userRole string, lang string) string {
 	norm := NormalizeRole(userRole)
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
 
 	roleDisplay := norm
 	if norm == "HR" {
 		roleDisplay = "Human Resources (HR)"
 	} else if norm == "payroll" {
 		roleDisplay = "Payroll & Finance"
+	}
+
+	if isZh {
+		return fmt.Sprintf(
+			"⚠️ **权限不足 (角色权限限制)**\n\n您当前的角色 (**%s**) 没有权限修改调度班次或指派司机。\n\n- 🔒 **安全规则**：只有 **调度员 (Dispatcher)** 和 **系统管理员 (Admin)** 可以排班、重新指派或修改路线班次。\n- 💡 **人事 (HR)** 和 **薪酬 (Payroll)** 等角色仅限访问对应业务模块，无法改动调度排班。",
+			roleDisplay,
+		)
 	}
 
 	if isFr {
@@ -138,6 +195,14 @@ func BuildDispatchModificationDeniedMessage(userRole string, lang string) string
 func BuildPayrollAccessDeniedMessage(userRole string, lang string) string {
 	norm := NormalizeRole(userRole)
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
+
+	if isZh {
+		return fmt.Sprintf(
+			"⚠️ **权限不足 (薪酬与财务模块)**\n\n您当前的角色 (**%s**) 无权查阅司机薪酬与工资费率数据。\n\n- 🔒 薪酬数据仅限 **薪酬财务部门 (Payroll)** 与 **系统管理员 (Admin)** 查阅。",
+			norm,
+		)
+	}
 
 	if isFr {
 		return fmt.Sprintf(
@@ -156,6 +221,14 @@ func BuildPayrollAccessDeniedMessage(userRole string, lang string) string {
 func BuildHRAccessDeniedMessage(userRole string, lang string) string {
 	norm := NormalizeRole(userRole)
 	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
+
+	if isZh {
+		return fmt.Sprintf(
+			"⚠️ **权限不足 (人事管理模块)**\n\n您当前的角色 (**%s**) 无权查阅员工保密档案。\n\n- 🔒 人事档案仅限 **人事 (HR)** 与 **系统管理员 (Admin)** 查阅。",
+			norm,
+		)
+	}
 
 	if isFr {
 		return fmt.Sprintf(
@@ -239,4 +312,3 @@ func BuildExpenseAccessDeniedMessage(userRole string, lang string) string {
 		norm,
 	)
 }
-

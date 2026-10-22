@@ -43,6 +43,10 @@ type Config struct {
 
 	// Google Maps Routes API (Server-side only, never leaked to clients)
 	GoogleMapsAPIKey string
+
+	// MCP Server & Direct Auth Settings
+	MCPTokenSecret    string
+	FirebaseWebAPIKey string
 }
 
 func LoadConfig() *Config {
@@ -134,6 +138,12 @@ func LoadConfig() *Config {
 		approvalSecret = "DevApprovalSecretChangeInProduction"
 	}
 
+	mcpTokenSecret := getEnvFallback("MCP_TOKEN_SECRET", "APPROVAL_SECRET")
+	if mcpTokenSecret == "" {
+		mcpTokenSecret = approvalSecret
+	}
+	firebaseWebAPIKey := getEnvFallback("FIREBASE_WEB_API_KEY", "VITE_FIREBASE_API_KEY")
+
 	dispatchEmail := os.Getenv("DISPATCH_FORWARD_EMAIL")
 	if dispatchEmail == "" {
 		dispatchEmail = "dispatch@example.com"
@@ -181,6 +191,8 @@ func LoadConfig() *Config {
 		ParentAppBaseURL:        os.Getenv("PARENT_APP_BASE_URL"),
 		ParentJWTSigningKey:     os.Getenv("PARENT_JWT_SIGNING_KEY"),
 		GoogleMapsAPIKey:        getEnvFallback("GOOGLE_MAPS_API_KEY", "GOOGLE_ROUTES_API_KEY"),
+		MCPTokenSecret:          mcpTokenSecret,
+		FirebaseWebAPIKey:       firebaseWebAPIKey,
 	}
 }
 

@@ -1,5 +1,5 @@
 import { apiRequest } from './api';
-import { AIChatRequest, AIChatResponse, AICopilotStatus } from '../types/ai';
+import { AIChatRequest, AIChatResponse, AICopilotStatus, MCPTokenResponse } from '../types/ai';
 
 export const aiService = {
   /**
@@ -36,5 +36,15 @@ export const aiService = {
         version: '1.0',
       };
     }
+  },
+
+  /**
+   * Issue a signed Personal Access Token (dsp_mcp_...) for external MCP clients (Cursor, Gemini, Codex)
+   */
+  async generateMCPToken(ttlDays = 30): Promise<MCPTokenResponse> {
+    return await apiRequest<MCPTokenResponse>('/auth/mcp-token', {
+      method: 'POST',
+      body: JSON.stringify({ ttlDays }),
+    });
   },
 };
