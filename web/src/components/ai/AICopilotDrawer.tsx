@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Sparkles,
   Bot,
@@ -28,6 +28,12 @@ import {
   ShieldAlert,
   ClipboardCheck,
   BookOpen,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { aiService } from '../../services/aiService';
 import { AIChatMessage, AIActionCard, AICopilotStatus } from '../../types/ai';
@@ -51,7 +57,7 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
   onNavigateToChangeLog,
 }) => {
   const { currentUser } = useAuth();
-  const { lang, setLang, isFrench } = useI18n();
+  const { isFrench } = useI18n();
 
   const userRole = normalizeRole(currentUser?.role);
   const canModifyDispatch =
@@ -62,16 +68,142 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
   const operatorName =
     currentUser?.displayName || currentUser?.email || (isFrench ? 'Régulateur' : 'Dispatcher');
 
-  const todayStr = currentDate || new Date().toISOString().split('T')[0];
+  const todayStr = useMemo(() => {
+    if (currentDate) return currentDate;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, [currentDate]);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [status, setStatus] = useState<AICopilotStatus | null>(null);
   const [messages, setMessages] = useState<AIChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [actionProcessingId, setActionProcessingId] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [voiceAutoRead, setVoiceAutoRead] = useState(false);
+  const [copilotLang, setCopilotLang] = useState<'zh' | 'en' | 'fr'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('dispatch_ai_lang');
+      if (saved === 'zh' || saved === 'en' || saved === 'fr') return saved as 'zh' | 'en' | 'fr';
+      const navLang = navigator.language?.toLowerCase() || '';
+      if (navLang.startsWith('zh')) return 'zh';
+      if (navLang.startsWith('fr')) return 'fr';
+    }
+    return 'zh';
+  });
+  const isChinese = copilotLang === 'zh';
 
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return window.innerWidth < 640 || params.get('mode') === 'ai' || params.get('ai') === '1';
+    }
+    return false;
+  });
+  const [quotaInfo, setQuotaInfo] = useState<{
+    used: number;
+    limit: number;
+    remaining: number;
+    exhausted: boolean;
+  }>({ used: 0, limit: 15, remaining: 15, exhausted: false });
+
+  const recognitionRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const speakReply = (rawText: string) => {
+    if (!voiceAutoRead || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const clean = rawText
+        .replace(/[#*`_~>-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const utterance = new SpeechSynthesisUtterance(clean);
+      utterance.lang = isChinese ? 'zh-CN' : isFrench || copilotLang === 'fr' ? 'fr-CA' : 'en-US';
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // ignore TTS errors
+    }
+  };
+
+  const toggleVoiceInput = () => {
+    setVoiceError(null);
+    if (isListening && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognitionCtor =
+      typeof window !== 'undefined'
+        ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        : null;
+
+    if (!SpeechRecognitionCtor) {
+      setVoiceError(
+        isChinese
+          ? '语音输入需要 Chrome、Safari 或 Edge 浏览器。'
+          : isFrench
+          ? 'La reconnaissance vocale nécessite Chrome, Safari ou Edge.'
+          : 'Voice input requires Chrome, Safari, or Edge on mobile/desktop.'
+      );
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = isChinese ? 'zh-CN' : isFrench || copilotLang === 'fr' ? 'fr-CA' : 'en-US';
+      recognition.interimResults = true;
+      recognition.continuous = false;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript.trim()) {
+          setInputText(transcript.trim());
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        setIsListening(false);
+        if (event?.error && event.error !== 'no-speech' && event.error !== 'aborted') {
+          setVoiceError(
+            isChinese
+              ? `麦克风识别错误：${event.error}`
+              : isFrench
+              ? `Erreur microphone : ${event.error}`
+              : `Microphone error: ${event.error}`
+          );
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        inputRef.current?.focus();
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (e: any) {
+      setIsListening(false);
+      setVoiceError(e?.message || 'Failed to start microphone');
+    }
+  };
 
   useEffect(() => {
     if (currentDate) {
@@ -82,17 +214,40 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
   // Load Copilot status & initialize greeting on open
   useEffect(() => {
     if (isOpen) {
-      aiService.getStatus().then(setStatus).catch(console.error);
+      aiService
+        .getStatus()
+        .then((s) => {
+          setStatus(s);
+          if (typeof s.quotaLimit === 'number' && s.quotaLimit > 0) {
+            setQuotaInfo({
+              used: s.quotaUsed || 0,
+              limit: s.quotaLimit,
+              remaining: s.quotaRemaining ?? s.quotaLimit,
+              exhausted: !!s.quotaExhausted,
+            });
+          }
+        })
+        .catch(console.error);
 
       if (messages.length === 0) {
         let welcomeText = '';
         let welcomeQuestions: string[] = [];
 
         if (userRole === 'HR') {
-          welcomeText = isFrench
+          welcomeText = isChinese
+            ? `您好 **${operatorName}**！我是您的 **校车运营 AI 助手**。\n\n作为 **人事 (HR)**，您可以查询员工档案、跟踪司机驾照资质合规、查看培训与安全隐患列表以及车队状态。\n\n*(注：班次修改权限仅限调度员)*：`
+            : isFrench
             ? `Bonjour **${operatorName}** ! Je suis votre **Copilote IA d'opérations**.\n\nEn tant que membre **Ressources Humaines (RH)**, vous pouvez consulter le personnel actif, vérifier la conformité des permis de conduire et inspecter la flotte.\n\n*(Note : La modification des quarts de régulation est réservée aux régulateurs)* :`
             : `Hello **${operatorName}**! I am your **AI Operations Copilot**.\n\nIn your **Human Resources (HR)** role, you can inspect staff records, track CDL driver license compliance, and view fleet status.\n\n*(Note: Shift assignment modifications are restricted to Dispatchers)*:`;
-          welcomeQuestions = isFrench
+          welcomeQuestions = isChinese
+            ? [
+                "员工档案与资质合规概览",
+                "司机培训课程状态",
+                "查看驾驶证资质合规",
+                "安全隐患与隐患上报列表",
+                "查看车队车辆状态",
+              ]
+            : isFrench
             ? [
                 "Résumé des employés et conformité RH",
                 "Statut des formations des chauffeurs",
@@ -108,10 +263,18 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                 "Vehicle fleet status",
               ];
         } else if (userRole === 'payroll') {
-          welcomeText = isFrench
+          welcomeText = isChinese
+            ? `您好 **${operatorName}**！我是您的 **校车运营 AI 助手**。\n\n作为 **薪酬/财务**，您可以查阅薪酬费率、路线计费标准与排班工时统计。\n\n*(注：班次修改权限仅限调度员)*：`
+            : isFrench
             ? `Bonjour **${operatorName}** ! Je suis votre **Copilote IA d'opérations**.\n\nEn tant que membre **Paie & Rémunération**, vous pouvez consulter les grilles de taux de paie, les barèmes des lignes et les statistiques opérationnelles.\n\n*(Note : La modification des quarts de régulation est réservée aux régulateurs)* :`
             : `Hello **${operatorName}**! I am your **AI Operations Copilot**.\n\nIn your **Payroll & Compensation** role, you can inspect payroll rates, school board base tiers, and operational shift overviews.\n\n*(Note: Shift assignment modifications are restricted to Dispatchers)*:`;
-          welcomeQuestions = isFrench
+          welcomeQuestions = isChinese
+            ? [
+                "薪资与排班工时汇总",
+                "今日校车调度总览",
+                "查看车队车辆状态",
+              ]
+            : isFrench
             ? [
                 "Synthèse des taux de rémunération et de paie",
                 "Aperçu de la régulation",
@@ -123,10 +286,21 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                 "Vehicle fleet status",
               ];
         } else {
-          welcomeText = isFrench
+          welcomeText = isChinese
+            ? `您好 **${operatorName}**！我是您的 **校车运营调度 AI 助手**。\n\n我可以协助您进行全系统排班与运营管理：查询缺司机班次、跟进司机排班、分析事故与隐患、评估路线安全、监控车队等：`
+            : isFrench
             ? `Bonjour **${operatorName}** ! Je suis votre **Copilote IA d'opérations**.\n\nJe peux vous assister sur l'ensemble du système : vérifier les quarts vacants, inspecter les formations, analyser les incidents et dangers, évaluer la sécurité des lignes, ou surveiller la flotte :`
             : `Hello **${operatorName}**! I am your **AI Operations Copilot**.\n\nI can assist you across all pages: check shift vacancies, inspect driver training, review student incidents & hazards, assess route safety, and inspect the vehicle fleet:`;
-          welcomeQuestions = isFrench
+          welcomeQuestions = isChinese
+            ? [
+                "今天有哪些班次缺少司机？",
+                "查看车队车辆状态",
+                "今日校车调度总览",
+                "最近的学生安全事件",
+                "安全隐患与隐患上报列表",
+                "司机培训课程状态",
+              ]
+            : isFrench
             ? [
                 "Quels quarts n'ont pas de chauffeur aujourd'hui ?",
                 "Statut des formations des chauffeurs",
@@ -188,11 +362,21 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
       const resp = await aiService.chat({
         message: text,
         date: selectedDate,
+        operatorId: currentUser?.uid || currentUser?.employeeId || operatorName,
         operatorName,
         userRole,
         pagePermissions: currentUser?.pagePermissions as any,
-        lang,
+        lang: copilotLang,
       });
+
+      if (typeof resp.quotaLimit === 'number' && resp.quotaLimit > 0) {
+        setQuotaInfo({
+          used: resp.quotaUsed || 0,
+          limit: resp.quotaLimit,
+          remaining: resp.quotaRemaining ?? resp.quotaLimit,
+          exhausted: !!resp.quotaExhausted,
+        });
+      }
 
       const assistantMsg: AIChatMessage = {
         id: `resp-${Date.now()}`,
@@ -205,8 +389,11 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
+      speakReply(resp.reply);
     } catch (err: any) {
-      const errorText = isFrench
+      const errorText = isChinese
+        ? `抱歉，处理指令时发生错误：${err.message || '网络连接超时'}`
+        : isFrench
         ? `Désolé, une erreur est survenue lors du traitement de la commande : ${err.message || "Délai d'attente dépassé"}`
         : `Sorry, an error occurred while processing command: ${err.message || 'Network timeout'}`;
 
@@ -229,8 +416,8 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
     setActionProcessingId(actionId);
 
     const confirmationText = accepted
-      ? (isFrench ? "Confirmer l'exécution" : 'Confirm Execution')
-      : (isFrench ? 'Annuler' : 'Cancel Action');
+      ? (isChinese ? '确认执行' : isFrench ? "Confirmer l'exécution" : 'Confirm Execution')
+      : (isChinese ? '取消操作' : isFrench ? 'Annuler' : 'Cancel Action');
 
     const userMsg: AIChatMessage = {
       id: `confirm-msg-${Date.now()}`,
@@ -253,7 +440,7 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
         confirmed: accepted,
         confirmActionId: actionId,
         confirmAccepted: accepted,
-        lang,
+        lang: copilotLang,
       });
 
       const assistantMsg: AIChatMessage = {
@@ -1888,8 +2075,8 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
         onClick={onClose}
       />
 
-      <div className="absolute inset-y-0 right-0 max-w-full flex pl-10 pointer-events-auto">
-        <div className="w-screen max-w-md bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col h-full text-slate-100 animate-in slide-in-from-right duration-300">
+      <div className={`absolute inset-y-0 right-0 max-w-full flex ${isFullscreen ? 'pl-0 w-full' : 'pl-0 sm:pl-10'} pointer-events-auto`}>
+        <div className={`w-screen ${isFullscreen ? 'max-w-full' : 'max-w-full sm:max-w-md'} bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col h-full text-slate-100 animate-in slide-in-from-right duration-300`}>
           {/* Header */}
           <div className="p-4 border-b border-slate-800 bg-slate-900/90 backdrop-blur flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -1897,7 +2084,7 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                 <Sparkles className="w-5 h-5 text-white" />
               </div>
               <div>
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <h3 className="font-bold text-sm text-white">
                     {isFrench ? 'Copilote IA de régulation' : 'AI Dispatch Copilot'}
                   </h3>
@@ -1905,9 +2092,23 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                     <Zap className="w-2.5 h-2.5" />
                     <span>
                       {status?.engine === 'gemini'
-                        ? (isFrench ? 'Moteur Gemini' : 'Gemini Engine')
+                        ? (isFrench ? 'Gemini + Intégré' : 'Gemini + Smart')
                         : (isFrench ? 'Moteur Intelligent' : 'Smart Engine')}
                     </span>
+                  </span>
+                  <span
+                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                      quotaInfo.exhausted
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                        : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                    }`}
+                    title={
+                      isFrench
+                        ? 'Appels Gemini IA restants aujourd\'hui (les requêtes standard utilisent le moteur gratuit)'
+                        : 'Remaining Gemini LLM calls today (standard queries use the free built-in engine)'
+                    }
+                  >
+                    AI: {quotaInfo.remaining}/{quotaInfo.limit}
                   </span>
                 </div>
                 <div className="flex items-center space-x-2 text-[11px] text-slate-400 mt-1">
@@ -1936,14 +2137,51 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
             </div>
 
             <div className="flex items-center space-x-1">
+              {/* Voice Readout Toggle */}
+              <button
+                onClick={() => {
+                  const next = !voiceAutoRead;
+                  setVoiceAutoRead(next);
+                  if (!next && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                    window.speechSynthesis.cancel();
+                  }
+                }}
+                className={`p-1.5 rounded-lg border transition-colors ${
+                  voiceAutoRead
+                    ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300'
+                    : 'border-slate-700 bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+                title={isFrench ? 'Lecture vocale des réponses' : 'Toggle voice readout'}
+              >
+                {voiceAutoRead ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+              </button>
+
+              {/* Fullscreen Toggle */}
+              <button
+                onClick={() => setIsFullscreen((prev) => !prev)}
+                className="p-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen Mode'}
+              >
+                {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              </button>
+
               {/* Language Switcher */}
               <button
-                onClick={() => setLang(isFrench ? 'en' : 'fr')}
+                onClick={() => {
+                  const nextLang = copilotLang === 'zh' ? 'en' : copilotLang === 'en' ? 'fr' : 'zh';
+                  setCopilotLang(nextLang);
+                  try {
+                    localStorage.setItem('dispatch_ai_lang', nextLang);
+                  } catch {}
+                  if (messages.length <= 1) {
+                    setMessages([]);
+                  }
+                }}
                 className="px-2 py-1 text-[11px] font-bold rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 transition-colors flex items-center space-x-1"
-                title={isFrench ? 'Basculer en Anglais' : 'Switch to French'}
+                title="切换语言 / Switch Language"
               >
                 <Globe className="w-3 h-3 text-amber-400" />
-                <span>{isFrench ? 'FR' : 'EN'}</span>
+                <span>{copilotLang === 'zh' ? '🇨🇳 中文' : copilotLang === 'fr' ? '🇫🇷 FR' : '🇺🇸 EN'}</span>
               </button>
 
               <button
@@ -1952,14 +2190,14 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                   aiService.getStatus().then(setStatus);
                 }}
                 className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-                title={isFrench ? 'Effacer la conversation' : 'Clear conversation'}
+                title={isChinese ? '清空对话' : isFrench ? 'Effacer la conversation' : 'Clear conversation'}
               >
                 <RefreshCw className="w-4 h-4" />
               </button>
               <button
                 onClick={onClose}
                 className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-                title={isFrench ? 'Fermer' : 'Close'}
+                title={isChinese ? '关闭' : isFrench ? 'Fermer' : 'Close'}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2035,7 +2273,9 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                     <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce"></span>
                   </div>
                   <span>
-                    {isFrench
+                    {isChinese
+                      ? '正在分析排班与路线调度数据...'
+                      : isFrench
                       ? 'Analyse des quarts et des horaires en cours...'
                       : 'Analyzing dispatch shifts and schedules...'}
                   </span>
@@ -2049,144 +2289,143 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
           {/* Quick Prompts Bar */}
           <div className="px-3 py-2 bg-slate-950/40 border-t border-slate-800/80 flex items-center space-x-1.5 overflow-x-auto text-[11px] scrollbar-none">
             <span className="text-slate-500 text-[10px] font-semibold whitespace-nowrap pl-1">
-              {isFrench ? 'Raccourcis :' : 'Quick:'}
+              {isChinese ? '快捷：' : isFrench ? 'Raccourcis :' : 'Quick:'}
             </span>
             <button
               onClick={() =>
                 handleSendMessage(
-                  isFrench
+                  isChinese
+                    ? '今天有哪些路线缺司机？'
+                    : isFrench
                     ? "Quels quarts n'ont pas de chauffeur aujourd'hui ?"
                     : 'Which shifts have no driver today?'
                 )
               }
               className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md whitespace-nowrap border border-slate-700/60 transition-colors"
             >
-              {isFrench ? 'Quarts sans chauffeur' : 'Unassigned Shifts'}
+              {isChinese ? '缺司机班次' : isFrench ? 'Quarts sans chauffeur' : 'Unassigned Shifts'}
             </button>
             <button
               onClick={() =>
                 handleSendMessage(
-                  isFrench
+                  isChinese
+                    ? '查看车队车辆状态'
+                    : isFrench
                     ? 'Statut de la flotte de véhicules'
                     : 'Vehicle fleet status'
                 )
               }
               className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md whitespace-nowrap border border-slate-700/60 transition-colors"
             >
-              {isFrench ? 'Véhicules' : 'Fleet Vehicles'}
+              {isChinese ? '车队车辆' : isFrench ? 'Véhicules' : 'Fleet Vehicles'}
             </button>
             <button
               onClick={() =>
                 handleSendMessage(
-                  isFrench
-                    ? 'Synthèse du réseau des lignes'
-                    : 'Master routes fleet summary'
-                )
-              }
-              className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md whitespace-nowrap border border-slate-700/60 transition-colors"
-            >
-              {isFrench ? 'Lignes & Réseau' : 'Routes'}
-            </button>
-            <button
-              onClick={() =>
-                handleSendMessage(
-                  isFrench
-                    ? "État des affectations aujourd'hui"
-                    : "Today's assignments overview"
-                )
-              }
-              className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md whitespace-nowrap border border-slate-700/60 transition-colors"
-            >
-              {isFrench ? 'Affectations' : 'Assignments'}
-            </button>
-            <button
-              onClick={() =>
-                handleSendMessage(
-                  isFrench
-                    ? 'Synthèse du transport des élèves'
-                    : 'Student transportation summary'
-                )
-              }
-              className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md whitespace-nowrap border border-slate-700/60 transition-colors"
-            >
-              {isFrench ? 'Élèves' : 'Students'}
-            </button>
-            <button
-              onClick={() =>
-                handleSendMessage(
-                  isFrench
-                    ? 'Résumé des employés et conformité RH'
-                    : 'Staff and driver overview'
-                )
-              }
-              className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md whitespace-nowrap border border-slate-700/60 transition-colors"
-            >
-              {isFrench ? 'Personnel' : 'Staff'}
-            </button>
-            <button
-              onClick={() =>
-                handleSendMessage(
-                  isFrench
+                  isChinese
+                    ? '今日校车调度总览'
+                    : isFrench
                     ? "Aperçu de la régulation"
                     : "View today's dispatch overview"
                 )
               }
               className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md whitespace-nowrap border border-slate-700/60 transition-colors"
             >
-              {isFrench ? 'Aperçu global' : 'Overview'}
+              {isChinese ? '今日总览' : isFrench ? 'Aperçu global' : 'Overview'}
             </button>
             <button
               onClick={() =>
                 handleSendMessage(
-                  isFrench
+                  isChinese
+                    ? '请假申请汇总'
+                    : isFrench
                     ? "Synthèse des demandes de congé"
                     : "Time off requests overview"
                 )
               }
               className="bg-slate-800 hover:bg-slate-700 text-teal-300/90 hover:text-teal-300 px-2.5 py-1 rounded-md whitespace-nowrap border border-teal-500/30 transition-colors"
             >
-              {isFrench ? 'Congés' : 'Time Off'}
+              {isChinese ? '请假' : isFrench ? 'Congés' : 'Time Off'}
             </button>
             <button
               onClick={() =>
                 handleSendMessage(
-                  isFrench
+                  isChinese
+                    ? '薪酬与费率汇总'
+                    : isFrench
                     ? "Synthèse du module paie & rémunération"
                     : "Payroll and compensation rates summary"
                 )
               }
               className="bg-slate-800 hover:bg-slate-700 text-amber-300/90 hover:text-amber-300 px-2.5 py-1 rounded-md whitespace-nowrap border border-amber-500/30 transition-colors"
             >
-              {isFrench ? 'Paie' : 'Payroll'}
+              {isChinese ? '薪酬' : isFrench ? 'Paie' : 'Payroll'}
             </button>
             <button
               onClick={() =>
                 handleSendMessage(
-                  isFrench
+                  isChinese
+                    ? '报销申请汇总'
+                    : isFrench
                     ? "Synthèse des notes de frais & remboursements"
                     : "Expense reimbursement summary"
                 )
               }
               className="bg-slate-800 hover:bg-slate-700 text-emerald-300/90 hover:text-emerald-300 px-2.5 py-1 rounded-md whitespace-nowrap border border-emerald-500/30 transition-colors"
             >
-              {isFrench ? 'Frais' : 'Expenses'}
+              {isChinese ? '报销' : isFrench ? 'Frais' : 'Expenses'}
             </button>
             <button
               onClick={() =>
                 handleSendMessage(
-                  isFrench
+                  isChinese
+                    ? '今天是谁创建的调度？'
+                    : isFrench
                     ? "Qui a créé le dispatch aujourd'hui ?"
                     : 'Who created dispatch today?'
                 )
               }
               className="bg-slate-800 hover:bg-slate-700 text-amber-300/90 hover:text-amber-300 px-2.5 py-1 rounded-md whitespace-nowrap border border-amber-500/30 transition-colors"
             >
-              {isFrench ? 'Créateur du dispatch' : 'Who created dispatch?'}
+              {isChinese ? '调度创建人' : isFrench ? 'Créateur du dispatch' : 'Who created dispatch?'}
             </button>
           </div>
 
           {/* Input Form */}
           <div className="p-3 border-t border-slate-800 bg-slate-900">
+            {isListening && (
+              <div className="mb-2 px-3 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[11px] flex items-center justify-between animate-pulse">
+                <div className="flex items-center space-x-2">
+                  <Mic className="w-3.5 h-3.5 text-rose-400" />
+                  <span>
+                    {isChinese
+                      ? '🎤 正在聆听语音... 请说话（免 Gemini Key · 0 令牌消耗）'
+                      : isFrench
+                      ? '🎤 Écoute en cours... Parlez maintenant (Gratuit · Sans clé Gemini)'
+                      : '🎤 Listening... Speak now (Free Web Speech · 0 Gemini tokens)'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleVoiceInput}
+                  className="text-[10px] underline font-semibold text-rose-200"
+                >
+                  {isChinese ? '停止' : isFrench ? 'Arrêter' : 'Stop'}
+                </button>
+              </div>
+            )}
+            {voiceError && (
+              <div className="mb-2 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] flex items-center justify-between">
+                <span>{voiceError}</span>
+                <button
+                  type="button"
+                  onClick={() => setVoiceError(null)}
+                  className="text-[10px] underline ml-2"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -2194,6 +2433,20 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
               }}
               className="flex items-center space-x-2"
             >
+              <button
+                type="button"
+                onClick={toggleVoiceInput}
+                disabled={loading}
+                className={`p-2.5 rounded-xl font-bold transition-all flex-shrink-0 border ${
+                  isListening
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400 animate-pulse shadow-md shadow-rose-500/30'
+                    : 'bg-slate-800 hover:bg-slate-700 text-amber-400 border-slate-700'
+                }`}
+                title={isChinese ? '语音输入 (麦克风)' : isFrench ? 'Entrée vocale (Microphone)' : 'Voice Input (Microphone)'}
+              >
+                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+
               <div className="relative flex-1">
                 <input
                   ref={inputRef}
@@ -2201,11 +2454,13 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder={
-                    isFrench
-                      ? "Posez une question sur les quarts, lignes, véhicules, ou tapez 'Assigner Tom sur la ligne csdf-001'..."
-                      : "Ask about shifts, routes, vehicles, drivers, or type 'Assign Tom to route csdf-001'..."
+                    isChinese
+                      ? '按 🎤 说话或输入问题（如：今天缺哪些司机、查看路线...）'
+                      : isFrench
+                      ? "Parlez (🎤) ou posez une question sur les quarts, lignes, véhicules..."
+                      : "Tap 🎤 to speak or ask about shifts, routes, vehicles, drivers..."
                   }
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 pr-10"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 pr-4"
                   disabled={loading}
                 />
               </div>
@@ -2214,18 +2469,20 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                 type="submit"
                 disabled={!inputText.trim() || loading}
                 className="p-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500 text-slate-950 font-bold rounded-xl transition-all shadow-md shadow-amber-500/20 flex-shrink-0"
-                title={isFrench ? 'Envoyer' : 'Send'}
+                title={isChinese ? '发送' : isFrench ? 'Envoyer' : 'Send'}
               >
                 <Send className="w-4 h-4" />
               </button>
             </form>
             <div className="text-[10px] text-slate-500 text-center mt-2 flex items-center justify-center space-x-2">
-              <span>{isFrench ? 'Raccourci :' : 'Shortcut:'}</span>
+              <span>{isChinese ? '快捷键：' : isFrench ? 'Raccourci :' : 'Shortcut:'}</span>
               <kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-400 font-mono">
                 Ctrl + J
               </kbd>
               <span>
-                {isFrench
+                {isChinese
+                  ? '展开/收起 AI 助手'
+                  : isFrench
                   ? 'Ouvrir/fermer le Copilote IA'
                   : 'Toggle AI Copilot'}
               </span>

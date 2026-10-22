@@ -26,6 +26,7 @@ import (
 	"dispatch-server/internal/auth"
 	"dispatch-server/internal/config"
 	"dispatch-server/internal/handlers"
+	"dispatch-server/internal/mcp"
 	"dispatch-server/internal/models"
 	"dispatch-server/internal/repository"
 	"dispatch-server/internal/services"
@@ -158,8 +159,10 @@ func main() {
 	}))
 
 	// Auth, Employee, School, Student, Route & Vehicle handlers
-	authenticator := auth.NewAuthenticator(authClient, cfg.AllowsDemo())
 	authHandler := handlers.NewAuthHandler(repo, authClient, cfg)
+	authenticator := auth.NewAuthenticator(authClient, cfg.AllowsDemo()).
+		WithMCPTokenSecret(cfg.MCPTokenSecret).
+		WithUserResolver(authHandler.ResolveEmployeeAuthUser)
 	empHandler := handlers.NewEmployeeHandler(repo, authClient, cfg.AllowsDemo())
 	schoolHandler := handlers.NewSchoolHandler(schoolRepo, schoolBoardRepo)
 	studentHandler := handlers.NewStudentHandler(studentRepo)
@@ -211,6 +214,8 @@ func main() {
 	aiToolService := services.NewAIToolService(dispatchRepo, repo, routeRepo, vehicleRepo, payrollRepo, studentRepo)
 	aiService := services.NewAIService(aiToolService)
 	aiHandler := handlers.NewAIHandler(aiService)
+	mcpServer := mcp.NewServer(aiToolService, dispatchRepo, repo)
+	mcpHandler := handlers.NewMCPHandler(mcpServer)
 
 	// Amazon SES & SNS Inbound/Outbound Email services for time-off requests
 	emailService := services.NewEmailService(cfg)
@@ -239,6 +244,7 @@ func main() {
 		r.With(adminSecretMiddleware(cfg.AdminAPISecret)).Post("/api/auth/sync-employee-users", authHandler.SyncEmployeeUsers)
 	}
 	r.Get("/api/auth/resolve-username", authHandler.ResolveUsername)
+	r.Post("/api/auth/mcp-login", authHandler.LoginMCP)
 
 	// File uploads & static file serving
 	_ = handlers.EnsureUploadDir()
@@ -536,6 +542,13 @@ func main() {
 		// AI Dispatch Copilot routes
 		protected.Post("/api/ai/chat", aiHandler.ProcessChat)
 		protected.Get("/api/ai/status", aiHandler.GetStatus)
+
+		// MCP Server & Personal Access Token routes (Authenticated & RBAC enforced on API server)
+		protected.Post("/api/auth/mcp-token", authHandler.IssueMCPToken)
+		protected.Get("/api/mcp", mcpHandler.HandleHTTP)
+		protected.Post("/api/mcp", mcpHandler.HandleHTTP)
+		protected.Get("/api/mcp/sse", mcpHandler.HandleSSE)
+		protected.Post("/api/mcp/message", mcpHandler.HandleSSEMessage)
 	})
 
 	// Public fallback for read-only preview in dev mode if requested

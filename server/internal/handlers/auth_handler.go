@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -25,6 +29,71 @@ func NewAuthHandler(repo repository.EmployeeRepository, authClient *firebaseAuth
 		authClient: authClient,
 		cfg:        cfg,
 	}
+}
+
+// ResolveEmployeeAuthUser enriches AuthUser with the latest Employee role, active status, and pagePermissions from the database.
+func (h *AuthHandler) ResolveEmployeeAuthUser(ctx context.Context, user *auth.AuthUser) (*auth.AuthUser, error) {
+	if user == nil || h.repo == nil {
+		return user, nil
+	}
+
+	emp := h.findEmployeeForUser(ctx, user)
+	if emp == nil {
+		return user, nil
+	}
+
+	if !emp.IsActive {
+		return nil, errors.New("employee account is deactivated")
+	}
+
+	cloned := *user
+	if emp.Role != "" {
+		cloned.Role = emp.Role
+	}
+	if emp.EmployeeNumber != "" {
+		cloned.EmployeeID = emp.EmployeeNumber
+	} else if emp.ID != "" && cloned.EmployeeID == "" {
+		cloned.EmployeeID = emp.ID
+	}
+	if emp.Username != "" {
+		cloned.Username = emp.Username
+	}
+	if emp.FullName != "" {
+		cloned.FullName = emp.FullName
+	}
+	if emp.WorkEmail != "" && cloned.Email == "" {
+		cloned.Email = emp.WorkEmail
+	}
+	if emp.PagePermissions != nil {
+		cloned.PagePermissions = emp.PagePermissions
+	}
+	return &cloned, nil
+}
+
+func (h *AuthHandler) findEmployeeForUser(ctx context.Context, user *auth.AuthUser) *models.Employee {
+	if user == nil || h.repo == nil {
+		return nil
+	}
+	var emp *models.Employee
+	if user.EmployeeID != "" {
+		emp, _ = h.repo.GetByEmployeeNumber(ctx, user.EmployeeID)
+		if emp == nil {
+			emp, _ = h.repo.GetByID(ctx, user.EmployeeID)
+		}
+	}
+	if emp == nil && user.UID != "" {
+		emp, _ = h.repo.GetByFirebaseUID(ctx, user.UID)
+	}
+	if emp == nil && user.Username != "" {
+		emp, _ = h.repo.GetByUsername(ctx, user.Username)
+	}
+	if emp == nil && user.Email != "" {
+		if idx := strings.Index(user.Email, "@"); idx > 0 {
+			uname := strings.ToLower(strings.TrimSpace(user.Email[:idx]))
+			emp, _ = h.repo.GetByUsername(ctx, uname)
+		}
+	}
+	return emp
 }
 
 type SetupAdminRequest struct {
@@ -189,14 +258,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	var emp *models.Employee
-
-	if authUser.EmployeeID != "" {
-		emp, _ = h.repo.GetByEmployeeNumber(ctx, authUser.EmployeeID)
-	}
-	if emp == nil && authUser.UID != "" {
-		emp, _ = h.repo.GetByFirebaseUID(ctx, authUser.UID)
-	}
+	emp := h.findEmployeeForUser(ctx, authUser)
 
 	response := map[string]interface{}{
 		"user":     authUser,
@@ -360,4 +422,268 @@ func (h *AuthHandler) ResolveUsername(w http.ResponseWriter, r *http.Request) {
 		"username":  username,
 		"authEmail": authEmail,
 	})
+}
+
+type IssueMCPTokenRequest struct {
+	TTLDays int `json:"ttlDays,omitempty"`
+}
+
+type IssueMCPTokenResponse struct {
+	Token      string         `json:"token"`
+	ExpiresAt  string         `json:"expiresAt"`
+	TTLDays    int            `json:"ttlDays"`
+	User       *auth.AuthUser `json:"user"`
+	ServerURL  string         `json:"serverUrl"`
+	MCPHttpURL string         `json:"mcpHttpUrl"`
+}
+
+// IssueMCPToken generates a signed Personal Access Token (dsp_mcp_...) for the currently logged-in user.
+func (h *AuthHandler) IssueMCPToken(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil {
+		http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+		return
+	}
+
+	resolvedUser, err := h.ResolveEmployeeAuthUser(r.Context(), authUser)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusForbidden)
+		return
+	}
+
+	var req IssueMCPTokenRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	ttlDays := req.TTLDays
+	if ttlDays <= 0 || ttlDays > 365 {
+		ttlDays = 30
+	}
+
+	secret := ""
+	if h.cfg != nil {
+		secret = h.cfg.MCPTokenSecret
+	}
+	baseURL := resolveRequestBaseURL(r, h.cfg)
+
+	token, exp, err := auth.GenerateMCPToken(secret, resolvedUser, time.Duration(ttlDays)*24*time.Hour)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(IssueMCPTokenResponse{
+		Token:      token,
+		ExpiresAt:  exp.Format(time.RFC3339),
+		TTLDays:    ttlDays,
+		User:       resolvedUser,
+		ServerURL:  baseURL,
+		MCPHttpURL: baseURL + "/api/mcp",
+	})
+}
+
+type LoginMCPRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	TTLDays  int    `json:"ttlDays,omitempty"`
+}
+
+// LoginMCP authenticates a user by username/email + password and returns a signed MCP token.
+func (h *AuthHandler) LoginMCP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req LoginMCPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid login payload"}`, http.StatusBadRequest)
+		return
+	}
+
+	identifier := strings.ToLower(strings.TrimSpace(req.Username))
+	password := req.Password
+	if identifier == "" || password == "" {
+		http.Error(w, `{"error":"username and password are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	loginEmail := identifier
+	usernamePart := identifier
+	if !strings.Contains(identifier, "@") {
+		loginEmail = identifier + AuthEmailDomain
+	} else if idx := strings.Index(identifier, "@"); idx > 0 {
+		usernamePart = identifier[:idx]
+	}
+
+	ctx := r.Context()
+	var verifiedUser *auth.AuthUser
+
+	// 1. If Firebase Web API Key is configured, verify password against Firebase Identity Toolkit
+	if h.cfg != nil && h.cfg.FirebaseWebAPIKey != "" {
+		fbUser, err := h.verifyPasswordWithFirebaseREST(ctx, loginEmail, password)
+		if err == nil && fbUser != nil {
+			verifiedUser = fbUser
+		} else if !h.cfg.AllowsDemo() {
+			http.Error(w, `{"error":"invalid username or password"}`, http.StatusUnauthorized)
+			return
+		}
+	}
+
+	// 2. Demo/Local fallback password verification if not yet verified
+	if verifiedUser == nil {
+		if h.cfg != nil && !h.cfg.AllowsDemo() {
+			http.Error(w, `{"error":"FIREBASE_WEB_API_KEY is required for direct password login in production; please generate an MCP token from the Web Settings page"}`, http.StatusServiceUnavailable)
+			return
+		}
+
+		// Demo mode credential check
+		validDemoPass := password == DefaultInitialPassword ||
+			password == "Admin@Dispatch2026!" ||
+			(h.cfg != nil && h.cfg.AdminPassword != "" && password == h.cfg.AdminPassword)
+		if !validDemoPass {
+			http.Error(w, `{"error":"invalid username or password"}`, http.StatusUnauthorized)
+			return
+		}
+
+		if usernamePart == "admin" || loginEmail == "admin@dispatch.local" || (h.cfg != nil && strings.EqualFold(loginEmail, h.cfg.AdminEmail)) {
+			verifiedUser = &auth.AuthUser{
+				UID:        "mock-admin-uid-001",
+				Email:      loginEmail,
+				Username:   "admin",
+				FullName:   "System Admin",
+				Role:       "admin",
+				EmployeeID: "EMP-ADMIN-001",
+			}
+		} else if h.repo != nil {
+			emp, _ := h.repo.GetByUsername(ctx, usernamePart)
+			if emp == nil {
+				emp, _ = h.repo.GetByEmployeeNumber(ctx, strings.ToUpper(usernamePart))
+			}
+			if emp == nil {
+				http.Error(w, `{"error":"user account not found"}`, http.StatusUnauthorized)
+				return
+			}
+			if !emp.IsActive {
+				http.Error(w, `{"error":"employee account is deactivated"}`, http.StatusForbidden)
+				return
+			}
+			verifiedUser = &auth.AuthUser{
+				UID:             emp.FirebaseUID,
+				Email:           emp.WorkEmail,
+				Username:        emp.Username,
+				FullName:        emp.FullName,
+				Role:            emp.Role,
+				EmployeeID:      emp.EmployeeNumber,
+				PagePermissions: emp.PagePermissions,
+			}
+			if verifiedUser.UID == "" {
+				verifiedUser.UID = "mock-uid-" + emp.Username
+			}
+		}
+	}
+
+	if verifiedUser == nil {
+		http.Error(w, `{"error":"authentication failed"}`, http.StatusUnauthorized)
+		return
+	}
+
+	resolvedUser, err := h.ResolveEmployeeAuthUser(ctx, verifiedUser)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusForbidden)
+		return
+	}
+
+	ttlDays := req.TTLDays
+	if ttlDays <= 0 || ttlDays > 365 {
+		ttlDays = 30
+	}
+
+	secret := ""
+	if h.cfg != nil {
+		secret = h.cfg.MCPTokenSecret
+	}
+	baseURL := resolveRequestBaseURL(r, h.cfg)
+
+	token, exp, err := auth.GenerateMCPToken(secret, resolvedUser, time.Duration(ttlDays)*24*time.Hour)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(IssueMCPTokenResponse{
+		Token:      token,
+		ExpiresAt:  exp.Format(time.RFC3339),
+		TTLDays:    ttlDays,
+		User:       resolvedUser,
+		ServerURL:  baseURL,
+		MCPHttpURL: baseURL + "/api/mcp",
+	})
+}
+
+const DefaultCloudRunAPIURL = "https://dispatch-api-kv7qum3dca-nn.a.run.app"
+
+// resolveRequestBaseURL determines the public API server URL from Config or defaults to the Cloud Run API URL.
+func resolveRequestBaseURL(_ *http.Request, cfg *config.Config) string {
+	if cfg != nil && cfg.AppBaseURL != "" && cfg.AppBaseURL != "http://localhost:8080" {
+		return strings.TrimRight(cfg.AppBaseURL, "/")
+	}
+	return DefaultCloudRunAPIURL
+}
+
+func (h *AuthHandler) verifyPasswordWithFirebaseREST(ctx context.Context, email, password string) (*auth.AuthUser, error) {
+	url := fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=%s", h.cfg.FirebaseWebAPIKey)
+	payload, _ := json.Marshal(map[string]interface{}{
+		"email":             email,
+		"password":          password,
+		"returnSecureToken": true,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("firebase sign-in rejected credentials")
+	}
+
+	var result struct {
+		LocalID      string `json:"localId"`
+		Email        string `json:"email"`
+		DisplayName  string `json:"displayName"`
+		IDToken      string `json:"idToken"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	user := &auth.AuthUser{
+		UID:      result.LocalID,
+		Email:    result.Email,
+		FullName: result.DisplayName,
+		Role:     "staff",
+	}
+
+	// If Firebase Admin client is available, verify token to extract custom claims
+	if h.authClient != nil && result.IDToken != "" {
+		if tok, err := h.authClient.VerifyIDToken(ctx, result.IDToken); err == nil && tok != nil {
+			if r, ok := tok.Claims["role"].(string); ok && r != "" {
+				user.Role = r
+			}
+			if e, ok := tok.Claims["employeeId"].(string); ok && e != "" {
+				user.EmployeeID = e
+			}
+			if u, ok := tok.Claims["username"].(string); ok && u != "" {
+				user.Username = u
+			}
+		}
+	}
+
+	return user, nil
 }

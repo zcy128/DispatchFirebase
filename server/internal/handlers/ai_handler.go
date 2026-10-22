@@ -40,6 +40,9 @@ func (h *AIHandler) ProcessChat(w http.ResponseWriter, r *http.Request) {
 		if req.UserRole == "" && user.Role != "" {
 			req.UserRole = user.Role
 		}
+		if req.PagePermissions == nil && user.PagePermissions != nil {
+			req.PagePermissions = user.PagePermissions
+		}
 	}
 
 	if req.UserRole == "" {
@@ -63,7 +66,7 @@ func (h *AIHandler) ProcessChat(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// GetStatus returns the operational status and active engine of AI Copilot
+// GetStatus returns the operational status, active engine, and daily Gemini quota of AI Copilot
 func (h *AIHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -73,12 +76,28 @@ func (h *AIHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 		engine = "gemini"
 	}
 
+	userKey := "anonymous"
+	if user := auth.GetUser(r.Context()); user != nil && user.UID != "" {
+		userKey = user.UID
+	} else if qUser := r.URL.Query().Get("userId"); qUser != "" {
+		userKey = qUser
+	}
+
+	used, limit, remaining, exhausted := 0, services.DefaultUserDailyGeminiLimit, services.DefaultUserDailyGeminiLimit, false
+	if h.aiService != nil {
+		used, limit, remaining, exhausted = h.aiService.GetQuotaStatus(userKey)
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":      "online",
-		"engine":      engine,
-		"hasApiKey":   hasKey,
-		"name":        "Dispatch AI Copilot",
-		"version":     "1.0",
-		"supported":   []string{"unassigned_shifts", "assign_driver", "driver_schedule", "fleet_summary"},
+		"status":         "online",
+		"engine":         engine,
+		"hasApiKey":      hasKey,
+		"name":           "Dispatch AI Copilot",
+		"version":        "1.0",
+		"supported":      []string{"unassigned_shifts", "assign_driver", "driver_schedule", "fleet_summary"},
+		"quotaUsed":      used,
+		"quotaLimit":     limit,
+		"quotaRemaining": remaining,
+		"quotaExhausted": exhausted,
 	})
 }

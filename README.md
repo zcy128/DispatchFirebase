@@ -23,9 +23,10 @@ A fully interactive public demo environment is available online with zero setup 
 
 | Application Module | Public Live URL | Access & Login Instructions |
 | :--- | :--- | :--- |
-| **Dispatch Office Console (`web`)** | [schoolbus.pcytech.ca](https://schoolbus.pcytech.ca/)<br>*(Mirror: [schoolbusdispatchapp.web.app](https://schoolbusdispatchapp.web.app/))* | Click the **"1-Click Launch as Operations Admin"** button on the sign-in screen to instantly enter the desktop console with full administrative, dispatch, and compliance privileges. |
+| **Dispatch Office Console (`web`)** | [schoolbus.pcytech.ca](https://schoolbus.pcytech.ca/)<br>*(Mirror: [schoolbusdispatchapp.web.app](https://schoolbusdispatchapp.web.app/))* | Click the **"1-Click Launch as Operations Admin"** button on the sign-in screen to instantly enter the desktop console with full administrative, dispatch, and compliance privileges.<br>*(Note: Navigate to `/?mode=ai` to directly open the full-screen standalone AI Copilot PWA)* |
 | **Driver & Monitor App (`driver_app`)** | [schoolbus.pcytech.ca/driver](https://schoolbus.pcytech.ca/driver)<br>*(Mirror: [schoolbusdispatchapp.web.app/driver](https://schoolbusdispatchapp.web.app/driver))* | Click **"Quick Demo Credentials"** at the bottom of the login form to autofill demo credentials (`driver@example.com` / `password123`), choose your role as **Driver** or **Attendant**, and tap **Sign In** to experience the shift schedule, pre-trip inspections, and student boarding check-in. |
 | **Parent Bus Tracker App (`parent_app`)** | [schoolbus.pcytech.ca/parent](https://schoolbus.pcytech.ca/parent)<br>*(Mirror: [schoolbusdispatchapp.web.app/parent](https://schoolbusdispatchapp.web.app/parent))* | Features passwordless passcode verification. Click **"Demo Phone"** or **"Demo Email"** to fill in demo credentials, tap **Continue**, then on the verification screen tap the amber **"Dev Passcode (Tap to autofill)"** banner to log in immediately and track the live school bus GPS route and arrival ETA. |
+| **Model Context Protocol (MCP) Endpoint** | `https://dispatch-api-kv7qum3dca-nn.a.run.app/api/mcp` | Standard Anthropic MCP protocol server endpoint, allowing external AI clients (Claude Desktop, Cursor, Gemini CLI) to connect via MCP Token and inspect or run dispatch operations. |
 
 ---
 
@@ -63,25 +64,37 @@ A fully interactive public demo environment is available online with zero setup 
 ### 8. Built-in Real-Time Team Chat
 - Secure operational instant messaging between dispatchers, yard supervisors, and fleet personnel for instant traffic and emergency communications.
 
-### 9. AI-Powered Natural Language Ops Assistant
-- Embedded LLM assistant with function calling tailored for school bus dispatch:
-  - **Natural Language Queries**: *"How many shifts are remaining today?"*, *"Which drivers have CDL licenses expiring this month?"*
-  - **Natural Language Dispatch Actions**: *"Assign Driver John to the afternoon run on Route 12."*
+### 9. Dual-Engine AI Copilot & Full Voice I/O
+- **Dual-Engine Architecture**:
+  - **Zero-Cost Built-in Semantic Engine**: Free, instantaneous regex/pattern execution against Firestore for high-frequency queries (shift coverage overview, vacant routes, vehicle fleet status, student safety incidents, HR directory, time off requests, payroll, expense claims) with 0 token consumption.
+  - **Generative Gemini Fallback**: Seamless escalation to Gemini API for complex inquiries, long-tail operations, and cross-domain reasoning, complete with per-user token quotas and rate limiting.
+- **Interactive ActionCards**: UI dynamically renders structured, clickable action cards directly in chat (shift assignment overview, assign driver confirmation, vehicle details, student incident reports, payroll tiers, expense claims).
+- **Multi-Language Voice I/O**:
+  - Real-time speech-to-text dictation input via Web Speech API (English, Chinese, French).
+  - High-quality text-to-speech (TTS) auto-readout for hands-free voice operations on the go.
+- **Mobile PWA Standalone Mode**:
+  - Installable directly as a standalone desktop/mobile Progressive Web App.
+  - Access `/?mode=ai` for a clean, full-screen walkie-talkie style voice dispatch assistant.
 
-### 10. Granular Page-Level Access Control (RBAC)
+### 10. Anthropic Model Context Protocol (MCP) Standard Integration
+- **Native MCP Standard Support**: Built-in standardized MCP Server supporting both local Stdio transport (`server/cmd/mcp`) and remote HTTP MCP endpoint (`/api/mcp`).
+- **External AI Agent Connectivity**: External AI tools (such as Claude Desktop, Cursor, Gemini CLI, or custom autonomous agents) can securely inspect live dispatch shifts, check vacant routes, verify driver/vehicle compliance, and trigger driver assignments.
+- **Secure Token Management**: Operators can generate dedicated MCP Tokens with custom expirations in the **Settings** view, protected by SHA-256 hash storage and scoped to the user's RBAC role.
+
+### 11. Granular Page-Level Access Control (RBAC)
 - Fine-grained role-based permission matrix governing exact read/write access for Administrators, Dispatchers, Yard Supervisors, Safety Officers, Payroll Accountants, Drivers, and Parents.
 
-### 11. BigQuery Cold Archiving & Disaster Recovery
+### 12. BigQuery Cold Archiving & Disaster Recovery
 - Active operational records reside in Firestore for sub-second latency and real-time streaming.
 - Completed shifts, audit trails, and attendance logs are archived to Google BigQuery, ensuring long-term audit compliance, data security, and analytics without bloating database costs.
 
-### 12. BusPlanner Staging Routes
+### 13. BusPlanner Staging Routes
 - **Staging Routes** lists shifts, stops, and students pulled from BusPlanner. The page does not assign drivers, vehicles, or attendants.
 - A dispatcher with write access can copy one staging route into the live route. Existing crew assignments stay as they are.
 - Automatic copy runs only after BusPlanner sync is turned on. Each shift is applied at 9:00 AM America/Toronto on the weekday before its effective date. If that day is a weekend, the copy moves to Friday at 9:00 AM. The previous shift keeps running through the weekend and retires on the calendar day before the effective date.
 - While sync is off, demo mode recreates five sample staging routes every Monday at 9:00 AM. Those samples are not copied into live routes automatically. The default BusPlanner address is `https://school.mybusplanner.ca`.
 
-### 13. External Sync and Zonar Vehicle Trace
+### 14. External Sync and Zonar Vehicle Trace
 - **External Data Sync** holds BambooHR, Zonar, and BusPlanner settings. Passwords and API keys stay on the server and are never returned to the browser.
 - BambooHR sync reads employees only. Zonar GPS polling and Zonar route write-back are separate switches. Route data is prepared locally and is not posted to Zonar until route sync is turned on.
 - On a dispatch stop, the map can draw that vehicle's Zonar path and idle stops for the shift day when Zonar sync is enabled.
@@ -94,9 +107,10 @@ A fully interactive public demo environment is available online with zero setup 
 | :--- | :--- | :--- |
 | **Driver Mobile & Web App (`driver_app`)** | **Flutter (Android / iOS / Web)** | Shift scheduling, clock-in/out, Pre-trip inspections, student boarding & drop-off check-in via barcode/camera scan, real-time dispatch alerts |
 | **Parent Mobile & Web App (`parent_app`)** | **Flutter (Android / iOS / Web)** | Passwordless one-time passcode login, live school bus GPS tracking on OpenStreetMap, accurate arrival ETA, student absence reporting |
-| **Dispatch Office Web Console (`web`)** | **React + TypeScript + Vite + Tailwind CSS** | High-density operations dashboard, route scheduling, BusPlanner staging, temporary driver/bus substitution, vehicle and driver compliance roster (PWA ready) |
-| **Backend API Service (`server`)** | **Go (Golang 1.24+) + Chi Router** | High-performance microservices (CQRS architecture, Twilio SMS gateway, BusPlanner staging, Zonar GPS, ETA route calculation, real-time audit logging and authentication) |
-| **Cloud Data & Event Streaming** | **Firebase / Firestore / Cloud Storage / Cloud Run** | Real-time push notifications, distributed event-driven state synchronization |
+| **Dispatch Office Web Console (`web`)** | **React + TypeScript + Vite + Tailwind CSS** | High-density operations dashboard, route scheduling, BusPlanner staging, temporary driver/bus substitution, vehicle and driver compliance roster, voice AI Copilot (PWA ready) |
+| **Backend API Service (`server`)** | **Go (Golang 1.24+) + Chi Router** | High-performance microservices (CQRS architecture, Twilio SMS gateway, BusPlanner staging, Zonar GPS, ETA route calculation, dual-engine AI Copilot) |
+| **MCP Standard Server (`server/cmd/mcp`)** | **Go + Anthropic MCP SDK** | Standard Model Context Protocol server enabling external Claude Desktop / Cursor / custom AI agents to safely execute dispatch queries and operations |
+| **Cloud Data & Event Streaming** | **Firebase / Firestore / Cloud Storage / Cloud Run** | Real-time push notifications, distributed event-driven state synchronization, scale-to-zero serverless hosting |
 | **Analytics & Cold Storage** | **Google BigQuery** | Long-term compliant shift archiving and historical reporting |
 
 ---
@@ -117,11 +131,12 @@ DispatchFirebase/
 │   └── lib/features/auth/           # Passwordless parent phone/email passcode auth
 ├── web/                             # React + Vite fleet operations desktop console
 │   ├── .env.example                 # Web console environment variables template
-│   └── src/                         # Fleet dashboard, views, components & store
+│   └── src/                         # Fleet dashboard, views, components, AI Copilot & store
 ├── server/                          # Go backend microservice
 │   ├── cmd/server/main.go           # Web API server entrypoint
+│   ├── cmd/mcp/main.go              # Anthropic MCP Server entrypoint
 │   ├── cmd/seed/main.go             # Initial master data and mock seeding CLI
-│   └── internal/                    # Auth, repository layer, ETA, email/SMS services
+│   └── internal/                    # Auth, repository layer, ETA, email/SMS services, AI engine & MCP handler
 ├── deploy/                          # Google Cloud Run deployment scripts
 ├── .env.example                     # Root environment variables template
 ├── firestore.rules                  # Firestore database security rules
@@ -149,6 +164,11 @@ All production credentials and sensitive keys have been decoupled from the publi
    go run ./cmd/server
    ```
    The backend API will be available on `http://localhost:8080`.
+4. *(Optional)* Run the local standalone MCP server:
+   ```bash
+   cd server
+   go run ./cmd/mcp
+   ```
 
 ---
 
@@ -208,6 +228,7 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
 - **Credential Hygiene**: **Never** commit files containing actual private keys or secrets (`serviceAccountKey.json`, `firebase_options.dart`, `.env`). All such files are strictly excluded via `.gitignore`.
 - **Firestore Security Rules**: Before deploying to production or connecting to a live cloud database, ensure you tighten `firestore.rules` to enforce strict authorization controls.
 - **Integration secrets**: BusPlanner, Zonar, and BambooHR credentials, and the BusPlanner staging collections, are readable only by the API. Firestore rules deny browser access.
+- **MCP Token Security**: MCP Tokens are hashed with SHA-256 before storing in Firestore. The raw token is only returned to the administrator once upon creation.
 
 ---
 

@@ -26,6 +26,10 @@ export interface AIChatResponse {
   actionCards?: AIActionCard[];
   suggestedQuestions?: string[];
   engine?: string;
+  quotaUsed?: number;
+  quotaLimit?: number;
+  quotaRemaining?: number;
+  quotaExhausted?: boolean;
 }
 
 export interface AIChatMessage {
@@ -46,4 +50,25 @@ export interface AICopilotStatus {
   name: string;
   supported: string[];
   version: string;
+  quotaUsed?: number;
+  quotaLimit?: number;
+  quotaRemaining?: number;
+  quotaExhausted?: boolean;
+}
+
+export interface MCPTokenResponse {
+  token: string;
+  expiresAt: string;
+  ttlDays: number;
+  serverUrl: string;
+  mcpHttpUrl: string;
+  user: {
+    uid: string;
+    email: string;
+    username?: string;
+    fullName?: string;
+    role: string;
+    employeeId: string;
+    pagePermissions?: Record<string, string>;
+  };
 }

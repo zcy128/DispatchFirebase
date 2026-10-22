@@ -83,7 +83,13 @@ export const AppContent: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
-  const [isAICopilotOpen, setIsAICopilotOpen] = useState<boolean>(false);
+  const [isAICopilotOpen, setIsAICopilotOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('mode') === 'ai' || params.get('ai') === '1';
+    }
+    return false;
+  });
   const [chatInitialTargetUserId, setChatInitialTargetUserId] = useState<string | null>(null);
   const [chatInitialParent, setChatInitialParent] = useState<CreateParentChannelPayload | null>(null);
 
