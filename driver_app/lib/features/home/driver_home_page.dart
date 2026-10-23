@@ -38,6 +38,10 @@ import '../chat/repository/chat_repository.dart';
 import '../chat/presentation/chat_channels_page.dart';
 import '../chat/services/chat_notification_service.dart';
 import '../route_openings/route_openings_page.dart';
+import '../charter/models/charter_model.dart';
+import '../charter/repository/charter_repository.dart';
+import '../charter/presentation/charter_trip_card.dart';
+import '../charter/presentation/available_charters_sheet.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../core/services/device_token_service.dart';
 
@@ -456,6 +460,9 @@ class _DriverHomePageBody extends StatelessWidget {
           _buildProfileCard(context, isDark),
           const SizedBox(height: 24),
 
+          // Assigned Charter Trips Section (Live Stream)
+          _buildAssignedCharterSection(context, isDark),
+
           // Active Shift / Route Card Header
           Row(
             children: [
@@ -577,8 +584,110 @@ class _DriverHomePageBody extends StatelessWidget {
               );
             },
           ),
+          const SizedBox(height: 12),
+          _buildShortcutTile(
+            context: context,
+            isDark: isDark,
+            icon: Icons.airport_shuttle_rounded,
+            iconColor: Colors.deepOrangeAccent,
+            title: 'Charter & Field Trips',
+            subtitle: 'Browse and self-assign available charter runs or view assignments',
+            onTap: () {
+              AvailableChartersSheet.show(
+                context,
+                driverId: driverId,
+                username: username,
+                role: role,
+                repository: context.read<CharterRepository>(),
+              );
+            },
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAssignedCharterSection(BuildContext context, bool isDark) {
+    final charterRepo = context.read<CharterRepository>();
+
+    return StreamBuilder<List<CharterTripModel>>(
+      stream: charterRepo.streamAssignedTrips(driverId: driverId, username: username),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final assignedTrips = snapshot.data!;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'ASSIGNED CHARTER TRIPS',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${assignedTrips.length} RUN${assignedTrips.length > 1 ? 'S' : ''}',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () {
+                    AvailableChartersSheet.show(
+                      context,
+                      driverId: driverId,
+                      username: username,
+                      role: role,
+                      repository: charterRepo,
+                    );
+                  },
+                  icon: const Icon(Icons.explore_outlined, size: 14),
+                  label: const Text('Browse Charters', style: TextStyle(fontSize: 11)),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ...assignedTrips.map((trip) {
+              final assignment = trip.getAssignmentForUser(driverId, username);
+              if (assignment == null) return const SizedBox.shrink();
+              return CharterTripCard(
+                key: ValueKey('charter-${trip.id}-${assignment.id}'),
+                trip: trip,
+                assignment: assignment,
+                driverId: driverId,
+                username: username,
+                role: role,
+                repository: charterRepo,
+              );
+            }),
+            const SizedBox(height: 12),
+          ],
+        );
+      },
     );
   }
 

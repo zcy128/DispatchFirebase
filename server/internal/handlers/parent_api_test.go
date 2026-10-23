@@ -1,4 +1,4 @@
-package handlers_test
+﻿package handlers_test
 
 import (
 	"context"
@@ -147,6 +147,42 @@ func TestRequestOTP_NotFound(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 	if resp.Success {
 		t.Fatalf("expected success to be false for unknown number")
+	}
+}
+
+func TestRequestOTP_DemoContacts(t *testing.T) {
+	parentHandler, _, _, _, _ := setupTestEnvironment()
+
+	demoContacts := []string{
+		"613-555-0199",
+		"613-555-0100",
+		"parent@pcytech.ca",
+		"parent@example.com",
+		"demo",
+	}
+
+	for _, c := range demoContacts {
+		t.Run("contact_"+c, func(t *testing.T) {
+			payload := fmt.Sprintf(`{"contact":"%s"}`, c)
+			req := httptest.NewRequest("POST", "/api/parent/auth/request-otp", strings.NewReader(payload))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			parentHandler.RequestOTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+
+			var resp models.RequestOTPResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("failed to parse response: %v", err)
+			}
+
+			if !resp.Success {
+				t.Errorf("expected success true for demo contact %s, got: %s", c, resp.Message)
+			}
+		})
 	}
 }
 

@@ -24,9 +24,13 @@ type DispatchPayrollRecord struct {
 	RateSource      string      `json:"rateSource" firestore:"rateSource"`           // "override_pd", "override_dd", "override_np", "override_custom", "route_shift_rate", "board_base_rate", "default"
 	RateDescription string      `json:"rateDescription,omitempty" firestore:"rateDescription,omitempty"`
 	PayrollComments string      `json:"payrollComments,omitempty" firestore:"payrollComments,omitempty"`
-	Status          string      `json:"status" firestore:"status"`                   // "pending_checkout", "pending_approval", "approved", "rejected"
-	SyncedToFinance bool        `json:"syncedToFinance" firestore:"syncedToFinance"` // true if synced to payroll_logs
-	ApprovedBy      *string     `json:"approvedBy,omitempty" firestore:"approvedBy,omitempty"`
+	Status              string      `json:"status" firestore:"status"`                   // "pending_checkout", "pending_approval", "approved", "rejected"
+	SyncedToFinance     bool        `json:"syncedToFinance" firestore:"syncedToFinance"` // true if synced to payroll_logs
+	IsCharter           bool        `json:"isCharter,omitempty" firestore:"isCharter,omitempty"`
+	CharterTripID       string      `json:"charterTripId,omitempty" firestore:"charterTripId,omitempty"`
+	CharterAssignmentID string      `json:"charterAssignmentId,omitempty" firestore:"charterAssignmentId,omitempty"`
+	ClientName          string      `json:"clientName,omitempty" firestore:"clientName,omitempty"`
+	ApprovedBy          *string     `json:"approvedBy,omitempty" firestore:"approvedBy,omitempty"`
 	ApprovedAt      *string     `json:"approvedAt,omitempty" firestore:"approvedAt,omitempty"`
 	RejectedBy      *string     `json:"rejectedBy,omitempty" firestore:"rejectedBy,omitempty"`
 	RejectedAt      *string     `json:"rejectedAt,omitempty" firestore:"rejectedAt,omitempty"`
@@ -91,8 +95,12 @@ type PayrollDepartmentLogRecord struct {
 	DispatcherComments string      `json:"dispatcherComments,omitempty" firestore:"dispatcherComments,omitempty"`
 	CrewComments       string      `json:"crewComments,omitempty" firestore:"crewComments,omitempty"`
 	PayrollNotes       string      `json:"payrollNotes,omitempty" firestore:"payrollNotes,omitempty"` // Internal Finance adjustments/notes
-	Status             string      `json:"status" firestore:"status"`                             // "approved", "processed", "paid", "on_hold"
-	ApprovedBy         string      `json:"approvedBy,omitempty" firestore:"approvedBy,omitempty"`
+	Status              string      `json:"status" firestore:"status"`                             // "approved", "processed", "paid", "on_hold"
+	IsCharter           bool        `json:"isCharter,omitempty" firestore:"isCharter,omitempty"`
+	CharterTripID       string      `json:"charterTripId,omitempty" firestore:"charterTripId,omitempty"`
+	CharterAssignmentID string      `json:"charterAssignmentId,omitempty" firestore:"charterAssignmentId,omitempty"`
+	ClientName          string      `json:"clientName,omitempty" firestore:"clientName,omitempty"`
+	ApprovedBy          string      `json:"approvedBy,omitempty" firestore:"approvedBy,omitempty"`
 	ApprovedAt         string      `json:"approvedAt,omitempty" firestore:"approvedAt,omitempty"`
 	SyncedAt           string      `json:"syncedAt" firestore:"syncedAt"`
 	UpdatedAt          interface{} `json:"updatedAt,omitempty" firestore:"updatedAt,omitempty"`

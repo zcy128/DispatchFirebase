@@ -22,6 +22,7 @@ import {
   X,
   Lock,
   ArrowRight,
+  Compass,
 } from 'lucide-react';
 import { DispatchPayrollRecord, ApproveDispatchPayrollPayload } from '../../types/dispatch';
 import { DispatchService } from '../../services/dispatchService';
@@ -68,8 +69,8 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Category filter: Two primary categories
-  const [category, setCategory] = useState<'all' | 'with_comments' | 'without_comments'>('all');
+  // Category filter: Two primary categories + dedicated Charter category
+  const [category, setCategory] = useState<'all' | 'with_comments' | 'without_comments' | 'charter'>('all');
 
   // Additional Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -287,14 +288,18 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
   // Filtered list
   const filteredPayrolls = useMemo(() => {
     return payrolls.filter((item) => {
-      // Category filter (With Comments vs Without Comments)
+      const isCharterItem = Boolean(item.isCharter || item.shiftType === 'CHARTER');
       const hasComm = Boolean(item.hasComments || (item.payrollComments && item.payrollComments.trim() !== ''));
-      if (category === 'with_comments' && !hasComm) {
-        return false;
+
+      // Category filter (All vs Needs Review vs Clean vs Charter)
+      if (category === 'charter') {
+        if (!isCharterItem) return false;
+      } else if (category === 'with_comments') {
+        if (!hasComm) return false;
+      } else if (category === 'without_comments') {
+        if (hasComm) return false;
       }
-      if (category === 'without_comments' && hasComm) {
-        return false;
-      }
+
       // Role filter
       if (roleFilter !== 'all' && (item.role || '').toLowerCase() !== roleFilter) {
         return false;
@@ -312,7 +317,8 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
         const unitMatch = (item.unitNumber || '').toLowerCase().includes(q);
         const commentMatch = (item.payrollComments || '').toLowerCase().includes(q);
         const sourceMatch = (item.rateSource || '').toLowerCase().includes(q);
-        if (!routeMatch && !nameMatch && !empIdMatch && !unitMatch && !commentMatch && !sourceMatch) {
+        const clientMatch = (item.clientName || '').toLowerCase().includes(q);
+        if (!routeMatch && !nameMatch && !empIdMatch && !unitMatch && !commentMatch && !sourceMatch && !clientMatch) {
           return false;
         }
       }
@@ -327,6 +333,10 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
 
   const withoutCommentsCount = useMemo(() => {
     return payrolls.filter((p) => !p.hasComments && (!p.payrollComments || p.payrollComments.trim() === '')).length;
+  }, [payrolls]);
+
+  const charterCount = useMemo(() => {
+    return payrolls.filter((p) => Boolean(p.isCharter || p.shiftType === 'CHARTER')).length;
   }, [payrolls]);
 
   // Aggregate statistics
@@ -670,6 +680,21 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
             {withoutCommentsCount}
           </span>
         </button>
+
+        <button
+          onClick={() => setCategory('charter')}
+          className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-colors ${
+            category === 'charter'
+              ? 'bg-white dark:bg-slate-900 border-t border-l border-r border-slate-200 dark:border-slate-800 text-indigo-600 dark:text-indigo-400'
+              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <Compass className="w-3.5 h-3.5 text-indigo-500" />
+          <span>Charter Trips</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold">
+            {charterCount}
+          </span>
+        </button>
       </div>
 
       {/* Filter and Search Bar */}
@@ -783,13 +808,24 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                           <span className="font-mono font-bold text-slate-900 dark:text-white">
                             {rec.routeNo}
                           </span>
-                          <span className="text-[11px] px-1.5 py-0.5 rounded font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                            {rec.shiftType}
-                          </span>
+                          {rec.isCharter || rec.shiftType === 'CHARTER' ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-extrabold bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                              CHARTER
+                            </span>
+                          ) : (
+                            <span className="text-[11px] px-1.5 py-0.5 rounded font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                              {rec.shiftType}
+                            </span>
+                          )}
                         </div>
                         {rec.routeName && (
-                          <div className="text-xs text-slate-500 truncate max-w-[130px]">
+                          <div className="text-xs text-slate-500 truncate max-w-[150px]">
                             {rec.routeName}
+                          </div>
+                        )}
+                        {rec.clientName && (
+                          <div className="text-[10px] text-indigo-600 dark:text-indigo-400 truncate max-w-[150px]">
+                            {rec.clientName}
                           </div>
                         )}
                       </td>

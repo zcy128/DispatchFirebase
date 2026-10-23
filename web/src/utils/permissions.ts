@@ -15,6 +15,7 @@ export const SYSTEM_PAGES: PageDefinition[] = [
   { id: 'routes', label: 'Route Network', category: 'operations', description: 'Route paths, runs, stops and schedules' },
   { id: 'staging_routes', label: 'Staging Routes', category: 'operations', description: 'BusPlanner staging routes, shifts, stops, and students. No crew assignment.' },
   { id: 'dispatch_payroll', label: 'Daily Dispatch Payroll', category: 'operations', description: 'Daily dispatch shift payroll review, driver shift adjustments and finance approvals' },
+  { id: 'charter', label: 'Charter Trip Management', category: 'operations', description: 'Charter trip contracts, multi-vehicle dispatch, crew check-in and payroll generation' },
   { id: 'dispatch_log', label: 'Dispatch Change Log', category: 'operations', description: 'Audit trail of dispatcher changes & cover assignments' },
   { id: 'temporary_assignments', label: 'Route Openings & Coverage', category: 'operations', description: 'Route vacancy bidding board and temporary shift covers' },
   { id: 'assignment_history', label: 'Assignment Tracking (Driver & Route/Bus)', category: 'operations', description: 'Lifecycle history tracking when drivers are assigned or unassigned from routes and vehicles' },
@@ -128,6 +129,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   admin: {
     dashboard: 'readwrite',
     dispatch: 'readwrite',
+    charter: 'readwrite',
     dispatch_payroll: 'readwrite',
     dispatch_log: 'readwrite',
     temporary_assignments: 'readwrite',
@@ -165,6 +167,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   manager: {
     dashboard: 'readonly',
     dispatch: 'readonly',
+    charter: 'readonly',
     dispatch_payroll: 'readonly',
     dispatch_log: 'readonly',
     temporary_assignments: 'readonly',
@@ -202,6 +205,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   dispatcher: {
     dashboard: 'readwrite',
     dispatch: 'readwrite',
+    charter: 'readwrite',
     dispatch_payroll: 'readwrite',
     dispatch_log: 'readwrite',
     temporary_assignments: 'readwrite',
@@ -239,6 +243,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   'office staff': {
     dashboard: 'readonly',
     dispatch: 'readonly',
+    charter: 'none',
     dispatch_payroll: 'none',
     dispatch_log: 'readonly',
     temporary_assignments: 'readonly',
@@ -276,6 +281,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   studentcare: {
     dashboard: 'readonly',
     dispatch: 'readonly',
+    charter: 'none',
     dispatch_payroll: 'none',
     dispatch_log: 'readonly',
     temporary_assignments: 'readonly',
@@ -313,6 +319,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   fleet: {
     dashboard: 'readonly',
     dispatch: 'readonly',           // Read-only dispatch
+    charter: 'readonly',
     dispatch_payroll: 'none',
     dispatch_log: 'readonly',
     temporary_assignments: 'readonly',
@@ -350,6 +357,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   supervisor: {
     dashboard: 'readonly',
     dispatch: 'readonly',           // Read-only yard dispatch
+    charter: 'readonly',
     dispatch_payroll: 'readonly',
     dispatch_log: 'readonly',
     temporary_assignments: 'readonly',
@@ -387,6 +395,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   HR: {
     dashboard: 'readonly',
     dispatch: 'readonly',
+    charter: 'none',
     dispatch_payroll: 'none',
     dispatch_log: 'readonly',
     temporary_assignments: 'readonly',
@@ -424,6 +433,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   payroll: {
     dashboard: 'readonly',
     dispatch: 'readonly',
+    charter: 'readonly',
     dispatch_payroll: 'readwrite',
     dispatch_log: 'readonly',
     temporary_assignments: 'readonly',
@@ -461,6 +471,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   training: {
     dashboard: 'readonly',
     dispatch: 'readonly',
+    charter: 'none',
     dispatch_payroll: 'none',
     dispatch_log: 'readonly',
     temporary_assignments: 'readonly',
@@ -498,6 +509,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   driver: {
     dashboard: 'none',
     dispatch: 'none',
+    charter: 'none',
     dispatch_payroll: 'none',
     dispatch_log: 'none',
     temporary_assignments: 'readonly',
@@ -535,6 +547,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
   helper: {
     dashboard: 'none',
     dispatch: 'none',
+    charter: 'none',
     dispatch_payroll: 'none',
     dispatch_log: 'none',
     temporary_assignments: 'readonly',

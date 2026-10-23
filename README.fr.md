@@ -30,6 +30,83 @@ Un environnement de démonstration public complet est directement accessible san
 
 ---
 
+## 📱 Suite d'Applications & Liste des Fonctionnalités Principales
+
+La plateforme est structurée autour d'un écosystème d'applications dédiées, répondant aux besoins spécifiques des régulateurs, des chauffeurs sur le terrain, des parents d'élèves et des services administratifs :
+
+### 1. Console de Régulation & Gestion d'Exploitation (`web`)
+*Console d'exploitation sur ordinateur et tablette conçue avec React, TypeScript et Tailwind CSS pour les répartiteurs, chefs de dépôt, responsables sécurité et comptables.*
+
+- **Tableau de Répartition Interactif des Services** : Visualisation en colonnes des services du matin (AM), du midi (MD) et du soir (PM) avec indicateurs en direct (Non assigné, Planifié, Pointé, En cours, Terminé).
+- **Planification Dynamique des Remplacements (Cover Drivers)** : Assignation en un clic de chauffeurs ou d'accompagnateurs remplaçants en cas de congés validés ou d'absences imprévues, éliminant les pénuries de dernière minute.
+- **Gestion Complète du Parc de Véhicules** : Fiches d'inventaire détaillées (marque, modèle, capacité en passagers, accès fauteuil roulant, numéro de châssis VIN, odomètre, type de carburant).
+- **Contrôle Réglementaire Semestriel (6 mois) & Conformité SAAQ / CVOR** : Compte à rebours automatique avant l'échéance des inspections gouvernementales obligatoires. Les véhicules dont le contrôle est dépassé ou signalant une défectuosité critique sont automatiquement bloqués et retirés des listes d'assignation.
+- **Registre de Conformité des Chauffeurs & Accompagnateurs** : Suivi des classes de permis de conduire professionnel (CDL), des dates de renouvellement médical et des antécédents, avec alertes visuelles automatiques d'expiration.
+- **Gestion des Lignes, Circuits & Fiches Élèves** : Définition des itinéraires avec séquencement des points d'arrêt, géolocalisation, horaires théoriques et liste nominative des élèves avec besoins d'assistance particuliers.
+- **Gestion des Transports Nolisés / Voyages Scolaires (Charter Operations)** : Module complet dédié aux réservations nolisées. Paramétrage des arrêts de départ/destination, informations clients, affectation des véhicules et équipages. Synchronisation du pointage en direct avec l'application chauffeur et génération automatique des lignes de paie correspondantes.
+- **Atelier de Rémunération & Approbation de la Paie (Payroll)** : Configuration flexible des taux horaires et des forfaits par tournée pour chauffeurs et accompagnateurs. Calcul automatisé des gains quotidiens à la clôture des services. Processus dédié de revue et validation des heures de voyages nolisés avec traçabilité dans le journal d'audit `payroll_logs`.
+- **Publication des Lignes Vacantes & Candidatures Chauffeurs (Bidding)** : Diffusion des tournées ouvertes ou renforts temporaires auprès des chauffeurs. Analyse des candidatures et attribution transparente des circuits.
+- **Traitement des Défectuosités, Dangers & Incidents** : Déclaration, catégorisation, photos justificatives et suivi de la résolution pour les anomalies mécaniques (Defects), dangers routiers (Hazards) et rapports de discipline élèves (Student Incidents).
+- **Importation & Synchronisation BusPlanner Staging** : Importation et prévisualisation des lignes, arrêts et élèves depuis BusPlanner, comparaison des modifications et promotion automatisée ou en un clic vers les lignes actives.
+- **Télémétrie & Synchronisation Externe** : Panneau de synchronisation centralisé avec BambooHR (données collaborateurs), Zonar (tracé GPS, arrêts au ralenti) et BusPlanner.
+- **Matrice de Permissions Granulaire (RBAC)** : Contrôle d'accès strict par rôle protégeant les circuits, données RH, grilles salariales et paramètres système.
+- **Gestion Sécurisée des Jetons MCP** : Génération et révocation de jetons Model Context Protocol sécurisés (hachage SHA-256) pour la connexion d'agents IA externes.
+
+---
+
+### 2. Application Mobile Chauffeur & Accompagnateur (`driver_app`)
+*Application mobile multiplateforme et PWA conçue avec Flutter pour les chauffeurs d'autobus et les accompagnateurs scolaires.*
+
+- **Planning Quotidien des Services** : Synthèse chronologique des tournées du matin, du midi et du soir avec numéros de circuit, bus attribué et heure de prise de service.
+- **Pointage Rapide Prise & Fin de Service (Check-In / Check-Out)** : Enregistrement instantané synchronisant le statut en temps réel avec le tableau de régulation central.
+- **Module des Transports Nolisés Assignés (Assigned Charters)** : Fiches dédiées pour les voyages scolaires et nolisés affichant les détails de course, rôle à bord (chauffeur/accompagnateur), consignes particulières. Comprend le pointage de prise/fin de mission, l'horodatage d'arrivée et de départ à chaque étape et la transmission directe en paie.
+- **Feuille de Route & Navigation Arrêt par Arrêt** : Ordre séquentiel des arrêts, horaires prévus, nombre d'élèves à embarquer et assistance cartographique.
+- **Pointage des Élèves à la Montée & Descente** : Validation rapide du statut de chaque élève par sélection tactile ou lecture de code-barres / QR code via la caméra, avec mise en évidence des absences signalées et des alertes médicales.
+- **Ronde de Sécurité Réglementaire Schedule 5 (Pre-Trip Inspection)** : Liste de contrôle numérique obligatoire avant le départ conforme aux exigences réglementaires (MTO / SAAQ / CVOR). Enregistrement de l'odomètre, vérification des freins, issues de secours, feux et signalement des défectuosités bloquant le départ en cas de danger majeur.
+- **Déclaration Immédiate de Défectuosités & Dangers** : Signalement sur le terrain des problèmes mécaniques ou imprévus de circulation avec prise de photos et notification instantanée du dispatch.
+- **Candidature aux Lignes Vacantes (Route Bidding)** : Consultation des circuits vacants et des vacations supplémentaires proposées par la régulation avec soumission directe de candidature depuis le mobile.
+- **Messagerie Instantanée d'Équipe en Direct** : Canal de communication bidirectionnel direct avec le centre de régulation en cas de ralentissement ou d'urgence.
+- **Notifications Push Automatisées (FCM)** : Rappels programmés avant la prise de poste, relances d'inspection pré-départ et notifications de modification de tournée.
+
+---
+
+### 3. Application Parent de Suivi en Direct (`parent_app`)
+*Application mobile et web claire et intuitive conçue avec Flutter pour les parents et tuteurs légaux.*
+
+- **Connexion Sécurisée Sans Mot de Passe (OTP)** : Authentification simple par numéro de téléphone SMS ou adresse courriel avec code d'accès temporaire à 6 chiffres.
+- **Télémétrie GPS en Direct & Tracé Cartographique** : Visualisation en temps réel de la position de l'autobus scolaire se déplaçant le long de l'itinéraire vers l'arrêt de l'élève.
+- **Estimation d'Arrivée (ETA) & Distance en Temps Réel** : Calcul dynamique du délai d'attente estimé en minutes et de la distance restante avant l'arrêt de l'enfant.
+- **Prise en Charge Multi-Enfants** : Basculement fluide entre les profils de plusieurs enfants pour suivre leurs circuits respectifs du matin et de l'après-midi.
+- **Indicateurs d'État du Trajet en Direct** : Suivi des étapes clés du trajet (`SCHEDULED` Prévu, `EN_ROUTE` En route, `APPROACHING` Approche imminente, `BOARDED` À bord, `DROPPED_OFF` Déposé en toute sécurité, `ABSENT` Absent).
+- **Déclaration d'Absence Directe par le Parent** : Signalement en 1 clic de l'absence de l'enfant pour le matin ou le soir, alertant directement la régulation et retirant l'arrêt de la tournée du chauffeur.
+- **Messagerie Dédiée avec la Régulation** : Canal de contact direct pour prévenir d'un imprévu, signaler un objet oublié ou poser une question au régulateur.
+- **Alertes Personnalisables** : Notifications configurables à l'approche du bus (ex. 5 minutes avant), confirmation de montée à bord et confirmation de descente (par push, SMS ou courriel).
+
+---
+
+### 4. Copilote IA Opérationnel & Serveur Standard MCP
+*Assistant vocal intelligent d'exploitation et interface standard pour agents d'intelligence artificielle.*
+
+- **Interface Vocale Talkie-Walkie Mains Libres** : Dictée vocale continue (STT) et synthèse vocale haute définition (TTS) pour piloter les opérations sans clavier.
+- **Architecture à Double Moteur** :
+  - *Moteur Sémantique Intégré à Coût Zéro* : Zéro consommation de jetons API ; requêtes instantanées sur les circuits vacants, fiches véhicules et synthèses de paie.
+  - *Moteur Génératif Gemini* : Prise en charge automatique pour les requêtes complexes, analyses d'impact et raisonnements opérationnels.
+- **Cartes d'Actions Interactives (ActionCards)** : Affichage direct dans le fil de discussion de fiches interactives pour réassigner un chauffeur en un clic ou vérifier les signalements de sécurité.
+- **Protocole Standard Anthropic MCP (`/api/mcp`)** : Point d'accès normalisé permettant aux outils IA (Claude Desktop, Cursor, Gemini CLI, agents autonomes) d'interroger les tournées et d'exécuter des actions avec des jetons sécurisés.
+
+---
+
+### 5. Microservice Backend Go Haute Performance (`server`)
+*Microservice d'entreprise en langage Go déployé sur Google Cloud Run offrant une haute disponibilité et une montée en charge sans serveur.*
+
+- **Architecture Propre & Modèle CQRS** : API REST ultra-rapide sous Go 1.24+ avec routeur Chi, optimisée pour le streaming temps réel et la télémétrie mobile.
+- **Flux d'Absence par Courriel Sans Connexion** : Passerelle webhooks Twilio SendGrid / Amazon SES permettant aux chauffeurs de demander un congé par simple courriel et aux responsables de valider en 1 clic depuis leur boîte professionnelle via un lien signé sécurisé.
+- **Passerelle SMS Twilio** : Expédition automatisée des codes de vérification OTP et des alertes critiques aux parents.
+- **Moteur d'Intégration Externe** : Synchronisation continue avec BambooHR (fiches collaborateurs), Zonar Systems (points GPS et détection d'arrêts prolongés) et BusPlanner (horaires et circuits).
+- **Archivage Réglementaire BigQuery** : Pipeline automatisé transférant les historiques de services, feuilles de présence et données de paie vers Google BigQuery pour un stockage pérenne, conforme et économique.
+
+---
+
 ## 🌟 Avantages Clés & Fonctionnalités Majeures
 
 ### 1. Coûts d'Exploitation Minimes (Architecture Cloud Sans Serveur)

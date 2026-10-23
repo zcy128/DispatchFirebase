@@ -16,6 +16,7 @@ import 'features/route_assessment/repository/route_assessment_repository.dart';
 import 'features/vehicle_signout/repository/vehicle_signout_repository.dart';
 import 'features/route/repository/route_repository.dart';
 import 'features/chat/repository/chat_repository.dart';
+import 'features/charter/repository/charter_repository.dart';
 import 'firebase_options.dart';
 
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -66,6 +67,7 @@ void main() async {
   await vehicleSignoutRepository.init();
 
   final chatRepository = ChatRepository();
+  final charterRepository = CharterRepository();
 
   runApp(DriverApp(
     dispatchRepository: dispatchRepository,
@@ -79,6 +81,7 @@ void main() async {
     routeAssessmentRepository: routeAssessmentRepository,
     vehicleSignoutRepository: vehicleSignoutRepository,
     chatRepository: chatRepository,
+    charterRepository: charterRepository,
   ));
 }
 
@@ -94,6 +97,7 @@ class DriverApp extends StatelessWidget {
   final RouteAssessmentRepository? routeAssessmentRepository;
   final VehicleSignoutRepository? vehicleSignoutRepository;
   final ChatRepository? chatRepository;
+  final CharterRepository? charterRepository;
 
   const DriverApp({
     super.key,
@@ -108,6 +112,7 @@ class DriverApp extends StatelessWidget {
     this.routeAssessmentRepository,
     this.vehicleSignoutRepository,
     this.chatRepository,
+    this.charterRepository,
   });
 
   @override
@@ -196,6 +201,8 @@ class DriverApp extends StatelessWidget {
             RepositoryProvider<VehicleSignoutRepository>.value(value: vehicleSignoutRepository!),
           if (chatRepository != null)
             RepositoryProvider<ChatRepository>.value(value: chatRepository!),
+          if (charterRepository != null)
+            RepositoryProvider<CharterRepository>.value(value: charterRepository!),
         ],
         child: app,
       );

@@ -3723,6 +3723,10 @@ func (r *FirestoreDispatchRepository) SyncToPayrollLog(ctx context.Context, p *m
 		logRec.RateSource = p.RateSource
 		logRec.RateDescription = p.RateDescription
 		logRec.DispatcherComments = p.PayrollComments
+		logRec.IsCharter = p.IsCharter
+		logRec.CharterTripID = p.CharterTripID
+		logRec.CharterAssignmentID = p.CharterAssignmentID
+		logRec.ClientName = p.ClientName
 		logRec.Status = "approved"
 		logRec.UpdatedAt = now
 		if p.ApprovedBy != nil {
@@ -3734,31 +3738,35 @@ func (r *FirestoreDispatchRepository) SyncToPayrollLog(ctx context.Context, p *m
 		}
 	} else {
 		logRec = models.PayrollDepartmentLogRecord{
-			ID:                 logID,
-			DispatchPayrollID:  p.ID,
-			DispatchDate:       p.DispatchDate,
-			ShiftID:            p.ShiftID,
-			RouteNo:            p.RouteNo,
-			RouteName:          p.RouteName,
-			ShiftType:          p.ShiftType,
-			SchoolBoardCode:    p.SchoolBoardCode,
-			EmployeeID:         p.EmployeeID,
-			EmployeeName:       p.EmployeeName,
-			Role:               p.Role,
-			UnitNumber:         p.UnitNumber,
-			CheckInTime:        p.CheckInTime,
-			CheckOutTime:       p.CheckOutTime,
-			PayOption:          p.PayOption,
-			OriginalPayRate:    p.PayRate,
-			PayAmount:          p.PayRate,
-			OriginalEiHours:    p.EiHours,
-			EiHours:            p.EiHours,
-			RateSource:         p.RateSource,
-			RateDescription:    p.RateDescription,
-			DispatcherComments: p.PayrollComments,
-			Status:             "approved",
-			SyncedAt:           now,
-			UpdatedAt:          now,
+			ID:                  logID,
+			DispatchPayrollID:   p.ID,
+			DispatchDate:        p.DispatchDate,
+			ShiftID:             p.ShiftID,
+			RouteNo:             p.RouteNo,
+			RouteName:           p.RouteName,
+			ShiftType:           p.ShiftType,
+			SchoolBoardCode:     p.SchoolBoardCode,
+			EmployeeID:          p.EmployeeID,
+			EmployeeName:        p.EmployeeName,
+			Role:                p.Role,
+			UnitNumber:          p.UnitNumber,
+			CheckInTime:         p.CheckInTime,
+			CheckOutTime:        p.CheckOutTime,
+			PayOption:           p.PayOption,
+			OriginalPayRate:     p.PayRate,
+			PayAmount:           p.PayRate,
+			OriginalEiHours:     p.EiHours,
+			EiHours:             p.EiHours,
+			RateSource:          p.RateSource,
+			RateDescription:     p.RateDescription,
+			DispatcherComments:  p.PayrollComments,
+			IsCharter:           p.IsCharter,
+			CharterTripID:       p.CharterTripID,
+			CharterAssignmentID: p.CharterAssignmentID,
+			ClientName:          p.ClientName,
+			Status:              "approved",
+			SyncedAt:            now,
+			UpdatedAt:           now,
 		}
 		if p.ApprovedBy != nil {
 			logRec.ApprovedBy = *p.ApprovedBy

@@ -377,7 +377,7 @@ func (m *MemoryParentRepository) RegisterDeviceToken(ctx context.Context, parent
 	return nil
 }
 
-func sanitizeContactKey(c string) string {
+func SanitizeContactKey(c string) string {
 	clean := strings.TrimSpace(c)
 	clean = strings.ReplaceAll(clean, "+", "")
 	clean = strings.ReplaceAll(clean, "@", "_at_")
@@ -387,4 +387,8 @@ func sanitizeContactKey(c string) string {
 	clean = strings.ReplaceAll(clean, "(", "")
 	clean = strings.ReplaceAll(clean, ")", "")
 	return clean
+}
+
+func sanitizeContactKey(c string) string {
+	return SanitizeContactKey(c)
 }

@@ -66,6 +66,7 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'driver' | 'attendant'>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sourceTypeFilter, setSourceTypeFilter] = useState<'all' | 'routes' | 'charter'>('all');
 
   // Edit Modal State
   const [editingLog, setEditingLog] = useState<PayrollDepartmentLogRecord | null>(null);
@@ -194,6 +195,13 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
   // Filtered logs
   const filteredLogs = useMemo(() => {
     return logs.filter((item) => {
+      const isCharterItem = Boolean(item.isCharter || item.shiftType === 'CHARTER');
+      if (sourceTypeFilter === 'charter' && !isCharterItem) {
+        return false;
+      }
+      if (sourceTypeFilter === 'routes' && isCharterItem) {
+        return false;
+      }
       if (roleFilter !== 'all' && (item.role || '').toLowerCase() !== roleFilter) {
         return false;
       }
@@ -208,13 +216,14 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
         const unitMatch = (item.unitNumber || '').toLowerCase().includes(q);
         const notesMatch = (item.payrollNotes || '').toLowerCase().includes(q);
         const commentsMatch = (item.dispatcherComments || '').toLowerCase().includes(q);
-        if (!routeMatch && !nameMatch && !empIdMatch && !unitMatch && !notesMatch && !commentsMatch) {
+        const clientMatch = (item.clientName || '').toLowerCase().includes(q);
+        if (!routeMatch && !nameMatch && !empIdMatch && !unitMatch && !notesMatch && !commentsMatch && !clientMatch) {
           return false;
         }
       }
       return true;
     });
-  }, [logs, roleFilter, statusFilter, searchQuery]);
+  }, [logs, sourceTypeFilter, roleFilter, statusFilter, searchQuery]);
 
   // Aggregate statistics
   const stats = useMemo(() => {
@@ -436,6 +445,18 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
             <Filter className="w-3.5 h-3.5" />
             <select
+              value={sourceTypeFilter}
+              onChange={(e) => setSourceTypeFilter(e.target.value as 'all' | 'routes' | 'charter')}
+              className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
+            >
+              <option value="all">All Shifts & Trips</option>
+              <option value="routes">Route Shifts Only</option>
+              <option value="charter">Charter Trips Only</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+            <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value as 'all' | 'driver' | 'attendant')}
               className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
@@ -590,13 +611,24 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-1.5 font-mono font-bold text-slate-900 dark:text-white">
                         <span>{rec.routeNo}</span>
-                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-sans">
-                          {rec.shiftType}
-                        </span>
+                        {rec.isCharter || rec.shiftType === 'CHARTER' ? (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-extrabold bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                            CHARTER
+                          </span>
+                        ) : (
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-sans">
+                            {rec.shiftType}
+                          </span>
+                        )}
                       </div>
                       {rec.routeName && (
-                        <div className="text-xs text-slate-400 truncate max-w-[130px]">
+                        <div className="text-xs text-slate-400 truncate max-w-[150px]">
                           {rec.routeName}
+                        </div>
+                      )}
+                      {rec.clientName && (
+                        <div className="text-[10px] text-indigo-600 dark:text-indigo-400 truncate max-w-[150px]">
+                          {rec.clientName}
                         </div>
                       )}
                     </td>
