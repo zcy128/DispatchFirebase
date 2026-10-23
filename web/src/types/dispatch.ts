@@ -282,6 +282,10 @@ export interface DispatchPayrollRecord {
   payrollComments?: string;
   status: 'pending_checkout' | 'pending_approval' | 'approved' | 'rejected' | string;
   syncedToFinance?: boolean;
+  isCharter?: boolean;
+  charterTripId?: string;
+  charterAssignmentId?: string;
+  clientName?: string;
   approvedBy?: string;
   approvedAt?: string;
   rejectedBy?: string;
@@ -317,6 +321,10 @@ export interface PayrollDepartmentLogRecord {
   crewComments?: string;
   payrollNotes?: string;
   status: 'approved' | 'processed' | 'paid' | 'on_hold' | string;
+  isCharter?: boolean;
+  charterTripId?: string;
+  charterAssignmentId?: string;
+  clientName?: string;
   approvedBy?: string;
   approvedAt?: string;
   syncedAt: string;

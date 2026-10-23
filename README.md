@@ -30,6 +30,83 @@ A fully interactive public demo environment is available online with zero setup 
 
 ---
 
+## 📱 Application Suite & Core Feature Breakdown
+
+The platform consists of a deeply integrated ecosystem of specialized applications serving fleet operators, field drivers, parents, and administrative staff:
+
+### 1. Dispatch Office Management Console (`web`)
+*Desktop & tablet operations console built with React, TypeScript, and Tailwind CSS for fleet dispatchers, supervisors, safety managers, and payroll accountants.*
+
+- **Interactive Shift Dispatch Board**: Visual Kanban-style morning (AM), midday (MD), and afternoon (PM) shift boards with real-time status indicators (Unassigned, Scheduled, Checked-In, In-Progress, Completed).
+- **Dynamic Crew & Substitute Driver Planning**: One-click driver and attendant substitution; pre-assign replacement drivers for approved time-off or emergency absences with zero schedule disruption.
+- **Fleet & Vehicle Maintenance Center**: Full vehicle master registry (make, model, passenger capacity, wheelchair accessibility, VIN, odometer, fuel type). Tracks active status, maintenance history, and preventative service cycles.
+- **Statutory 6-Month Inspection & SAAQ / CVOR Compliance**: Automated countdown for regulatory government safety inspections. Vehicles due or overdue for inspection or with critical defects are automatically blocked and excluded from the active dispatch assignment pool.
+- **Driver & Attendant Compliance Roster**: Commercial Driver License (CDL class A/B/C/E/F), medical fitness renewal dates, and background checks with automated color-coded expiry warnings.
+- **Routes, Runs & Student Manifests**: Visual route builder with ordered stop sequences, stop geofences, designated run times, student passenger rosters with photo IDs, and special medical/mobility requirements.
+- **Charter Operations Management**: Dedicated charter run booking and management module. Configure departure/destination stops, client details, vehicle and crew assignments. Real-time check-in sync with the Driver App and automatic payroll line generation.
+- **Payroll & Compensation Workbench**: Flexible wage configuration (custom hourly pay rates and flat per-trip rates for drivers and attendants). Auto-calculates daily shift earnings upon run completion. Dedicated charter payroll review and approval workflow with an immutable historical audit trail in `payroll_logs`.
+- **Route Openings & Shift Bidding Workflow**: Dispatchers can publish open routes or temporary shifts to the driver pool. Review incoming driver bids, compare seniority or availability, and award shifts directly.
+- **Safety, Defect & Incident Intake**: Immediate triage workflow for vehicle mechanical defects, roadside hazards, and student behavior incidents with photo evidence and resolution tracking.
+- **BusPlanner Staging Route Sync**: Ingest, preview, and diff route data directly from BusPlanner staging collections, with automated scheduled activation or manual 1-click promotion to active live routes.
+- **External Telemetry & System Sync**: Unified settings management for BambooHR staff synchronization, Zonar GPS vehicle breadcrumb mapping, and BusPlanner integration.
+- **Granular RBAC Security Matrix**: Fine-grained role-based access control protecting routes, HR records, wage information, and administrative settings across multiple operational roles.
+- **Model Context Protocol (MCP) Token Management**: Generate, review, and revoke secure SHA-256 hashed API tokens for external AI agents connecting via the `/api/mcp` endpoint.
+
+---
+
+### 2. Driver & Monitor Mobile Hub (`driver_app`)
+*Cross-platform mobile and Progressive Web App built with Flutter for school bus drivers and on-board attendants.*
+
+- **Daily Shift Overview**: Real-time morning, midday, and afternoon shift timeline showing assigned run numbers, bus number, route description, and scheduled start times.
+- **One-Tap Shift Check-In / Check-Out**: Direct punch-in/punch-out syncs live arrival and departure status directly with the central dispatch shift board.
+- **Assigned Charter Trips Module**: Dedicated charter cards showing assigned charter runs, client notes, crew roles (driver vs. attendant), and route stops. Includes one-tap Charter Check-In / Check-Out, real-time stop arrival/departure timestamp logging, and automatic payroll linkage.
+- **Turn-by-Turn Route Itinerary & Navigation**: Chronological list of bus stops with scheduled arrival times, student counts, and integrated interactive map navigation.
+- **Student Boarding & Drop-Off Attendance**: Digital check-in for every student at their designated stop using quick-tap or camera/barcode scanning. Displays student alert tags (medical notices, authorized pickup persons).
+- **Schedule 5 Pre-Trip Inspection Checklist**: Mandatory digital walk-around inspection complying with regulatory safety standards (MTO / SAAQ / CVOR). Requires odometer entry, fluid checks, emergency door tests, lighting checks, and mandatory defect sign-off prior to departure.
+- **Defect & Hazard Reporting**: Immediate field reporting of mechanical defects (brakes, lights, tires, engine) or roadside hazards with descriptions and photo attachments, alerting dispatch in real-time.
+- **Open Route Bidding**: In-app marketplace where drivers can browse posted route openings, view compensation rates, and submit shift bids directly from their mobile phone.
+- **Real-Time Dispatch Team Chat**: Secure two-way messaging channel with dispatchers and yard staff for route delays, road closures, or operational questions.
+- **Push Notification Shift Reminders (FCM)**: Timely push notifications reminding drivers of upcoming shift departure times, pending pre-trip inspections, and dispatch updates.
+
+---
+
+### 3. Parent Bus Tracker App (`parent_app`)
+*Clean, parent-friendly mobile and web app built with Flutter for parents and legal guardians.*
+
+- **Passwordless One-Time Passcode (OTP) Login**: Secure, frictionless sign-in using SMS mobile phone number or email address—no passwords to create or reset.
+- **Real-Time GPS Bus Telemetry & Map**: Interactive map tracking the school bus in real-time as it travels along the designated route polyline toward the student's stop.
+- **Live Arrival ETA & Distance Countdown**: Dynamic, real-time estimated time of arrival calculation displaying exact remaining minutes and distance to the student's pickup or drop-off point.
+- **Multi-Student Family Support**: Parents with multiple enrolled children can seamlessly toggle between student profiles to track independent morning and afternoon bus runs.
+- **Commute Lifecycle Status Badges**: Real-time visual status updates for student commute stages (`SCHEDULED`, `EN_ROUTE`, `APPROACHING`, `BOARDED`, `DROPPED_OFF`, `ABSENT`).
+- **Direct Student Absence Reporting**: Parents can report student absences in advance directly through the app, instantly notifying dispatch and removing the stop from the driver's active morning or afternoon pickup queue.
+- **Two-Way Dispatch Messaging**: Dedicated communication channel allowing parents to message dispatch regarding unexpected delays, lost items, or special arrangements.
+- **Customizable Commute Alerts**: Configurable push, SMS, and email alerts for when the bus is approaching the stop (e.g. 5 minutes away), safe boarding confirmation, and safe drop-off delivery.
+
+---
+
+### 4. AI Fleet Copilot & MCP Standard Server
+*Voice-enabled intelligent operations assistant and standard agent connectivity layer.*
+
+- **Hands-Free Walkie-Talkie Voice Interface**: Native speech-to-text dictation and high-fidelity text-to-speech audio readout for effortless voice operations.
+- **Dual-Engine Architecture**:
+  - *Zero-Cost Built-in Semantic Engine*: $0 token cost; instant regex and Firestore query execution for shift coverage lookups, vacant route queries, vehicle status checks, and payroll summaries.
+  - *Generative Gemini LLM Engine*: Seamless escalation for complex reasoning, schedule optimization queries, and cross-domain operational questions.
+- **Interactive ActionCards**: Chat interface dynamically generates clickable cards for instant driver reassignment, route status summaries, vehicle inspection details, and incident intake.
+- **Standard Anthropic Model Context Protocol (MCP)**: Native `/api/mcp` endpoint and local stdio server enabling external AI tools (Claude Desktop, Cursor, Gemini CLI, custom agents) to securely inspect schedules, query driver compliance, and trigger dispatch assignments.
+
+---
+
+### 5. High-Performance Go Backend Microservice (`server`)
+*Enterprise-grade Go microservice deployed on Google Cloud Run with sub-second response times and serverless scaling.*
+
+- **Clean & CQRS Architecture**: High-concurrency REST API using Go 1.24+ and the Chi router, optimized for high-throughput mobile telemetry and web socket streaming.
+- **Zero-Login Frictionless Email Workflows**: Twilio SendGrid / Amazon SES webhook integration allowing drivers to request time off via email and managers to approve directly from their corporate email inbox with 1-click signed URLs.
+- **Twilio SMS Gateway**: Automated SMS dispatch for parent passwordless authentication codes and critical route alerts.
+- **External Integration Pipeline**: Robust background sync engine interfacing with BambooHR (HR directory), Zonar Systems (GPS vehicle breadcrumbs and idle detection), and BusPlanner (staging route schedules).
+- **Google BigQuery Cold Archiving**: Automated scheduled data pipeline that archives completed dispatch records, driver logs, and student attendance to BigQuery for regulatory compliance, long-term auditing, and analytics.
+
+---
+
 ## 🌟 Key Advantages & Feature Highlights
 
 ### 1. Ultra-Low Operating Cost (Serverless Cloud Architecture)

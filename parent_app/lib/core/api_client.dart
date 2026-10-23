@@ -1,8 +1,9 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
+import 'app_mode.dart';
 
 class ApiClient {
   static const String _tokenKey = 'parent_session_token';
@@ -71,41 +72,79 @@ class ApiClient {
     return headers;
   }
 
+  bool _isDemoContact(String contact) {
+    final clean = contact.trim().toLowerCase();
+    if (clean.contains('demo') || clean.contains('parent@') || clean.contains('example.com') || clean == 'demo') {
+      return true;
+    }
+    final digits = clean.replaceAll(RegExp(r'\D'), '');
+    return digits.endsWith('5550199') || digits.endsWith('5550100') || digits == '1234567890';
+  }
+
   // 1. Request OTP Passcode
   Future<Map<String, dynamic>> requestOtp(String contact) async {
     final url = Uri.parse('$baseUrl/api/parent/auth/request-otp');
-    final resp = await http.post(
-      url,
-      headers: _headers(),
-      body: jsonEncode({'contact': contact}),
-    );
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      if (data['success'] == false) {
-        throw Exception(data['error'] ?? 'No student profile found with this phone number or email');
+    try {
+      final resp = await http.post(
+        url,
+        headers: _headers(),
+        body: jsonEncode({'contact': contact}),
+      ).timeout(const Duration(seconds: 8));
+
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        if (data['success'] == false) {
+          if (AppMode.isDemo && _isDemoContact(contact)) {
+            return _getDemoOtpResponse(contact);
+          }
+          throw Exception(data['error'] ?? 'No student profile found with this phone number or email');
+        }
+        return data;
       }
-      return data;
+      if (AppMode.isDemo && _isDemoContact(contact)) {
+        return _getDemoOtpResponse(contact);
+      }
+      throw Exception(data['error'] ?? 'Failed to send passcode');
+    } catch (e) {
+      if (AppMode.isDemo && _isDemoContact(contact)) {
+        return _getDemoOtpResponse(contact);
+      }
+      rethrow;
     }
-    throw Exception(data['error'] ?? 'Failed to send passcode');
   }
 
   // 2. Verify OTP Passcode
   Future<Map<String, dynamic>> verifyOtp(String contact, String code) async {
     final url = Uri.parse('$baseUrl/api/parent/auth/verify-otp');
-    final resp = await http.post(
-      url,
-      headers: _headers(),
-      body: jsonEncode({'contact': contact, 'code': code}),
-    );
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      final token = data['token'] as String?;
-      if (token != null) {
-        await saveSession(token, contact);
+    try {
+      final resp = await http.post(
+        url,
+        headers: _headers(),
+        body: jsonEncode({'contact': contact, 'code': code}),
+      ).timeout(const Duration(seconds: 8));
+
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final token = data['token'] as String?;
+        if (token != null) {
+          await saveSession(token, contact);
+        }
+        return data;
       }
-      return data;
+      if (AppMode.isDemo && _isDemoContact(contact) && (code == '123456' || code.length >= 4)) {
+        final demoResp = _getDemoVerifyResponse(contact);
+        await saveSession(demoResp['token'] as String, contact);
+        return demoResp;
+      }
+      throw Exception(data['error'] ?? 'Invalid passcode');
+    } catch (e) {
+      if (AppMode.isDemo && _isDemoContact(contact) && (code == '123456' || code.length >= 4)) {
+        final demoResp = _getDemoVerifyResponse(contact);
+        await saveSession(demoResp['token'] as String, contact);
+        return demoResp;
+      }
+      rethrow;
     }
-    throw Exception(data['error'] ?? 'Invalid passcode');
   }
 
   // 3. Optional Account Registration
@@ -130,10 +169,24 @@ class ApiClient {
   // 4. Fetch Linked Students & Commutes
   Future<List<ParentStudentCommute>> fetchStudents(String contact) async {
     final url = Uri.parse('$baseUrl/api/parent/students?contact=${Uri.encodeComponent(contact)}');
-    final resp = await http.get(url, headers: _headers());
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      final list = jsonDecode(resp.body) as List<dynamic>;
-      return list.map((e) => ParentStudentCommute.fromJson(e as Map<String, dynamic>)).toList();
+    try {
+      final resp = await http.get(url, headers: _headers()).timeout(const Duration(seconds: 8));
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final list = jsonDecode(resp.body) as List<dynamic>;
+        if (list.isNotEmpty) {
+          return list.map((e) => ParentStudentCommute.fromJson(e as Map<String, dynamic>)).toList();
+        }
+      }
+      if (AppMode.isDemo && _isDemoContact(contact)) {
+        return _getDemoStudentCommutes();
+      }
+    } catch (_) {
+      if (AppMode.isDemo && _isDemoContact(contact)) {
+        return _getDemoStudentCommutes();
+      }
+    }
+    if (AppMode.isDemo && _isDemoContact(contact)) {
+      return _getDemoStudentCommutes();
     }
     throw Exception('Failed to load student transit data');
   }
@@ -299,5 +352,118 @@ class ApiClient {
     } catch (_) {
       throw Exception('Server returned status ${resp.statusCode}');
     }
+  }
+  Map<String, dynamic> _getDemoOtpResponse(String contact) {
+    return {
+      'success': true,
+      'message': 'Demo temporary passcode generated: 123456',
+      'contactType': contact.contains('@') ? 'email' : 'phone',
+      'matchedStudentsCount': 2,
+      'devCode': '123456',
+    };
+  }
+
+  Map<String, dynamic> _getDemoVerifyResponse(String contact) {
+    return {
+      'success': true,
+      'token': 'demo-session-token-pcytech',
+      'isRegistered': true,
+      'parentUser': {
+        'id': 'PAR-demo',
+        'contactType': contact.contains('@') ? 'email' : 'phone',
+        'contactValue': contact,
+        'displayName': 'David Watson (Demo Parent)',
+        'isRegistered': true,
+        'linkedStudentIds': ['STU-1001', 'STU-1002'],
+      },
+      'students': _demoStudentCommutesJson(),
+    };
+  }
+
+  List<Map<String, dynamic>> _demoStudentCommutesJson() {
+    return [
+      {
+        'studentId': 1001,
+        'studentNo': 'S-1001',
+        'studentName': 'Emma Watson',
+        'grade': '2',
+        'schoolName': 'Broadview Public School',
+        'schoolLatitude': 45.36850,
+        'schoolLongitude': -75.75720,
+        'avatarColor': '#2563EB',
+        'shiftType': 'AM',
+        'shiftId': 'SHIFT-AM-1',
+        'routeNo': 'OCDSB-001',
+        'busUnitNumber': '42',
+        'driverName': 'Robert Johnson',
+        'stopLocation': 'Woodroffe Ave & Baseline Rd, Ottawa, ON',
+        'stopLatitude': 45.35125,
+        'stopLongitude': -75.76015,
+        'stopType': 'HomePickup',
+        'scheduledTime': '07:35 AM',
+        'estimatedTime': '07:37 AM',
+        'lateMinutes': 2,
+        'status': 'EN_ROUTE',
+        'distanceKm': 0.8,
+        'minutesAway': 3,
+        'vehicleLocation': {
+          'unitNumber': '42',
+          'routeNo': 'OCDSB-001',
+          'shiftId': 'SHIFT-AM-1',
+          'latitude': 45.3530,
+          'longitude': -75.7610,
+          'heading': 85.0,
+          'speedKmh': 35.0,
+          'lastUpdated': DateTime.now().toIso8601String(),
+          'currentStopSequence': 3,
+          'nextStopLocation': 'Woodroffe Ave & Baseline Rd',
+          'status': 'EN_ROUTE',
+        },
+      },
+      {
+        'studentId': 1002,
+        'studentNo': 'S-1002',
+        'studentName': 'Lucas Watson',
+        'grade': '5',
+        'schoolName': 'Nepean High School',
+        'schoolLatitude': 45.37800,
+        'schoolLongitude': -75.75500,
+        'avatarColor': '#7C3AED',
+        'shiftType': 'AM',
+        'shiftId': 'SHIFT-AM-1',
+        'routeNo': 'OCDSB-001',
+        'busUnitNumber': '42',
+        'driverName': 'Robert Johnson',
+        'stopLocation': 'Woodroffe Ave & Richmond Rd, Ottawa, ON',
+        'stopLatitude': 45.36850,
+        'stopLongitude': -75.75720,
+        'stopType': 'HomePickup',
+        'scheduledTime': '07:45 AM',
+        'estimatedTime': '07:47 AM',
+        'lateMinutes': 2,
+        'status': 'SCHEDULED',
+        'distanceKm': 2.2,
+        'minutesAway': 9,
+        'vehicleLocation': {
+          'unitNumber': '42',
+          'routeNo': 'OCDSB-001',
+          'shiftId': 'SHIFT-AM-1',
+          'latitude': 45.3530,
+          'longitude': -75.7610,
+          'heading': 85.0,
+          'speedKmh': 35.0,
+          'lastUpdated': DateTime.now().toIso8601String(),
+          'currentStopSequence': 3,
+          'nextStopLocation': 'Woodroffe Ave & Baseline Rd',
+          'status': 'EN_ROUTE',
+        },
+      },
+    ];
+  }
+
+  List<ParentStudentCommute> _getDemoStudentCommutes() {
+    return _demoStudentCommutesJson()
+        .map((e) => ParentStudentCommute.fromJson(e))
+        .toList();
   }
 }

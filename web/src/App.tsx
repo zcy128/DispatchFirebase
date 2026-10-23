@@ -50,6 +50,7 @@ import { YardListView } from './views/YardListView';
 import { hasPageAccess, initCloudRolePermissionsListener } from './utils/permissions';
 import { YardService } from './services/yardService';
 import { DispatchWorkbenchView } from './views/DispatchWorkbenchView';
+import { CharterManagementView } from './views/CharterManagementView';
 import { DispatchChangeLogView } from './views/DispatchChangeLogView';
 import { TemporaryAssignmentsView } from './views/TemporaryAssignmentsView';
 import { AssignmentTrackingView } from './views/AssignmentTrackingView';
@@ -910,6 +911,17 @@ export const AppContent: React.FC = () => {
               onMessageDriver={(driverId) => {
                 setChatInitialTargetUserId(driverId);
                 setIsChatOpen(true);
+              }}
+            />
+          )}
+
+          {currentTab === 'charter' && (
+            <CharterManagementView
+              employees={employees}
+              vehicles={vehicles}
+              schools={schools}
+              onNavigateToPayroll={() => {
+                setCurrentTab('dispatch_payroll');
               }}
             />
           )}

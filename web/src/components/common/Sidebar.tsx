@@ -31,7 +31,8 @@ import {
   FileSpreadsheet,
   BadgeDollarSign,
   UserX,
-  RefreshCw
+  RefreshCw,
+  Compass
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { hasPageAccess } from '../../utils/permissions';
@@ -39,6 +40,7 @@ import { hasPageAccess } from '../../utils/permissions';
 export type NavTab =
   | 'dashboard'
   | 'dispatch'
+  | 'charter'
   | 'routes'
   | 'staging_routes'
   | 'dispatch_payroll'
@@ -122,6 +124,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'dispatch',
           label: (t.nav as any).dispatch || (isFrench ? 'Console de répartition' : 'Dispatch Workbench'),
           icon: Radio,
+          badge: null
+        },
+        {
+          id: 'charter',
+          label: isFrench ? 'Gestion des nolisés' : 'Charter Trips',
+          icon: Compass,
           badge: null
         },
         {
