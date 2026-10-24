@@ -1,4 +1,4 @@
-export type RouteOpeningType = 'permanent' | 'temporary';
+export type RouteOpeningType = 'permanent' | 'temporary' | 'charter';
 export type RouteOpeningRole = 'driver' | 'attendant' | 'driver_and_attendant';
 export type RouteOpeningStatus = 'open' | 'reviewing' | 'awarded' | 'cancelled';
 
@@ -27,12 +27,24 @@ export interface RouteOpening {
   yardName?: string;
   schoolBoardCode?: string;
 
-  postingType: RouteOpeningType; // 'permanent' | 'temporary'
+  postingType: RouteOpeningType; // 'permanent' | 'temporary' | 'charter'
   roleNeeded: RouteOpeningRole;   // 'driver' | 'attendant' | 'driver_and_attendant'
 
+  // Charter-specific metadata (when postingType === 'charter')
+  charterTripId?: string;
+  charterClientName?: string;
+  vehiclesNeeded?: number;
+  openShiftsCount?: number;
+  departsAt?: string;
+  returnsAt?: string;
+  passengerCount?: number;
+  driverPayRate?: number;
+  attendantPayRate?: number;
+  sanitizedStops?: SanitizedStopPreview[];
+
   effectiveStartDate: string;    // YYYY-MM-DD
-  effectiveEndDate?: string;     // YYYY-MM-DD (optional, for temporary)
-  shiftType: string;             // 'ALL', 'AM', 'PM', 'Midday'
+  effectiveEndDate?: string;     // YYYY-MM-DD (optional, for temporary/charter)
+  shiftType: string;             // 'ALL', 'AM', 'PM', 'Midday', or 'CHARTER'
 
   deadline: string;              // ISO string or YYYY-MM-DDTHH:mm
   compensationNote?: string;
@@ -73,6 +85,17 @@ export interface CreateRouteOpeningPayload {
 
   postingType: RouteOpeningType;
   roleNeeded: RouteOpeningRole;
+
+  charterTripId?: string;
+  charterClientName?: string;
+  vehiclesNeeded?: number;
+  openShiftsCount?: number;
+  departsAt?: string;
+  returnsAt?: string;
+  passengerCount?: number;
+  driverPayRate?: number;
+  attendantPayRate?: number;
+  sanitizedStops?: SanitizedStopPreview[];
 
   effectiveStartDate: string;
   effectiveEndDate?: string;

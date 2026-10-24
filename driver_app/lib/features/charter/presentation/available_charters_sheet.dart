@@ -48,15 +48,21 @@ class _AvailableChartersSheetState extends State<AvailableChartersSheet> {
 
   Future<void> _claimAssignment(
     CharterTripModel trip,
-    CharterAssignmentModel assignment,
+    CharterAssignmentModel? assignment,
     String role,
   ) async {
+    final unitInfo = (assignment != null &&
+            assignment.vehicleUnitNumber.isNotEmpty &&
+            assignment.vehicleUnitNumber != 'TBD')
+        ? 'Bus #${assignment.vehicleUnitNumber}'
+        : 'Vehicle TBD by Dispatch';
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Claim Charter Assignment'),
+        title: const Text('Claim Charter Shift'),
         content: Text(
-          'Do you want to self-assign as the $role for "${trip.title}" on ${trip.dispatchDate}?\n\nBus #${assignment.vehicleUnitNumber} • ${trip.passengerCount} Passengers',
+          'Do you want to self-assign as $role for "${trip.title}" on ${trip.dispatchDate}?\n\n$unitInfo • ${trip.passengerCount} Passengers',
         ),
         actions: [
           TextButton(
@@ -81,7 +87,7 @@ class _AvailableChartersSheetState extends State<AvailableChartersSheet> {
     try {
       await widget.repository.assignCrewMember(
         tripId: trip.id,
-        assignmentId: assignment.id,
+        assignmentId: assignment?.id,
         role: role,
         employeeId: widget.driverId,
         employeeName: widget.username,
@@ -218,7 +224,40 @@ class _AvailableChartersSheetState extends State<AvailableChartersSheet> {
   }
 
   Widget _buildTripItem(BuildContext context, CharterTripModel trip, bool isDark) {
-    final hasUserAssigned = trip.getAssignmentForUser(widget.driverId, widget.username) != null;
+    final myAssignment = trip.getAssignmentForUser(widget.driverId, widget.username);
+    final hasUserAssigned = myAssignment != null;
+
+    final totalShifts = trip.assignments.length > trip.vehiclesNeeded
+        ? trip.assignments.length
+        : (trip.vehiclesNeeded > 0 ? trip.vehiclesNeeded : 1);
+    final filledDriverCount = trip.assignments
+        .where((a) => a.driverId.trim().isNotEmpty || a.driverName.trim().isNotEmpty)
+        .length;
+    final openDriverSlots = (totalShifts - filledDriverCount).clamp(0, totalShifts);
+
+    final filledAttendantCount = trip.assignments
+        .where((a) => a.attendantId.trim().isNotEmpty || a.attendantName.trim().isNotEmpty)
+        .length;
+    final openAttendantSlots =
+        trip.needsAttendant ? (totalShifts - filledAttendantCount).clamp(0, totalShifts) : 0;
+
+    CharterAssignmentModel? firstOpenDriverAsg;
+    for (final a in trip.assignments) {
+      if (a.driverId.trim().isEmpty && a.driverName.trim().isEmpty) {
+        firstOpenDriverAsg = a;
+        break;
+      }
+    }
+
+    CharterAssignmentModel? firstOpenAttendantAsg;
+    if (trip.needsAttendant) {
+      for (final a in trip.assignments) {
+        if (a.attendantId.trim().isEmpty && a.attendantName.trim().isEmpty) {
+          firstOpenAttendantAsg = a;
+          break;
+        }
+      }
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -283,106 +322,109 @@ class _AvailableChartersSheetState extends State<AvailableChartersSheet> {
           ),
           const Divider(height: 18),
 
-          // Assignments
-          ...trip.assignments.map((assignment) {
-            final isDriverNeeded = assignment.driverId.isEmpty;
-            final isAttendantNeeded = trip.needsAttendant && assignment.attendantId.isEmpty;
-            final isAssignedToMe = assignment.matchesUser(widget.driverId, widget.username);
-
-            return Container(
-              margin: const EdgeInsets.only(top: 6),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.darkCard : Colors.white,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.directions_bus_rounded, size: 16, color: AppColors.primary),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Bus #${assignment.vehicleUnitNumber}',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                      const Spacer(),
-                      if (isAssignedToMe)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.success.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            'ASSIGNED TO YOU',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.success),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Driver: ${assignment.driverName.isNotEmpty ? assignment.driverName : "Unassigned"}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: isDriverNeeded ? Colors.orange : (isDark ? Colors.grey.shade300 : Colors.black87),
-                      fontWeight: isDriverNeeded ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                  if (trip.needsAttendant)
+          // Unified Single Task Shift Summary & Action Card
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkCard : Colors.white,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.directions_bus_rounded, size: 16, color: AppColors.primary),
+                    const SizedBox(width: 6),
                     Text(
-                      'Attendant: ${assignment.attendantName.isNotEmpty ? assignment.attendantName : "Unassigned"}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isAttendantNeeded ? Colors.orange : (isDark ? Colors.grey.shade300 : Colors.black87),
-                        fontWeight: isAttendantNeeded ? FontWeight.bold : FontWeight.normal,
-                      ),
+                      hasUserAssigned
+                          ? 'Your Shift: ${myAssignment.runNumber != null ? "#${myAssignment.runNumber} • " : ""}Bus #${myAssignment.vehicleUnitNumber.isNotEmpty ? myAssignment.vehicleUnitNumber : "TBD"}'
+                          : '$totalShifts ${totalShifts == 1 ? "Bus Needed" : "Buses Needed"}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                     ),
-                  const SizedBox(height: 8),
-
-                  // Actions
-                  Row(
-                    children: [
-                      TextButton.icon(
-                        onPressed: () => CharterStopsSheet.show(
-                          context,
-                          trip: trip,
-                          repository: widget.repository,
+                    const Spacer(),
+                    if (hasUserAssigned)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
                         ),
-                        icon: const Icon(Icons.list_alt_rounded, size: 14),
-                        label: const Text('View Stops', style: TextStyle(fontSize: 11)),
+                        child: const Text(
+                          'ASSIGNED TO YOU',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.success),
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: (openDriverSlots > 0 ? Colors.orange : AppColors.success)
+                              .withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          openDriverSlots > 0
+                              ? '$openDriverSlots / $totalShifts Open'
+                              : 'All Shifts Filled',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: openDriverSlots > 0 ? Colors.orange : AppColors.success,
+                          ),
+                        ),
                       ),
-                      const Spacer(),
-                      if (isDriverNeeded)
-                        ElevatedButton.icon(
-                          onPressed: _isClaiming ? null : () => _claimAssignment(trip, assignment, 'Driver'),
-                          icon: const Icon(Icons.person_add_alt_1_rounded, size: 14),
-                          label: const Text('Claim as Driver', style: TextStyle(fontSize: 11)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.black,
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        )
-                      else if (isAttendantNeeded && widget.role.toLowerCase() != 'driver')
-                        ElevatedButton.icon(
-                          onPressed: _isClaiming ? null : () => _claimAssignment(trip, assignment, 'Attendant'),
-                          icon: const Icon(Icons.person_add_alt_1_rounded, size: 14),
-                          label: const Text('Claim as Attendant', style: TextStyle(fontSize: 11)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.info,
-                            foregroundColor: Colors.white,
-                            visualDensity: VisualDensity.compact,
-                          ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Actions
+                Row(
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => CharterStopsSheet.show(
+                        context,
+                        trip: trip,
+                        repository: widget.repository,
+                        assignmentId: myAssignment?.id,
+                      ),
+                      icon: const Icon(Icons.list_alt_rounded, size: 14),
+                      label: const Text('View Stops', style: TextStyle(fontSize: 11)),
+                    ),
+                    const Spacer(),
+                    if (!hasUserAssigned && openDriverSlots > 0)
+                      ElevatedButton.icon(
+                        onPressed: _isClaiming
+                            ? null
+                            : () => _claimAssignment(trip, firstOpenDriverAsg, 'Driver'),
+                        icon: const Icon(Icons.person_add_alt_1_rounded, size: 14),
+                        label: const Text('Claim as Driver', style: TextStyle(fontSize: 11)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.black,
+                          visualDensity: VisualDensity.compact,
                         ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          }),
+                      )
+                    else if (!hasUserAssigned &&
+                        openAttendantSlots > 0 &&
+                        widget.role.toLowerCase() != 'driver')
+                      ElevatedButton.icon(
+                        onPressed: _isClaiming
+                            ? null
+                            : () => _claimAssignment(trip, firstOpenAttendantAsg, 'Attendant'),
+                        icon: const Icon(Icons.person_add_alt_1_rounded, size: 14),
+                        label: const Text('Claim as Attendant', style: TextStyle(fontSize: 11)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.info,
+                          foregroundColor: Colors.white,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

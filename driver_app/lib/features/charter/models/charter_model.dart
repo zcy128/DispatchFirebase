@@ -32,12 +32,118 @@ class CharterStopModel {
       case 0:
         return 'Pickup';
       case 1:
-        return 'Destination';
+        return 'Dropoff';
       case 2:
-        return 'Return';
+        return 'Return Dropoff';
+      case 3:
+        return 'Return Pickup';
       default:
         return 'Stop';
     }
+  }
+
+  static String extractTimeOnly(String? raw) {
+    final v = (raw ?? '').trim();
+    if (v.isEmpty) return '';
+    if (RegExp(r'^\d{1,2}:\d{2}').hasMatch(v)) {
+      return v.substring(0, v.indexOf(':') + 3);
+    }
+    final normalized = v.replaceAll('T', ' ');
+    final parts = normalized.split(' ');
+    for (final p in parts) {
+      if (RegExp(r'^\d{1,2}:\d{2}').hasMatch(p)) {
+        return p.substring(0, p.indexOf(':') + 3);
+      }
+    }
+    return v;
+  }
+
+  static String addMinutesToTime(String hhmm, int minutes) {
+    final clean = extractTimeOnly(hhmm);
+    final parts = clean.split(':');
+    if (parts.length < 2) return clean;
+    final h = int.tryParse(parts[0]) ?? 8;
+    final m = int.tryParse(parts[1]) ?? 0;
+    final total = h * 60 + m + minutes;
+    final nh = (total ~/ 60) % 24;
+    final nm = total % 60;
+    return '${nh.toString().padLeft(2, '0')}:${nm.toString().padLeft(2, '0')}';
+  }
+
+  static List<CharterStopModel> normalizeRoundTripStops(
+    List<CharterStopModel> stops, {
+    required String tripId,
+    required String departsAt,
+    required String returnsAt,
+    bool roundTrip = true,
+  }) {
+    if (!roundTrip || stops.length != 3) return stops;
+    final s0 = stops[0];
+    final s1 = stops[1];
+    final s2 = stops[2];
+    final addr0 = s0.address.trim().isNotEmpty
+        ? s0.address.trim()
+        : (s0.locationName.trim().isNotEmpty ? s0.locationName.trim() : 'School');
+    final addr1 = s1.address.trim().isNotEmpty
+        ? s1.address.trim()
+        : (s1.locationName.trim().isNotEmpty ? s1.locationName.trim() : 'Museum');
+    final addr3 = s2.address.trim().isNotEmpty ? s2.address.trim() : addr0;
+
+    final depClean = extractTimeOnly(departsAt).isNotEmpty ? extractTimeOnly(departsAt) : '08:00';
+    final retClean = extractTimeOnly(returnsAt).isNotEmpty ? extractTimeOnly(returnsAt) : '15:00';
+
+    final t0 = extractTimeOnly(s0.scheduledAt).isNotEmpty ? extractTimeOnly(s0.scheduledAt) : depClean;
+    final t1 = addMinutesToTime(t0, 30);
+    final t2 = extractTimeOnly(s2.scheduledAt).isNotEmpty ? extractTimeOnly(s2.scheduledAt) : retClean;
+    final t3 = addMinutesToTime(t2, 30);
+
+    return [
+      CharterStopModel(
+        id: s0.id.isNotEmpty ? s0.id : 'stop-1',
+        charterTripId: tripId,
+        sequenceOrder: 1,
+        stopType: 0,
+        locationName: 'Pickup: $addr0',
+        address: addr0,
+        scheduledAt: t0,
+        arrivedAt: s0.arrivedAt,
+        departedAt: s0.departedAt,
+        notes: s0.notes,
+      ),
+      CharterStopModel(
+        id: s1.id.isNotEmpty ? s1.id : 'stop-2',
+        charterTripId: tripId,
+        sequenceOrder: 2,
+        stopType: 1,
+        locationName: 'Dropoff: $addr1',
+        address: addr1,
+        scheduledAt: t1,
+        arrivedAt: s1.arrivedAt,
+        departedAt: s1.departedAt,
+        notes: s1.notes,
+      ),
+      CharterStopModel(
+        id: 'stop-3',
+        charterTripId: tripId,
+        sequenceOrder: 3,
+        stopType: 3,
+        locationName: 'Return Pickup: $addr1',
+        address: addr1,
+        scheduledAt: t2,
+      ),
+      CharterStopModel(
+        id: s2.id.isNotEmpty && s2.id != 'stop-3' ? s2.id : 'stop-4',
+        charterTripId: tripId,
+        sequenceOrder: 4,
+        stopType: 2,
+        locationName: 'Return Dropoff: $addr3',
+        address: addr3,
+        scheduledAt: t3,
+        arrivedAt: s2.arrivedAt,
+        departedAt: s2.departedAt,
+        notes: s2.notes,
+      ),
+    ];
   }
 
   bool get isArrived => arrivedAt != null && arrivedAt!.isNotEmpty;
@@ -102,6 +208,7 @@ class CharterStopModel {
 class CharterAssignmentModel {
   final String id;
   final String charterTripId;
+  final int? runNumber;
   final dynamic vehicleId;
   final String vehicleUnitNumber;
   final String plateNumber;
@@ -128,11 +235,13 @@ class CharterAssignmentModel {
   final bool isAttendantCheckedOut;
   final String? attendantCheckedOutAt;
   final String? attendantPayrollComments;
+  final List<CharterStopModel> stops;
   final String? notes;
 
   const CharterAssignmentModel({
     required this.id,
     required this.charterTripId,
+    this.runNumber,
     required this.vehicleId,
     required this.vehicleUnitNumber,
     required this.plateNumber,
@@ -159,6 +268,7 @@ class CharterAssignmentModel {
     this.isAttendantCheckedOut = false,
     this.attendantCheckedOutAt,
     this.attendantPayrollComments,
+    this.stops = const [],
     this.notes,
   });
 
@@ -185,9 +295,17 @@ class CharterAssignmentModel {
   }
 
   factory CharterAssignmentModel.fromMap(Map<String, dynamic> map, {String tripId = ''}) {
+    final rawStops = map['stops'] as List<dynamic>? ?? [];
+    final parsedStops = rawStops
+        .whereType<Map>()
+        .map((s) => CharterStopModel.fromMap(Map<String, dynamic>.from(s), tripId: tripId))
+        .toList()
+      ..sort((a, b) => a.sequenceOrder.compareTo(b.sequenceOrder));
+
     return CharterAssignmentModel(
       id: map['id']?.toString() ?? '',
       charterTripId: map['charterTripId']?.toString() ?? tripId,
+      runNumber: (map['runNumber'] as num?)?.toInt(),
       vehicleId: map['vehicleId'] ?? 0,
       vehicleUnitNumber: map['vehicleUnitNumber']?.toString() ?? '',
       plateNumber: map['plateNumber']?.toString() ?? '',
@@ -214,6 +332,7 @@ class CharterAssignmentModel {
       isAttendantCheckedOut: map['isAttendantCheckedOut'] as bool? ?? false,
       attendantCheckedOutAt: map['attendantCheckedOutAt']?.toString(),
       attendantPayrollComments: map['attendantPayrollComments']?.toString(),
+      stops: parsedStops,
       notes: map['notes']?.toString(),
     );
   }
@@ -222,6 +341,7 @@ class CharterAssignmentModel {
     return {
       'id': id,
       'charterTripId': charterTripId,
+      if (runNumber != null) 'runNumber': runNumber,
       'vehicleId': vehicleId,
       'vehicleUnitNumber': vehicleUnitNumber,
       'plateNumber': plateNumber,
@@ -248,6 +368,7 @@ class CharterAssignmentModel {
       'isAttendantCheckedOut': isAttendantCheckedOut,
       if (attendantCheckedOutAt != null) 'attendantCheckedOutAt': attendantCheckedOutAt,
       if (attendantPayrollComments != null) 'attendantPayrollComments': attendantPayrollComments,
+      if (stops.isNotEmpty) 'stops': stops.map((s) => s.toMap()).toList(),
       if (notes != null) 'notes': notes,
     };
   }
@@ -265,7 +386,11 @@ class CharterTripModel {
   final String departsAt;
   final String returnsAt;
   final int passengerCount;
+  final int vehiclesNeeded;
   final bool needsAttendant;
+  final double billableHours;
+  final double driverPayRate;
+  final double attendantPayRate;
   final String? specialRequirements;
   final String? notes;
   final bool roundTrip;
@@ -286,7 +411,11 @@ class CharterTripModel {
     required this.departsAt,
     required this.returnsAt,
     this.passengerCount = 0,
+    this.vehiclesNeeded = 1,
     this.needsAttendant = false,
+    this.billableHours = 5.0,
+    this.driverPayRate = 150.0,
+    this.attendantPayRate = 100.0,
     this.specialRequirements,
     this.notes,
     this.roundTrip = true,
@@ -337,20 +466,90 @@ class CharterTripModel {
     return null;
   }
 
+  List<CharterStopModel> effectiveStopsForAssignment(String? assignmentId) {
+    if (assignmentId != null && assignmentId.isNotEmpty) {
+      for (final a in assignments) {
+        if (a.id == assignmentId && a.stops.isNotEmpty) {
+          return a.stops;
+        }
+      }
+    }
+    return stops;
+  }
+
   factory CharterTripModel.fromMap(Map<String, dynamic> map, String docId) {
+    final resolvedId = docId.isNotEmpty ? docId : (map['id']?.toString() ?? '');
+    final departsAtStr = map['departsAt']?.toString() ?? '08:00';
+    final returnsAtStr = map['returnsAt']?.toString() ?? '15:00';
+    final isRoundTrip = map['roundTrip'] as bool? ?? true;
+
     final rawStops = map['stops'] as List<dynamic>? ?? [];
-    final stops = rawStops
-        .map((s) => CharterStopModel.fromMap(Map<String, dynamic>.from(s as Map), tripId: docId))
+    final parsedStops = rawStops
+        .whereType<Map>()
+        .map((s) => CharterStopModel.fromMap(Map<String, dynamic>.from(s), tripId: resolvedId))
         .toList()
       ..sort((a, b) => a.sequenceOrder.compareTo(b.sequenceOrder));
 
+    final stops = CharterStopModel.normalizeRoundTripStops(
+      parsedStops,
+      tripId: resolvedId,
+      departsAt: departsAtStr,
+      returnsAt: returnsAtStr,
+      roundTrip: isRoundTrip,
+    );
+
     final rawAssignments = map['assignments'] as List<dynamic>? ?? [];
     final assignments = rawAssignments
-        .map((a) => CharterAssignmentModel.fromMap(Map<String, dynamic>.from(a as Map), tripId: docId))
+        .whereType<Map>()
+        .map((a) {
+          final asg = CharterAssignmentModel.fromMap(Map<String, dynamic>.from(a), tripId: resolvedId);
+          if (asg.stops.length == 3 && isRoundTrip) {
+            return CharterAssignmentModel(
+              id: asg.id,
+              charterTripId: asg.charterTripId,
+              runNumber: asg.runNumber,
+              vehicleId: asg.vehicleId,
+              vehicleUnitNumber: asg.vehicleUnitNumber,
+              plateNumber: asg.plateNumber,
+              driverId: asg.driverId,
+              driverName: asg.driverName,
+              driverPhone: asg.driverPhone,
+              attendantId: asg.attendantId,
+              attendantName: asg.attendantName,
+              attendantPhone: asg.attendantPhone,
+              driverPayOption: asg.driverPayOption,
+              driverPayRate: asg.driverPayRate,
+              driverEiHours: asg.driverEiHours,
+              attendantPayOption: asg.attendantPayOption,
+              attendantPayRate: asg.attendantPayRate,
+              attendantEiHours: asg.attendantEiHours,
+              status: asg.status,
+              isDriverCheckedIn: asg.isDriverCheckedIn,
+              driverCheckedInAt: asg.driverCheckedInAt,
+              isDriverCheckedOut: asg.isDriverCheckedOut,
+              driverCheckedOutAt: asg.driverCheckedOutAt,
+              driverPayrollComments: asg.driverPayrollComments,
+              isAttendantCheckedIn: asg.isAttendantCheckedIn,
+              attendantCheckedInAt: asg.attendantCheckedInAt,
+              isAttendantCheckedOut: asg.isAttendantCheckedOut,
+              attendantCheckedOutAt: asg.attendantCheckedOutAt,
+              attendantPayrollComments: asg.attendantPayrollComments,
+              stops: CharterStopModel.normalizeRoundTripStops(
+                asg.stops,
+                tripId: resolvedId,
+                departsAt: departsAtStr,
+                returnsAt: returnsAtStr,
+                roundTrip: isRoundTrip,
+              ),
+              notes: asg.notes,
+            );
+          }
+          return asg;
+        })
         .toList();
 
     return CharterTripModel(
-      id: docId.isNotEmpty ? docId : (map['id']?.toString() ?? ''),
+      id: resolvedId,
       tripNumber: map['tripNumber']?.toString() ?? '',
       charterClientId: map['charterClientId']?.toString() ?? '',
       clientName: map['clientName']?.toString() ?? '',
@@ -358,13 +557,17 @@ class CharterTripModel {
       tripType: (map['tripType'] as num?)?.toInt() ?? 0,
       status: (map['status'] as num?)?.toInt() ?? 0,
       dispatchDate: map['dispatchDate']?.toString() ?? '',
-      departsAt: map['departsAt']?.toString() ?? '',
-      returnsAt: map['returnsAt']?.toString() ?? '',
+      departsAt: departsAtStr,
+      returnsAt: returnsAtStr,
       passengerCount: (map['passengerCount'] as num?)?.toInt() ?? 0,
+      vehiclesNeeded: (map['vehiclesNeeded'] as num?)?.toInt() ?? 1,
       needsAttendant: map['needsAttendant'] as bool? ?? false,
+      billableHours: (map['billableHours'] as num?)?.toDouble() ?? 5.0,
+      driverPayRate: (map['driverPayRate'] as num?)?.toDouble() ?? 150.0,
+      attendantPayRate: (map['attendantPayRate'] as num?)?.toDouble() ?? 100.0,
       specialRequirements: map['specialRequirements']?.toString(),
       notes: map['notes']?.toString(),
-      roundTrip: map['roundTrip'] as bool? ?? true,
+      roundTrip: isRoundTrip,
       stops: stops,
       assignments: assignments,
       createdAt: map['createdAt']?.toString() ?? '',
@@ -385,7 +588,11 @@ class CharterTripModel {
       'departsAt': departsAt,
       'returnsAt': returnsAt,
       'passengerCount': passengerCount,
+      'vehiclesNeeded': vehiclesNeeded,
       'needsAttendant': needsAttendant,
+      'billableHours': billableHours,
+      'driverPayRate': driverPayRate,
+      'attendantPayRate': attendantPayRate,
       if (specialRequirements != null) 'specialRequirements': specialRequirements,
       if (notes != null) 'notes': notes,
       'roundTrip': roundTrip,

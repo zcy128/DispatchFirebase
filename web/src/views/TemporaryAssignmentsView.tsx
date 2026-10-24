@@ -21,9 +21,11 @@ import { TemporaryAssignment } from '../types/dispatch';
 import { BusRoute } from '../types/route';
 import { Employee } from '../types/employee';
 import { Vehicle } from '../types/vehicle';
-import { RouteOpening } from '../types/routeOpening';
+import { RouteOpening, SanitizedStopPreview } from '../types/routeOpening';
+import { CharterTrip, formatCharterStopTime, addMinutesToCharterTime } from '../types/charter';
 import { DispatchService } from '../services/dispatchService';
 import { RouteOpeningService } from '../services/routeOpeningService';
+import { CharterService } from '../services/charterService';
 import { TemporaryAssignmentModal } from '../components/dispatch/TemporaryAssignmentModal';
 import { RouteOpeningCreateModal } from '../components/dispatch/RouteOpeningCreateModal';
 import { RouteOpeningStopPreviewModal } from '../components/dispatch/RouteOpeningStopPreviewModal';
@@ -72,9 +74,10 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
   // 1. Route Openings & Bidding State
   // ==========================================
   const [openings, setOpenings] = useState<RouteOpening[]>([]);
+  const [charterTrips, setCharterTrips] = useState<CharterTrip[]>([]);
   const [openingsLoading, setOpeningsLoading] = useState<boolean>(true);
   const [openingSearch, setOpeningSearch] = useState<string>('');
-  const [openingTypeFilter, setOpeningTypeFilter] = useState<'all' | 'permanent' | 'temporary'>('all');
+  const [openingTypeFilter, setOpeningTypeFilter] = useState<'all' | 'permanent' | 'temporary' | 'charter'>('all');
   const [openingStatusFilter, setOpeningStatusFilter] = useState<'all' | 'open' | 'reviewing' | 'awarded'>('all');
 
   // Openings Modals
@@ -83,7 +86,7 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
   const [applyingOpening, setApplyingOpening] = useState<RouteOpening | null>(null);
   const [reviewingOpening, setReviewingOpening] = useState<RouteOpening | null>(null);
 
-  // Subscribe to route openings
+  // Subscribe to route openings & charter trips
   useEffect(() => {
     setOpeningsLoading(true);
     const unsubscribe = RouteOpeningService.subscribeToOpenings(
@@ -96,10 +99,135 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
         setOpeningsLoading(false);
       }
     );
+    const unsubCharters = CharterService.subscribeToTrips(
+      (trips) => setCharterTrips(Array.isArray(trips) ? trips : []),
+      () => {}
+    );
     return () => {
       if (unsubscribe) unsubscribe();
+      if (unsubCharters) unsubCharters();
     };
   }, []);
+
+  const charterTripsById = useMemo(() => {
+    const map: Record<string, CharterTrip> = {};
+    charterTrips.forEach((tr) => {
+      map[tr.id] = tr;
+    });
+    return map;
+  }, [charterTrips]);
+
+  // Resolves the full 4-stop itinerary for Charter openings (or sanitizedStops for route openings)
+  const resolveOpeningDisplayStops = (op: RouteOpening): SanitizedStopPreview[] => {
+    if (op.postingType === 'charter') {
+      const trip = charterTripsById[op.charterTripId || op.routeId];
+      const depTime = formatCharterStopTime(trip?.departsAt || op.departsAt) || '08:00';
+      const retTime = formatCharterStopTime(trip?.returnsAt || op.returnsAt) || '15:00';
+
+      if (trip && trip.stops && trip.stops.length > 0) {
+        if (trip.roundTrip !== false && trip.stops.length === 3) {
+          const s0 = trip.stops[0];
+          const s1 = trip.stops[1];
+          const s2 = trip.stops[2];
+          const t0 = formatCharterStopTime(s0.scheduledAt) || depTime;
+          const t1 = addMinutesToCharterTime(t0, 30);
+          const t2 = formatCharterStopTime(s2.scheduledAt) || retTime;
+          const t3 = addMinutesToCharterTime(t2, 30);
+          return [
+            {
+              stopId: s0.id || 'stop-1',
+              sequence: 1,
+              stopLocation: `Pickup: ${s0.address || 'School'}`,
+              stopScheduleTime: t0,
+              stopType: 'CharterPickup',
+            },
+            {
+              stopId: s1.id || 'stop-2',
+              sequence: 2,
+              stopLocation: `Dropoff: ${s1.address || 'Museum'}`,
+              stopScheduleTime: t1,
+              stopType: 'CharterDestination',
+            },
+            {
+              stopId: 'stop-3',
+              sequence: 3,
+              stopLocation: `Return Pickup: ${s1.address || 'Library'}`,
+              stopScheduleTime: t2,
+              stopType: 'CharterPickup',
+            },
+            {
+              stopId: s2.id || 'stop-4',
+              sequence: 4,
+              stopLocation: `Return Dropoff: ${s2.address || s0.address || 'School'}`,
+              stopScheduleTime: t3,
+              stopType: 'CharterReturn',
+            },
+          ];
+        }
+        return trip.stops.map((s, idx) => {
+          const actionLabel =
+            s.stopType === 0
+              ? 'Pickup'
+              : s.stopType === 1
+              ? 'Dropoff'
+              : s.stopType === 3
+              ? 'Return Pickup'
+              : 'Return Dropoff';
+          const fallbackT =
+            idx === 0
+              ? depTime
+              : idx === 1
+              ? addMinutesToCharterTime(depTime, 30)
+              : idx === 2
+              ? retTime
+              : addMinutesToCharterTime(retTime, 30);
+          return {
+            stopId: s.id || `stop-${idx + 1}`,
+            sequence: idx + 1,
+            stopLocation: `${actionLabel}: ${s.address}`,
+            stopScheduleTime: formatCharterStopTime(s.scheduledAt) || fallbackT,
+            stopType: s.stopType === 0 || s.stopType === 3 ? 'CharterPickup' : 'CharterReturn',
+          };
+        });
+      }
+
+      if (op.sanitizedStops && op.sanitizedStops.length === 3) {
+        const s0 = op.sanitizedStops[0];
+        const s1 = op.sanitizedStops[1];
+        const s2 = op.sanitizedStops[2];
+        const t0 = formatCharterStopTime(s0.stopScheduleTime) || depTime;
+        const t1 = addMinutesToCharterTime(t0, 30);
+        const t2 = formatCharterStopTime(s2.stopScheduleTime) || retTime;
+        const t3 = addMinutesToCharterTime(t2, 30);
+        return [
+          { ...s0, sequence: 1, stopScheduleTime: t0 },
+          {
+            ...s1,
+            sequence: 2,
+            stopLocation: s1.stopLocation.replace(/^Destination/i, 'Dropoff'),
+            stopScheduleTime: t1,
+          },
+          {
+            ...s1,
+            stopId: 'stop-3',
+            sequence: 3,
+            stopLocation: s1.stopLocation.replace(/^(Destination|Dropoff)/i, 'Return Pickup'),
+            stopScheduleTime: t2,
+            stopType: 'CharterPickup',
+          },
+          {
+            ...s2,
+            stopId: 'stop-4',
+            sequence: 4,
+            stopLocation: s2.stopLocation.replace(/^Return/i, 'Return Dropoff'),
+            stopScheduleTime: t3,
+            stopType: 'CharterReturn',
+          },
+        ];
+      }
+    }
+    return op.sanitizedStops || [];
+  };
 
   // Helper for deadline countdown
   const getDeadlineStatus = (deadlineStr: string) => {
@@ -501,9 +629,10 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
                 onChange={(e) => setOpeningTypeFilter(e.target.value as any)}
                 className="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
               >
-                <option value="all">All Posting Types</option>
-                <option value="permanent">Permanent Standing</option>
-                <option value="temporary">Temporary Coverage</option>
+                <option value="all">All Categories</option>
+                <option value="permanent">Permanent Route</option>
+                <option value="temporary">Temporary Route Coverage</option>
+                <option value="charter">Charter Trips</option>
               </select>
 
               {/* Status Filter */}
@@ -583,12 +712,18 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
                           </span>
                           <span
                             className={`px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
-                              isPermanent
+                              op.postingType === 'charter'
+                                ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+                                : isPermanent
                                 ? 'bg-blue-500/10 text-blue-300 border-blue-500/30'
                                 : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
                             }`}
                           >
-                            {isPermanent ? 'Permanent Run' : 'Temporary Cover'}
+                            {op.postingType === 'charter'
+                              ? `Charter Trip${typeof op.openShiftsCount === 'number' ? ` (${op.openShiftsCount}/${op.vehiclesNeeded || 1} Open)` : ''}`
+                              : isPermanent
+                              ? 'Permanent Run'
+                              : 'Temporary Cover'}
                           </span>
                           <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-800 text-slate-300">
                             {op.roleNeeded === 'driver'
@@ -645,6 +780,40 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
                           <div className="text-[11px] text-slate-500">Board: {op.schoolBoardCode}</div>
                         )}
                       </div>
+
+                      {/* Stop Schedule & Time List (for Charter / Sanitized Stops) */}
+                      {(() => {
+                        const displayStops = resolveOpeningDisplayStops(op);
+                        if (!displayStops || displayStops.length === 0) return null;
+                        return (
+                          <div className="mt-2.5 p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1.5">
+                            <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              <span>Stop Schedule ({displayStops.length} stops)</span>
+                              <span>Time</span>
+                            </div>
+                            <div className="divide-y divide-slate-800/60 space-y-1">
+                              {displayStops.map((st, sIdx) => (
+                                <div
+                                  key={st.stopId || sIdx}
+                                  className="pt-1 first:pt-0 flex items-center justify-between gap-2 text-xs"
+                                >
+                                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                    <span className="w-4 h-4 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold flex items-center justify-center shrink-0">
+                                      {st.sequence || sIdx + 1}
+                                    </span>
+                                    <span className="text-slate-300 truncate" title={st.stopLocation}>
+                                      {st.stopLocation}
+                                    </span>
+                                  </div>
+                                  <span className="font-mono font-bold text-cyan-400 shrink-0">
+                                    {st.stopScheduleTime || '--:--'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {op.description && (
                         <p className="mt-2.5 text-xs text-slate-300 bg-slate-950/40 p-2.5 rounded-xl border border-slate-800/80 line-clamp-2">
@@ -1148,6 +1317,7 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
           routeId={inspectingOpening.routeId}
           routeNo={inspectingOpening.routeNo}
           routeName={inspectingOpening.routeName}
+          opening={inspectingOpening}
         />
       )}
 

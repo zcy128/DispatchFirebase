@@ -122,13 +122,30 @@ export const RouteOpeningService = {
   createOpening: async (payload: CreateRouteOpeningPayload): Promise<RouteOpening> => {
     if (!db) throw new Error('Firestore is not initialized');
 
-    const id = `RO-${Date.now()}`;
+    const id =
+      payload.postingType === 'charter' && payload.charterTripId
+        ? `RO-CHARTER-${payload.charterTripId}`
+        : `RO-${Date.now()}`;
     const nowIso = new Date().toISOString();
 
     const title =
-      payload.postingType === 'permanent'
+      payload.postingType === 'charter'
+        ? `Charter Trip Assignment - ${payload.routeName || payload.routeNo}`
+        : payload.postingType === 'permanent'
         ? `Permanent Route Driver/Crew - Route ${payload.routeNo}`
         : `Temporary Route Coverage - Route ${payload.routeNo}`;
+
+    // Preserve existing applicants if updating an existing charter opening
+    let existingApplicants: RouteOpeningApplicant[] = [];
+    if (payload.postingType === 'charter') {
+      try {
+        const existingSnap = await getDoc(doc(db, COLLECTION_NAME, id));
+        if (existingSnap.exists()) {
+          const existingData = existingSnap.data() as RouteOpening;
+          existingApplicants = existingData.applicants || [];
+        }
+      } catch {}
+    }
 
     const newOpening: RouteOpening = {
       id,
@@ -141,6 +158,16 @@ export const RouteOpeningService = {
       schoolBoardCode: payload.schoolBoardCode,
       postingType: payload.postingType,
       roleNeeded: payload.roleNeeded,
+      charterTripId: payload.charterTripId,
+      charterClientName: payload.charterClientName,
+      vehiclesNeeded: payload.vehiclesNeeded,
+      openShiftsCount: payload.openShiftsCount,
+      departsAt: payload.departsAt,
+      returnsAt: payload.returnsAt,
+      passengerCount: payload.passengerCount,
+      driverPayRate: payload.driverPayRate,
+      attendantPayRate: payload.attendantPayRate,
+      sanitizedStops: payload.sanitizedStops,
       effectiveStartDate: payload.effectiveStartDate,
       effectiveEndDate: payload.effectiveEndDate,
       shiftType: payload.shiftType || 'ALL',
@@ -149,7 +176,7 @@ export const RouteOpeningService = {
       description: payload.description,
       requirements: payload.requirements,
       status: 'open',
-      applicants: [],
+      applicants: existingApplicants,
       chatAnnouncementSent: false,
       createdBy: payload.createdBy,
       createdAt: nowIso,
@@ -157,7 +184,7 @@ export const RouteOpeningService = {
     };
 
     const docRef = doc(db, COLLECTION_NAME, id);
-    await setDoc(docRef, stripUndefined(newOpening));
+    await setDoc(docRef, stripUndefined(newOpening), { merge: true });
 
     // Broadcast bulletin to Fleet Chat if selected
     if (payload.postToChat) {
@@ -518,6 +545,163 @@ export const RouteOpeningService = {
     const todayStr = getTodayLocalDateStr();
     const isDriver = applicant.roleApplied === 'driver';
 
+    // Special handling for Charter Trip Openings (supports 1..N shifts)
+    if (opening.postingType === 'charter' && opening.charterTripId) {
+      const tripRef = doc(db, 'charter_trips', opening.charterTripId);
+      const tripSnap = await getDoc(tripRef);
+      if (!tripSnap.exists()) {
+        throw new Error(`Charter trip ${opening.charterTripId} not found`);
+      }
+
+      const tripData = tripSnap.data() as Record<string, any>;
+      const assignments: Record<string, any>[] = Array.isArray(tripData.assignments)
+        ? [...tripData.assignments]
+        : [];
+      const totalNeeded = Math.max(Number(tripData.vehiclesNeeded) || 1, assignments.length);
+
+      let targetIdx = assignments.findIndex((a) =>
+        isDriver
+          ? !a.driverId && !a.driverName
+          : !a.attendantId && !a.attendantName
+      );
+
+      const defaultDrvRate = Number(opening.driverPayRate ?? tripData.driverPayRate) || 150;
+      const defaultAttRate = Number(opening.attendantPayRate ?? tripData.attendantPayRate) || 100;
+
+      if (targetIdx === -1) {
+        // Create a new shift slot
+        const runNum = assignments.length + 1;
+        const clonedStops = Array.isArray(tripData.stops)
+          ? tripData.stops.map((s: Record<string, any>) => {
+              const copy = { ...s };
+              delete copy.arrivedAt;
+              delete copy.departedAt;
+              return copy;
+            })
+          : [];
+        assignments.push({
+          id: `ASG-${opening.charterTripId}-${runNum}-${Date.now().toString().slice(-4)}`,
+          charterTripId: opening.charterTripId,
+          runNumber: runNum,
+          vehicleId: 0,
+          vehicleUnitNumber: 'TBD',
+          plateNumber: '',
+          driverId: isDriver ? applicant.employeeId : '',
+          driverName: isDriver ? applicant.fullName : '',
+          driverPhone: isDriver ? (applicant.phone || '') : '',
+          driverPayOption: 'STANDARD',
+          driverPayRate: defaultDrvRate,
+          driverEiHours: Number(tripData.billableHours) || 5,
+          attendantId: !isDriver ? applicant.employeeId : '',
+          attendantName: !isDriver ? applicant.fullName : '',
+          attendantPhone: !isDriver ? (applicant.phone || '') : '',
+          attendantPayOption: 'STANDARD',
+          attendantPayRate: defaultAttRate,
+          attendantEiHours: Number(tripData.billableHours) || 5,
+          status: 0,
+          isDriverCheckedIn: false,
+          isAttendantCheckedIn: false,
+          stops: clonedStops,
+          notes: notes || '',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+        targetIdx = assignments.length - 1;
+      } else {
+        const existingAsg: Record<string, any> = { ...assignments[targetIdx], updatedAt: nowIso };
+        if (isDriver) {
+          existingAsg.driverId = applicant.employeeId;
+          existingAsg.driverName = applicant.fullName;
+          existingAsg.driverPhone = applicant.phone || '';
+          if (!existingAsg.driverPayRate || opening.driverPayRate !== undefined) {
+            existingAsg.driverPayRate = defaultDrvRate;
+          }
+        } else {
+          existingAsg.attendantId = applicant.employeeId;
+          existingAsg.attendantName = applicant.fullName;
+          existingAsg.attendantPhone = applicant.phone || '';
+          if (!existingAsg.attendantPayRate || opening.attendantPayRate !== undefined) {
+            existingAsg.attendantPayRate = defaultAttRate;
+          }
+        }
+        if (notes) {
+          existingAsg.notes = existingAsg.notes ? `${existingAsg.notes} | ${notes}` : notes;
+        }
+        assignments[targetIdx] = existingAsg;
+      }
+
+      const assignedRunNumber = assignments[targetIdx].runNumber || targetIdx + 1;
+      const newTripStatus = (Number(tripData.status) || 0) < 2 ? 2 : tripData.status;
+
+      await setDoc(
+        tripRef,
+        stripUndefined({
+          assignments,
+          vehiclesNeeded: Math.max(totalNeeded, assignments.length),
+          status: newTripStatus,
+          updatedAt: nowIso,
+        }),
+        { merge: true }
+      );
+
+      const filledDrivers = assignments.filter((a) => Boolean(a.driverId || a.driverName)).length;
+      const remainingOpenDrivers = Math.max(0, Math.max(totalNeeded, assignments.length) - filledDrivers);
+      const filledAttendants = assignments.filter((a) => Boolean(a.attendantId || a.attendantName)).length;
+      const remainingOpenAttendants = tripData.needsAttendant
+        ? Math.max(0, Math.max(totalNeeded, assignments.length) - filledAttendants)
+        : 0;
+
+      const allCharterShiftsFilled = remainingOpenDrivers === 0 && remainingOpenAttendants === 0;
+
+      const updatedCharterApplicants = (opening.applicants || []).map((a) => {
+        if (a.employeeId === applicant.employeeId && a.roleApplied === applicant.roleApplied) {
+          return { ...a, status: 'selected' as const };
+        }
+        if (allCharterShiftsFilled && a.status === 'pending') {
+          return { ...a, status: 'rejected' as const };
+        }
+        return a;
+      });
+
+      const selectedDriverNames = updatedCharterApplicants
+        .filter((a) => a.status === 'selected' && a.roleApplied === 'driver')
+        .map((a) => a.fullName);
+
+      const updatedCharterOpening: RouteOpening = {
+        ...opening,
+        status: allCharterShiftsFilled ? 'awarded' : 'open',
+        openShiftsCount: remainingOpenDrivers,
+        applicants: updatedCharterApplicants,
+        awardedDriverId: isDriver ? applicant.employeeId : opening.awardedDriverId,
+        awardedDriverName:
+          selectedDriverNames.length > 0
+            ? selectedDriverNames.join(', ')
+            : isDriver
+            ? applicant.fullName
+            : opening.awardedDriverName,
+        awardedDriverPhone: isDriver ? (applicant.phone || '') : opening.awardedDriverPhone,
+        awardedAttendantId: !isDriver ? applicant.employeeId : opening.awardedAttendantId,
+        awardedAttendantName: !isDriver ? applicant.fullName : opening.awardedAttendantName,
+        awardedAttendantPhone: !isDriver ? (applicant.phone || '') : opening.awardedAttendantPhone,
+        awardedAt: nowIso,
+        awardedBy: actorName,
+        awardedNotes: notes || opening.awardedNotes || '',
+        updatedAt: nowIso,
+      };
+
+      await setDoc(doc(db, COLLECTION_NAME, opening.id), stripUndefined(updatedCharterOpening), {
+        merge: true,
+      });
+
+      try {
+        const awardMsg = `🎉 [CHARTER SHIFT CONFIRMED]\nCharter ${opening.routeNo} (${opening.routeName || 'Charter Trip'}) — Shift #${assignedRunNumber} has been awarded to ${applicant.fullName} (${applicant.roleApplied.toUpperCase()}) for ${opening.effectiveStartDate}.`;
+        await RouteOpeningService.postBroadcastMessage(awardMsg, actorName);
+      } catch (e) {
+        console.warn('[RouteOpeningService] Charter award announcement notice:', e);
+      }
+      return;
+    }
+
     const newAwardedDriverId = isDriver ? applicant.employeeId : opening.awardedDriverId;
     const newAwardedDriverName = isDriver ? applicant.fullName : opening.awardedDriverName;
     const newAwardedDriverPhone = isDriver ? (applicant.phone || '') : opening.awardedDriverPhone;
@@ -648,20 +832,27 @@ export const RouteOpeningService = {
         : 'Driver & Attendant';
 
     const typeLabel =
-      opening.postingType === 'permanent'
+      opening.postingType === 'charter'
+        ? `Charter Trip (${opening.effectiveStartDate}${opening.openShiftsCount ? ` • ${opening.openShiftsCount} Shift(s) Open` : ''})`
+        : opening.postingType === 'permanent'
         ? `Permanent (Effective: ${opening.effectiveStartDate})`
         : `Temporary Coverage (${opening.effectiveStartDate} ~ ${opening.effectiveEndDate || opening.effectiveStartDate})`;
 
     const deadlineFormatted = opening.deadline.replace('T', ' ');
 
+    const headerTitle =
+      opening.postingType === 'charter'
+        ? `📢 [CHARTER TRIP OPENING / OFFRE DE VOYAGE NOLISÉ]`
+        : `📢 [FLEET ROUTE OPENING BULLETIN / OFFRE D'ITINÉRAIRE]`;
+
     const text =
-      `📢 [FLEET ROUTE OPENING BULLETIN / OFFRE D'ITINÉRAIRE]\n` +
-      `📍 Route: ${opening.routeNo} ${opening.routeName ? '- ' + opening.routeName : ''}\n` +
+      `${headerTitle}\n` +
+      `📍 ${opening.postingType === 'charter' ? 'Charter' : 'Route'}: ${opening.routeNo} ${opening.routeName ? '- ' + opening.routeName : ''}\n` +
       `💼 Position: ${roleLabel} | ${typeLabel}\n` +
-      `⏰ Shifts: ${opening.shiftType}\n` +
+      `⏰ Schedule: ${opening.shiftType}\n` +
       `⏳ Application Deadline: ${deadlineFormatted}\n` +
       `${opening.description ? `📝 Details: ${opening.description}\n` : ''}` +
-      `👉 Interested drivers & attendants: Open the "Route Openings" tab to preview sanitized route stops and submit your application!`;
+      `👉 Interested drivers & attendants: Open the "Route Openings" tab to preview stops and submit your application!`;
 
     await RouteOpeningService.postBroadcastMessage(text, actorName);
   },

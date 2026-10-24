@@ -101,6 +101,28 @@ class _CharterTripCardState extends State<CharterTripCard> {
         : widget.assignment.attendantCheckedOutAt;
   }
 
+  double get _myPayRate {
+    if (_isDriverRole) {
+      return widget.assignment.driverPayRate > 0
+          ? widget.assignment.driverPayRate
+          : (widget.trip.driverPayRate > 0 ? widget.trip.driverPayRate : 150.0);
+    }
+    return widget.assignment.attendantPayRate > 0
+        ? widget.assignment.attendantPayRate
+        : (widget.trip.attendantPayRate > 0 ? widget.trip.attendantPayRate : 100.0);
+  }
+
+  double get _myEiHours {
+    if (_isDriverRole) {
+      return widget.assignment.driverEiHours > 0
+          ? widget.assignment.driverEiHours
+          : (widget.trip.billableHours > 0 ? widget.trip.billableHours : 5.0);
+    }
+    return widget.assignment.attendantEiHours > 0
+        ? widget.assignment.attendantEiHours
+        : (widget.trip.billableHours > 0 ? widget.trip.billableHours : 5.0);
+  }
+
   Future<void> _handleCheckIn() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -113,7 +135,7 @@ class _CharterTripCardState extends State<CharterTripCard> {
           ],
         ),
         content: Text(
-          'Confirm check-in for charter "${widget.trip.title}" with Bus #${widget.assignment.vehicleUnitNumber}?\n\nThis will automatically log your shift in Dispatch Payroll.',
+          'Confirm check-in for charter "${widget.trip.title}" with Bus #${widget.assignment.vehicleUnitNumber}?\n\nThis will automatically log your shift and reveal your confirmed Payroll Rate in Dispatch Payroll.',
           style: const TextStyle(fontSize: 13, height: 1.4),
         ),
         actions: [
@@ -146,8 +168,10 @@ class _CharterTripCardState extends State<CharterTripCard> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Successfully checked in for charter run!'),
+          SnackBar(
+            content: Text(
+              'Checked in! Your ${_isDriverRole ? "Driver" : "Attendant"} Payroll Rate is \$${_myPayRate.toStringAsFixed(2)} (${_myEiHours.toStringAsFixed(1)}h EI).',
+            ),
             backgroundColor: AppColors.success,
           ),
         );
@@ -287,8 +311,9 @@ class _CharterTripCardState extends State<CharterTripCard> {
     final trip = widget.trip;
     final asg = widget.assignment;
 
-    final arrivedStopsCount = trip.stops.where((s) => s.isArrived).length;
-    final totalStopsCount = trip.stops.length;
+    final effectiveStops = trip.effectiveStopsForAssignment(asg.id);
+    final arrivedStopsCount = effectiveStops.where((s) => s.isArrived).length;
+    final totalStopsCount = effectiveStops.length;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -529,12 +554,118 @@ class _CharterTripCardState extends State<CharterTripCard> {
                   const SizedBox(height: 14),
                 ],
 
-                // Stops & Itinerary Shortcut Button
+                // Payroll Rate Section (Revealed after Check-In)
+                _buildPayrollRateSection(isDark),
+                const SizedBox(height: 14),
+
+                // Stops & Itinerary Preview + Shortcut Button
+                if (effectiveStops.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1A2234) : Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.schedule_rounded, size: 13, color: AppColors.primary),
+                            const SizedBox(width: 6),
+                            Text(
+                              'STOP SCHEDULE (${effectiveStops.length} STOPS)',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        ...effectiveStops.asMap().entries.map((entry) {
+                          final idx = entry.key;
+                          final st = entry.value;
+                          final isPickup = st.stopType == 0 || st.stopType == 3;
+                          final timeStr = CharterStopModel.extractTimeOnly(st.scheduledAt);
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2.5),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 18,
+                                  height: 18,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: (isPickup ? AppColors.primary : Colors.purple)
+                                        .withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '${idx + 1}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: isPickup ? AppColors.primary : Colors.purple,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: (isPickup ? AppColors.primary : Colors.purple)
+                                        .withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    st.stopTypeLabel,
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: isPickup ? AppColors.primary : Colors.purple,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    st.address.isNotEmpty ? st.address : st.locationName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                                  ),
+                                ),
+                                if (timeStr.isNotEmpty) ...[
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    timeStr,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 InkWell(
                   onTap: () => CharterStopsSheet.show(
                     context,
                     trip: trip,
                     repository: widget.repository,
+                    assignmentId: asg.id,
                   ),
                   borderRadius: BorderRadius.circular(10),
                   child: Container(
@@ -567,6 +698,144 @@ class _CharterTripCardState extends State<CharterTripCard> {
 
                 // Check-In / Check-Out Action Button
                 _buildCheckInOutButton(isDark),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPayrollRateSection(bool isDark) {
+    final roleLabel = _isDriverRole ? 'Driver' : 'Attendant';
+    if (!_isCheckedIn) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1A2234) : Colors.blueGrey.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isDark ? AppColors.darkCardBorder : Colors.blueGrey.shade100,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.payments_outlined,
+              size: 18,
+              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Check in to view & log your $roleLabel Payroll Rate',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.lock_clock_outlined,
+              size: 16,
+              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: isDark ? 0.14 : 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.success.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.success.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.attach_money_rounded,
+              color: AppColors.success,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      '$roleLabel Payroll Rate',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.green.shade300 : Colors.green.shade800,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'SYNCED TO PAYROLL',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      '\$${_myPayRate.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.success,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '• ${_myEiHours.toStringAsFixed(1)}h EI',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _isCheckedOut
+                      ? 'In: ${_checkedInAt ?? "--:--"}  •  Out: ${_checkedOutAt ?? "--:--"}'
+                      : 'Checked in at ${_checkedInAt ?? "--:--"}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                  ),
+                ),
               ],
             ),
           ),
