@@ -61,10 +61,10 @@ class CharterRepository {
     return CharterTripModel.fromMap(doc.data()!, doc.id);
   }
 
-  /// Assign or claim crew for a charter trip assignment
+  /// Assign or claim crew for a charter trip assignment (or first available shift slot)
   Future<void> assignCrewMember({
     required String tripId,
-    required String assignmentId,
+    String? assignmentId,
     required String role, // 'driver' or 'attendant'
     required String employeeId,
     required String employeeName,
@@ -76,25 +76,97 @@ class CharterRepository {
 
     final trip = CharterTripModel.fromMap(snap.data()!, snap.id);
     final assignments = List<CharterAssignmentModel>.from(trip.assignments);
-    final index = assignments.indexWhere((a) => a.id == assignmentId);
-    if (index == -1) throw Exception('Assignment $assignmentId not found');
+    final isDriverRole = role.toLowerCase() == 'driver';
 
-    final current = assignments[index];
-    final map = current.toMap();
-    if (role.toLowerCase() == 'driver') {
-      map['driverId'] = employeeId;
-      map['driverName'] = employeeName;
-      if (phone != null) map['driverPhone'] = phone;
+    int index = -1;
+    if (assignmentId != null && assignmentId.isNotEmpty) {
+      index = assignments.indexWhere((a) => a.id == assignmentId);
     } else {
-      map['attendantId'] = employeeId;
-      map['attendantName'] = employeeName;
-      if (phone != null) map['attendantPhone'] = phone;
+      // Find first open shift slot for the requested role
+      index = assignments.indexWhere((a) =>
+          isDriverRole
+              ? (a.driverId.trim().isEmpty && a.driverName.trim().isEmpty)
+              : (a.attendantId.trim().isEmpty && a.attendantName.trim().isEmpty));
     }
 
-    assignments[index] = CharterAssignmentModel.fromMap(map, tripId: tripId);
+    if (index == -1) {
+      // Create a new shift slot if under vehiclesNeeded (or if no assignments existed)
+      final runNum = assignments.length + 1;
+      final newId = 'ASG-$tripId-$runNum-${DateTime.now().millisecondsSinceEpoch % 10000}';
+      final initialStops = trip.stops
+          .map((s) => CharterStopModel(
+                id: s.id,
+                charterTripId: s.charterTripId,
+                sequenceOrder: s.sequenceOrder,
+                stopType: s.stopType,
+                locationName: s.locationName,
+                address: s.address,
+                latitude: s.latitude,
+                longitude: s.longitude,
+                scheduledAt: s.scheduledAt,
+                notes: s.notes,
+              ))
+          .toList();
+
+      final newAsg = CharterAssignmentModel(
+        id: newId,
+        charterTripId: tripId,
+        runNumber: runNum,
+        vehicleId: 0,
+        vehicleUnitNumber: 'TBD',
+        plateNumber: '',
+        driverId: isDriverRole ? employeeId : '',
+        driverName: isDriverRole ? employeeName : '',
+        driverPhone: isDriverRole ? (phone ?? '') : '',
+        attendantId: !isDriverRole ? employeeId : '',
+        attendantName: !isDriverRole ? employeeName : '',
+        attendantPhone: !isDriverRole ? (phone ?? '') : '',
+        driverPayOption: 'STANDARD',
+        driverPayRate: trip.driverPayRate > 0 ? trip.driverPayRate : 150.0,
+        driverEiHours: trip.billableHours > 0 ? trip.billableHours : 5.0,
+        attendantPayOption: 'STANDARD',
+        attendantPayRate: trip.attendantPayRate > 0 ? trip.attendantPayRate : 100.0,
+        attendantEiHours: trip.billableHours > 0 ? trip.billableHours : 5.0,
+        status: 0,
+        stops: initialStops,
+      );
+      assignments.add(newAsg);
+    } else {
+      final current = assignments[index];
+      final map = current.toMap();
+      if (isDriverRole) {
+        map['driverId'] = employeeId;
+        map['driverName'] = employeeName;
+        if (phone != null) map['driverPhone'] = phone;
+      } else {
+        map['attendantId'] = employeeId;
+        map['attendantName'] = employeeName;
+        if (phone != null) map['attendantPhone'] = phone;
+      }
+      if (current.stops.isEmpty && trip.stops.isNotEmpty) {
+        map['stops'] = trip.stops
+            .map((s) => CharterStopModel(
+                  id: s.id,
+                  charterTripId: s.charterTripId,
+                  sequenceOrder: s.sequenceOrder,
+                  stopType: s.stopType,
+                  locationName: s.locationName,
+                  address: s.address,
+                  latitude: s.latitude,
+                  longitude: s.longitude,
+                  scheduledAt: s.scheduledAt,
+                  notes: s.notes,
+                ).toMap())
+            .toList();
+      }
+      assignments[index] = CharterAssignmentModel.fromMap(map, tripId: tripId);
+    }
+
     final updatedTripMap = trip.toMap();
     updatedTripMap['assignments'] = assignments.map((a) => a.toMap()).toList();
-    updatedTripMap['status'] = 2; // Assigned
+    if (trip.status < 2) {
+      updatedTripMap['status'] = 2; // Assigned
+    }
     updatedTripMap['updatedAt'] = DateTime.now().toIso8601String();
 
     await docRef.set(updatedTripMap, SetOptions(merge: true));
@@ -126,9 +198,21 @@ class CharterRepository {
     if (isDriver) {
       map['isDriverCheckedIn'] = true;
       map['driverCheckedInAt'] = timeStr;
+      if ((map['driverPayRate'] as num? ?? 0) <= 0) {
+        map['driverPayRate'] = trip.driverPayRate > 0 ? trip.driverPayRate : 150.0;
+      }
+      if ((map['driverEiHours'] as num? ?? 0) <= 0) {
+        map['driverEiHours'] = trip.billableHours > 0 ? trip.billableHours : 5.0;
+      }
     } else {
       map['isAttendantCheckedIn'] = true;
       map['attendantCheckedInAt'] = timeStr;
+      if ((map['attendantPayRate'] as num? ?? 0) <= 0) {
+        map['attendantPayRate'] = trip.attendantPayRate > 0 ? trip.attendantPayRate : 100.0;
+      }
+      if ((map['attendantEiHours'] as num? ?? 0) <= 0) {
+        map['attendantEiHours'] = trip.billableHours > 0 ? trip.billableHours : 5.0;
+      }
     }
 
     final updatedAssignment = CharterAssignmentModel.fromMap(map, tripId: tripId);
@@ -231,10 +315,11 @@ class CharterRepository {
     );
   }
 
-  /// Record arrival time at a specific stop
+  /// Record arrival time at a specific stop (per shift/assignment if assignmentId provided)
   Future<void> recordStopArrival({
     required String tripId,
     required String stopId,
+    String? assignmentId,
     String? arrivalTime,
   }) async {
     final docRef = _tripsRef.doc(tripId);
@@ -242,15 +327,47 @@ class CharterRepository {
     if (!snap.exists) throw Exception('Trip $tripId not found');
 
     final trip = CharterTripModel.fromMap(snap.data()!, snap.id);
-    final stops = List<CharterStopModel>.from(trip.stops);
-    final index = stops.indexWhere((s) => s.id == stopId);
-    if (index == -1) throw Exception('Stop $stopId not found');
-
     final timeStr = arrivalTime ?? DateFormat('HH:mm').format(DateTime.now());
-    stops[index] = stops[index].copyWith(arrivedAt: timeStr);
-
     final updatedTripMap = trip.toMap();
-    updatedTripMap['stops'] = stops.map((s) => s.toMap()).toList();
+
+    if (assignmentId != null && assignmentId.isNotEmpty) {
+      final assignments = List<CharterAssignmentModel>.from(trip.assignments);
+      final asgIndex = assignments.indexWhere((a) => a.id == assignmentId);
+      if (asgIndex != -1) {
+        final currentAsg = assignments[asgIndex];
+        final asgStops = currentAsg.stops.isNotEmpty
+            ? List<CharterStopModel>.from(currentAsg.stops)
+            : trip.stops
+                .map((s) => CharterStopModel(
+                      id: s.id,
+                      charterTripId: s.charterTripId,
+                      sequenceOrder: s.sequenceOrder,
+                      stopType: s.stopType,
+                      locationName: s.locationName,
+                      address: s.address,
+                      latitude: s.latitude,
+                      longitude: s.longitude,
+                      scheduledAt: s.scheduledAt,
+                      notes: s.notes,
+                    ))
+                .toList();
+        final sIdx = asgStops.indexWhere((s) => s.id == stopId);
+        if (sIdx == -1) throw Exception('Stop $stopId not found');
+        asgStops[sIdx] = asgStops[sIdx].copyWith(arrivedAt: timeStr);
+
+        final asgMap = currentAsg.toMap();
+        asgMap['stops'] = asgStops.map((s) => s.toMap()).toList();
+        assignments[asgIndex] = CharterAssignmentModel.fromMap(asgMap, tripId: tripId);
+        updatedTripMap['assignments'] = assignments.map((a) => a.toMap()).toList();
+      }
+    } else {
+      final stops = List<CharterStopModel>.from(trip.stops);
+      final index = stops.indexWhere((s) => s.id == stopId);
+      if (index == -1) throw Exception('Stop $stopId not found');
+      stops[index] = stops[index].copyWith(arrivedAt: timeStr);
+      updatedTripMap['stops'] = stops.map((s) => s.toMap()).toList();
+    }
+
     if (trip.status < 3) {
       updatedTripMap['status'] = 3; // In Progress
     }
@@ -259,10 +376,11 @@ class CharterRepository {
     await docRef.set(updatedTripMap, SetOptions(merge: true));
   }
 
-  /// Record departure time from a specific stop
+  /// Record departure time from a specific stop (per shift/assignment if assignmentId provided)
   Future<void> recordStopDeparture({
     required String tripId,
     required String stopId,
+    String? assignmentId,
     String? departureTime,
   }) async {
     final docRef = _tripsRef.doc(tripId);
@@ -270,15 +388,47 @@ class CharterRepository {
     if (!snap.exists) throw Exception('Trip $tripId not found');
 
     final trip = CharterTripModel.fromMap(snap.data()!, snap.id);
-    final stops = List<CharterStopModel>.from(trip.stops);
-    final index = stops.indexWhere((s) => s.id == stopId);
-    if (index == -1) throw Exception('Stop $stopId not found');
-
     final timeStr = departureTime ?? DateFormat('HH:mm').format(DateTime.now());
-    stops[index] = stops[index].copyWith(departedAt: timeStr);
-
     final updatedTripMap = trip.toMap();
-    updatedTripMap['stops'] = stops.map((s) => s.toMap()).toList();
+
+    if (assignmentId != null && assignmentId.isNotEmpty) {
+      final assignments = List<CharterAssignmentModel>.from(trip.assignments);
+      final asgIndex = assignments.indexWhere((a) => a.id == assignmentId);
+      if (asgIndex != -1) {
+        final currentAsg = assignments[asgIndex];
+        final asgStops = currentAsg.stops.isNotEmpty
+            ? List<CharterStopModel>.from(currentAsg.stops)
+            : trip.stops
+                .map((s) => CharterStopModel(
+                      id: s.id,
+                      charterTripId: s.charterTripId,
+                      sequenceOrder: s.sequenceOrder,
+                      stopType: s.stopType,
+                      locationName: s.locationName,
+                      address: s.address,
+                      latitude: s.latitude,
+                      longitude: s.longitude,
+                      scheduledAt: s.scheduledAt,
+                      notes: s.notes,
+                    ))
+                .toList();
+        final sIdx = asgStops.indexWhere((s) => s.id == stopId);
+        if (sIdx == -1) throw Exception('Stop $stopId not found');
+        asgStops[sIdx] = asgStops[sIdx].copyWith(departedAt: timeStr);
+
+        final asgMap = currentAsg.toMap();
+        asgMap['stops'] = asgStops.map((s) => s.toMap()).toList();
+        assignments[asgIndex] = CharterAssignmentModel.fromMap(asgMap, tripId: tripId);
+        updatedTripMap['assignments'] = assignments.map((a) => a.toMap()).toList();
+      }
+    } else {
+      final stops = List<CharterStopModel>.from(trip.stops);
+      final index = stops.indexWhere((s) => s.id == stopId);
+      if (index == -1) throw Exception('Stop $stopId not found');
+      stops[index] = stops[index].copyWith(departedAt: timeStr);
+      updatedTripMap['stops'] = stops.map((s) => s.toMap()).toList();
+    }
+
     updatedTripMap['updatedAt'] = DateTime.now().toIso8601String();
 
     await docRef.set(updatedTripMap, SetOptions(merge: true));

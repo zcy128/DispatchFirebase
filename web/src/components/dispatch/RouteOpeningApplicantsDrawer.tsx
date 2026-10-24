@@ -68,7 +68,10 @@ export const RouteOpeningApplicantsDrawer: React.FC<RouteOpeningApplicantsDrawer
       );
       onAwarded();
       setAwardingApplicant(null);
-      onClose();
+      setAwardNotes('');
+      if (opening.postingType !== 'charter' || (opening.openShiftsCount ?? 1) <= 1) {
+        onClose();
+      }
     } catch (err: any) {
       console.error('[ApplicantsDrawer] Failed to award position:', err);
       setError(err?.message || 'Failed to award position. Please try again.');
@@ -87,20 +90,29 @@ export const RouteOpeningApplicantsDrawer: React.FC<RouteOpeningApplicantsDrawer
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-lg font-bold text-slate-100">
                   {t.routeOpenings?.reviewApplicantsBtn || 'Review Candidates'}
                 </h3>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  Route {opening.routeNo}
+                  {opening.postingType === 'charter' ? `Charter ${opening.routeNo}` : `Route ${opening.routeNo}`}
                 </span>
+                {opening.postingType === 'charter' && typeof opening.openShiftsCount === 'number' && (
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    {opening.openShiftsCount} / {opening.vehiclesNeeded || 1} Shift(s) Open
+                  </span>
+                )}
                 <span className="text-xs text-slate-400">
                   ({applicants.length} {t.routeOpenings?.applicantsCount || 'Applicants'})
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                {opening.postingType === 'permanent' ? 'Permanent Route Vacancy' : 'Temporary Coverage Shift'} •
-                Effective: {opening.effectiveStartDate}
+                {opening.postingType === 'charter'
+                  ? `Charter Trip (${opening.charterClientName || opening.routeName || ''})`
+                  : opening.postingType === 'permanent'
+                  ? 'Permanent Route Vacancy'
+                  : 'Temporary Coverage Shift'}{' '}
+                • Effective: {opening.effectiveStartDate}
               </p>
             </div>
           </div>
@@ -237,7 +249,9 @@ export const RouteOpeningApplicantsDrawer: React.FC<RouteOpeningApplicantsDrawer
                   <span className="font-bold text-slate-100">{awardingApplicant.roleApplied.toUpperCase()}</span>?
                 </p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  {opening.postingType === 'permanent'
+                  {opening.postingType === 'charter'
+                    ? 'This will assign the selected crew member to the next open shift on this Charter Trip.'
+                    : opening.postingType === 'permanent'
                     ? 'This will permanently assign the crew to the bus route.'
                     : 'This will schedule a temporary coverage assignment for the shift dates.'}
                 </p>

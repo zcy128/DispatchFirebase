@@ -163,9 +163,16 @@ class RouteOpeningItem {
   final String routeName;
   final String? schoolName;
   final String? schoolAddress;
-  final String postingType; // 'permanent' | 'temporary'
+  final String postingType; // 'permanent' | 'temporary' | 'charter'
   final String roleNeeded; // 'driver' | 'attendant' | 'both'
-  final String shiftType; // 'ALL' | 'AM' | 'PM'
+  final String? charterTripId;
+  final String? charterClientName;
+  final int? vehiclesNeeded;
+  final int? openShiftsCount;
+  final String? departsAt;
+  final String? returnsAt;
+  final int? passengerCount;
+  final String shiftType; // 'ALL' | 'AM' | 'PM' | 'CHARTER (...)'
   final String effectiveStartDate;
   final String? effectiveEndDate;
   final String deadline;
@@ -190,6 +197,13 @@ class RouteOpeningItem {
     this.schoolAddress,
     required this.postingType,
     required this.roleNeeded,
+    this.charterTripId,
+    this.charterClientName,
+    this.vehiclesNeeded,
+    this.openShiftsCount,
+    this.departsAt,
+    this.returnsAt,
+    this.passengerCount,
     required this.shiftType,
     required this.effectiveStartDate,
     this.effectiveEndDate,
@@ -223,6 +237,13 @@ class RouteOpeningItem {
       schoolAddress: data['schoolAddress']?.toString(),
       postingType: (data['postingType'] ?? 'permanent').toString(),
       roleNeeded: (data['roleNeeded'] ?? 'driver').toString(),
+      charterTripId: data['charterTripId']?.toString(),
+      charterClientName: data['charterClientName']?.toString(),
+      vehiclesNeeded: (data['vehiclesNeeded'] as num?)?.toInt(),
+      openShiftsCount: (data['openShiftsCount'] as num?)?.toInt(),
+      departsAt: data['departsAt']?.toString(),
+      returnsAt: data['returnsAt']?.toString(),
+      passengerCount: (data['passengerCount'] as num?)?.toInt(),
       shiftType: (data['shiftType'] ?? 'ALL').toString(),
       effectiveStartDate: (data['effectiveStartDate'] ?? '').toString(),
       effectiveEndDate: data['effectiveEndDate']?.toString(),
@@ -294,6 +315,7 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
   static const String _localDevUrl = 'http://localhost:8080';
 
   String _filterMode = 'open'; // 'open' | 'mine' | 'all'
+  String _categoryFilter = 'all'; // 'all' | 'routes' | 'charter'
   String? _employeePhone;
   String? _employeeAddress;
   String? _employeeSeniority;
@@ -341,19 +363,216 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
     }
   }
 
+  String _extractTimeOnly(String raw) {
+    final v = raw.trim();
+    if (v.isEmpty) return '';
+    if (RegExp(r'^\d{1,2}:\d{2}').hasMatch(v)) {
+      return v.substring(0, v.indexOf(':') + 3);
+    }
+    final normalized = v.replaceAll('T', ' ');
+    final parts = normalized.split(' ');
+    for (final p in parts) {
+      if (RegExp(r'^\d{1,2}:\d{2}').hasMatch(p)) {
+        return p.substring(0, p.indexOf(':') + 3);
+      }
+    }
+    return v;
+  }
+
+  String _addMinutesToTime(String hhmm, int minutes) {
+    final clean = _extractTimeOnly(hhmm);
+    final parts = clean.split(':');
+    if (parts.length < 2) return clean;
+    final h = int.tryParse(parts[0]) ?? 8;
+    final m = int.tryParse(parts[1]) ?? 0;
+    final total = h * 60 + m + minutes;
+    final nh = (total ~/ 60) % 24;
+    final nm = total % 60;
+    return '${nh.toString().padLeft(2, '0')}:${nm.toString().padLeft(2, '0')}';
+  }
+
   Future<List<SanitizedRouteShift>> _ensureShiftsForOpening(
     RouteOpeningItem opening,
   ) async {
     final existing = _getShiftsForOpening(opening);
-    if (existing.isNotEmpty) return existing;
+    final isCachedFromTrip = opening.routeId.isNotEmpty &&
+        _shiftsByRouteId.containsKey(opening.routeId);
+    final hasMissingCharterTime = opening.postingType == 'charter' &&
+        (!isCachedFromTrip ||
+            existing.isEmpty ||
+            existing.any((sh) =>
+                sh.stops.length == 3 ||
+                sh.stops.any((st) => st.scheduledTime.isEmpty)));
+    if (existing.isNotEmpty && !hasMissingCharterTime) return existing;
 
     final key = opening.routeId.isNotEmpty
         ? opening.routeId
         : 'NO:${opening.routeNo}';
-    if (_loadingRouteIds.contains(key)) return const [];
+    if (_loadingRouteIds.contains(key)) return existing;
     _loadingRouteIds.add(key);
 
     try {
+      // 0. If Charter Trip opening, fetch charter_trips document to ensure full stop & time schedule
+      if (opening.postingType == 'charter') {
+        final tripId = (opening.charterTripId != null &&
+                opening.charterTripId!.isNotEmpty)
+            ? opening.charterTripId!
+            : opening.routeId;
+        if (tripId.isNotEmpty) {
+          final tripDoc = await FirebaseFirestore.instance
+              .collection('charter_trips')
+              .doc(tripId)
+              .get();
+          if (tripDoc.exists && tripDoc.data() != null) {
+            final d = tripDoc.data()!;
+            final depTime =
+                _extractTimeOnly((d['departsAt'] ?? '08:00').toString());
+            final retTime =
+                _extractTimeOnly((d['returnsAt'] ?? '15:00').toString());
+            final isRoundTrip = d['roundTrip'] != false;
+            final rawStops = d['stops'];
+            final List<SanitizedStopItem> parsedStops = [];
+            if (rawStops is List && rawStops.isNotEmpty) {
+              if (isRoundTrip && rawStops.length == 3) {
+                final m0 = rawStops[0] is Map
+                    ? Map<String, dynamic>.from(rawStops[0] as Map)
+                    : <String, dynamic>{};
+                final m1 = rawStops[1] is Map
+                    ? Map<String, dynamic>.from(rawStops[1] as Map)
+                    : <String, dynamic>{};
+                final m2 = rawStops[2] is Map
+                    ? Map<String, dynamic>.from(rawStops[2] as Map)
+                    : <String, dynamic>{};
+                final addr0 = (m0['address'] ?? 'School').toString();
+                final addr1 = (m1['address'] ?? 'Museum').toString();
+                final addr2 = (m2['address'] ?? addr0).toString();
+                final t0 = _extractTimeOnly(
+                        (m0['scheduledAt'] ?? '').toString())
+                    .isNotEmpty
+                    ? _extractTimeOnly((m0['scheduledAt'] ?? '').toString())
+                    : depTime;
+                final t1 = _addMinutesToTime(t0, 30);
+                final t2 = _extractTimeOnly(
+                        (m2['scheduledAt'] ?? '').toString())
+                    .isNotEmpty
+                    ? _extractTimeOnly((m2['scheduledAt'] ?? '').toString())
+                    : retTime;
+                final t3 = _addMinutesToTime(t2, 30);
+                parsedStops.addAll([
+                  SanitizedStopItem(
+                    sequence: 1,
+                    stopName: 'Pickup: $addr0',
+                    address: addr0,
+                    scheduledTime: t0,
+                    stopType: 'Pickup',
+                  ),
+                  SanitizedStopItem(
+                    sequence: 2,
+                    stopName: 'Dropoff: $addr1',
+                    address: addr1,
+                    scheduledTime: t1,
+                    stopType: 'Dropoff',
+                  ),
+                  SanitizedStopItem(
+                    sequence: 3,
+                    stopName: 'Return Pickup: $addr1',
+                    address: addr1,
+                    scheduledTime: t2,
+                    stopType: 'Return Pickup',
+                  ),
+                  SanitizedStopItem(
+                    sequence: 4,
+                    stopName: 'Return Dropoff: $addr2',
+                    address: addr2,
+                    scheduledTime: t3,
+                    stopType: 'Return Dropoff',
+                  ),
+                ]);
+              } else {
+                for (int idx = 0; idx < rawStops.length; idx++) {
+                  final item = rawStops[idx];
+                  if (item is Map) {
+                    final m = Map<String, dynamic>.from(item);
+                    final stopType = (m['stopType'] is num)
+                        ? (m['stopType'] as num).toInt()
+                        : (idx == 0
+                            ? 0
+                            : idx == 1
+                                ? 1
+                                : idx == 2
+                                    ? 3
+                                    : 2);
+                    String sched = _extractTimeOnly(
+                        (m['scheduledAt'] ?? m['scheduledTime'] ?? '')
+                            .toString());
+                    if (sched.isEmpty) {
+                      if (idx == 0 || stopType == 0) {
+                        sched = depTime;
+                      } else if (idx == 1 || stopType == 1) {
+                        sched = _addMinutesToTime(depTime, 30);
+                      } else if (idx == 2 || stopType == 3) {
+                        sched = retTime;
+                      } else {
+                        sched = _addMinutesToTime(retTime, 30);
+                      }
+                    }
+                    final addr =
+                        (m['address'] ?? m['stopName'] ?? 'Stop #${idx + 1}')
+                            .toString();
+                    final label = stopType == 0
+                        ? 'Pickup: $addr'
+                        : stopType == 1
+                            ? 'Dropoff: $addr'
+                            : stopType == 3
+                                ? 'Return Pickup: $addr'
+                                : 'Return Dropoff: $addr';
+                    parsedStops.add(
+                      SanitizedStopItem(
+                        sequence: (m['sequence'] is num)
+                            ? (m['sequence'] as num).toInt()
+                            : (idx + 1),
+                        stopName: label,
+                        address: addr,
+                        scheduledTime: sched,
+                        stopType: stopType == 0 || stopType == 3
+                            ? 'Pickup'
+                            : 'Dropoff',
+                        latitude: (m['lat'] is num)
+                            ? (m['lat'] as num).toDouble()
+                            : null,
+                        longitude: (m['lng'] is num)
+                            ? (m['lng'] as num).toDouble()
+                            : null,
+                      ),
+                    );
+                  }
+                }
+              }
+            }
+            if (parsedStops.isNotEmpty) {
+              final shifts = [
+                SanitizedRouteShift(
+                  id: 'charter_$tripId',
+                  shiftType: opening.shiftType.isNotEmpty
+                      ? opening.shiftType
+                      : 'CHARTER',
+                  firstStopTime: parsedStops.first.scheduledTime,
+                  lastStopTime: parsedStops.last.scheduledTime,
+                  stops: parsedStops,
+                ),
+              ];
+              if (mounted) {
+                setState(() {
+                  _shiftsByRouteId[opening.routeId] = shifts;
+                });
+              }
+              return shifts;
+            }
+          }
+        }
+        return existing;
+      }
+
       // 1. Try Firestore query by routeId or routeNo
       if (opening.routeId.isNotEmpty) {
         final snap = await FirebaseFirestore.instance
@@ -441,13 +660,57 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
         _shiftsByRouteId.containsKey('NO:${opening.routeNo}')) {
       shifts = _shiftsByRouteId['NO:${opening.routeNo}']!;
     } else if (opening.sanitizedStops.isNotEmpty) {
+      List<SanitizedStopItem> resolvedStops = opening.sanitizedStops;
+      if (opening.postingType == 'charter' && resolvedStops.length == 3) {
+        final s0 = resolvedStops[0];
+        final s1 = resolvedStops[1];
+        final s2 = resolvedStops[2];
+        final t0 = _extractTimeOnly(s0.scheduledTime).isNotEmpty
+            ? _extractTimeOnly(s0.scheduledTime)
+            : '08:00';
+        final t1 = _addMinutesToTime(t0, 30);
+        final t2 = _extractTimeOnly(s2.scheduledTime).isNotEmpty
+            ? _extractTimeOnly(s2.scheduledTime)
+            : '15:00';
+        final t3 = _addMinutesToTime(t2, 30);
+        resolvedStops = [
+          SanitizedStopItem(
+            sequence: 1,
+            stopName: s0.stopName,
+            address: s0.address,
+            scheduledTime: t0,
+            stopType: 'Pickup',
+          ),
+          SanitizedStopItem(
+            sequence: 2,
+            stopName: s1.stopName.replaceAll('Destination', 'Dropoff'),
+            address: s1.address,
+            scheduledTime: t1,
+            stopType: 'Dropoff',
+          ),
+          SanitizedStopItem(
+            sequence: 3,
+            stopName: s1.stopName.replaceAll('Destination', 'Return Pickup'),
+            address: s1.address,
+            scheduledTime: t2,
+            stopType: 'Return Pickup',
+          ),
+          SanitizedStopItem(
+            sequence: 4,
+            stopName: s2.stopName.replaceAll('Return', 'Return Dropoff'),
+            address: s2.address,
+            scheduledTime: t3,
+            stopType: 'Return Dropoff',
+          ),
+        ];
+      }
       shifts = [
         SanitizedRouteShift(
           id: 'default',
           shiftType: opening.shiftType,
           firstStopTime: '',
           lastStopTime: '',
-          stops: opening.sanitizedStops,
+          stops: resolvedStops,
         ),
       ];
     }
@@ -593,17 +856,39 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
 
                 // Trigger background fetch for any opening whose shifts aren't cached yet
                 for (final item in allItems) {
-                  if (_getShiftsForOpening(item).isEmpty) {
+                  final cachedShifts = _getShiftsForOpening(item);
+                  final needsCharterFetch = item.postingType == 'charter' &&
+                      (cachedShifts.isEmpty ||
+                          cachedShifts.any((sh) =>
+                              sh.stops.any((st) => st.scheduledTime.isEmpty)));
+                  if (cachedShifts.isEmpty || needsCharterFetch) {
                     _ensureShiftsForOpening(item);
                   }
                 }
 
-                final filtered = allItems.where((item) {
+                final statusFiltered = allItems.where((item) {
                   if (_filterMode == 'open') {
                     return item.status == 'open';
                   }
                   if (_filterMode == 'mine') {
                     return item.myApplication(widget.driverId) != null;
+                  }
+                  return true;
+                }).toList();
+
+                final routeCount = statusFiltered
+                    .where((i) => i.postingType != 'charter')
+                    .length;
+                final charterCount = statusFiltered
+                    .where((i) => i.postingType == 'charter')
+                    .length;
+
+                final filtered = statusFiltered.where((item) {
+                  if (_categoryFilter == 'routes') {
+                    return item.postingType != 'charter';
+                  }
+                  if (_categoryFilter == 'charter') {
+                    return item.postingType == 'charter';
                   }
                   return true;
                 }).toList();
@@ -620,55 +905,261 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
                   });
                 }
 
-                if (filtered.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.campaign_outlined,
-                          size: 54,
-                          color: isDark
-                              ? Colors.grey.shade700
-                              : Colors.grey.shade400,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          _filterMode == 'mine'
-                              ? 'You have not applied to any route openings yet.'
-                              : 'No active route openings at the moment.',
-                          style: TextStyle(
-                            fontSize: 14,
+                return Column(
+                  children: [
+                    // Category Tabs Bar (Routes vs Charter Trips)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? AppColors.darkCard.withValues(alpha: 0.7)
+                            : Colors.grey.shade50,
+                        border: Border(
+                          bottom: BorderSide(
                             color: isDark
-                                ? AppColors.textSecondaryDark
-                                : AppColors.textSecondaryLight,
+                                ? AppColors.darkCardBorder
+                                : AppColors.lightCardBorder,
                           ),
                         ),
-                      ],
+                      ),
+                      child: Row(
+                        children: [
+                          _buildCategoryChip(
+                            'all',
+                            'All (${statusFiltered.length})',
+                            Icons.apps_rounded,
+                            isDark,
+                          ),
+                          const SizedBox(width: 8),
+                          _buildCategoryChip(
+                            'routes',
+                            'Routes ($routeCount)',
+                            Icons.alt_route_rounded,
+                            isDark,
+                          ),
+                          const SizedBox(width: 8),
+                          _buildCategoryChip(
+                            'charter',
+                            'Charter ($charterCount)',
+                            Icons.airport_shuttle_rounded,
+                            isDark,
+                          ),
+                        ],
+                      ),
                     ),
-                  );
-                }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) {
-                    final opening = filtered[index];
-                    final isHighlighted = widget.initialRouteNo != null &&
-                        opening.routeNo.toLowerCase() ==
-                            widget.initialRouteNo!.trim().toLowerCase();
-                    return _buildOpeningCard(
-                      context,
-                      opening,
-                      isDark,
-                      isHighlighted: isHighlighted,
-                    );
-                  },
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    _categoryFilter == 'charter'
+                                        ? Icons.airport_shuttle_outlined
+                                        : Icons.campaign_outlined,
+                                    size: 54,
+                                    color: isDark
+                                        ? Colors.grey.shade700
+                                        : Colors.grey.shade400,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _filterMode == 'mine'
+                                        ? 'You have not applied to any openings in this category yet.'
+                                        : _categoryFilter == 'charter'
+                                        ? 'No open Charter Trip assignments at the moment.'
+                                        : 'No active route openings at the moment.',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: isDark
+                                          ? AppColors.textSecondaryDark
+                                          : AppColors.textSecondaryLight,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : _buildCategorizedList(context, filtered, isDark),
+                    ),
+                  ],
                 );
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCategorizedList(
+    BuildContext context,
+    List<RouteOpeningItem> items,
+    bool isDark,
+  ) {
+    if (_categoryFilter != 'all') {
+      return ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: items.length,
+        itemBuilder: (context, index) {
+          final opening = items[index];
+          final isHighlighted = widget.initialRouteNo != null &&
+              opening.routeNo.toLowerCase() ==
+                  widget.initialRouteNo!.trim().toLowerCase();
+          return _buildOpeningCard(
+            context,
+            opening,
+            isDark,
+            isHighlighted: isHighlighted,
+          );
+        },
+      );
+    }
+
+    final routeItems =
+        items.where((i) => i.postingType != 'charter').toList();
+    final charterItems =
+        items.where((i) => i.postingType == 'charter').toList();
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (charterItems.isNotEmpty) ...[
+          _buildCategorySectionHeader(
+            'CHARTER TRIP ASSIGNMENTS (${charterItems.length})',
+            Icons.airport_shuttle_rounded,
+            Colors.indigoAccent,
+            isDark,
+          ),
+          const SizedBox(height: 10),
+          ...charterItems.map((opening) {
+            final isHighlighted = widget.initialRouteNo != null &&
+                opening.routeNo.toLowerCase() ==
+                    widget.initialRouteNo!.trim().toLowerCase();
+            return _buildOpeningCard(
+              context,
+              opening,
+              isDark,
+              isHighlighted: isHighlighted,
+            );
+          }),
+          if (routeItems.isNotEmpty) const SizedBox(height: 10),
+        ],
+        if (routeItems.isNotEmpty) ...[
+          _buildCategorySectionHeader(
+            'SCHOOL BUS ROUTES (${routeItems.length})',
+            Icons.alt_route_rounded,
+            AppColors.primary,
+            isDark,
+          ),
+          const SizedBox(height: 10),
+          ...routeItems.map((opening) {
+            final isHighlighted = widget.initialRouteNo != null &&
+                opening.routeNo.toLowerCase() ==
+                    widget.initialRouteNo!.trim().toLowerCase();
+            return _buildOpeningCard(
+              context,
+              opening,
+              isDark,
+              isHighlighted: isHighlighted,
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCategorySectionHeader(
+    String title,
+    IconData icon,
+    Color accent,
+    bool isDark,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: isDark ? 0.15 : 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: accent),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+              color: accent,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryChip(
+    String category,
+    String label,
+    IconData icon,
+    bool isDark,
+  ) {
+    final selected = _categoryFilter == category;
+    final activeColor =
+        category == 'charter' ? Colors.indigoAccent : AppColors.primary;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _categoryFilter = category),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 6),
+          decoration: BoxDecoration(
+            color: selected
+                ? activeColor.withValues(alpha: 0.18)
+                : (isDark ? Colors.black12 : Colors.white),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected
+                  ? activeColor
+                  : (isDark
+                      ? AppColors.darkCardBorder
+                      : AppColors.lightCardBorder),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 14,
+                color: selected
+                    ? activeColor
+                    : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+              ),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                    color: selected
+                        ? activeColor
+                        : (isDark
+                            ? Colors.grey.shade300
+                            : Colors.grey.shade700),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -713,15 +1204,18 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
     final canApply = opening.status == 'open' && !opening.isDeadlinePassed;
     final totalStops = _getTotalStopCount(opening);
 
+    final isCharter = opening.postingType == 'charter';
     final roleBadgeText = opening.roleNeeded == 'driver'
         ? 'DRIVER NEEDED'
         : opening.roleNeeded == 'attendant'
             ? 'ATTENDANT NEEDED'
             : 'DRIVER & ATTENDANT';
 
-    final typeText = opening.postingType == 'permanent'
-        ? 'Permanent Run (Starts ${opening.effectiveStartDate})'
-        : 'Temporary (${opening.effectiveStartDate} ~ ${opening.effectiveEndDate ?? opening.effectiveStartDate})';
+    final typeText = isCharter
+        ? 'Charter Date: ${opening.effectiveStartDate}${opening.passengerCount != null ? ' • ${opening.passengerCount} Passengers' : ''}'
+        : opening.postingType == 'permanent'
+            ? 'Permanent Run (Starts ${opening.effectiveStartDate})'
+            : 'Temporary (${opening.effectiveStartDate} ~ ${opening.effectiveEndDate ?? opening.effectiveStartDate})';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -761,11 +1255,22 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
                         : Colors.grey,
               ),
               _buildPill(
-                opening.postingType == 'permanent' ? 'PERMANENT' : 'TEMPORARY',
-                opening.postingType == 'permanent'
-                    ? Colors.purpleAccent
-                    : AppColors.primary,
+                isCharter
+                    ? 'CHARTER TRIP'
+                    : opening.postingType == 'permanent'
+                        ? 'PERMANENT'
+                        : 'TEMPORARY',
+                isCharter
+                    ? Colors.indigoAccent
+                    : opening.postingType == 'permanent'
+                        ? Colors.purpleAccent
+                        : AppColors.primary,
               ),
+              if (isCharter && opening.openShiftsCount != null)
+                _buildPill(
+                  '${opening.openShiftsCount}/${opening.vehiclesNeeded ?? 1} SHIFTS OPEN',
+                  Colors.cyan,
+                ),
               _buildPill(roleBadgeText, Colors.amber),
               if (myApp != null)
                 _buildPill(
@@ -785,15 +1290,16 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.15),
+                  color: (isCharter ? Colors.indigoAccent : AppColors.primary)
+                      .withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   opening.routeNo,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
-                    color: AppColors.primary,
+                    color: isCharter ? Colors.indigoAccent : AppColors.primary,
                   ),
                 ),
               ),
@@ -805,13 +1311,27 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
                     Text(
                       opening.routeName.isNotEmpty
                           ? opening.routeName
-                          : 'Route ${opening.routeNo}',
+                          : isCharter
+                              ? 'Charter ${opening.routeNo}'
+                              : 'Route ${opening.routeNo}',
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (opening.schoolName != null &&
+                    if (isCharter &&
+                        opening.charterClientName != null &&
+                        opening.charterClientName!.isNotEmpty)
+                      Text(
+                        'Client: ${opening.charterClientName}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? AppColors.textSecondaryDark
+                              : AppColors.textSecondaryLight,
+                        ),
+                      )
+                    else if (opening.schoolName != null &&
                         opening.schoolName!.isNotEmpty)
                       Text(
                         'School: ${opening.schoolName}',
@@ -834,7 +1354,9 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
           const SizedBox(height: 4),
           _buildInfoRow(
             Icons.access_time_rounded,
-            'Shifts: ${opening.shiftType == 'ALL' ? 'Full Run (AM & PM)' : '${opening.shiftType} Shift Only'} • $totalStops Stops',
+            isCharter
+                ? 'Schedule: ${opening.shiftType} • $totalStops Stops'
+                : 'Shifts: ${opening.shiftType == 'ALL' ? 'Full Run (AM & PM)' : '${opening.shiftType} Shift Only'} • $totalStops Stops',
             isDark,
           ),
           const SizedBox(height: 4),
@@ -855,6 +1377,121 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
               highlightColor: AppColors.success,
             ),
           ],
+
+          // Stop Schedule & Time List preview on card
+          Builder(
+            builder: (context) {
+              final shifts = _getShiftsForOpening(opening);
+              final stops = shifts.expand((sh) => sh.stops).toList();
+              if (stops.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.indigo.withValues(alpha: 0.12)
+                        : Colors.indigo.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.indigo.withValues(alpha: 0.22),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.schedule_rounded,
+                            size: 13,
+                            color: Colors.indigo,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'STOP SCHEDULE (${stops.length} STOPS)',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.4,
+                              color: Colors.indigo,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ...stops.map((s) {
+                        final timeStr = _extractTimeOnly(s.scheduledTime);
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2.5),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 20,
+                                height: 20,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: Colors.indigo.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Text(
+                                  '#${s.sequence}',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.indigo,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  s.stopName.isNotEmpty ? s.stopName : s.address,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark
+                                        ? Colors.grey.shade200
+                                        : Colors.grey.shade800,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: timeStr.isNotEmpty
+                                      ? AppColors.primary.withValues(alpha: 0.14)
+                                      : Colors.grey.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  timeStr.isNotEmpty ? timeStr : 'TBD',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: timeStr.isNotEmpty
+                                        ? AppColors.primary
+                                        : Colors.grey,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
 
           if (opening.description.isNotEmpty) ...[
             const SizedBox(height: 10),

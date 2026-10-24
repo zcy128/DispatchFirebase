@@ -8,23 +8,30 @@ import '../repository/charter_repository.dart';
 class CharterStopsSheet extends StatefulWidget {
   final CharterTripModel trip;
   final CharterRepository repository;
+  final String? assignmentId;
 
   const CharterStopsSheet({
     super.key,
     required this.trip,
     required this.repository,
+    this.assignmentId,
   });
 
   static Future<void> show(
     BuildContext context, {
     required CharterTripModel trip,
     required CharterRepository repository,
+    String? assignmentId,
   }) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => CharterStopsSheet(trip: trip, repository: repository),
+      builder: (_) => CharterStopsSheet(
+        trip: trip,
+        repository: repository,
+        assignmentId: assignmentId,
+      ),
     );
   }
 
@@ -58,6 +65,7 @@ class _CharterStopsSheetState extends State<CharterStopsSheet> {
       await widget.repository.recordStopArrival(
         tripId: _currentTrip.id,
         stopId: stop.id,
+        assignmentId: widget.assignmentId,
         arrivalTime: nowStr,
       );
       if (mounted) {
@@ -87,6 +95,7 @@ class _CharterStopsSheetState extends State<CharterStopsSheet> {
       await widget.repository.recordStopDeparture(
         tripId: _currentTrip.id,
         stopId: stop.id,
+        assignmentId: widget.assignmentId,
         departureTime: nowStr,
       );
       if (mounted) {
@@ -127,7 +136,7 @@ class _CharterStopsSheetState extends State<CharterStopsSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final stops = _currentTrip.stops;
+    final stops = _currentTrip.effectiveStopsForAssignment(widget.assignmentId);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.75,
@@ -252,6 +261,10 @@ class _CharterStopsSheetState extends State<CharterStopsSheet> {
         typeColor = Colors.purple;
         typeIcon = Icons.flag_rounded;
         break;
+      case 3:
+        typeColor = AppColors.info;
+        typeIcon = Icons.departure_board_rounded;
+        break;
       case 2:
         typeColor = AppColors.success;
         typeIcon = Icons.keyboard_return_rounded;
@@ -365,7 +378,7 @@ class _CharterStopsSheetState extends State<CharterStopsSheet> {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              'Sched: ${stop.scheduledAt}',
+                              'Sched: ${CharterStopModel.extractTimeOnly(stop.scheduledAt)}',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,

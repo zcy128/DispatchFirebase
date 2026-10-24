@@ -5,7 +5,9 @@ import { X, ShieldCheck, MapPin, Clock, School as SchoolIcon, Bus } from 'lucide
 import { RouteService } from '../../services/routeService';
 import { BusRouteShift } from '../../types/route';
 import { sanitizeStopsForPublicViewing } from '../../utils/stopSanitizer';
-import { SanitizedStopPreview } from '../../types/routeOpening';
+import { RouteOpening, SanitizedStopPreview } from '../../types/routeOpening';
+import { CharterService } from '../../services/charterService';
+import { formatCharterStopTime, addMinutesToCharterTime } from '../../types/charter';
 import { useI18n } from '../../contexts/I18nContext';
 
 interface RouteOpeningStopPreviewModalProps {
@@ -14,6 +16,7 @@ interface RouteOpeningStopPreviewModalProps {
   routeId: string;
   routeNo: string;
   routeName?: string;
+  opening?: RouteOpening;
 }
 
 export const RouteOpeningStopPreviewModal: React.FC<RouteOpeningStopPreviewModalProps> = ({
@@ -21,10 +24,12 @@ export const RouteOpeningStopPreviewModal: React.FC<RouteOpeningStopPreviewModal
   onClose,
   routeId,
   routeNo,
-  routeName
+  routeName,
+  opening
 }) => {
   const { t } = useI18n();
   const [shifts, setShifts] = useState<BusRouteShift[]>([]);
+  const [charterStops, setCharterStops] = useState<SanitizedStopPreview[]>([]);
   const [selectedShiftIndex, setSelectedShiftIndex] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -32,16 +37,133 @@ export const RouteOpeningStopPreviewModal: React.FC<RouteOpeningStopPreviewModal
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
 
-  // Load shifts for route
+  // Load shifts for route or charter stops
   useEffect(() => {
     if (!isOpen || !routeId) {
       setShifts([]);
+      setCharterStops([]);
       setSelectedShiftIndex(0);
       return;
     }
 
     let isCancelled = false;
     setLoading(true);
+
+    if (opening?.postingType === 'charter' || (opening?.sanitizedStops && opening.sanitizedStops.length > 0)) {
+      if (opening.sanitizedStops && opening.sanitizedStops.length > 0) {
+        if (opening.postingType === 'charter' && opening.sanitizedStops.length === 3) {
+          const s0 = opening.sanitizedStops[0];
+          const s1 = opening.sanitizedStops[1];
+          const s2 = opening.sanitizedStops[2];
+          const t0 = formatCharterStopTime(s0.stopScheduleTime) || formatCharterStopTime(opening.departsAt) || '08:00';
+          const t1 = addMinutesToCharterTime(t0, 30);
+          const t2 = formatCharterStopTime(s2.stopScheduleTime) || formatCharterStopTime(opening.returnsAt) || '15:00';
+          const t3 = addMinutesToCharterTime(t2, 30);
+          setCharterStops([
+            { ...s0, sequence: 1, stopScheduleTime: t0 },
+            { ...s1, sequence: 2, stopScheduleTime: t1 },
+            {
+              ...s1,
+              stopId: 'stop-3',
+              sequence: 3,
+              stopLocation: s1.stopLocation.replace(/^Destination/i, 'Return Pickup'),
+              stopScheduleTime: t2,
+              stopType: 'CharterPickup',
+            },
+            {
+              ...s2,
+              stopId: 'stop-4',
+              sequence: 4,
+              stopLocation: s2.stopLocation.replace(/^Return/i, 'Return Dropoff'),
+              stopScheduleTime: t3,
+              stopType: 'CharterReturn',
+            },
+          ]);
+        } else {
+          setCharterStops(opening.sanitizedStops);
+        }
+        setShifts([]);
+        setLoading(false);
+        return;
+      }
+      const targetTripId = opening.charterTripId || routeId;
+      CharterService.getTripById(targetTripId)
+        .then((trip) => {
+          if (isCancelled) return;
+          if (trip && trip.stops && trip.stops.length > 0) {
+            const depT = formatCharterStopTime(trip.departsAt) || '08:00';
+            const retT = formatCharterStopTime(trip.returnsAt) || '15:00';
+            const raw = trip.stops;
+            if (trip.roundTrip !== false && raw.length === 3) {
+              const t0 = formatCharterStopTime(raw[0].scheduledAt) || depT;
+              const t1 = addMinutesToCharterTime(t0, 30);
+              const t2 = formatCharterStopTime(raw[2].scheduledAt) || retT;
+              const t3 = addMinutesToCharterTime(t2, 30);
+              setCharterStops([
+                {
+                  stopId: raw[0].id || 'stop-1',
+                  sequence: 1,
+                  stopLocation: `Pickup: ${raw[0].address}`,
+                  stopScheduleTime: t0,
+                  stopType: 'CharterPickup',
+                  schoolName: trip.clientName,
+                  latitude: raw[0].latitude,
+                  longitude: raw[0].longitude,
+                },
+                {
+                  stopId: raw[1].id || 'stop-2',
+                  sequence: 2,
+                  stopLocation: `Dropoff: ${raw[1].address}`,
+                  stopScheduleTime: t1,
+                  stopType: 'CharterDestination',
+                  schoolName: trip.clientName,
+                  latitude: raw[1].latitude,
+                  longitude: raw[1].longitude,
+                },
+                {
+                  stopId: 'stop-3',
+                  sequence: 3,
+                  stopLocation: `Return Pickup: ${raw[1].address}`,
+                  stopScheduleTime: t2,
+                  stopType: 'CharterPickup',
+                  schoolName: trip.clientName,
+                  latitude: raw[1].latitude,
+                  longitude: raw[1].longitude,
+                },
+                {
+                  stopId: raw[2].id || 'stop-4',
+                  sequence: 4,
+                  stopLocation: `Return Dropoff: ${raw[2].address || raw[0].address}`,
+                  stopScheduleTime: t3,
+                  stopType: 'CharterReturn',
+                  schoolName: trip.clientName,
+                  latitude: raw[2].latitude,
+                  longitude: raw[2].longitude,
+                },
+              ]);
+            } else {
+              const mapped: SanitizedStopPreview[] = raw.map((s, idx) => ({
+                stopId: s.id || `stop-${idx + 1}`,
+                sequence: s.sequenceOrder || idx + 1,
+                stopLocation: s.locationName ? `${s.locationName}: ${s.address}` : s.address,
+                stopScheduleTime: formatCharterStopTime(s.scheduledAt) || (idx === 0 ? depT : retT),
+                stopType: s.stopType === 0 || s.stopType === 3 ? 'CharterPickup' : s.stopType === 1 ? 'CharterDestination' : 'CharterReturn',
+                schoolName: trip.clientName,
+                latitude: s.latitude,
+                longitude: s.longitude,
+              }));
+              setCharterStops(mapped);
+            }
+          }
+          setLoading(false);
+        })
+        .catch(() => {
+          if (!isCancelled) setLoading(false);
+        });
+      return () => {
+        isCancelled = true;
+      };
+    }
 
     RouteService.getShiftsForRoute(routeId)
       .then((data) => {
@@ -61,19 +183,20 @@ export const RouteOpeningStopPreviewModal: React.FC<RouteOpeningStopPreviewModal
     return () => {
       isCancelled = true;
     };
-  }, [isOpen, routeId]);
+  }, [isOpen, routeId, opening]);
 
   const activeShift = shifts[selectedShiftIndex] || null;
   const markersByIndexRef = useRef<L.Marker[]>([]);
 
   // Derive sanitized stops with resolved coordinates
   const sanitizedStops: SanitizedStopPreview[] = useMemo(() => {
+    if (charterStops.length > 0) return charterStops;
     if (!activeShift || !activeShift.stops) return [];
     return sanitizeStopsForPublicViewing(
       activeShift.stops,
       activeShift.shiftSchools || routeName
     );
-  }, [activeShift, routeName]);
+  }, [charterStops, activeShift, routeName]);
 
   const handleFocusStop = (idx: number) => {
     const map = mapInstanceRef.current;

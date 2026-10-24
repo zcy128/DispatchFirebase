@@ -14,6 +14,7 @@ import {
   CharterClient,
   CharterTrip,
   CharterAssignment,
+  CharterStop,
 } from '../types/charter';
 import {
   DispatchPayrollRecord,
@@ -338,6 +339,56 @@ export const CharterService = {
     }
 
     return await CharterService.updateAssignmentCrew(tripId, assignmentId, update, actorName);
+  },
+
+  updateAssignmentStopTime: async (
+    tripId: string,
+    assignmentId: string,
+    stopId: string,
+    stopUpdate: { arrivedAt?: string; departedAt?: string },
+    actorName = 'Dispatcher'
+  ): Promise<CharterTrip> => {
+    if (!db) throw new Error('Firestore not initialized');
+    const tripRef = doc(db, TRIPS_COLL, tripId);
+    const snap = await getDoc(tripRef);
+    if (!snap.exists()) throw new Error(`Trip ${tripId} not found`);
+
+    const trip = snap.data() as CharterTrip;
+    const assignments = trip.assignments || [];
+    const index = assignments.findIndex((a) => a.id === assignmentId);
+    if (index === -1) throw new Error(`Assignment ${assignmentId} not found`);
+
+    const currentAsg = assignments[index];
+    const baseStops: CharterStop[] =
+      currentAsg.stops && currentAsg.stops.length > 0
+        ? currentAsg.stops
+        : (trip.stops || []).map((s) => {
+            const copy: CharterStop = { ...s };
+            delete copy.arrivedAt;
+            delete copy.departedAt;
+            return copy;
+          });
+
+    const updatedStops = baseStops.map((s) => {
+      if (s.id !== stopId) return s;
+      const next: CharterStop = { ...s };
+      if ('arrivedAt' in stopUpdate) {
+        if (stopUpdate.arrivedAt) next.arrivedAt = stopUpdate.arrivedAt;
+        else delete next.arrivedAt;
+      }
+      if ('departedAt' in stopUpdate) {
+        if (stopUpdate.departedAt) next.departedAt = stopUpdate.departedAt;
+        else delete next.departedAt;
+      }
+      return next;
+    });
+
+    return await CharterService.updateAssignmentCrew(
+      tripId,
+      assignmentId,
+      { stops: updatedStops },
+      actorName
+    );
   },
 
   // ─── SYNCHRONIZATION WITH DISPATCH PAYROLL & PAYROLL LOG ───────────────────

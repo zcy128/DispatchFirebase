@@ -135,6 +135,17 @@ service cloud.firestore {
       allow write: if true;
     }
 
+    // Charter Operations: Clients & Trips
+    match /charter_clients/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /charter_trips/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
     // Time Off Requests Collection
     match /time_off_requests/{id} {
       allow read: if true;
