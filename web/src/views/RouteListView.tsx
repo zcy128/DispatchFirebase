@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { BusRoute, RouteStats, formatOpDays, getShiftBadgeStyle, isAutoMarryupEnabled } from '../types/route';
 import { Student } from '../types/student';
 import { Yard } from '../types/yard';
@@ -204,6 +205,36 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
   const uniqueBoards = Array.from(new Set(routes.map((r) => r.schoolBoardCode).filter(Boolean)));
   const uniqueYards = Array.from(new Set(routes.map((r) => r.yardName).filter(Boolean)));
   const totalExpanded = Object.values(expandedRouteIds).filter(Boolean).length;
+
+  // Virtual scrolling containers for 1,000+ routes
+  const routeTableContainerRef = useRef<HTMLDivElement>(null);
+  const routeMobileContainerRef = useRef<HTMLDivElement>(null);
+
+  const routeTableVirtualizer = useVirtualizer({
+    count: filteredRoutes.length,
+    getScrollElement: () => routeTableContainerRef.current,
+    estimateSize: (index) => {
+      const r = filteredRoutes[index];
+      return expandedRouteIds[r?.id] ? 380 : 54;
+    },
+    overscan: 8,
+  });
+
+  const virtualRoutes = routeTableVirtualizer.getVirtualItems();
+  const routePaddingTop = virtualRoutes.length > 0 ? virtualRoutes[0]?.start || 0 : 0;
+  const routePaddingBottom = virtualRoutes.length > 0
+    ? routeTableVirtualizer.getTotalSize() - (virtualRoutes[virtualRoutes.length - 1]?.end || 0)
+    : 0;
+
+  const routeMobileVirtualizer = useVirtualizer({
+    count: filteredRoutes.length,
+    getScrollElement: () => routeMobileContainerRef.current,
+    estimateSize: (index) => {
+      const r = filteredRoutes[index];
+      return expandedRouteIds[r?.id] ? 450 : 160;
+    },
+    overscan: 5,
+  });
 
   return (
     <div className="p-3.5 sm:p-6 space-y-4 sm:space-y-5 max-w-7xl mx-auto">
@@ -459,10 +490,10 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
         ) : (
           <>
             {/* Desktop Table View (visible on md screens and up) */}
-            <div className="hidden md:block overflow-x-auto">
+            <div ref={routeTableContainerRef} className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
               <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 text-slate-400 font-semibold uppercase tracking-wider text-[11px] backdrop-blur-xs">
+                  <tr>
                     <th className="py-3 px-3 w-10 text-center">#</th>
                     <th className="py-3 px-4">Route Info</th>
                     <th className="py-3 px-4">Board & Yard</th>
@@ -473,7 +504,14 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {filteredRoutes.map((r) => {
+                  {routePaddingTop > 0 && (
+                    <tr>
+                      <td style={{ height: `${routePaddingTop}px`, padding: 0, border: 0 }} colSpan={7} />
+                    </tr>
+                  )}
+                  {virtualRoutes.map((virtualRow) => {
+                    const r = filteredRoutes[virtualRow.index];
+                    if (!r) return null;
                     const isExpanded = !!expandedRouteIds[r.id];
 
                     return (
@@ -720,17 +758,43 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                       </React.Fragment>
                     );
                   })}
+                  {routePaddingBottom > 0 && (
+                    <tr>
+                      <td style={{ height: `${routePaddingBottom}px`, padding: 0, border: 0 }} colSpan={7} />
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
 
             {/* Mobile Cards View (visible on phones below md) */}
-            <div className="block md:hidden divide-y divide-slate-800/80">
-              {filteredRoutes.map((r) => {
+            <div ref={routeMobileContainerRef} className="block md:hidden overflow-y-auto max-h-[calc(100vh-270px)]">
+              <div
+                style={{
+                  height: `${routeMobileVirtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {routeMobileVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const r = filteredRoutes[virtualRow.index];
+                  if (!r) return null;
                 const isExpanded = !!expandedRouteIds[r.id];
 
                 return (
-                  <div key={r.id} className="p-3.5 space-y-3 bg-slate-900/60 hover:bg-slate-800/20 transition">
+                  <div
+                    key={r.id}
+                    data-index={virtualRow.index}
+                    ref={routeMobileVirtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <div className="p-3.5 space-y-3 bg-slate-900/60 hover:bg-slate-800/20 transition border-b border-slate-800/80">
                     {/* Header: Route No, Board, Yard, AutoMarryup, Actions */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2.5">
@@ -905,8 +969,10 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                       </div>
                     )}
                   </div>
+                  </div>
                 );
               })}
+              </div>
             </div>
           </>
         )}

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -629,6 +630,30 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
       return true;
     });
   }, [effectiveShifts, routeFilter, driverFilter, stopFilter, vehicleFilter, shiftTypeFilter, yardFilter, healthFilter, currentTimeStr, isToday]);
+
+  // Virtual scrolling containers for high-density dispatch shifts (1,000+ items)
+  const cardContainerRef = useRef<HTMLDivElement>(null);
+  const sheetContainerRef = useRef<HTMLDivElement>(null);
+
+  const cardVirtualizer = useVirtualizer({
+    count: filteredShifts.length,
+    getScrollElement: () => cardContainerRef.current,
+    estimateSize: () => 148,
+    overscan: 6,
+  });
+
+  const sheetVirtualizer = useVirtualizer({
+    count: filteredShifts.length,
+    getScrollElement: () => sheetContainerRef.current,
+    estimateSize: () => 48,
+    overscan: 10,
+  });
+
+  const virtualSheetItems = sheetVirtualizer.getVirtualItems();
+  const sheetPaddingTop = virtualSheetItems.length > 0 ? virtualSheetItems[0]?.start || 0 : 0;
+  const sheetPaddingBottom = virtualSheetItems.length > 0
+    ? sheetVirtualizer.getTotalSize() - (virtualSheetItems[virtualSheetItems.length - 1]?.end || 0)
+    : 0;
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300 pb-12">
@@ -1357,9 +1382,9 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
         </div>
       ) : isSheetView ? (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
+          <div ref={sheetContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
             <table className="w-full text-left text-xs whitespace-nowrap">
-              <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold uppercase tracking-wider">
+              <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold uppercase tracking-wider backdrop-blur-xs">
                 <tr>
                   <th className="px-3.5 py-2.5">Status</th>
                   <th className="px-3.5 py-2.5">Route</th>
@@ -1373,7 +1398,14 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredShifts.map((shift) => {
+                {sheetPaddingTop > 0 && (
+                  <tr>
+                    <td style={{ height: `${sheetPaddingTop}px`, padding: 0, border: 0 }} colSpan={9} />
+                  </tr>
+                )}
+                {virtualSheetItems.map((virtualRow) => {
+                  const shift = filteredShifts[virtualRow.index];
+                  if (!shift) return null;
                   const lateness = calculateDynamicShiftLateness(shift, currentTimeStr, isToday);
                   const isYellow = lateness.effectiveHealth === 'yellow';
                   const isRed = lateness.effectiveHealth === 'red';
@@ -1678,46 +1710,77 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
                     </tr>
                   );
                 })}
+                {sheetPaddingBottom > 0 && (
+                  <tr>
+                    <td style={{ height: `${sheetPaddingBottom}px`, padding: 0, border: 0 }} colSpan={9} />
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
       ) : (
-        <div className="space-y-2">
-          {filteredShifts.map((shift) => (
-            <WorkbenchShiftRow
-              key={shift.id}
-              shift={shift}
-              currentTimeStr={currentTimeStr}
-              isToday={isToday}
-              onQuickCheckIn={handleQuickCheckIn}
-              onQuickAttendantCheckIn={handleQuickAttendantCheckIn}
-              onQuickCheckOut={handleQuickCheckOut}
-              onOpenCheckOutModal={handleOpenCheckOutModal}
-              onOpenNotification={(stopId) => {
-                setSelectedShiftForNotification(shift);
-                setSelectedStopForNotification(stopId || null);
-              }}
-              onOpenMap={() => {
-                handleOpenMap(shift);
-              }}
-              onOpenStops={(stopId) => {
-                handleOpenStops(shift, stopId);
-              }}
-              onOpenCrew={() => {
-                setSelectedShiftForCrew(shift);
-              }}
-              onOpenSplit={() => {
-                setSelectedShiftForSplit(shift);
-              }}
-              onOpenPayroll={() => {
-                setSelectedShiftForPayroll(shift);
-              }}
-              onOpenHistory={() => {
-                setSelectedShiftForHistory(shift);
-              }}
-            />
-          ))}
+        <div ref={cardContainerRef} className="overflow-y-auto max-h-[calc(100vh-270px)] pr-1">
+          <div
+            style={{
+              height: `${cardVirtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {cardVirtualizer.getVirtualItems().map((virtualRow) => {
+              const shift = filteredShifts[virtualRow.index];
+              if (!shift) return null;
+              return (
+                <div
+                  key={shift.id}
+                  data-index={virtualRow.index}
+                  ref={cardVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <div className="pb-2">
+                    <WorkbenchShiftRow
+                      shift={shift}
+                      currentTimeStr={currentTimeStr}
+                      isToday={isToday}
+                      onQuickCheckIn={handleQuickCheckIn}
+                      onQuickAttendantCheckIn={handleQuickAttendantCheckIn}
+                      onQuickCheckOut={handleQuickCheckOut}
+                      onOpenCheckOutModal={handleOpenCheckOutModal}
+                      onOpenNotification={(stopId) => {
+                        setSelectedShiftForNotification(shift);
+                        setSelectedStopForNotification(stopId || null);
+                      }}
+                      onOpenMap={() => {
+                        handleOpenMap(shift);
+                      }}
+                      onOpenStops={(stopId) => {
+                        handleOpenStops(shift, stopId);
+                      }}
+                      onOpenCrew={() => {
+                        setSelectedShiftForCrew(shift);
+                      }}
+                      onOpenSplit={() => {
+                        setSelectedShiftForSplit(shift);
+                      }}
+                      onOpenPayroll={() => {
+                        setSelectedShiftForPayroll(shift);
+                      }}
+                      onOpenHistory={() => {
+                        setSelectedShiftForHistory(shift);
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
