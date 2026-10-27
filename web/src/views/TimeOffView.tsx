@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   CalendarOff,
   Plus,
@@ -380,6 +381,22 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
     horizonLimitDateStr,
     thirtyDaysAgoStr
   ]);
+
+  // Virtual scrolling for 1,000+ time off requests
+  const timeOffTableContainerRef = useRef<HTMLDivElement>(null);
+
+  const timeOffVirtualizer = useVirtualizer({
+    count: filteredRequests.length,
+    getScrollElement: () => timeOffTableContainerRef.current,
+    estimateSize: () => 70,
+    overscan: 8,
+  });
+
+  const virtualTimeOffs = timeOffVirtualizer.getVirtualItems();
+  const timeOffPaddingTop = virtualTimeOffs.length > 0 ? virtualTimeOffs[0]?.start || 0 : 0;
+  const timeOffPaddingBottom = virtualTimeOffs.length > 0
+    ? timeOffVirtualizer.getTotalSize() - (virtualTimeOffs[virtualTimeOffs.length - 1]?.end || 0)
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -830,21 +847,37 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-200">
-              <thead className="bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400 border-b border-slate-800">
+          <div ref={timeOffTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+            <table className="w-full text-left text-sm text-slate-200 border-collapse table-fixed min-w-[1420px]">
+              <colgroup>
+                <col style={{ width: '200px' }} />
+                <col style={{ width: '150px' }} />
+                <col style={{ width: '200px' }} />
+                <col style={{ width: '220px' }} />
+                <col style={{ width: '160px' }} />
+                <col style={{ width: '200px' }} />
+                <col style={{ width: '290px' }} />
+              </colgroup>
+              <thead className="sticky top-0 z-10 bg-slate-900 text-xs uppercase tracking-wider text-slate-400 border-b border-slate-800 shadow-xs">
                 <tr>
-                  <th className="py-3.5 px-4 font-semibold">Employee</th>
-                  <th className="py-3.5 px-4 font-semibold">Leave Type</th>
-                  <th className="py-3.5 px-4 font-semibold">Dates & Shifts</th>
-                  <th className="py-3.5 px-4 font-semibold">Comments</th>
-                  <th className="py-3.5 px-4 font-semibold">Status</th>
-                  <th className="py-3.5 px-4 font-semibold">Review History</th>
-                  <th className="py-3.5 px-4 font-semibold text-right">Actions</th>
+                  <th className="py-3 px-4 font-semibold">Employee</th>
+                  <th className="py-3 px-4 font-semibold">Leave Type</th>
+                  <th className="py-3 px-4 font-semibold">Dates & Shifts</th>
+                  <th className="py-3 px-4 font-semibold">Comments</th>
+                  <th className="py-3 px-4 font-semibold">Status</th>
+                  <th className="py-3 px-4 font-semibold">Review History</th>
+                  <th className="py-3 px-4 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredRequests.map((r) => {
+                {timeOffPaddingTop > 0 && (
+                  <tr>
+                    <td style={{ height: `${timeOffPaddingTop}px`, padding: 0, border: 0 }} colSpan={7} />
+                  </tr>
+                )}
+                {virtualTimeOffs.map((virtualRow) => {
+                  const r = filteredRequests[virtualRow.index];
+                  if (!r) return null;
                   const isEffectiveToday =
                     r.status === 'approved' && r.startDate <= todayStr && todayStr <= r.endDate;
                   const isPast = r.endDate < todayStr;
@@ -857,10 +890,10 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
                   return (
                     <tr
                       key={r.id}
-                      className="hover:bg-slate-800/40 transition duration-150 group"
+                      className="h-[70px] hover:bg-slate-800/40 transition duration-150 group"
                     >
                       {/* Employee */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-2.5 px-4 align-middle h-[70px]">
                         <div className="font-semibold text-white flex items-center space-x-1.5">
                           <User className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
                           <span>{r.employeeName}</span>
@@ -873,14 +906,14 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
                       </td>
 
                       {/* Leave Type */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-2.5 px-4 align-middle h-[70px]">
                         <span className="inline-block text-xs font-medium px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                           {LEAVE_TYPE_LABELS[r.leaveType] || r.leaveType}
                         </span>
                       </td>
 
                       {/* Dates & Shifts */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-2.5 px-4 align-middle h-[70px]">
                         <div className="flex items-center space-x-1.5 text-xs text-slate-300 font-mono">
                           <span>{r.startDate}</span>
                           <span className="text-slate-500">→</span>
@@ -899,7 +932,7 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
                       </td>
 
                       {/* Comments */}
-                      <td className="py-3.5 px-4 max-w-xs">
+                      <td className="py-2.5 px-4 align-middle h-[70px]">
                         {r.comments ? (
                           <div className="text-xs text-slate-300 truncate" title={r.comments}>
                             {r.comments}
@@ -913,7 +946,7 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
                       </td>
 
                       {/* Status */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-2.5 px-4 align-middle h-[70px]">
                         {r.status === 'pending' ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
                             <Clock className="w-3 h-3 mr-1" />
@@ -968,7 +1001,7 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
                       </td>
 
                       {/* Review History */}
-                      <td className="py-3.5 px-4 max-w-xs">
+                      <td className="py-2.5 px-4 align-middle h-[70px]">
                         {r.approvedByName ? (
                           <div>
                             <div className="text-xs text-slate-300 font-medium">
@@ -1011,7 +1044,7 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-2.5 px-4 text-right align-middle h-[70px] whitespace-nowrap overflow-hidden">
                         <div className="flex items-center justify-end space-x-1.5">
                           {/* HR Decision Action: only HR can approve/reject */}
                           {isHR && r.status === 'pending' && (
@@ -1115,6 +1148,11 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
                     </tr>
                   );
                 })}
+                {timeOffPaddingBottom > 0 && (
+                  <tr>
+                    <td style={{ height: `${timeOffPaddingBottom}px`, padding: 0, border: 0 }} colSpan={7} />
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
