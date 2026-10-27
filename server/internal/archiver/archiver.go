@@ -83,8 +83,8 @@ func (a *Archiver) EnsureTables(ctx context.Context) error {
 		{Name: "updated_at", Type: bigquery.TimestampFieldType, Required: true},
 	}
 
-	// 1. Business tables (dispatch_shifts, dispatch_payrolls, payroll_logs)
-	bizTables := []string{"dispatch_shifts", "dispatch_payrolls", "payroll_logs"}
+	// 1. Business tables (dispatch_shifts, dispatch_payrolls, payroll_logs, time_off_requests)
+	bizTables := []string{"dispatch_shifts", "dispatch_payrolls", "payroll_logs", "time_off_requests"}
 	for _, tblName := range bizTables {
 		tbl := ds.Table(tblName)
 		if _, err := tbl.Metadata(ctx); err != nil {
@@ -214,6 +214,137 @@ func (a *Archiver) SyncAnnualIncidents(ctx context.Context, startDate, endDate s
 		}
 	}
 	return nil
+}
+
+// SyncTimeOff syncs time-off requests older than olderThanDays (default 30) past endDate to BigQuery table time_off_requests
+func (a *Archiver) SyncTimeOff(ctx context.Context, olderThanDays int) (int, error) {
+	if olderThanDays <= 0 {
+		olderThanDays = 30
+	}
+	cutoff := time.Now().AddDate(0, 0, -olderThanDays).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Syncing time-off requests with endDate < %s (%d days past endDate) to BigQuery...", cutoff, olderThanDays)
+
+	iter := a.fsClient.Collection("time_off_requests").Where("endDate", "<", cutoff).Documents(ctx)
+	defer iter.Stop()
+
+	now := time.Now()
+	var rows []*ArchiveRow
+	var ids []string
+
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return 0, fmt.Errorf("reading time_off_requests: %w", err)
+		}
+
+		data := doc.Data()
+		dataBytes, err := json.Marshal(data)
+		if err != nil {
+			continue
+		}
+
+		dateVal := ""
+		if ed, ok := data["endDate"].(string); ok && ed != "" {
+			dateVal = ed
+		} else if sd, ok := data["startDate"].(string); ok && sd != "" {
+			dateVal = sd
+		} else {
+			dateVal = now.Format("2006-01-02")
+		}
+
+		rows = append(rows, &ArchiveRow{
+			ID:           doc.Ref.ID,
+			DispatchDate: dateVal,
+			Data:         string(dataBytes),
+			UpdatedAt:    now,
+		})
+		ids = append(ids, doc.Ref.ID)
+	}
+
+	if len(rows) == 0 {
+		log.Printf("[ARCHIVER] No time-off requests found with endDate < %s to sync.", cutoff)
+		return 0, nil
+	}
+
+	// Delete existing records in BigQuery for idempotency
+	delChunkSize := 400
+	for i := 0; i < len(ids); i += delChunkSize {
+		end := i + delChunkSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunkIDs := ids[i:end]
+		delSQL := fmt.Sprintf("DELETE FROM `%s.%s.time_off_requests` WHERE id IN UNNEST(@ids)", a.projectID, a.datasetID)
+		q := a.bqClient.Query(delSQL)
+		q.Parameters = []bigquery.QueryParameter{
+			{Name: "ids", Value: chunkIDs},
+		}
+		job, err := q.Run(ctx)
+		if err == nil {
+			_, _ = job.Wait(ctx)
+		}
+	}
+
+	// Batch insert into BigQuery (chunks of 500)
+	inserter := a.bqClient.Dataset(a.datasetID).Table("time_off_requests").Inserter()
+	chunkSize := 500
+	for i := 0; i < len(rows); i += chunkSize {
+		end := i + chunkSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := inserter.Put(ctx, rows[i:end]); err != nil {
+			return 0, fmt.Errorf("failed to insert time_off_requests into BigQuery: %w", err)
+		}
+	}
+
+	log.Printf("[ARCHIVER] Successfully archived %d time-off requests to BigQuery table time_off_requests", len(rows))
+	return len(rows), nil
+}
+
+// CleanupTimeOffFirestore deletes time-off requests from Firestore whose endDate is older than olderThanDays (min 30 days)
+func (a *Archiver) CleanupTimeOffFirestore(ctx context.Context, olderThanDays int) (int, error) {
+	if olderThanDays < 30 {
+		olderThanDays = 30 // Safeguard: never delete time off within 30 days of endDate
+	}
+	cutoff := time.Now().AddDate(0, 0, -olderThanDays).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Starting cleanup of Firestore time-off requests with endDate < %s (%d days past endDate)...", cutoff, olderThanDays)
+
+	iter := a.fsClient.Collection("time_off_requests").Where("endDate", "<", cutoff).Documents(ctx)
+	defer iter.Stop()
+
+	deletedCount := 0
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return deletedCount, err
+		}
+		if _, err := doc.Ref.Delete(ctx); err == nil {
+			deletedCount++
+		}
+	}
+
+	log.Printf("[ARCHIVER] Cleaned up %d time-off requests from Firestore time_off_requests", deletedCount)
+	return deletedCount, nil
+}
+
+// ArchiveTimeOff syncs time-off requests older than 30 days to BigQuery and cleans them up from Firestore
+func (a *Archiver) ArchiveTimeOff(ctx context.Context, olderThanDays int) (int, int, error) {
+	synced, err := a.SyncTimeOff(ctx, olderThanDays)
+	if err != nil {
+		return 0, 0, fmt.Errorf("sync time-off failed: %w", err)
+	}
+	deleted, err := a.CleanupTimeOffFirestore(ctx, olderThanDays)
+	if err != nil {
+		return synced, 0, fmt.Errorf("cleanup time-off failed: %w", err)
+	}
+	return synced, deleted, nil
 }
 
 // SyncDate syncs dispatch_shifts, dispatch_payrolls, and payroll_logs for a specific date

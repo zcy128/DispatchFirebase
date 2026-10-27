@@ -37,6 +37,10 @@ func (m *mockDispatchRepo) ListTimeOffRequests(ctx context.Context, employeeID s
 	return m.timeOffRequests, nil
 }
 
+func (m *mockDispatchRepo) ListTimeOffRequestsFiltered(ctx context.Context, filter repository.TimeOffFilter) ([]*models.TimeOffRequest, error) {
+	return m.timeOffRequests, nil
+}
+
 func (m *mockDispatchRepo) ListExpenseClaims(ctx context.Context, employeeID string, status string) ([]*models.ExpenseReimbursement, error) {
 	return m.expenseClaims, nil
 }

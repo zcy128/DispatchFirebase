@@ -812,9 +812,14 @@ func main() {
 					} else {
 						log.Printf("[ARCHIVER] SyncWeeklyLogs completed successfully.")
 					}
+					if synced, deleted, err := arc.ArchiveTimeOff(ctx, 30); err != nil {
+						log.Printf("[ARCHIVER] ArchiveTimeOff error in sync-all: %v", err)
+					} else {
+						log.Printf("[ARCHIVER] ArchiveTimeOff in sync-all completed: %d synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+					}
 					log.Printf("[ARCHIVER] Unified BigQuery sync-all finished.")
 				}()
-				w.Write([]byte(fmt.Sprintf(`{"success":true,"message":"unified sync initiated for past %d days and operational logs"}`, days)))
+				w.Write([]byte(fmt.Sprintf(`{"success":true,"message":"unified sync initiated for past %d days, operational logs, and time-off archive (past 30 days)"}`, days)))
 			})
 
 			adminRoute.Post("/api/admin/archive/cleanup-logs", func(w http.ResponseWriter, r *http.Request) {

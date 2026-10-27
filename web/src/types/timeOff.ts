@@ -32,6 +32,10 @@ export interface TimeOffRequest {
   coverageAssignedAt?: string;
   createdAt: string;
   updatedAt: string;
+  isArchivedToBigQuery?: boolean;
+  bigQueryDataset?: string;
+  bigQueryTable?: string;
+  bigQueryArchivedAt?: string;
 }
 
 export interface CreateTimeOffRequestPayload {

@@ -39,6 +39,10 @@ function normalizeTimeOffRecord(raw: any, id: string): TimeOffRequest {
     updatedAt: normalizeTimeOffDate(raw?.updatedAt) || new Date().toISOString(),
     approvedAt: raw?.approvedAt ? normalizeTimeOffDate(raw.approvedAt) : undefined,
     rejectedAt: raw?.rejectedAt ? normalizeTimeOffDate(raw.rejectedAt) : undefined,
+    isArchivedToBigQuery: Boolean(raw?.isArchivedToBigQuery),
+    bigQueryDataset: raw?.bigQueryDataset || undefined,
+    bigQueryTable: raw?.bigQueryTable || undefined,
+    bigQueryArchivedAt: raw?.bigQueryArchivedAt ? normalizeTimeOffDate(raw.bigQueryArchivedAt) : undefined,
   };
 }
 
@@ -65,6 +69,20 @@ export const TimeOffService = {
         }
         throw err;
       }
+    }
+  },
+
+  loadArchivedTimeOffRequests: async (params?: Record<string, string>): Promise<TimeOffRequest[]> => {
+    return TimeOffService.listTimeOffRequests({ includeArchive: 'true', ...(params || {}) });
+  },
+
+  triggerBigQueryArchival: async (days: number = 30): Promise<{ success: boolean; message: string }> => {
+    try {
+      return await apiRequest<{ success: boolean; message: string }>(`/api/admin/archive/sync-all?days=${days}`, {
+        method: 'POST',
+      });
+    } catch {
+      return { success: false, message: 'Archive endpoint unavailable in local preview mode.' };
     }
   },
 

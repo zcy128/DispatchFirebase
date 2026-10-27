@@ -318,6 +318,15 @@ flutter build web --dart-define=API_BASE_URL=https://votre-domaine-api.com
 
 ---
 
+## 🛠️ Guides d'Exploitation & de Cycle de Vie des Données
+
+- 📘 **[Guide d'Archivage Firestore TTL & Cloud Scheduler](docs/firestore-ttl-cloud-scheduler-instructions.md#français)** (Disponible en **English**, **Français**, **简体中文**) :
+  - Configuration du Time-to-Live (TTL) Firestore dans Google Cloud Console.
+  - Mise en place de la tâche planifiée Cloud Scheduler unique (`/api/admin/archive/sync-all`) pour archiver les services, journaux d'audit et congés vers BigQuery au coût le plus bas.
+  - Basculement transparent (Dual-Engine) entre le stockage chaud Firestore et l'archivage froid BigQuery.
+
+---
+
 ## Licence
 
 Ce projet est distribué sous la [Licence MIT](LICENSE).

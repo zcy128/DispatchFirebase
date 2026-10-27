@@ -318,6 +318,15 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
 
 ---
 
+## 🛠️ 运维与数据生命周期管理指南
+
+- 📘 **[Firestore TTL 与 Cloud Scheduler 自动化归档配置指南](docs/firestore-ttl-cloud-scheduler-instructions.md#简体中文)**（提供 **English**、**Français**、**简体中文** 三语版本）：
+  - Google Cloud 控制台中的 Firestore 自动过期（TTL）规则设置说明。
+  - Cloud Scheduler 唯一聚合归档任务（`/api/admin/archive/sync-all`）配置步骤，一键归档班次、流水日志及过期请假单，实现超低云端运行开销。
+  - Firestore 热存储与 BigQuery 冷存储的双引擎无感知智能路由与兜底机制。
+
+---
+
 ## 开源许可证 (License)
 
 本项目基于 [MIT 许可证](LICENSE) 开源。
