@@ -291,15 +291,15 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
   const filteredPayrolls = useMemo(() => {
     return payrolls.filter((item) => {
       const isCharterItem = Boolean(item.isCharter || item.shiftType === 'CHARTER');
-      const hasComm = Boolean(item.hasComments || (item.payrollComments && item.payrollComments.trim() !== ''));
+      const isNeedsReviewItem = item.status === 'pending_approval' || Boolean(item.hasComments || (item.payrollComments && item.payrollComments.trim() !== ''));
 
       // Category filter (All vs Needs Review vs Clean vs Charter)
       if (category === 'charter') {
         if (!isCharterItem) return false;
       } else if (category === 'with_comments') {
-        if (!hasComm) return false;
+        if (!isNeedsReviewItem) return false;
       } else if (category === 'without_comments') {
-        if (hasComm) return false;
+        if (isNeedsReviewItem) return false;
       }
 
       // Role filter
@@ -343,13 +343,13 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
     ? payrollVirtualizer.getTotalSize() - (virtualPayrolls[virtualPayrolls.length - 1]?.end || 0)
     : 0;
 
-  // Counts for category badges
+  // Counts for category badges (aligned with pending approval & comments)
   const withCommentsCount = useMemo(() => {
-    return payrolls.filter((p) => Boolean(p.hasComments || (p.payrollComments && p.payrollComments.trim() !== ''))).length;
+    return payrolls.filter((p) => p.status === 'pending_approval' || Boolean(p.hasComments || (p.payrollComments && p.payrollComments.trim() !== ''))).length;
   }, [payrolls]);
 
   const withoutCommentsCount = useMemo(() => {
-    return payrolls.filter((p) => !p.hasComments && (!p.payrollComments || p.payrollComments.trim() === '')).length;
+    return payrolls.filter((p) => p.status !== 'pending_approval' && !p.hasComments && (!p.payrollComments || p.payrollComments.trim() === '')).length;
   }, [payrolls]);
 
   const charterCount = useMemo(() => {
@@ -371,7 +371,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
       if (r.role === 'driver') driversCount++;
       if (r.role === 'attendant') attendantsCount++;
 
-      if (r.status === 'pending_approval') pendingApprovalCount++;
+      if (r.status === 'pending_approval' || Boolean(r.hasComments || (r.payrollComments && r.payrollComments.trim() !== ''))) pendingApprovalCount++;
       if (r.syncedToFinance) syncedToFinanceCount++;
     }
 
@@ -832,11 +832,12 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                     const rec = filteredPayrolls[virtualRow.index];
                     if (!rec) return null;
                   const hasComm = Boolean(rec.hasComments || (rec.payrollComments && rec.payrollComments.trim() !== ''));
+                    const isNeedsReviewRec = rec.status === 'pending_approval' || hasComm;
                   return (
                     <tr
                       key={rec.id}
                       className={`h-16 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors ${
-                        hasComm && rec.status === 'pending_approval' ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
+                        isNeedsReviewRec && rec.status === 'pending_approval' ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
                       }`}
                     >
                       {/* Route & Shift */}
