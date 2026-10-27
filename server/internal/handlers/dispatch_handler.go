@@ -927,6 +927,7 @@ func (h *DispatchHandler) ListTimeOffRequests(w http.ResponseWriter, r *http.Req
 		EndDate:        r.URL.Query().Get("endDate"),
 		IncludeArchive: r.URL.Query().Get("includeArchive") == "true" || r.URL.Query().Get("archive") == "true",
 		OnlyArchive:    r.URL.Query().Get("onlyArchive") == "true",
+		FullArchive:    r.URL.Query().Get("fullArchive") == "true",
 	})
 	if err != nil {
 		http.Error(w, `{"error":"failed to list time off requests: `+err.Error()+`"}`, http.StatusInternalServerError)
