@@ -333,11 +333,8 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
   const payrollVirtualizer = useVirtualizer({
     count: filteredPayrolls.length,
     getScrollElement: () => payrollTableContainerRef.current,
-    estimateSize: (index) => {
-      const rec = filteredPayrolls[index];
-      return (rec?.hasComments || (rec?.payrollComments && rec.payrollComments.trim())) ? 84 : 70;
-    },
-    overscan: 12,
+    estimateSize: () => 64,
+    overscan: 8,
   });
 
   const virtualPayrolls = payrollVirtualizer.getVirtualItems();
@@ -769,7 +766,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
       {/* Main Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
         <div ref={payrollTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
-          <table className="w-full text-left text-sm min-w-[1100px] border-collapse">
+          <table className="w-full text-left text-sm min-w-[1100px] border-collapse table-fixed">
             <colgroup>
               <col style={{ width: '160px' }} />
               <col style={{ width: '100px' }} />
@@ -838,14 +835,12 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                   return (
                     <tr
                       key={rec.id}
-                      data-index={virtualRow.index}
-                      ref={payrollVirtualizer.measureElement}
-                      className={`hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors ${
+                      className={`h-16 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors ${
                         hasComm && rec.status === 'pending_approval' ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
                       }`}
                     >
                       {/* Route & Shift */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-2.5 px-4 align-middle h-16">
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-bold text-slate-900 dark:text-white">
                             {rec.routeNo}
@@ -860,20 +855,15 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                             </span>
                           )}
                         </div>
-                        {rec.routeName && (
-                          <div className="text-xs text-slate-500 truncate max-w-[150px]">
-                            {rec.routeName}
-                          </div>
-                        )}
-                        {rec.clientName && (
-                          <div className="text-[10px] text-indigo-600 dark:text-indigo-400 truncate max-w-[150px]">
-                            {rec.clientName}
+                        {(rec.routeName || rec.clientName) && (
+                          <div className="text-xs text-slate-500 truncate max-w-[150px]" title={rec.routeName || rec.clientName}>
+                            {rec.routeName || rec.clientName}
                           </div>
                         )}
                       </td>
 
                       {/* Role */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-2.5 px-4 align-middle h-16">
                         {rec.role === 'driver' ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                             <Bus className="w-3 h-3" />
@@ -888,7 +878,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                       </td>
 
                       {/* Employee */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-2.5 px-4 align-middle h-16">
                         <div className="font-medium text-slate-900 dark:text-slate-100">
                           {rec.employeeName}
                         </div>
@@ -898,7 +888,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                       </td>
 
                       {/* Check-in / Check-out */}
-                      <td className="py-3.5 px-4 text-xs font-mono">
+                      <td className="py-2.5 px-4 align-middle h-16 text-xs font-mono">
                         <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
                           <span>In: {rec.checkInTime || '-'}</span>
                         </div>
@@ -908,7 +898,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                       </td>
 
                       {/* Pay Rate */}
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-2.5 px-4 align-middle h-16 text-right">
                         <span className="font-mono font-bold text-base text-emerald-600 dark:text-emerald-400">
                           ${(rec.payRate || 0).toFixed(2)}
                         </span>
@@ -918,12 +908,12 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                       </td>
 
                       {/* EI Hours */}
-                      <td className="py-3.5 px-4 text-right font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <td className="py-2.5 px-4 align-middle h-16 text-right font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">
                         {(rec.eiHours || 0).toFixed(1)} hrs
                       </td>
 
                       {/* Crew Comments */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-2.5 px-4 align-middle h-16">
                         {hasComm ? (
                           <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 max-w-[200px]">
                             <div className="font-bold flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400">
@@ -940,12 +930,12 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                       </td>
 
                       {/* Status */}
-                      <td className="py-3.5 px-4 text-center">
+                      <td className="py-2.5 px-4 align-middle h-16 text-center">
                         {getStatusBadge(rec)}
                       </td>
 
                       {/* Last Modified */}
-                      <td className="py-3.5 px-4 text-xs font-mono">
+                      <td className="py-2.5 px-4 align-middle h-16 text-xs font-mono">
                         <div className="font-semibold text-slate-800 dark:text-slate-200">
                           {rec.updatedBy || rec.approvedBy || rec.rejectedBy || 'System'}
                         </div>
@@ -955,7 +945,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                       </td>
 
                       {/* Dispatcher Actions */}
-                      <td className="py-3.5 px-4 text-center">
+                      <td className="py-2.5 px-4 align-middle h-16 text-center">
                         <div className="inline-flex items-center gap-1">
                           {rec.status === 'pending_approval' && (
                             <>
