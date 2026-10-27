@@ -492,7 +492,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
             {/* Desktop Table View (visible on md screens and up) */}
             <div ref={routeTableContainerRef} className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 text-slate-400 font-semibold uppercase tracking-wider text-[11px] backdrop-blur-xs">
+                <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider text-[11px] shadow-xs">
                   <tr>
                     <th className="py-3 px-3 w-10 text-center">#</th>
                     <th className="py-3 px-4">Route Info</th>

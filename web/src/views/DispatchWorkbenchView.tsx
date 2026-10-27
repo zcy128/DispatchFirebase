@@ -1384,7 +1384,7 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
           <div ref={sheetContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
             <table className="w-full text-left text-xs whitespace-nowrap">
-              <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold uppercase tracking-wider backdrop-blur-xs">
+              <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold uppercase tracking-wider shadow-xs">
                 <tr>
                   <th className="px-3.5 py-2.5">Status</th>
                   <th className="px-3.5 py-2.5">Route</th>

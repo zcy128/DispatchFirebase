@@ -333,8 +333,11 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
   const payrollVirtualizer = useVirtualizer({
     count: filteredPayrolls.length,
     getScrollElement: () => payrollTableContainerRef.current,
-    estimateSize: () => 54,
-    overscan: 10,
+    estimateSize: (index) => {
+      const rec = filteredPayrolls[index];
+      return (rec?.hasComments || (rec?.payrollComments && rec.payrollComments.trim())) ? 84 : 70;
+    },
+    overscan: 12,
   });
 
   const virtualPayrolls = payrollVirtualizer.getVirtualItems();
@@ -766,8 +769,20 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
       {/* Main Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
         <div ref={payrollTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
-          <table className="w-full text-left text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-50/95 dark:bg-slate-800/95 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 backdrop-blur-xs">
+          <table className="w-full text-left text-sm min-w-[1100px] border-collapse">
+            <colgroup>
+              <col style={{ width: '160px' }} />
+              <col style={{ width: '100px' }} />
+              <col style={{ width: '170px' }} />
+              <col style={{ width: '130px' }} />
+              <col style={{ width: '110px' }} />
+              <col style={{ width: '90px' }} />
+              <col style={{ minWidth: '200px' }} />
+              <col style={{ width: '150px' }} />
+              <col style={{ width: '150px' }} />
+              <col style={{ width: '110px' }} />
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700 shadow-xs">
               <tr>
                 <th className="py-3.5 px-4">Route & Shift</th>
                 <th className="py-3.5 px-4">Role</th>
@@ -823,6 +838,8 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                   return (
                     <tr
                       key={rec.id}
+                      data-index={virtualRow.index}
+                      ref={payrollVirtualizer.measureElement}
                       className={`hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors ${
                         hasComm && rec.status === 'pending_approval' ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
                       }`}
