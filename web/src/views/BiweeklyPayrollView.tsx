@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Calendar,
   ChevronDown,
@@ -1234,6 +1235,22 @@ export const BiweeklyPayrollView: React.FC = () => {
     };
   }, [groupedData]);
 
+  // Virtual scrolling for 1,000+ employee payroll records
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  const groupVirtualizer = useVirtualizer({
+    count: groupedData.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 140,
+    overscan: 8,
+  });
+
+  const virtualGroups = groupVirtualizer.getVirtualItems();
+  const paddingTop = virtualGroups.length > 0 ? virtualGroups[0]?.start || 0 : 0;
+  const paddingBottom = virtualGroups.length > 0
+    ? groupVirtualizer.getTotalSize() - (virtualGroups[virtualGroups.length - 1]?.end || 0)
+    : 0;
+
   // Distinct lists for dropdowns
   const availableBoards = useMemo(() => {
     const boardSet = new Set<string>();
@@ -1663,9 +1680,9 @@ export const BiweeklyPayrollView: React.FC = () => {
 
       {/* Main Payroll Table */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
           <table className="w-full border-collapse text-left text-sm">
-            <thead>
+            <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800 shadow-2xs">
               <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 text-xs font-semibold select-none">
                 <th className="py-3 px-4 min-w-[150px]">Route</th>
                 <th className="py-3 px-3 min-w-[90px]">Rate</th>
@@ -1686,7 +1703,7 @@ export const BiweeklyPayrollView: React.FC = () => {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
               {/* Grand Total Summary Row */}
               {groupedData.length > 0 && (
-                <tr className="bg-slate-100/70 dark:bg-slate-800/50 font-bold text-slate-800 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700">
+                <tr className="sticky top-[41px] z-10 bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700 shadow-2xs">
                   <td className="py-2.5 px-4 text-xs tracking-wider uppercase text-slate-600 dark:text-slate-400">
                     Grand Summary
                   </td>
@@ -1719,8 +1736,15 @@ export const BiweeklyPayrollView: React.FC = () => {
                 </tr>
               )}
 
-              {/* Grouped Employee Sections */}
-              {groupedData.map((empGroup) => {
+              {/* Grouped Employee Sections (Virtual Scrolling) */}
+              {paddingTop > 0 && (
+                <tr>
+                  <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={13} />
+                </tr>
+              )}
+              {virtualGroups.map((virtualRow) => {
+                const empGroup = groupedData[virtualRow.index];
+                if (!empGroup) return null;
                 const isExpanded = expandedMap[empGroup.employeeId] !== false;
                 const hasExpenses = empGroup.expenses.totalAmount > 0;
                 const hasHolidayPay = empGroup.totalHolidayRuns > 0;
@@ -1944,6 +1968,11 @@ export const BiweeklyPayrollView: React.FC = () => {
                   </React.Fragment>
                 );
               })}
+              {paddingBottom > 0 && (
+                <tr>
+                  <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={13} />
+                </tr>
+              )}
 
               {/* No Records Found State */}
               {groupedData.length === 0 && !loading && (

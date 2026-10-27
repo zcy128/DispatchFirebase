@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Calendar,
   ChevronLeft,
@@ -251,6 +252,22 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
       paidCount,
     };
   }, [logs]);
+
+  // Virtual scrolling container for large payroll logs
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: filteredLogs.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 64,
+    overscan: 10,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start || 0 : 0;
+  const paddingBottom = virtualRows.length > 0
+    ? rowVirtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1]?.end || 0)
+    : 0;
 
   // Export to Excel / CSV with UTF-8 BOM
   const handleExportExcel = () => {
@@ -554,9 +571,9 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
 
       {/* Main Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
+        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50/75 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800">
+            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 shadow-2xs">
               <tr>
                 <th className="py-3.5 px-4">Route & Shift</th>
                 <th className="py-3.5 px-4">Role</th>
@@ -602,10 +619,19 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
                   </td>
                 </tr>
               ) : (
-                filteredLogs.map((rec) => (
-                  <tr
-                    key={rec.id}
-                    className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                <>
+                  {paddingTop > 0 && (
+                    <tr>
+                      <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={13} />
+                    </tr>
+                  )}
+                  {virtualRows.map((virtualRow) => {
+                    const rec = filteredLogs[virtualRow.index];
+                    if (!rec) return null;
+                    return (
+                      <tr
+                        key={rec.id}
+                        className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                   >
                     {/* Route & Shift */}
                     <td className="py-3.5 px-4">
@@ -734,9 +760,16 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
                       </button>
                     </td>
                   </tr>
-                ))
+                );
+              })}
+              {paddingBottom > 0 && (
+                <tr>
+                  <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={13} />
+                </tr>
               )}
-            </tbody>
+            </>
+          )}
+        </tbody>
           </table>
         </div>
 
