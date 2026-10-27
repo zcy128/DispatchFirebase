@@ -44,6 +44,7 @@ type TimeOffFilter struct {
 	EndDate        string
 	IncludeArchive bool
 	OnlyArchive    bool
+	FullArchive    bool
 }
 
 type DispatchRepository interface {
@@ -4495,6 +4496,11 @@ func (r *FirestoreDispatchRepository) listTimeOffRequestsFromBigQueryFiltered(ct
 	if filter.StartDate != "" {
 		querySQL += " AND JSON_VALUE(data, '$.endDate') >= @startDate"
 		params = append(params, bigquery.QueryParameter{Name: "startDate", Value: filter.StartDate})
+	} else if filter.Date == "" && !filter.FullArchive {
+		// By default, only retrieve cold records within past 1 year (rolling 365 days)
+		oneYearAgo := time.Now().AddDate(-1, 0, 0).Format("2006-01-02")
+		querySQL += " AND JSON_VALUE(data, '$.endDate') >= @defaultOneYearCutoff"
+		params = append(params, bigquery.QueryParameter{Name: "defaultOneYearCutoff", Value: oneYearAgo})
 	}
 	if filter.EndDate != "" {
 		querySQL += " AND JSON_VALUE(data, '$.startDate') <= @endDate"
