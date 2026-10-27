@@ -67,13 +67,13 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
   // View Mode: 'requests' board vs 'monthly_report'
   const [viewMode, setViewMode] = useState<'requests' | 'monthly_report'>('requests');
 
-  // Filters (default to 'pending' to surface unapproved requests immediately)
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'pending' | 'needs_coverage' | 'active_today'>('pending');
+  // Filters (default to 'all' category and 'upcoming' date to surface future leaves immediately)
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'pending' | 'needs_coverage' | 'active_today'>('all');
   const [viewScope, setViewScope] = useState<'all' | 'mine'>(isDispatcher ? 'all' : 'mine');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<'recent' | 'all_archive' | 'today' | 'upcoming' | 'past_30' | 'specific_date' | 'custom_range'>('recent');
+  const [dateFilter, setDateFilter] = useState<'recent' | 'all_archive' | 'today' | 'upcoming' | 'past_30' | 'specific_date' | 'custom_range'>('upcoming');
   const [includeAdvanceInCoverage, setIncludeAdvanceInCoverage] = useState<boolean>(false);
   const [filterSpecificDate, setFilterSpecificDate] = useState<string>(todayStr);
   const [filterRangeStart, setFilterRangeStart] = useState<string>(todayStr);
@@ -261,10 +261,10 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
     setIsCreateOpeningModalOpen(true);
   };
 
-  // KPI Metrics
+  // KPI Metrics (Pending excludes expired unapproved leaves)
   const pendingCount = useMemo(() => {
-    return (requests || []).filter((r) => r.status === 'pending').length;
-  }, [requests]);
+    return (requests || []).filter((r) => r.status === 'pending' && r.endDate >= todayStr).length;
+  }, [requests, todayStr]);
 
   const needsCoverageCount = useMemo(() => {
     return (requests || []).filter(
@@ -311,7 +311,7 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
 
       // Quick Category Filter from Top Cards
       if (categoryFilter === 'pending') {
-        if (r.status !== 'pending') return false;
+        if (r.status !== 'pending' || r.endDate < todayStr) return false;
       } else if (categoryFilter === 'needs_coverage') {
         if (r.status !== 'approved' || r.endDate < todayStr || r.coverageAssigned) return false;
         if (!includeAdvanceInCoverage && r.startDate > horizonLimitDateStr) return false;
@@ -336,7 +336,7 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
       } else if (dateFilter === 'today') {
         if (!(r.startDate <= todayStr && todayStr <= r.endDate)) return false;
       } else if (dateFilter === 'upcoming') {
-        if (r.startDate <= todayStr) return false;
+        if (r.endDate < todayStr) return false;
       } else if (dateFilter === 'past_30') {
         if (r.endDate >= todayStr || r.endDate < thirtyDaysAgoStr) return false;
       } else if (dateFilter === 'all_archive') {
@@ -757,12 +757,12 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
               </div>
             )}
 
-            {dateFilter !== 'recent' && (
+            {dateFilter !== 'upcoming' && (
               <button
                 type="button"
-                onClick={() => setDateFilter('recent')}
+                onClick={() => setDateFilter('upcoming')}
                 className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition"
-                title="Reset to Recent 30 Days"
+                title="Reset to Upcoming Only"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -948,9 +948,16 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
                       {/* Status */}
                       <td className="py-2.5 px-4 align-middle h-[70px]">
                         {r.status === 'pending' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                              isPast
+                                ? 'bg-slate-800 text-slate-400 border border-slate-700'
+                                : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                            }`}
+                            title={isPast ? 'Leave date has passed without HR approval' : 'Pending review'}
+                          >
                             <Clock className="w-3 h-3 mr-1" />
-                            Pending Review
+                            {isPast ? 'Pending (Expired)' : 'Pending Review'}
                           </span>
                         ) : r.status === 'approved' ? (
                           <div className="flex flex-col items-start space-y-1">
