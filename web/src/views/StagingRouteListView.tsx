@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Bus, ChevronDown, ChevronRight, Clock, Copy, MapPin, RefreshCw, Search, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
@@ -97,6 +98,19 @@ export const StagingRouteListView: React.FC = () => {
     }
   };
 
+  // Virtual scrolling container for 1,000+ staging routes
+  const stagingContainerRef = useRef<HTMLDivElement>(null);
+
+  const stagingVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => stagingContainerRef.current,
+    estimateSize: (index) => {
+      const route = filtered[index];
+      return expanded[route?.id] ? 360 : 68;
+    },
+    overscan: 6,
+  });
+
   const openShift = (route: StagingRoute): StagingShift | undefined => {
     const selected = activeShift[route.id];
     return route.shifts.find((shift) => shift.id === selected) || route.shifts[0];
@@ -175,13 +189,34 @@ export const StagingRouteListView: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-800/60">
-            {filtered.map((route) => {
-              const isOpen = !!expanded[route.id];
-              const shift = openShift(route);
-              return (
-                <div key={route.id}>
-                  <div className="px-4 py-3 hover:bg-slate-800/40 flex items-center gap-3">
+          <div ref={stagingContainerRef} className="overflow-y-auto max-h-[calc(100vh-270px)]">
+            <div
+              style={{
+                height: `${stagingVirtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {stagingVirtualizer.getVirtualItems().map((virtualRow) => {
+                const route = filtered[virtualRow.index];
+                if (!route) return null;
+                const isOpen = !!expanded[route.id];
+                const shift = openShift(route);
+                return (
+                  <div
+                    key={route.id}
+                    data-index={virtualRow.index}
+                    ref={stagingVirtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <div className="border-b border-slate-800/60">
+                      <div className="px-4 py-3 hover:bg-slate-800/40 flex items-center gap-3">
                     <button
                       type="button"
                       onClick={() => setExpanded((prev) => ({ ...prev, [route.id]: !prev[route.id] }))}
@@ -321,9 +356,11 @@ export const StagingRouteListView: React.FC = () => {
                   {isOpen && !shift && (
                     <div className="px-4 pb-4 text-xs text-slate-500">{isFrench ? 'Aucun quart' : 'No shifts'}</div>
                   )}
-                </div>
-              );
-            })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
