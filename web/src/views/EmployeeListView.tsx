@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Employee } from '../types/employee';
 import {
   Search,
@@ -70,6 +71,31 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
   });
 
   const uniquePositions = Array.from(new Set(employees.map((e) => e.jobPosition).filter(Boolean)));
+
+  // Virtual scrolling containers for 1,000+ employees
+  const employeeTableContainerRef = useRef<HTMLDivElement>(null);
+  const employeeMobileContainerRef = useRef<HTMLDivElement>(null);
+
+  const employeeTableVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => employeeTableContainerRef.current,
+    estimateSize: () => 64,
+    overscan: 8,
+  });
+
+  const virtualEmployees = employeeTableVirtualizer.getVirtualItems();
+  const empPaddingTop = virtualEmployees.length > 0 ? virtualEmployees[0]?.start || 0 : 0;
+  const empPaddingBottom = virtualEmployees.length > 0
+    ? employeeTableVirtualizer.getTotalSize() - (virtualEmployees[virtualEmployees.length - 1]?.end || 0)
+    : 0;
+
+  const employeeMobileVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => employeeMobileContainerRef.current,
+    estimateSize: () => 140,
+    overscan: 6,
+  });
+  const virtualMobileEmployees = employeeMobileVirtualizer.getVirtualItems();
 
   return (
     <div className="p-6 space-y-5 max-w-7xl mx-auto">
@@ -191,10 +217,18 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
         ) : (
           <>
             {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 font-semibold uppercase tracking-wider">
+            <div ref={employeeTableContainerRef} className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+              <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1030px]">
+                <colgroup>
+                  <col style={{ width: '240px' }} />
+                  <col style={{ width: '180px' }} />
+                  <col style={{ width: '200px' }} />
+                  <col style={{ width: '180px' }} />
+                  <col style={{ width: '110px' }} />
+                  <col style={{ width: '120px' }} />
+                </colgroup>
+                <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider text-[11px] shadow-xs">
+                  <tr>
                     <th className="py-3 px-4">Employee</th>
                     <th className="py-3 px-4">Role & Yard</th>
                     <th className="py-3 px-4">Contact Info</th>
@@ -204,7 +238,14 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {filtered.map((emp) => {
+                  {empPaddingTop > 0 && (
+                    <tr>
+                      <td style={{ height: `${empPaddingTop}px`, padding: 0, border: 0 }} colSpan={6} />
+                    </tr>
+                  )}
+                  {virtualEmployees.map((virtualRow) => {
+                    const emp = filtered[virtualRow.index];
+                    if (!emp) return null;
                     const daysToExpiration = emp.driverLicense?.expirationDate
                       ? Math.ceil(
                           (new Date(emp.driverLicense.expirationDate).getTime() - Date.now()) /
@@ -216,10 +257,10 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                       <tr
                         key={emp.id}
                         onClick={() => onSelectEmployee(emp)}
-                        className="hover:bg-slate-800/40 transition cursor-pointer group"
+                        className="h-16 hover:bg-slate-800/40 transition cursor-pointer group"
                       >
                         {/* Name & ID */}
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-4 align-middle h-16">
                           <div className="flex items-center space-x-3">
                             {emp.employeePhoto?.photoUrl ? (
                               <img
@@ -250,7 +291,7 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                         </td>
 
                         {/* Job & Yard */}
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-4 align-middle h-16">
                           <div className="flex items-center space-x-2">
                             <span className="text-slate-200 font-medium">{emp.jobPosition}</span>
                             <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase">
@@ -271,7 +312,7 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                         </td>
 
                         {/* Contact Info */}
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-4 align-middle h-16">
                           <div className="space-y-0.5">
                             {emp.preferredPhone ? (
                               <a
@@ -300,7 +341,7 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                         </td>
 
                         {/* CDL Status */}
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-4 align-middle h-16">
                           {emp.driverLicense ? (
                             <div>
                               <span className="text-slate-300 font-medium block">
@@ -332,7 +373,7 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                         </td>
 
                         {/* Status */}
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-2.5 px-4 text-center align-middle h-16">
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
                               emp.isActive
@@ -345,7 +386,7 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                         </td>
 
                         {/* Row Actions */}
-                        <td className="py-3 px-4 text-right">
+                        <td className="py-2.5 px-4 text-right align-middle h-16">
                           <div
                             className="flex items-center justify-end space-x-1"
                             onClick={(e) => e.stopPropagation()}
@@ -376,13 +417,27 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                       </tr>
                     );
                   })}
+                  {empPaddingBottom > 0 && (
+                    <tr>
+                      <td style={{ height: `${empPaddingBottom}px`, padding: 0, border: 0 }} colSpan={6} />
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
 
             {/* Mobile Touch Cards Stream */}
-            <div className="md:hidden divide-y divide-slate-800/80">
-              {filtered.map((emp) => {
+            <div ref={employeeMobileContainerRef} className="md:hidden overflow-y-auto max-h-[calc(100vh-270px)]">
+              <div
+                style={{
+                  height: `${employeeMobileVirtualizer.getTotalSize()}px`,
+                  position: 'relative',
+                  width: '100%',
+                }}
+              >
+                {virtualMobileEmployees.map((virtualRow) => {
+                  const emp = filtered[virtualRow.index];
+                  if (!emp) return null;
                 const daysToExpiration = emp.driverLicense?.expirationDate
                   ? Math.ceil(
                       (new Date(emp.driverLicense.expirationDate).getTime() - Date.now()) /
@@ -392,10 +447,19 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
 
                 return (
                   <div
-                    key={emp.id}
-                    onClick={() => onSelectEmployee(emp)}
-                    className="p-4 hover:bg-slate-800/40 active:bg-slate-800/70 transition cursor-pointer space-y-3"
-                  >
+                      key={emp.id}
+                      data-index={virtualRow.index}
+                      ref={employeeMobileVirtualizer.measureElement}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                      onClick={() => onSelectEmployee(emp)}
+                      className="p-4 hover:bg-slate-800/40 active:bg-slate-800/70 transition cursor-pointer space-y-3 border-b border-slate-800/80"
+                    >
                     {/* Top Header: Photo + Name + Status */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center space-x-3">
@@ -519,6 +583,7 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                   </div>
                 );
               })}
+              </div>
             </div>
           </>
         )}
