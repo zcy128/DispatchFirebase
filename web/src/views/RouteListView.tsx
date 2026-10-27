@@ -491,15 +491,15 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
           <>
             {/* Desktop Table View (visible on md screens and up) */}
             <div ref={routeTableContainerRef} className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
-              <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1150px]">
+              <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1250px]">
                 <colgroup>
                   <col style={{ width: '48px' }} />
-                  <col style={{ width: '230px' }} />
-                  <col style={{ width: '140px' }} />
-                  <col style={{ width: '180px' }} />
-                  <col style={{ minWidth: '240px' }} />
+                  <col style={{ width: '220px' }} />
                   <col style={{ width: '130px' }} />
-                  <col style={{ width: '210px' }} />
+                  <col style={{ width: '170px' }} />
+                  <col style={{ minWidth: '220px' }} />
+                  <col style={{ width: '130px' }} />
+                  <col style={{ width: '330px' }} />
                 </colgroup>
                 <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider text-[11px] shadow-xs">
                   <tr>
@@ -665,7 +665,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                           </td>
 
                           {/* Actions (Drawer & Expand) */}
-                          <td className="py-2.5 px-4 text-right align-middle h-[68px]">
+                          <td className="py-2.5 px-4 text-right align-middle h-[68px] whitespace-nowrap overflow-hidden">
                             <div className="flex items-center justify-end space-x-1.5">
                               {/* Edit Route Button */}
                               <button
@@ -691,7 +691,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                                 {togglingRouteIds[r.id] && (
                                   <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mr-1" />
                                 )}
-                                <span>{isAutoMarryupEnabled(r) ? 'Disable Auto Marryup' : 'Set Auto Marryup'}</span>
+                                <span>{isAutoMarryupEnabled(r) ? 'Marryup ON' : 'Marryup OFF'}</span>
                               </button>
 
                               {onAssignCrew && (
