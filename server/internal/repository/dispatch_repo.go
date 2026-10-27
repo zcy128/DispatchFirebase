@@ -81,6 +81,7 @@ type DispatchRepository interface {
 	RejectDispatchPayroll(ctx context.Context, payrollID string, req *models.RejectDispatchPayrollRequest) (*models.DispatchPayrollRecord, error)
 	SyncToPayrollLog(ctx context.Context, payrollRecord *models.DispatchPayrollRecord) (*models.PayrollDepartmentLogRecord, error)
 	RemoveFromPayrollLog(ctx context.Context, dispatchPayrollID string) error
+	SyncCleanPayrollsForDate(ctx context.Context, date string) (int, error)
 	ListPayrollDepartmentLogs(ctx context.Context, date string, status string, employeeID string) ([]*models.PayrollDepartmentLogRecord, error)
 	ListPayrollDepartmentLogsRange(ctx context.Context, startDate string, endDate string, status string, employeeID string) ([]*models.PayrollDepartmentLogRecord, error)
 	UpdatePayrollDepartmentLog(ctx context.Context, logID string, req *models.UpdatePayrollDepartmentLogRequest) (*models.PayrollDepartmentLogRecord, error)
@@ -3342,8 +3343,9 @@ func (r *FirestoreDispatchRepository) GenerateDispatchPayroll(ctx context.Contex
 		UpdatedAt:       now,
 	}
 
-	// Auto-sync to Finance if already checked out without comments and rate > 0
-	if status == "approved" && payRate > 0 {
+	// Auto-sync to Finance if clean (no comments / not pending approval) and rate > 0
+	needsDispatchApproval := record.Status == "pending_approval" || record.HasComments || (strings.TrimSpace(record.PayrollComments) != "")
+	if !needsDispatchApproval && record.PayRate > 0 {
 		_, _ = r.SyncToPayrollLog(ctx, &record)
 		record.SyncedToFinance = true
 	}
@@ -3720,7 +3722,8 @@ func (r *FirestoreDispatchRepository) RejectDispatchPayroll(ctx context.Context,
 }
 
 func (r *FirestoreDispatchRepository) SyncToPayrollLog(ctx context.Context, p *models.DispatchPayrollRecord) (*models.PayrollDepartmentLogRecord, error) {
-	if p.PayRate <= 0 || p.Status != "approved" {
+	needsDispatchApproval := p.Status == "pending_approval" || p.HasComments || (strings.TrimSpace(p.PayrollComments) != "")
+	if p.PayRate <= 0 || needsDispatchApproval {
 		_ = r.RemoveFromPayrollLog(ctx, p.ID)
 		return nil, nil
 	}
@@ -3819,6 +3822,37 @@ func (r *FirestoreDispatchRepository) RemoveFromPayrollLog(ctx context.Context, 
 	logID := strings.Replace(dispatchPayrollID, "DP-", "PL-", 1)
 	_, err := r.client.Collection(r.payrollLogColl).Doc(logID).Delete(ctx)
 	return err
+}
+
+func (r *FirestoreDispatchRepository) SyncCleanPayrollsForDate(ctx context.Context, date string) (int, error) {
+	if date == "" || r.client == nil {
+		return 0, nil
+	}
+
+	payrolls, err := r.ListDispatchPayrolls(ctx, date)
+	if err != nil {
+		return 0, err
+	}
+
+	syncedCount := 0
+	for _, p := range payrolls {
+		if p == nil {
+			continue
+		}
+		needsApproval := p.Status == "pending_approval" || p.HasComments || (strings.TrimSpace(p.PayrollComments) != "")
+		if !needsApproval && p.PayRate > 0 {
+			_, syncErr := r.SyncToPayrollLog(ctx, p)
+			if syncErr == nil {
+				syncedCount++
+				if !p.SyncedToFinance {
+					p.SyncedToFinance = true
+					p.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+					_, _ = r.client.Collection(r.dispatchPayrollColl).Doc(p.ID).Set(ctx, p)
+				}
+			}
+		}
+	}
+	return syncedCount, nil
 }
 
 func (r *FirestoreDispatchRepository) listPayrollDepartmentLogsFromFirestore(ctx context.Context, date string, status string, employeeID string) ([]*models.PayrollDepartmentLogRecord, error) {
@@ -3949,6 +3983,11 @@ func (r *FirestoreDispatchRepository) ListPayrollDepartmentLogs(ctx context.Cont
 			r.sortPayrollDepartmentLogs(list)
 			return list, nil
 		}
+	}
+
+	// Auto-sync clean dispatch payrolls if it's hot active data
+	if date != "" && !r.isColdDate(date) {
+		_, _ = r.SyncCleanPayrollsForDate(ctx, date)
 	}
 
 	// Query Firestore
@@ -6432,7 +6471,8 @@ func (m *MemoryDispatchRepository) RejectDispatchPayroll(ctx context.Context, pa
 }
 
 func (m *MemoryDispatchRepository) syncToPayrollLogLocked(p *models.DispatchPayrollRecord) (*models.PayrollDepartmentLogRecord, error) {
-	if p.PayRate <= 0 || p.Status != "approved" {
+	needsDispatchApproval := p.Status == "pending_approval" || p.HasComments || (strings.TrimSpace(p.PayrollComments) != "")
+	if p.PayRate <= 0 || needsDispatchApproval {
 		delete(m.payrollLogs, strings.Replace(p.ID, "DP-", "PL-", 1))
 		return nil, nil
 	}
@@ -6510,6 +6550,26 @@ func (m *MemoryDispatchRepository) RemoveFromPayrollLog(ctx context.Context, dis
 	logID := strings.Replace(dispatchPayrollID, "DP-", "PL-", 1)
 	delete(m.payrollLogs, logID)
 	return nil
+}
+
+func (m *MemoryDispatchRepository) SyncCleanPayrollsForDate(ctx context.Context, date string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for _, p := range m.payrolls {
+		if p.DispatchDate != date {
+			continue
+		}
+		needsApproval := p.Status == "pending_approval" || p.HasComments || (strings.TrimSpace(p.PayrollComments) != "")
+		if !needsApproval && p.PayRate > 0 {
+			_, err := m.syncToPayrollLogLocked(p)
+			if err == nil {
+				count++
+				p.SyncedToFinance = true
+			}
+		}
+	}
+	return count, nil
 }
 
 func (m *MemoryDispatchRepository) ListPayrollDepartmentLogs(ctx context.Context, date string, status string, employeeID string) ([]*models.PayrollDepartmentLogRecord, error) {
