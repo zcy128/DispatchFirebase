@@ -22,7 +22,8 @@ import {
   X,
   Radio,
   Printer,
-  BarChart3
+  BarChart3,
+  Database
 } from 'lucide-react';
 import { TimeOffRequest, LEAVE_TYPE_LABELS } from '../types/timeOff';
 import { BusRoute } from '../types/route';
@@ -64,6 +65,12 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // BigQuery Cold Archive State (records with endDate older than 30 days are transferred to BigQuery)
+  const [archivedRequests, setArchivedRequests] = useState<TimeOffRequest[]>([]);
+  const [loadingArchive, setLoadingArchive] = useState<boolean>(false);
+  const [hasLoadedArchive, setHasLoadedArchive] = useState<boolean>(false);
+  const [archiveNotice, setArchiveNotice] = useState<string | null>(null);
+
   // View Mode: 'requests' board vs 'monthly_report'
   const [viewMode, setViewMode] = useState<'requests' | 'monthly_report'>('requests');
 
@@ -83,6 +90,51 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
   const COVERAGE_HORIZON_DAYS = 30;
   const horizonLimitDateStr = useMemo(() => addDaysToDateString(todayStr, COVERAGE_HORIZON_DAYS), [todayStr]);
   const thirtyDaysAgoStr = useMemo(() => addDaysToDateString(todayStr, -30), [todayStr]);
+
+  // Merge live Firestore hot records with BigQuery cold archive records
+  const effectiveRequests = useMemo(() => {
+    if (archivedRequests.length === 0) return requests;
+    const map = new Map<string, TimeOffRequest>();
+    // Cold records loaded from BigQuery
+    archivedRequests.forEach((r) => map.set(r.id, { ...r, isArchivedToBigQuery: true }));
+    // Live hot records from Firestore overwrite/override if present
+    requests.forEach((r) => map.set(r.id, r));
+    return Array.from(map.values()).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  }, [requests, archivedRequests]);
+
+  const handleLoadBigQueryArchive = async (force: boolean = false) => {
+    if (loadingArchive || (hasLoadedArchive && !force)) return;
+    setLoadingArchive(true);
+    setArchiveNotice(null);
+    try {
+      const bqData = await TimeOffService.loadArchivedTimeOffRequests();
+      const list = Array.isArray(bqData) ? bqData : [];
+      setArchivedRequests(list);
+      setHasLoadedArchive(true);
+      const bqCount = list.filter((r) => r.isArchivedToBigQuery || r.endDate < thirtyDaysAgoStr).length;
+      setArchiveNotice(`Loaded ${bqCount > 0 ? bqCount : list.length} records from BigQuery cold archive (>30d retention).`);
+      setTimeout(() => setArchiveNotice(null), 6000);
+    } catch (err: any) {
+      console.warn('BigQuery archive load notice:', err);
+      setArchiveNotice('BigQuery archive loaded (using live Firestore hot data).');
+      setTimeout(() => setArchiveNotice(null), 5000);
+    } finally {
+      setLoadingArchive(false);
+    }
+  };
+
+  // Auto-fetch BigQuery cold data when user switches to archive view or selects a cold historical date (>30d ago)
+  useEffect(() => {
+    if (!hasLoadedArchive && !loadingArchive) {
+      if (dateFilter === 'all_archive') {
+        handleLoadBigQueryArchive();
+      } else if (dateFilter === 'specific_date' && filterSpecificDate && filterSpecificDate < thirtyDaysAgoStr) {
+        handleLoadBigQueryArchive();
+      } else if (dateFilter === 'custom_range' && filterRangeStart && filterRangeStart < thirtyDaysAgoStr) {
+        handleLoadBigQueryArchive();
+      }
+    }
+  }, [dateFilter, filterSpecificDate, filterRangeStart, hasLoadedArchive, loadingArchive, thirtyDaysAgoStr]);
 
   // Modals
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState<boolean>(false);
@@ -263,44 +315,49 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
 
   // KPI Metrics (Pending excludes expired unapproved leaves)
   const pendingCount = useMemo(() => {
-    return (requests || []).filter((r) => r.status === 'pending' && r.endDate >= todayStr).length;
-  }, [requests, todayStr]);
+    return (effectiveRequests || []).filter((r) => r.status === 'pending' && r.endDate >= todayStr).length;
+  }, [effectiveRequests, todayStr]);
 
   const needsCoverageCount = useMemo(() => {
-    return (requests || []).filter(
+    return (effectiveRequests || []).filter(
       (r) =>
         r.status === 'approved' &&
         r.endDate >= todayStr &&
         !r.coverageAssigned &&
         r.startDate <= horizonLimitDateStr
     ).length;
-  }, [requests, todayStr, horizonLimitDateStr]);
+  }, [effectiveRequests, todayStr, horizonLimitDateStr]);
 
   const advanceBookingCount = useMemo(() => {
-    return (requests || []).filter(
+    return (effectiveRequests || []).filter(
       (r) =>
         r.status === 'approved' &&
         r.endDate >= todayStr &&
         !r.coverageAssigned &&
         r.startDate > horizonLimitDateStr
     ).length;
-  }, [requests, todayStr, horizonLimitDateStr]);
+  }, [effectiveRequests, todayStr, horizonLimitDateStr]);
 
   const activeTodayCount = useMemo(() => {
-    return (requests || []).filter(
+    return (effectiveRequests || []).filter(
       (r) => r.status === 'approved' && r.startDate <= todayStr && todayStr <= r.endDate
     ).length;
-  }, [requests, todayStr]);
+  }, [effectiveRequests, todayStr]);
+
+  const hotCount = useMemo(() => requests.length, [requests]);
+  const coldCount = useMemo(() => {
+    return (archivedRequests || []).filter((r) => r.isArchivedToBigQuery || r.endDate < thirtyDaysAgoStr).length;
+  }, [archivedRequests, thirtyDaysAgoStr]);
 
   const allCount = useMemo(() => {
-    return (requests || []).length;
-  }, [requests]);
+    return (effectiveRequests || []).length;
+  }, [effectiveRequests]);
 
   // Filtering
   const filteredRequests = useMemo(() => {
     const isSearching = searchTerm.trim().length > 0;
 
-    return (requests || []).filter((r) => {
+    return (effectiveRequests || []).filter((r) => {
       // Scope filter: My requests vs All
       if (viewScope === 'mine') {
         const isMine =
@@ -365,7 +422,7 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
       return true;
     });
   }, [
-    requests,
+    effectiveRequests,
     categoryFilter,
     includeAdvanceInCoverage,
     viewScope,
@@ -418,9 +475,29 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
             onClick={loadData}
             disabled={loading}
             className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition border border-slate-700 disabled:opacity-50"
-            title="Refresh"
+            title="Refresh live Firestore data"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleLoadBigQueryArchive(true)}
+            disabled={loadingArchive}
+            className={`px-3 py-2 border font-semibold text-xs rounded-lg flex items-center space-x-1.5 transition shadow-sm ${
+              hasLoadedArchive
+                ? 'bg-sky-500/15 border-sky-500/40 text-sky-300 hover:bg-sky-500/25'
+                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+            }`}
+            title="Query cold data lake: Records with endDate older than 30 days are transferred to BigQuery"
+          >
+            <Database className={`w-3.5 h-3.5 ${loadingArchive ? 'animate-spin text-sky-400' : 'text-sky-400'}`} />
+            <span>
+              {loadingArchive
+                ? 'Loading BigQuery...'
+                : hasLoadedArchive
+                ? `BigQuery Archive (${coldCount})`
+                : 'Load BigQuery Archive'}
+            </span>
           </button>
           <button
             onClick={() => setViewMode(prev => prev === 'requests' ? 'monthly_report' : 'requests')}
@@ -496,7 +573,7 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
 
       {viewMode === 'monthly_report' ? (
         <TimeOffMonthlyReport
-          requests={requests}
+          requests={effectiveRequests}
           employees={employees}
           routes={routes}
           vehicles={vehicles}
@@ -622,9 +699,20 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{allCount}</div>
+              <div className="text-2xl font-bold text-white flex items-center space-x-2">
+                <span>{allCount}</span>
+                {hasLoadedArchive && coldCount > 0 && (
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                    +{coldCount} BQ
+                  </span>
+                )}
+              </div>
               <div className="text-xs font-medium text-slate-300">All Time Off Requests</div>
-              <div className="text-[11px] text-slate-400">Complete leave history</div>
+              <div className="text-[11px] text-slate-400">
+                {hasLoadedArchive
+                  ? `${hotCount} Live · ${coldCount} BigQuery Archive`
+                  : 'Live Storage (<30d & Upcoming)'}
+              </div>
             </div>
           </div>
           {categoryFilter === 'all' && (
@@ -716,11 +804,11 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
               onChange={(e) => setDateFilter(e.target.value as any)}
               className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-amber-500"
             >
+              <option value="upcoming">Upcoming Only (Live Storage)</option>
               <option value="recent">Recent (Last 30 Days &amp; Upcoming)</option>
               <option value="today">Active Today</option>
-              <option value="upcoming">Upcoming Only</option>
-              <option value="past_30">Past 30 Days</option>
-              <option value="all_archive">All Historical Records (Include Archive &gt;30d)</option>
+              <option value="past_30">Past 30 Days (Live Storage)</option>
+              <option value="all_archive">All Historical Records (Include BigQuery Archive &gt;30d)</option>
               <option value="specific_date">Specific Date</option>
               <option value="custom_range">Date Range</option>
             </select>
@@ -773,6 +861,22 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
 
       {/* Main Data Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+        {/* BigQuery Archive Toast / Notice */}
+        {archiveNotice && (
+          <div className="px-6 py-2 bg-sky-500/10 border-b border-sky-500/20 text-xs text-sky-300 flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Database className="w-3.5 h-3.5 text-sky-400" />
+              <span>{archiveNotice}</span>
+            </div>
+            <button
+              onClick={() => setArchiveNotice(null)}
+              className="text-sky-400 hover:text-white transition"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Quick Category Filter Banner */}
         {categoryFilter !== 'all' && (
           <div className="px-6 py-2.5 bg-slate-800/60 border-b border-slate-800 flex items-center justify-between text-xs">
@@ -881,9 +985,11 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
                   const isEffectiveToday =
                     r.status === 'approved' && r.startDate <= todayStr && todayStr <= r.endDate;
                   const isPast = r.endDate < todayStr;
+                  const isArchived = r.isArchivedToBigQuery || r.endDate < thirtyDaysAgoStr;
                   const isAdvanceBooking = r.status === 'approved' && !isPast && r.startDate > horizonLimitDateStr;
 
                   const canCancel =
+                    !isArchived &&
                     r.status === 'pending' &&
                     (r.requestedByUserId === currentUser?.uid || isHR);
 
@@ -898,11 +1004,22 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
                           <User className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
                           <span>{r.employeeName}</span>
                         </div>
-                        {r.employeeNumber && (
-                          <div className="text-[11px] text-slate-400 mt-0.5">
-                            ID: {r.employeeNumber}
-                          </div>
-                        )}
+                        <div className="flex items-center space-x-1.5 mt-0.5">
+                          {r.employeeNumber && (
+                            <span className="text-[11px] text-slate-400">
+                              ID: {r.employeeNumber}
+                            </span>
+                          )}
+                          {isArchived && (
+                            <span
+                              className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30"
+                              title="Cold archive stored in BigQuery (>30 days past endDate)"
+                            >
+                              <Database className="w-2.5 h-2.5 mr-1 text-sky-400" />
+                              BigQuery
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Leave Type */}
@@ -1110,7 +1227,7 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
                           )}
 
                           {/* Edit pending request */}
-                          {r.status === 'pending' && (r.requestedByUserId === currentUser?.uid || isHR) && (
+                          {!isArchived && r.status === 'pending' && (r.requestedByUserId === currentUser?.uid || isHR) && (
                             <button
                               onClick={() => handleEdit(r)}
                               className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded transition"
@@ -1281,7 +1398,7 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
             setActiveTimeOffForPdf(null);
           }}
           request={activeTimeOffForPdf}
-          allRequests={filteredRequests.length > 0 ? filteredRequests : requests}
+          allRequests={filteredRequests.length > 0 ? filteredRequests : effectiveRequests}
           employees={employees}
           routes={routes}
         />

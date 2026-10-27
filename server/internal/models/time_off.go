@@ -45,8 +45,11 @@ type TimeOffRequest struct {
 	ApprovalNotes     string        `json:"approvalNotes,omitempty" firestore:"approvalNotes,omitempty"`
 	NotifiedChannels  []string      `json:"notifiedChannels,omitempty" firestore:"notifiedChannels,omitempty"`
 	NotifiedAt        *time.Time    `json:"notifiedAt,omitempty" firestore:"notifiedAt,omitempty"`
-	CreatedAt         time.Time     `json:"createdAt" firestore:"createdAt"`
-	UpdatedAt         time.Time     `json:"updatedAt" firestore:"updatedAt"`
+	CreatedAt            time.Time     `json:"createdAt" firestore:"createdAt"`
+	UpdatedAt            time.Time     `json:"updatedAt" firestore:"updatedAt"`
+	IsArchivedToBigQuery bool          `json:"isArchivedToBigQuery,omitempty" firestore:"isArchivedToBigQuery,omitempty"`
+	BigQueryDataset      string        `json:"bigQueryDataset,omitempty" firestore:"bigQueryDataset,omitempty"`
+	BigQueryTable        string        `json:"bigQueryTable,omitempty" firestore:"bigQueryTable,omitempty"`
 }
 
 // CreateTimeOffRequestPayload contains parameters for submitting a new time-off request

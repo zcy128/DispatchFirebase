@@ -319,6 +319,15 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
 
 ---
 
+## 🛠️ Operations & Data Lifecycle Guides
+
+- 📘 **[Firestore TTL & Cloud Scheduler Archiving Guide](docs/firestore-ttl-cloud-scheduler-instructions.md)** (Available in **English**, **Français**, **简体中文**):
+  - Instructions for configuring Firestore Time-to-Live (TTL) in Google Cloud Console.
+  - Setting up the single unified Cloud Scheduler job (`/api/admin/archive/sync-all`) to archive shifts, logs, and time-off requests to BigQuery with minimal cloud cost.
+  - Transparent dual-engine query fallback between Firestore hot storage and BigQuery cold storage.
+
+---
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).

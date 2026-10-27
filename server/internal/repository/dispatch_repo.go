@@ -35,6 +35,17 @@ type DispatchFilter struct {
 	NeedsAttention *bool
 }
 
+// TimeOffFilter contains criteria for querying time off requests with BigQuery cold archive support
+type TimeOffFilter struct {
+	EmployeeID     string
+	Status         string
+	Date           string
+	StartDate      string
+	EndDate        string
+	IncludeArchive bool
+	OnlyArchive    bool
+}
+
 type DispatchRepository interface {
 	CreateDay(ctx context.Context, date string, routeNoFilter []string) (*models.CreateDispatchDayResult, error)
 	DeleteDay(ctx context.Context, date string) error
@@ -78,6 +89,7 @@ type DispatchRepository interface {
 	UpdateTemporaryAssignment(ctx context.Context, id string, req *models.UpdateTemporaryAssignmentRequest) (*models.TemporaryAssignment, error)
 	DeleteTemporaryAssignment(ctx context.Context, id string) error
 	ListTimeOffRequests(ctx context.Context, employeeID string, status string, date string) ([]*models.TimeOffRequest, error)
+	ListTimeOffRequestsFiltered(ctx context.Context, filter TimeOffFilter) ([]*models.TimeOffRequest, error)
 	GetTimeOffRequestByID(ctx context.Context, id string) (*models.TimeOffRequest, error)
 	CreateTimeOffRequest(ctx context.Context, req *models.CreateTimeOffRequestPayload) (*models.TimeOffRequest, error)
 	UpdateTimeOffRequest(ctx context.Context, id string, req *models.UpdateTimeOffRequestPayload) (*models.TimeOffRequest, error)
@@ -250,6 +262,19 @@ func (r *FirestoreDispatchRepository) isLogColdDate(dateStr string) bool {
 		return false
 	}
 	cutoff := time.Now().AddDate(0, 0, -7)
+	return t.Before(cutoff)
+}
+
+// isTimeOffColdDate checks if target date is older than 30 days retention for time-off requests
+func (r *FirestoreDispatchRepository) isTimeOffColdDate(dateStr string) bool {
+	if dateStr == "" || r.bqClient == nil {
+		return false
+	}
+	t, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return false
+	}
+	cutoff := time.Now().AddDate(0, 0, -30)
 	return t.Before(cutoff)
 }
 
@@ -4338,21 +4363,54 @@ func (r *FirestoreDispatchRepository) DeleteTemporaryAssignment(ctx context.Cont
 // ── Time Off Requests (Firestore) ──────────────────────────────────────────
 
 func (r *FirestoreDispatchRepository) ListTimeOffRequests(ctx context.Context, employeeID string, status string, date string) ([]*models.TimeOffRequest, error) {
+	return r.ListTimeOffRequestsFiltered(ctx, TimeOffFilter{
+		EmployeeID: employeeID,
+		Status:     status,
+		Date:       date,
+	})
+}
+
+func (r *FirestoreDispatchRepository) ListTimeOffRequestsFiltered(ctx context.Context, filter TimeOffFilter) ([]*models.TimeOffRequest, error) {
 	if r.client == nil {
 		return make([]*models.TimeOffRequest, 0), nil
 	}
-	var q firestore.Query = r.client.Collection(r.timeOffColl).Query
-	if status != "" && status != "all" {
-		q = q.Where("status", "==", status)
+
+	// 1. If explicit onlyArchive is set, query BigQuery cold storage directly
+	if filter.OnlyArchive && r.bqClient != nil {
+		return r.listTimeOffRequestsFromBigQueryFiltered(ctx, filter)
 	}
-	if employeeID != "" && employeeID != "all" {
-		q = q.Where("employeeId", "==", employeeID)
+
+	// 2. If single date is specified and it's cold (> 30 days past), query BigQuery first (Dispatch method)
+	if filter.Date != "" && r.isTimeOffColdDate(filter.Date) && r.bqClient != nil {
+		bqList, err := r.listTimeOffRequestsFromBigQueryFiltered(ctx, filter)
+		if err == nil && len(bqList) > 0 {
+			return bqList, nil
+		}
+	}
+
+	// 3. If date range is entirely cold (endDate is < 30 days ago), query BigQuery first
+	if filter.EndDate != "" && r.isTimeOffColdDate(filter.EndDate) && r.bqClient != nil {
+		bqList, err := r.listTimeOffRequestsFromBigQueryFiltered(ctx, filter)
+		if err == nil && len(bqList) > 0 {
+			return bqList, nil
+		}
+	}
+
+	// 4. Query Firestore hot collection
+	var q firestore.Query = r.client.Collection(r.timeOffColl).Query
+	if filter.Status != "" && filter.Status != "all" {
+		q = q.Where("status", "==", filter.Status)
+	}
+	if filter.EmployeeID != "" && filter.EmployeeID != "all" {
+		q = q.Where("employeeId", "==", filter.EmployeeID)
 	}
 
 	iter := q.Documents(ctx)
 	defer iter.Stop()
 
 	list := make([]*models.TimeOffRequest, 0)
+	seenIDs := make(map[string]bool)
+
 	for {
 		doc, err := iter.Next()
 		if err == iterator.Done {
@@ -4366,15 +4424,36 @@ func (r *FirestoreDispatchRepository) ListTimeOffRequests(ctx context.Context, e
 			if rec.ID == "" {
 				rec.ID = doc.Ref.ID
 			}
-			if date != "" {
-				if rec.StartDate != "" && date < rec.StartDate {
+			if filter.Date != "" {
+				if rec.StartDate != "" && filter.Date < rec.StartDate {
 					continue
 				}
-				if rec.EndDate != "" && date > rec.EndDate {
+				if rec.EndDate != "" && filter.Date > rec.EndDate {
 					continue
 				}
 			}
+			if filter.StartDate != "" && rec.EndDate != "" && rec.EndDate < filter.StartDate {
+				continue
+			}
+			if filter.EndDate != "" && rec.StartDate != "" && rec.StartDate > filter.EndDate {
+				continue
+			}
+			seenIDs[rec.ID] = true
 			list = append(list, &rec)
+		}
+	}
+
+	// 5. Fallback or Archive Inclusion (Dispatch method)
+	// If includeArchive is true OR if Firestore returned 0 records and BigQuery is configured
+	shouldQueryBQ := (filter.IncludeArchive || len(list) == 0) && r.bqClient != nil
+	if shouldQueryBQ {
+		if bqRes, bqErr := r.listTimeOffRequestsFromBigQueryFiltered(ctx, filter); bqErr == nil && len(bqRes) > 0 {
+			for _, bqRec := range bqRes {
+				if !seenIDs[bqRec.ID] {
+					seenIDs[bqRec.ID] = true
+					list = append(list, bqRec)
+				}
+			}
 		}
 	}
 
@@ -4384,10 +4463,91 @@ func (r *FirestoreDispatchRepository) ListTimeOffRequests(ctx context.Context, e
 	return list, nil
 }
 
+func (r *FirestoreDispatchRepository) listTimeOffRequestsFromBigQuery(ctx context.Context, employeeID string, status string, date string) ([]*models.TimeOffRequest, error) {
+	return r.listTimeOffRequestsFromBigQueryFiltered(ctx, TimeOffFilter{
+		EmployeeID: employeeID,
+		Status:     status,
+		Date:       date,
+	})
+}
+
+func (r *FirestoreDispatchRepository) listTimeOffRequestsFromBigQueryFiltered(ctx context.Context, filter TimeOffFilter) ([]*models.TimeOffRequest, error) {
+	if r.bqClient == nil {
+		return nil, errors.New("bigquery client not initialized")
+	}
+
+	querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE 1=1",
+		r.projectID, r.bqDataset, r.timeOffColl)
+	var params []bigquery.QueryParameter
+
+	if filter.EmployeeID != "" && filter.EmployeeID != "all" {
+		querySQL += " AND JSON_VALUE(data, '$.employeeId') = @employeeId"
+		params = append(params, bigquery.QueryParameter{Name: "employeeId", Value: filter.EmployeeID})
+	}
+	if filter.Status != "" && filter.Status != "all" {
+		querySQL += " AND JSON_VALUE(data, '$.status') = @status"
+		params = append(params, bigquery.QueryParameter{Name: "status", Value: filter.Status})
+	}
+	if filter.Date != "" {
+		querySQL += " AND JSON_VALUE(data, '$.startDate') <= @date AND JSON_VALUE(data, '$.endDate') >= @date"
+		params = append(params, bigquery.QueryParameter{Name: "date", Value: filter.Date})
+	}
+	if filter.StartDate != "" {
+		querySQL += " AND JSON_VALUE(data, '$.endDate') >= @startDate"
+		params = append(params, bigquery.QueryParameter{Name: "startDate", Value: filter.StartDate})
+	}
+	if filter.EndDate != "" {
+		querySQL += " AND JSON_VALUE(data, '$.startDate') <= @endDate"
+		params = append(params, bigquery.QueryParameter{Name: "endDate", Value: filter.EndDate})
+	}
+
+	querySQL += " ORDER BY dispatch_date DESC LIMIT 1000"
+
+	q := r.bqClient.Query(querySQL)
+	q.Parameters = params
+
+	it, err := q.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []*models.TimeOffRequest
+	for {
+		var row struct {
+			ID   string `bigquery:"id"`
+			Data string `bigquery:"data"`
+		}
+		err := it.Next(&row)
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		var rec models.TimeOffRequest
+		if err := json.Unmarshal([]byte(row.Data), &rec); err == nil {
+			if rec.ID == "" {
+				rec.ID = row.ID
+			}
+			rec.IsArchivedToBigQuery = true
+			rec.BigQueryDataset = r.bqDataset
+			rec.BigQueryTable = r.timeOffColl
+			results = append(results, &rec)
+		}
+	}
+	return results, nil
+}
+
 func (r *FirestoreDispatchRepository) GetTimeOffRequestByID(ctx context.Context, id string) (*models.TimeOffRequest, error) {
 	docRef := r.client.Collection(r.timeOffColl).Doc(id)
 	snap, err := docRef.Get(ctx)
 	if err != nil {
+		// Fallback to BigQuery if archived
+		if r.bqClient != nil {
+			if bqRec, bqErr := r.getTimeOffRequestByIDFromBigQuery(ctx, id); bqErr == nil && bqRec != nil {
+				return bqRec, nil
+			}
+		}
 		return nil, fmt.Errorf("time off request not found: %s", id)
 	}
 	var rec models.TimeOffRequest
@@ -4395,6 +4555,42 @@ func (r *FirestoreDispatchRepository) GetTimeOffRequestByID(ctx context.Context,
 		return nil, err
 	}
 	rec.ID = docRef.ID
+	return &rec, nil
+}
+
+func (r *FirestoreDispatchRepository) getTimeOffRequestByIDFromBigQuery(ctx context.Context, id string) (*models.TimeOffRequest, error) {
+	if r.bqClient == nil {
+		return nil, errors.New("bigquery client not initialized")
+	}
+
+	querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE id = @id LIMIT 1",
+		r.projectID, r.bqDataset, r.timeOffColl)
+	q := r.bqClient.Query(querySQL)
+	q.Parameters = []bigquery.QueryParameter{
+		{Name: "id", Value: id},
+	}
+
+	it, err := q.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var row struct {
+		ID   string `bigquery:"id"`
+		Data string `bigquery:"data"`
+	}
+	err = it.Next(&row)
+	if err != nil {
+		return nil, err
+	}
+
+	var rec models.TimeOffRequest
+	if err := json.Unmarshal([]byte(row.Data), &rec); err != nil {
+		return nil, err
+	}
+	if rec.ID == "" {
+		rec.ID = row.ID
+	}
 	return &rec, nil
 }
 
@@ -6551,24 +6747,38 @@ func (m *MemoryDispatchRepository) DeleteTemporaryAssignment(ctx context.Context
 // ── Time Off Requests (Memory) ─────────────────────────────────────────────
 
 func (m *MemoryDispatchRepository) ListTimeOffRequests(ctx context.Context, employeeID string, status string, date string) ([]*models.TimeOffRequest, error) {
+	return m.ListTimeOffRequestsFiltered(ctx, TimeOffFilter{
+		EmployeeID: employeeID,
+		Status:     status,
+		Date:       date,
+	})
+}
+
+func (m *MemoryDispatchRepository) ListTimeOffRequestsFiltered(ctx context.Context, filter TimeOffFilter) ([]*models.TimeOffRequest, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	res := make([]*models.TimeOffRequest, 0)
 	for _, tor := range m.timeOffRequests {
-		if status != "" && status != "all" && string(tor.Status) != status {
+		if filter.Status != "" && filter.Status != "all" && string(tor.Status) != filter.Status {
 			continue
 		}
-		if employeeID != "" && employeeID != "all" && tor.EmployeeID != employeeID {
+		if filter.EmployeeID != "" && filter.EmployeeID != "all" && tor.EmployeeID != filter.EmployeeID {
 			continue
 		}
-		if date != "" {
-			if tor.StartDate != "" && date < tor.StartDate {
+		if filter.Date != "" {
+			if tor.StartDate != "" && filter.Date < tor.StartDate {
 				continue
 			}
-			if tor.EndDate != "" && date > tor.EndDate {
+			if tor.EndDate != "" && filter.Date > tor.EndDate {
 				continue
 			}
+		}
+		if filter.StartDate != "" && tor.EndDate != "" && tor.EndDate < filter.StartDate {
+			continue
+		}
+		if filter.EndDate != "" && tor.StartDate != "" && tor.StartDate > filter.EndDate {
+			continue
 		}
 		res = append(res, tor)
 	}

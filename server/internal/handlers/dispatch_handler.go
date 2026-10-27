@@ -919,7 +919,15 @@ func (h *DispatchHandler) ListTimeOffRequests(w http.ResponseWriter, r *http.Req
 	status := r.URL.Query().Get("status")
 	date := r.URL.Query().Get("date")
 
-	list, err := h.repo.ListTimeOffRequests(r.Context(), employeeID, status, date)
+	list, err := h.repo.ListTimeOffRequestsFiltered(r.Context(), repository.TimeOffFilter{
+		EmployeeID:     employeeID,
+		Status:         status,
+		Date:           date,
+		StartDate:      r.URL.Query().Get("startDate"),
+		EndDate:        r.URL.Query().Get("endDate"),
+		IncludeArchive: r.URL.Query().Get("includeArchive") == "true" || r.URL.Query().Get("archive") == "true",
+		OnlyArchive:    r.URL.Query().Get("onlyArchive") == "true",
+	})
 	if err != nil {
 		http.Error(w, `{"error":"failed to list time off requests: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
