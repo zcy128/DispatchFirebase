@@ -214,6 +214,61 @@ class _CharterStopsSheetState extends State<CharterStopsSheet> {
               ),
               const Divider(height: 20),
 
+              // Direction C: Micro-stepper in Stops Sheet
+              if (stops.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'STEP ${stops.where((s) => s.isArrived).length} OF ${stops.length}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                            ),
+                          ),
+                          Text(
+                            stops.every((s) => s.isArrived)
+                                ? 'ALL STOPS COMPLETE'
+                                : '${((stops.where((s) => s.isArrived).length / stops.length) * 100).toInt()}% COMPLETED',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: stops.every((s) => s.isArrived) ? AppColors.success : AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: List.generate(stops.length, (idx) {
+                          final isDone = stops[idx].isArrived;
+                          return Expanded(
+                            child: Container(
+                              height: 4,
+                              margin: EdgeInsets.only(right: idx == stops.length - 1 ? 0 : 4),
+                              decoration: BoxDecoration(
+                                color: isDone
+                                    ? AppColors.success
+                                    : (isDark ? Colors.grey.shade800 : Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                  ),
+                ),
+              ],
+
               // Stops Timeline List
               Expanded(
                 child: stops.isEmpty

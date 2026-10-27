@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import '../../core/api_config.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_mode.dart';
@@ -95,6 +98,9 @@ class _LoginPageState extends State<LoginPage> {
           _selectedRole = savedRole;
           if (remember && savedEmail.isNotEmpty) {
             _emailController.text = savedEmail;
+          } else if (AppMode.isDemo) {
+            _emailController.text = 'driver1d';
+            _passwordController.text = 'Dispatch2026!';
           }
         });
       }
@@ -167,15 +173,55 @@ class _LoginPageState extends State<LoginPage> {
     await _savePreferences();
 
     final emailInput = _emailController.text.trim();
-    final displayName = emailInput.contains('@')
+    final defaultDisplayName = emailInput.contains('@')
         ? emailInput.split('@')[0]
         : (emailInput.isNotEmpty ? emailInput : 'Driver');
+
+    String resolvedRole = _selectedRole;
+    String resolvedDisplayName = defaultDisplayName;
+    String resolvedEmployeeId = '';
+
+    // Authenticate and resolve user profile with role & allowed modules from backend
+    try {
+      final uri = Uri.parse('${ApiConfig.baseUrl}/api/auth/login');
+      final res = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'username': emailInput,
+          'password': _passwordController.text.trim(),
+        }),
+      ).timeout(const Duration(seconds: 4));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final user = data['user'] as Map<String, dynamic>?;
+        if (user != null) {
+          resolvedRole = user['role']?.toString() ?? _selectedRole;
+          resolvedDisplayName = user['fullName']?.toString() ?? user['username']?.toString() ?? defaultDisplayName;
+          resolvedEmployeeId = user['employeeId']?.toString() ?? '';
+          final overrides = user['overrides'] as Map<String, dynamic>?;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('driver_saved_role', resolvedRole);
+          if (resolvedEmployeeId.isNotEmpty) {
+            await prefs.setString('driver_saved_employee_id', resolvedEmployeeId);
+          }
+          if (overrides != null && overrides.isNotEmpty) {
+            await prefs.setString('driver_saved_overrides', jsonEncode(overrides));
+          } else {
+            await prefs.remove('driver_saved_overrides');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[LoginPage] Backend login notice: $e');
+    }
 
     // Record successful login audit log
     _recordLoginLog(
       isSuccess: true,
       username: emailInput,
-      employeeName: displayName,
+      employeeName: resolvedDisplayName,
     );
 
     if (!mounted) return;
@@ -183,8 +229,8 @@ class _LoginPageState extends State<LoginPage> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => DriverHomePage(
-          username: displayName,
-          role: _selectedRole,
+          username: resolvedDisplayName,
+          role: resolvedRole,
         ),
       ),
     );
@@ -327,7 +373,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       decoration: InputDecoration(
                         labelText: 'Staff Email / Driver ID',
-                        hintText: 'e.g. driver@schoolbusops.com',
+                        hintText: 'e.g. driver1d or email',
                         prefixIcon: const Icon(Icons.badge_outlined, size: 22),
                         suffixIcon: _emailController.text.isNotEmpty
                             ? IconButton(
@@ -563,15 +609,15 @@ class _LoginPageState extends State<LoginPage> {
                       OutlinedButton.icon(
                         onPressed: () {
                           setState(() {
-                            _emailController.text = 'driver@example.com';
-                            _passwordController.text = 'password123';
+                            _emailController.text = 'driver1d';
+                            _passwordController.text = 'Dispatch2026!';
                             _selectedRole = 'Driver';
                             _errorMessage = null;
                           });
                         },
                         icon: const Icon(Icons.bolt_rounded, size: 18, color: AppColors.primary),
                         label: const Text(
-                          'Fill Demo Driver Account',
+                          'Fill Demo Driver Account (driver1d)',
                           style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                         ),
                         style: OutlinedButton.styleFrom(

@@ -652,7 +652,77 @@ class _ShiftSelectorCard extends StatelessWidget {
               );
             }).toList(),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+
+          // Direction C: Micro-Stepper Progress Bar for Regular Route Shift
+          if (activeDispatch.stops.isNotEmpty) ...[
+            Builder(builder: (context) {
+              final total = activeDispatch.stops.length;
+              final arrivedCount = activeDispatch.stops.where((s) => s.isArrived).length;
+              final pct = total > 0 ? ((arrivedCount / total) * 100).toInt() : 0;
+              final isComplete = arrivedCount == total;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF141926) : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'MISSION PROGRESS: $arrivedCount / $total STOPS',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                          ),
+                        ),
+                        Text(
+                          isComplete ? 'RUN COMPLETED' : '$pct% EN-ROUTE',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: isComplete ? AppColors.success : AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: List.generate(total, (idx) {
+                        final isDone = activeDispatch.stops[idx].isArrived;
+                        final isCurrent = !isDone && (idx == 0 || activeDispatch.stops[idx - 1].isArrived);
+                        return Expanded(
+                          child: Container(
+                            height: 4,
+                            margin: EdgeInsets.only(right: idx == total - 1 ? 0 : 2),
+                            decoration: BoxDecoration(
+                              color: isDone
+                                  ? AppColors.success
+                                  : isCurrent
+                                      ? AppColors.primary
+                                      : (isDark ? Colors.grey.shade800 : Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
 
           // Route Details
           Row(
@@ -800,16 +870,21 @@ class _ShiftSelectorCard extends StatelessWidget {
             if (!activeDispatch.isCheckedIn)
               SizedBox(
                 width: double.infinity,
+                height: 52,
                 child: ElevatedButton.icon(
                   onPressed: () {
                     context.read<DispatchBloc>().add(DriverCheckInEvent(activeDispatch.id));
                   },
-                  icon: const Icon(Icons.login_rounded),
-                  label: const Text('Driver Check-In & Start Run'),
+                  icon: const Icon(Icons.login_rounded, size: 20),
+                  label: const Text(
+                    'DRIVER CHECK-IN & START RUN',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: const Color(0xFF0F172A),
-                    minimumSize: const Size(double.infinity, 48),
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               )
@@ -1268,20 +1343,26 @@ class _StopCard extends StatefulWidget {
 }
 
 class _StopCardState extends State<_StopCard> {
-  // Automatically unfold stops after checkin; keep collapsed before checkin or after checkout
+  // Direction C: Only keep the active ongoing stop expanded; keep completed stops collapsed to eliminate cognitive load
   late bool _isExpanded;
+
+  bool get _isCurrentActiveStop {
+    final stops = widget.dispatch.stops;
+    final activeIdx = stops.indexWhere((s) => !s.isArrived);
+    return activeIdx >= 0 && stops[activeIdx].stopId == widget.stop.stopId;
+  }
 
   @override
   void initState() {
     super.initState();
-    _isExpanded = widget.dispatch.isCheckedIn && !widget.dispatch.isCheckedOut;
+    _isExpanded = _isCurrentActiveStop || (!widget.stop.isArrived && widget.dispatch.isCheckedIn && !widget.dispatch.isCheckedOut);
   }
 
   @override
   void didUpdateWidget(covariant _StopCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!oldWidget.dispatch.isCheckedIn && widget.dispatch.isCheckedIn) {
-      _isExpanded = true;
+      _isExpanded = _isCurrentActiveStop;
     } else if (!oldWidget.dispatch.isCheckedOut && widget.dispatch.isCheckedOut) {
       _isExpanded = false;
     }
@@ -1307,15 +1388,19 @@ class _StopCardState extends State<_StopCard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : Colors.white,
+        color: _isCurrentActiveStop
+            ? (isDark ? const Color(0xFF1E283D) : Colors.amber.shade50.withValues(alpha: 0.6))
+            : (isDark ? AppColors.darkCard : Colors.white),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: stop.isArrived
-              ? AppColors.success.withValues(alpha: 0.6)
-              : (stop.isSchoolStop
-                  ? AppColors.primary.withValues(alpha: 0.5)
-                  : (isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder)),
-          width: stop.isArrived || stop.isSchoolStop ? 1.5 : 1,
+          color: _isCurrentActiveStop
+              ? AppColors.primary
+              : (stop.isArrived
+                  ? AppColors.success.withValues(alpha: 0.6)
+                  : (stop.isSchoolStop
+                      ? AppColors.primary.withValues(alpha: 0.5)
+                      : (isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder))),
+          width: _isCurrentActiveStop ? 2.0 : (stop.isArrived || stop.isSchoolStop ? 1.5 : 1),
         ),
       ),
       child: Column(
@@ -1335,11 +1420,13 @@ class _StopCardState extends State<_StopCard> {
             child: Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: stop.isArrived
-                    ? AppColors.success.withValues(alpha: 0.08)
-                    : (stop.isSchoolStop
-                        ? AppColors.primary.withValues(alpha: 0.1)
-                        : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC))),
+                color: _isCurrentActiveStop
+                    ? AppColors.primary.withValues(alpha: 0.12)
+                    : (stop.isArrived
+                        ? AppColors.success.withValues(alpha: 0.08)
+                        : (stop.isSchoolStop
+                            ? AppColors.primary.withValues(alpha: 0.1)
+                            : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC)))),
                 borderRadius: BorderRadius.vertical(
                   top: const Radius.circular(15),
                   bottom: Radius.circular(_isExpanded ? 0 : 15),
@@ -1349,9 +1436,11 @@ class _StopCardState extends State<_StopCard> {
                 children: [
                   CircleAvatar(
                     radius: 14,
-                    backgroundColor: stop.isArrived
-                        ? AppColors.success
-                        : (stop.isSchoolStop ? AppColors.primary : (isDark ? Colors.white24 : Colors.black12)),
+                    backgroundColor: _isCurrentActiveStop
+                        ? AppColors.primary
+                        : (stop.isArrived
+                            ? AppColors.success
+                            : (stop.isSchoolStop ? AppColors.primary : (isDark ? Colors.white24 : Colors.black12))),
                     child: stop.isArrived
                         ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
                         : Text(
@@ -1359,7 +1448,7 @@ class _StopCardState extends State<_StopCard> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: stop.isSchoolStop ? const Color(0xFF0F172A) : (isDark ? Colors.white : Colors.black87),
+                              color: (_isCurrentActiveStop || stop.isSchoolStop) ? const Color(0xFF0F172A) : (isDark ? Colors.white : Colors.black87),
                             ),
                           ),
                   ),
@@ -1370,6 +1459,25 @@ class _StopCardState extends State<_StopCard> {
                       children: [
                         Row(
                           children: [
+                            if (_isCurrentActiveStop) ...[
+                              Container(
+                                margin: const EdgeInsets.only(right: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'ACTIVE',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.black,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            ],
                             Expanded(
                               child: Text(
                                 stop.isSchoolStop && stop.schoolName != null

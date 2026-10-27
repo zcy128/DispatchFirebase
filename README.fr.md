@@ -24,7 +24,7 @@ Un environnement de démonstration public complet est directement accessible san
 | Module Applicatif | URL Publique | Modalités d'Accès & Instructions de Connexion |
 | :--- | :--- | :--- |
 | **Console de Régulation Web (`web`)** | [schoolbus.pcytech.ca](https://schoolbus.pcytech.ca/)<br>*(Miroir : [schoolbusdispatchapp.web.app](https://schoolbusdispatchapp.web.app/))* | Cliquez sur le bouton **« 1-Click Launch as Operations Admin »** sur l'écran d'accueil pour accéder instantanément à la console avec tous les privilèges d'administration, de régulation et de conformité.<br>*(Remarque : accédez à `/?mode=ai` pour ouvrir directement le Copilote IA en mode PWA autonome)* |
-| **Application Chauffeur & Accompagnateur (`driver_app`)** | [schoolbus.pcytech.ca/driver](https://schoolbus.pcytech.ca/driver)<br>*(Miroir : [schoolbusdispatchapp.web.app/driver](https://schoolbusdispatchapp.web.app/driver))* | Cliquez sur **« Quick Demo Credentials »** en bas du formulaire pour remplir les identifiants de test (`driver@example.com` / `password123`), sélectionnez le rôle **Driver** ou **Attendant**, puis appuyez sur **Sign In** pour tester les tournées, l'inspection Pre-trip et le pointage des élèves. |
+| **Application Chauffeur & Accompagnateur (`driver_app`)** | [schoolbus.pcytech.ca/driver](https://schoolbus.pcytech.ca/driver)<br>*(Miroir : [schoolbusdispatchapp.web.app/driver](https://schoolbusdispatchapp.web.app/driver))* | Cliquez sur **« Quick Demo Credentials »** en bas du formulaire pour remplir les identifiants de test (`driver1d` / `Dispatch2026!`), sélectionnez le rôle **Driver** ou **Attendant**, puis appuyez sur **Sign In** pour tester les tournées, l'inspection Pre-trip et le pointage des élèves. |
 | **Application Parent de Suivi en Direct (`parent_app`)** | [schoolbus.pcytech.ca/parent](https://schoolbus.pcytech.ca/parent)<br>*(Miroir : [schoolbusdispatchapp.web.app/parent](https://schoolbusdispatchapp.web.app/parent))* | Fonctionne par code d'accès temporaire sans mot de passe. Cliquez sur **« Demo Phone »** ou **« Demo Email »** pour renseigner le contact de test, appuyez sur **Continue**, puis touchez le bandeau ambré **« Dev Passcode (Tap to autofill) »** pour vous connecter instantanément et suivre la position GPS du bus sur la carte avec l'estimation d'arrivée (ETA). |
 | **Point de terminaison MCP (Model Context Protocol)** | `https://dispatch-api-kv7qum3dca-nn.a.run.app/api/mcp` | Point de terminaison standard du protocole Anthropic MCP, permettant aux agents IA externes (Claude Desktop, Cursor, Gemini CLI) de se connecter en toute sécurité avec un jeton MCP. |
 
@@ -163,8 +163,12 @@ La plateforme est structurée autour d'un écosystème d'applications dédiées,
 - **Connectivité pour Agents IA Externes** : Permet aux outils IA externes (Claude Desktop, Cursor, Gemini CLI ou agents autonomes) d'interagir directement et en toute sécurité avec le dispatch pour consulter les plannings, identifier les lignes vacantes et effectuer des assignations.
 - **Gestion Sécurisée des Jetons MCP** : Génération de jetons d'accès dédiés avec expiration personnalisée dans l'onglet **Paramètres (Settings)**, sécurisés par hachage SHA-256 et alignés sur les droits RBAC de l'opérateur.
 
-### 11. Contrôle d'Accès Granulaire par Rôle (RBAC)
-- Matrice détaillée de permissions basée sur les rôles, régissant précisément les droits de lecture et d'écriture pour chaque page et fonctionnalité (Administrateurs, Dispatchers, Superviseurs de dépôt, Responsables de sécurité, Comptabilité, Chauffeurs et Parents).
+### 11. Architecture RBAC Épurée & Sécurité Granulaire par Ligne (Row-Level Security)
+- **Architecture de Déclarations Ultra-Légères (`Role + Overrides`)** : Gère 34 modules opérationnels à travers 12 rôles. Pour respecter strictement la limite de 1 000 octets des Custom Claims de Firebase Auth, les jetons ne stockent que le rôle de base et les deltas de substitution (`ovr`), conservant une taille ultra-compacte (< 50 octets) sans requêtes de base de données redondantes.
+- **Règles de Sécurité en Production (`firestore.rules`)** : Vérifications de propriété des documents exécutées en mémoire sans coût de lecture additionnel :
+  - **Isolation des Formulaires Opérationnels** : Les chauffeurs et accompagnateurs ne peuvent interroger et soumettre que leurs propres demandes de congé, signalements d'anomalies, incidents élèves, signalements de dangers routiers, remises de clés et demandes de remboursement.
+  - **Visibilité Limitée aux Affectations** : Le personnel de terrain n'a accès qu'aux tournées, manifestes d'élèves et services qui lui sont formellement attribués (`myEmployeeId in assignedEmployeeIds`).
+  - **Protection des Données Financières et Secrets d'Intégration** : L'approbation des heures est réservée aux régulateurs et consultable par la comptabilité ; les identifiants et collections de transition bloquent tout accès direct côté navigateur.
 
 ### 12. Archivage Sécurisé & Sauvegarde BigQuery
 - Les données opérationnelles courantes restent dans Firestore pour une latence minimale et une synchronisation en direct.
@@ -308,7 +312,7 @@ flutter build web --dart-define=API_BASE_URL=https://votre-domaine-api.com
 ## Sécurité & Bonnes Pratiques Open-Source
 
 - **Gestion des Identifiants** : Ne committez **jamais** de fichiers contenant de vraies clés secrètes (`serviceAccountKey.json`, `firebase_options.dart`, `.env`). Ces fichiers sont strictement ignorés par le `.gitignore`.
-- **Règles de Sécurité Firestore** : Avant tout déploiement en production, veillez à durcir les règles de `firestore.rules` pour verrouiller l'accès aux seules personnes autorisées.
+- **Règles de Sécurité Firestore en Production** : Le fichier `firestore.rules` applique l'héritage de rôles, les surcharges de modules et l'isolation au niveau de la ligne sans surcoût de facturation ; les clients mobiles et Web ciblent strictement leurs données avec des filtres précis (ex. `where('employeeId', '==', id)`).
 - **Secrets d'Intégration** : Les identifiants BusPlanner, Zonar et BambooHR, ainsi que les collections staging, ne sont accessibles que par l'API backend.
 - **Sécurité des Jetons MCP** : Les jetons MCP sont stockés sous forme de hachage SHA-256 dans Firestore. Le jeton brut n'est présenté qu'une seule fois à l'opérateur lors de sa génération.
 

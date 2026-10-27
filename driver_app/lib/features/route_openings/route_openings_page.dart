@@ -1540,26 +1540,26 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
 
           const SizedBox(height: 14),
 
-          // Action buttons
+          // Action buttons (Direction C Thumb-Zone Ergonomics)
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.primary),
-                    minimumSize: const Size(0, 42),
+                    side: const BorderSide(color: AppColors.primary, width: 1.5),
+                    minimumSize: const Size(0, 48),
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  icon: const Icon(Icons.map_rounded, size: 16),
+                  icon: const Icon(Icons.map_rounded, size: 18),
                   label: Text(
                     'View Map & Stops ($totalStops)',
                     style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   onPressed: () => _showSanitizedStopsSheet(
@@ -1575,19 +1575,19 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.error,
-                      side: const BorderSide(color: AppColors.error),
-                      minimumSize: const Size(0, 42),
+                      side: const BorderSide(color: AppColors.error, width: 1.5),
+                      minimumSize: const Size(0, 48),
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    icon: const Icon(Icons.close_rounded, size: 16),
+                    icon: const Icon(Icons.close_rounded, size: 18),
                     label: const Text(
                       'Withdraw Bid',
                       style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     onPressed: () => _withdrawApplication(opening),
@@ -1599,18 +1599,19 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: const Color(0xFF0F172A),
-                      minimumSize: const Size(0, 42),
+                      minimumSize: const Size(0, 48),
+                      elevation: 2,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    icon: const Icon(Icons.send_rounded, size: 15),
+                    icon: const Icon(Icons.send_rounded, size: 16),
                     label: const Text(
                       'Apply Now',
                       style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                     onPressed: () => _showApplyDialog(context, opening, isDark),

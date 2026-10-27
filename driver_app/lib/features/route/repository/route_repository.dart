@@ -265,20 +265,33 @@ class RouteRepository {
       StreamSubscription? shiftsSub;
       String? currentListeningRouteId;
 
+      final cleanDriver = driverId.trim();
+      final empId = resolveEmployeeId(cleanDriver);
+      final queryKeys = <String>{
+        cleanDriver,
+        normalized,
+        if (empId.isNotEmpty) empId,
+        if (empId.isNotEmpty) empId.toLowerCase(),
+      }.where((s) => s.isNotEmpty && s != 'tbd' && s != 'unassigned').toList();
+
       controller = StreamController<DriverRouteInfo?>(
         onListen: () {
-          routesSub = FirebaseFirestore.instance
-              .collection('routes')
-              .snapshots()
-              .listen((routesSnap) {
+          final query = queryKeys.isNotEmpty
+              ? FirebaseFirestore.instance
+                  .collection('routes')
+                  .where('assignedEmployeeIds', arrayContainsAny: queryKeys)
+              : FirebaseFirestore.instance.collection('routes');
+
+          routesSub = query.snapshots().listen((routesSnap) {
             Map<String, dynamic>? matchingRoute;
-            final empId = resolveEmployeeId(normalized);
 
             for (final doc in routesSnap.docs) {
               final data = Map<String, dynamic>.from(doc.data());
               data['id'] = doc.id;
               final rDriverId = (data['driverId'] ?? '').toString();
+              final rDriverName = (data['driverName'] ?? '').toString();
               final matches = matchesDriver(rDriverId, normalized) ||
+                  matchesDriver(rDriverName, normalized) ||
                   (empId == 'EMP-001' && (data['id'] == 'RT-001' || data['id'] == 'OCDSB-001'));
               if (matches) {
                 matchingRoute = data;
@@ -344,7 +357,11 @@ class RouteRepository {
   Future<DriverRouteInfo?> syncRouteFromBackend(String driverId) async {
     try {
       final normalized = driverId.toLowerCase().trim();
-      final routesUri = Uri.parse('$apiBaseUrl/api/public/routes');
+      var urlStr = '$apiBaseUrl/api/public/routes';
+      if (normalized.isNotEmpty) {
+        urlStr += '?driver=${Uri.encodeComponent(normalized)}';
+      }
+      final routesUri = Uri.parse(urlStr);
       final res = await _httpClient.get(routesUri).timeout(const Duration(seconds: 4));
       if (res.statusCode != 200) return null;
 
@@ -354,7 +371,9 @@ class RouteRepository {
       final empId = resolveEmployeeId(normalized);
       for (final r in routesJson) {
         final rDriverId = (r['driverId'] ?? '').toString();
+        final rDriverName = (r['driverName'] ?? '').toString();
         final matches = matchesDriver(rDriverId, normalized) ||
+            matchesDriver(rDriverName, normalized) ||
             (empId == 'EMP-001' && (r['id'] == 'RT-001' || r['id'] == 'OCDSB-001'));
         if (matches) {
           matchingRoute = Map<String, dynamic>.from(r as Map);

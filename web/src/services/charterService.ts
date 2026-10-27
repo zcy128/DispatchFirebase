@@ -15,6 +15,7 @@ import {
   CharterTrip,
   CharterAssignment,
   CharterStop,
+  extractAssignedEmployeeIds,
 } from '../types/charter';
 import {
   DispatchPayrollRecord,
@@ -161,9 +162,11 @@ export const CharterService = {
     if (!db) throw new Error('Firestore not initialized');
     const id = `trip-${Date.now()}`;
     const now = new Date().toISOString();
+    const assignedEmployeeIds = extractAssignedEmployeeIds(tripData.assignments);
     const trip: CharterTrip = {
       ...tripData,
       id,
+      assignedEmployeeIds,
       createdAt: now,
       updatedAt: now,
     };
@@ -180,9 +183,12 @@ export const CharterService = {
       throw new Error(`Charter trip ${id} not found`);
     }
     const oldTrip = snap.data() as CharterTrip;
+    const assignmentsToUse = data.assignments || oldTrip.assignments;
+    const assignedEmployeeIds = extractAssignedEmployeeIds(assignmentsToUse);
     const updatedTrip: CharterTrip = {
       ...oldTrip,
       ...data,
+      assignedEmployeeIds,
       updatedAt: now,
     };
     await setDoc(tripRef, updatedTrip, { merge: true });
@@ -244,6 +250,7 @@ export const CharterService = {
     const updatedTrip: CharterTrip = {
       ...trip,
       assignments,
+      assignedEmployeeIds: extractAssignedEmployeeIds(assignments),
       updatedAt: new Date().toISOString(),
     };
 

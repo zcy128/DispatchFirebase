@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Direction A: Cockpit HUD High-Contrast · PCY Driver App</title>
+  <!-- React & Babel -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+    body {
+      background: #05070B;
+      color: #E2E8F0;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    .hud-num { font-family: 'JetBrains Mono', monospace; }
+    .hud-title { font-family: 'Chakra Petch', sans-serif; }
+    /* Hide scrollbar for clean UI */
+    ::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body class="min-h-screen py-10 px-6">
+  <div class="max-w-[1720px] mx-auto">
+    <!-- Header Banner -->
+    <header class="mb-8 flex flex-col md:flex-row md:items-end justify-between border-b border-zinc-800 pb-6 gap-4">
+      <div>
+        <div class="flex items-center gap-2.5 mb-2">
+          <span class="px-2.5 py-0.5 rounded text-[11px] font-black tracking-wider bg-amber-500 text-black uppercase">Direction A</span>
+          <span class="text-xs font-mono text-cyan-400">COCKPIT HUD // HIGH-CONTRAST</span>
+          <span class="px-2 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-300">防眩光 · 强光易读 · 超大盲操靶心</span>
+        </div>
+        <h1 class="text-3xl font-black text-white tracking-tight hud-title">驾驶舱平视仪表感 · 极端环境高对比度方案</h1>
+        <p class="text-zinc-400 text-sm mt-1 max-w-2xl">
+          针对司机在阳光暴晒驾驶舱、戴手套或颠簸行驶等现实场景设计。纯黑钛灰吸光底色 + 琥珀橙与荧光薄荷微发光读数，主交互按键一律采用底栏全宽 ≥60px 规格，实现 100% 防误触与扫读零成本。
+        </p>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="thumbs.html" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-lg transition-colors">← 返回候选画廊</a>
+        <a href="Direction-B-Apple-HIG-Glass.html" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg transition-colors">查看方向 B →</a>
+      </div>
+    </header>
+
+    <!-- Mount Point for React Multi-Screen Board -->
+    <div id="root"></div>
+  </div>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    // --- Standard IosFrame from huashu-design asset ---
+    const iosFrameStyles = {
+      wrapper: {
+        display: 'inline-block',
+        padding: 12,
+        background: '#090D14',
+        borderRadius: 56,
+        boxShadow: '0 0 0 2px #1E293B, 0 25px 60px -15px rgba(0,0,0,0.8)',
+        position: 'relative',
+      },
+      screen: {
+        position: 'relative',
+        borderRadius: 44,
+        overflow: 'hidden',
+        background: '#05070B',
+      },
+      statusBar: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 50,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 28px',
+        fontSize: 14,
+        fontWeight: 700,
+        fontFamily: 'JetBrains Mono, monospace',
+        zIndex: 20,
+        pointerEvents: 'none',
+      },
+      dynamicIsland: {
+        position: 'absolute',
+        top: 10,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 120,
+        height: 32,
+        background: '#000',
+        borderRadius: 999,
+        zIndex: 30,
+        border: '1px solid #182030',
+      },
+      content: {
+        position: 'absolute',
+        top: 50,
+        left: 0,
+        right: 0,
+        bottom: 24,
+        overflowY: 'auto',
+      },
+      homeIndicator: {
+        position: 'absolute',
+        bottom: 8,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 130,
+        height: 4,
+        background: 'rgba(255,255,255,0.25)',
+        borderRadius: 999,
+        zIndex: 10,
+      },
+    };
+
+    function IosFrame({ children, width = 375, height = 780, time = '07:45', battery = 94 }) {
+      return (
+        <div style={iosFrameStyles.wrapper}>
+          <div style={{ ...iosFrameStyles.screen, width, height }}>
+            <div style={{ ...iosFrameStyles.statusBar, color: '#94A3B8' }}>
+              <span>{time}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="text-[10px] text-emerald-400 font-mono">5G</span>
+                <span className="text-[11px] font-mono font-bold text-amber-400">{battery}%</span>
+              </div>
+            </div>
+            <div style={iosFrameStyles.dynamicIsland} />
+            <div style={iosFrameStyles.content}>{children}</div>
+            <div style={iosFrameStyles.homeIndicator} />
+          </div>
+        </div>
+      );
+    }
+
+    // --- Mock Data ---
+    const initialTrip = {
+      title: "Science Museum Field Trip",
+      tripNumber: "CT-204",
+      client: "St. Patrick High School",
+      busNumber: "102",
+      plateNumber: "ON-BUS-889",
+      driverRate: 150.00,
+      eiHours: 5.0,
+      checkedIn: true,
+      checkInTime: "07:38",
+      preTripComplete: true,
+      currentStopIdx: 1, // Stop #2
+      stops: [
+        { id: 1, type: "Pickup", label: "School Pickup", addr: "450 Maple Ave (Main Gate)", time: "08:00", arrived: true, arrivedTime: "07:58", departed: true, departedTime: "08:05" },
+        { id: 2, type: "Dropoff", label: "Museum Dropoff", addr: "Ontario Science Centre", time: "08:30", arrived: false, departed: false },
+        { id: 3, type: "Return Pickup", label: "Afternoon Pickup", addr: "Ontario Science Centre", time: "15:00", arrived: false, departed: false },
+        { id: 4, type: "Return Dropoff", label: "School Return", addr: "450 Maple Ave", time: "15:30", arrived: false, departed: false }
+      ]
+    };
+
+    // --- Component: Screen 1 - Cockpit Shift Board (排班与签到) ---
+    function CockpitShiftScreen({ trip, onCheckInToggle, onNavigate }) {
+      return (
+        <div className="p-4 flex flex-col h-full justify-between">
+          <div>
+            {/* Top HUD Vehicle Badge */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-3.5 mb-3 flex items-center justify-between">
+              <div>
+                <div className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider">ASSIGNED VEHICLE</div>
+                <div className="flex items-baseline gap-2 mt-0.5">
+                  <span className="text-3xl font-black hud-num text-amber-400">BUS #{trip.busNumber}</span>
+                  <span className="text-xs font-mono text-zinc-400">{trip.plateNumber}</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="inline-block px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-black hud-num">
+                  IN SERVICE
+                </span>
+                <div className="text-[10px] text-zinc-500 mt-1 font-mono">72 PASSENGERS</div>
+              </div>
+            </div>
+
+            {/* Shift Card */}
+            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                  {trip.tripNumber} · CHARTER
+                </span>
+                <span className="text-xs font-mono text-zinc-400">OCT 26 · TODAY</span>
+              </div>
+              <h2 className="text-lg font-black text-white">{trip.title}</h2>
+              <div className="text-xs text-zinc-400 mt-0.5">{trip.client}</div>
+
+              {/* Schedule row */}
+              <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-zinc-900">
+                <div className="bg-zinc-900/60 p-2.5 rounded-xl">
+                  <div className="text-[10px] text-zinc-500 font-mono">DEPARTS</div>
+                  <div className="text-base font-black text-white hud-num">08:00 AM</div>
+                </div>
+                <div className="bg-zinc-900/60 p-2.5 rounded-xl">
+                  <div className="text-[10px] text-zinc-500 font-mono">RETURNS</div>
+                  <div className="text-base font-black text-white hud-num">15:30 PM</div>
+                </div>
+              </div>
+
+              {/* Rate Disclosure */}
+              <div className="mt-3 p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-emerald-400 font-bold uppercase">PAYROLL RATE</div>
+                  <div className="text-xl font-black text-emerald-300 hud-num">${trip.driverRate.toFixed(2)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-mono text-zinc-400">{trip.eiHours}h EI Insurable</div>
+                  <div className="text-[10px] text-emerald-400/80 mt-0.5">✓ Auto-Synced</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Status Pill */}
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-3 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                <span className="font-bold text-zinc-200">Pre-Trip Inspection Done</span>
+              </div>
+              <span className="text-zinc-500 font-mono text-[11px]">07:35 AM</span>
+            </div>
+          </div>
+
+          {/* Bottom Huge Action Target */}
+          <div className="pt-2">
+            <button 
+              onClick={onCheckInToggle}
+              className={`w-full py-4 rounded-xl font-black text-base tracking-wider uppercase shadow-lg transition-transform active:scale-[0.98] ${
+                trip.checkedIn 
+                  ? 'bg-zinc-800 text-emerald-400 border border-emerald-500/40' 
+                  : 'bg-amber-500 hover:bg-amber-400 text-black'
+              }`}
+            >
+              {trip.checkedIn ? `✓ CHECKED IN AT ${trip.checkInTime}` : 'PUNCH CHECK-IN (ONE-TAP)'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Component: Screen 2 - 4-Stop Itinerary HUD (四站打卡与导航) ---
+    function CockpitStopsScreen({ trip, onArrive }) {
+      return (
+        <div className="p-4 flex flex-col h-full justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-zinc-800">
+              <div>
+                <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider">ITINERARY PROGRESS</span>
+                <div className="text-base font-black text-white hud-title">4-STOP SCHEDULE</div>
+              </div>
+              <span className="text-xs font-mono px-2 py-1 bg-zinc-800 text-zinc-300 rounded">
+                1 / 4 COMPLETED
+              </span>
+            </div>
+
+            {/* Active Stop Callout (Huge Cockpit Target) */}
+            <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border-2 border-amber-500/80 rounded-2xl p-4 mb-4 shadow-xl shadow-amber-500/5">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="px-2 py-0.5 bg-amber-500 text-black text-[10px] font-black rounded uppercase">
+                  CURRENT OBJECTIVE · STOP 2
+                </span>
+                <span className="text-sm font-mono font-bold text-amber-400">ETA 08:30 AM</span>
+              </div>
+              <div className="text-lg font-black text-white mt-1">Museum Dropoff</div>
+              <div className="text-xs text-zinc-300 mt-0.5">Ontario Science Centre (East Entrance)</div>
+              
+              <div className="mt-3 flex gap-2">
+                <button className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-white rounded-lg flex items-center justify-center gap-1.5 border border-zinc-700">
+                  <span>🧭</span> TURN-BY-TURN
+                </button>
+                <button className="px-3 py-2.5 bg-zinc-800 text-zinc-300 text-xs font-bold rounded-lg border border-zinc-700">
+                  📞 DISPATCH
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Stops Timeline */}
+            <div className="space-y-2">
+              {trip.stops.map((st, idx) => {
+                const isCurrent = idx === 1;
+                const isPassed = idx === 0;
+                return (
+                  <div 
+                    key={st.id} 
+                    className={`p-3 rounded-xl border flex items-center justify-between ${
+                      isCurrent 
+                        ? 'bg-zinc-900/90 border-amber-500/50' 
+                        : isPassed 
+                        ? 'bg-zinc-950/40 border-zinc-800 opacity-60' 
+                        : 'bg-zinc-950/80 border-zinc-900'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-mono font-black text-xs ${
+                        isPassed ? 'bg-emerald-500/20 text-emerald-400' : isCurrent ? 'bg-amber-500 text-black' : 'bg-zinc-800 text-zinc-400'
+                      }`}>
+                        {isPassed ? '✓' : idx + 1}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white">{st.label}</div>
+                        <div className="text-[11px] text-zinc-400 truncate max-w-[160px]">{st.addr}</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs font-mono font-bold text-zinc-300">{st.time}</div>
+                      <div className="text-[10px] text-zinc-500">{isPassed ? `Departed ${st.departedTime}` : isCurrent ? 'Approaching' : 'Pending'}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Bottom Primary Confirm Target */}
+          <div className="pt-2">
+            <button 
+              onClick={onArrive}
+              className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-sm tracking-wider uppercase rounded-xl shadow-lg active:scale-[0.98]"
+            >
+              RECORD ARRIVAL AT MUSEUM (08:30)
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Component: Screen 3 - Schedule 5 Inspection (车检) ---
+    function CockpitPreTripScreen() {
+      const [items, setItems] = useState([
+        { id: 1, name: "Braking System & Air Pressure", pass: true },
+        { id: 2, name: "Emergency Exit Doors & Roof Hatch", pass: true },
+        { id: 3, name: "All Lights, Flashers & Stop Arm", pass: true },
+        { id: 4, name: "Tires, Wheels & Lug Nuts", pass: true },
+        { id: 5, name: "Mirrors, Windshield & Wipers", pass: true },
+        { id: 6, name: "Fluid Levels (Oil, Coolant, Wash)", pass: true }
+      ]);
+
+      return (
+        <div className="p-4 flex flex-col h-full justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-zinc-800">
+              <div>
+                <span className="text-[10px] font-mono text-amber-400 uppercase tracking-wider">MTO / CVOR COMPLIANCE</span>
+                <div className="text-base font-black text-white hud-title">SCHEDULE 5 PRE-TRIP</div>
+              </div>
+              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold rounded">
+                6 / 6 PASSED
+              </span>
+            </div>
+
+            {/* Odometer Input HUD Card */}
+            <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-3 flex items-center justify-between">
+              <div>
+                <div className="text-[10px] text-zinc-400 font-mono">ODOMETER READING</div>
+                <div className="text-xl font-black font-mono text-white">142,850 <span className="text-xs text-zinc-500">KM</span></div>
+              </div>
+              <button className="px-2.5 py-1.5 bg-zinc-800 text-xs text-zinc-300 font-bold rounded">EDIT</button>
+            </div>
+
+            {/* Checklist items with massive check touch targets */}
+            <div className="space-y-2">
+              {items.map(it => (
+                <div key={it.id} className="p-3 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-between">
+                  <span className="text-xs font-semibold text-zinc-200">{it.name}</span>
+                  <div className="flex gap-1.5">
+                    <span className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-bold text-sm">
+                      ✓
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button className="w-full py-4 bg-emerald-500 text-black font-black text-sm tracking-wider uppercase rounded-xl shadow-lg">
+              SUBMIT INSPECTION SIGN-OFF
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Component: Screen 4 - Route Openings & Bidding (班次招募) ---
+    function CockpitOpeningsScreen() {
+      return (
+        <div className="p-4 flex flex-col h-full justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-zinc-800">
+              <div>
+                <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider">CREW MARKETPLACE</span>
+                <div className="text-base font-black text-white hud-title">ROUTE OPENINGS</div>
+              </div>
+              <span className="text-xs font-mono text-amber-400 font-bold">2 OPEN SHIFTS</span>
+            </div>
+
+            <div className="space-y-3">
+              {/* Charter Opening Card */}
+              <div className="p-3.5 bg-zinc-950 border border-amber-500/40 rounded-2xl">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold rounded">
+                    CHARTER OPENING
+                  </span>
+                  <span className="text-sm font-black font-mono text-emerald-400">$160.00</span>
+                </div>
+                <div className="text-sm font-black text-white mt-1">Athletic Tournament Convoi</div>
+                <div className="text-xs text-zinc-400 mt-0.5">Tomorrow · 09:00 AM - 16:30 PM (4 Stops)</div>
+                <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-zinc-900 text-xs">
+                  <span className="text-zinc-500 font-mono">Bus #108 (Automatic)</span>
+                  <button className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs rounded-lg uppercase">
+                    CLAIM AS DRIVER
+                  </button>
+                </div>
+              </div>
+
+              {/* Regular Route Opening Card */}
+              <div className="p-3.5 bg-zinc-950 border border-zinc-800 rounded-2xl">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-300 text-[10px] font-bold rounded">
+                    DAILY PM ROUTE
+                  </span>
+                  <span className="text-sm font-black font-mono text-white">$65.00 Flat</span>
+                </div>
+                <div className="text-sm font-black text-white mt-1">Route 22P - St. Mary Cover</div>
+                <div className="text-xs text-zinc-400 mt-0.5">Today · 14:45 PM - 16:30 PM (14 Stops)</div>
+                <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-zinc-900 text-xs">
+                  <span className="text-zinc-500 font-mono">Bus #112</span>
+                  <button className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs rounded-lg">
+                    SUBMIT BID
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-2 text-center text-xs text-zinc-500 font-mono">
+            UPDATED 2 MINS AGO // DISPATCH DESK
+          </div>
+        </div>
+      );
+    }
+
+    // --- Main App Multi-Screen Showcase ---
+    function App() {
+      const [trip, setTrip] = useState(initialTrip);
+
+      const toggleCheckIn = () => {
+        setTrip(t => ({
+          ...t,
+          checkedIn: !t.checkedIn,
+          checkInTime: !t.checkedIn ? "07:45" : null
+        }));
+      };
+
+      const recordArrival = () => {
+        alert("Arrival at Ontario Science Centre confirmed at 08:28 AM!");
+      };
+
+      return (
+        <div>
+          {/* 4 Phones Side-by-Side Display Board */}
+          <div className="flex flex-wrap gap-8 justify-center items-start py-6">
+            
+            {/* Screen 1 */}
+            <div className="flex flex-col items-center">
+              <div className="mb-3 text-center">
+                <span className="text-xs font-mono font-bold text-amber-400 tracking-wider uppercase">01 / SHIFT & CHECK-IN</span>
+                <div className="text-sm font-bold text-zinc-300">班次概览与一键签到（核定费率透视）</div>
+              </div>
+              <IosFrame time="07:45" battery={94}>
+                <CockpitShiftScreen trip={trip} onCheckInToggle={toggleCheckIn} />
+              </IosFrame>
+            </div>
+
+            {/* Screen 2 */}
+            <div className="flex flex-col items-center">
+              <div className="mb-3 text-center">
+                <span className="text-xs font-mono font-bold text-cyan-400 tracking-wider uppercase">02 / 4-STOP ITINERARY</span>
+                <div className="text-sm font-bold text-zinc-300">四站往返行程编排与一键到站打卡</div>
+              </div>
+              <IosFrame time="08:25" battery={91}>
+                <CockpitStopsScreen trip={trip} onArrive={recordArrival} />
+              </IosFrame>
+            </div>
+
+            {/* Screen 3 */}
+            <div className="flex flex-col items-center">
+              <div className="mb-3 text-center">
+                <span className="text-xs font-mono font-bold text-emerald-400 tracking-wider uppercase">03 / PRE-TRIP CHECK</span>
+                <div className="text-sm font-bold text-zinc-300">Schedule 5 法定出车前车检清单</div>
+              </div>
+              <IosFrame time="07:30" battery={96}>
+                <CockpitPreTripScreen />
+              </IosFrame>
+            </div>
+
+            {/* Screen 4 */}
+            <div className="flex flex-col items-center">
+              <div className="mb-3 text-center">
+                <span className="text-xs font-mono font-bold text-purple-400 tracking-wider uppercase">04 / ROUTE BIDDING</span>
+                <div className="text-sm font-bold text-zinc-300">包车增援与空缺路线在线申领</div>
+              </div>
+              <IosFrame time="11:15" battery={82}>
+                <CockpitOpeningsScreen />
+              </IosFrame>
+            </div>
+
+          </div>
+
+          {/* Design Rationale Footer */}
+          <footer className="mt-12 p-6 bg-zinc-950 border border-zinc-800 rounded-2xl max-w-4xl mx-auto text-xs text-zinc-400 space-y-2">
+            <div className="font-bold text-white uppercase text-sm mb-1">方向 A · 驾驶舱工控平视设计说明 (Design Notes)</div>
+            <p>1. <strong>反光环境优化</strong>：车厢前挡风玻璃强光直射时，普通白底浅灰界面极易泛白失真。深邃黑背景吸收光线，大对比度字重确保驾驶位一瞥即知。</p>
+            <p>2. <strong>颠簸盲操保障</strong>：行车核心按钮高度固定 ≥56px，横向撑满整宽，彻底告别“小圆点”误触。</p>
+            <p>3. <strong>薪资透明呈现</strong>：签到打卡后立刻展示绿色核定 Payroll Rate 与 EI 工时，消除司机对报酬计算的疑虑。</p>
+          </footer>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

@@ -20,6 +20,7 @@ import {
 } from '../types/routeOpening';
 import { RouteService } from './routeService';
 import { DispatchService } from './dispatchService';
+import { extractAssignedEmployeeIds } from '../types/charter';
 
 const COLLECTION_NAME = 'route_openings';
 
@@ -637,6 +638,7 @@ export const RouteOpeningService = {
         tripRef,
         stripUndefined({
           assignments,
+          assignedEmployeeIds: extractAssignedEmployeeIds(assignments as any),
           vehiclesNeeded: Math.max(totalNeeded, assignments.length),
           status: newTripStatus,
           updatedAt: nowIso,

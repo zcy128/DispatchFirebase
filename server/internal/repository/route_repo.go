@@ -18,10 +18,11 @@ var (
 )
 
 type RouteFilter struct {
-	Search  string
-	YardID  int
-	BoardID int
-	Active  *bool
+	Search       string
+	YardID       int
+	BoardID      int
+	Active       *bool
+	DriverFilter string
 }
 
 type RouteRepository interface {
@@ -95,6 +96,19 @@ func (r *FirestoreRouteRepository) ListRoutes(ctx context.Context, filter RouteF
 				strings.Contains(strings.ToLower(rt.DriverName), searchLower) ||
 				strings.Contains(strings.ToLower(rt.UnitNumber), searchLower) ||
 				strings.Contains(strings.ToLower(rt.YardName), searchLower)
+			if !matches {
+				continue
+			}
+		}
+
+		if filter.DriverFilter != "" {
+			dLower := strings.ToLower(strings.TrimSpace(filter.DriverFilter))
+			matches := strings.EqualFold(rt.DriverID, dLower) ||
+				strings.EqualFold(rt.DriverName, dLower) ||
+				strings.Contains(strings.ToLower(rt.DriverName), dLower) ||
+				strings.Contains(dLower, strings.ToLower(rt.DriverName)) ||
+				strings.EqualFold(rt.AttendantID, dLower) ||
+				strings.EqualFold(rt.AttendantName, dLower)
 			if !matches {
 				continue
 			}
@@ -365,6 +379,17 @@ func (r *FirestoreRouteRepository) AssignCrew(ctx context.Context, routeID strin
 	}
 	rt.ID = routeSnap.Ref.ID
 
+	rt.DriverID = req.DriverID
+	rt.DriverName = req.DriverName
+	rt.DriverPhone = req.DriverPhone
+	rt.VehicleID = req.VehicleID
+	rt.UnitNumber = req.UnitNumber
+	rt.PlateNumber = req.PlateNumber
+	rt.AttendantID = req.AttendantID
+	rt.AttendantName = req.AttendantName
+	rt.AttendantPhone = req.AttendantPhone
+	empIds := rt.ComputeAssignedEmployeeIds()
+
 	now := time.Now()
 	updates := []firestore.Update{
 		{Path: "driverId", Value: req.DriverID},
@@ -376,19 +401,13 @@ func (r *FirestoreRouteRepository) AssignCrew(ctx context.Context, routeID strin
 		{Path: "attendantId", Value: req.AttendantID},
 		{Path: "attendantName", Value: req.AttendantName},
 		{Path: "attendantPhone", Value: req.AttendantPhone},
+		{Path: "assignedEmployeeIds", Value: empIds},
 		{Path: "updatedAt", Value: now},
 	}
 
 	if _, err := routeDocRef.Update(ctx, updates); err != nil {
 		return nil, err
 	}
-
-	rt.DriverID = req.DriverID
-	rt.DriverName = req.DriverName
-	rt.DriverPhone = req.DriverPhone
-	rt.VehicleID = req.VehicleID
-	rt.UnitNumber = req.UnitNumber
-	rt.PlateNumber = req.PlateNumber
 	rt.AttendantID = req.AttendantID
 	rt.AttendantName = req.AttendantName
 	rt.AttendantPhone = req.AttendantPhone

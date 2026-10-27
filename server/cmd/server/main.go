@@ -244,6 +244,8 @@ func main() {
 		r.With(adminSecretMiddleware(cfg.AdminAPISecret)).Post("/api/auth/sync-employee-users", authHandler.SyncEmployeeUsers)
 	}
 	r.Get("/api/auth/resolve-username", authHandler.ResolveUsername)
+	r.Post("/api/auth/login", authHandler.Login)
+	r.Post("/api/public/auth/login", authHandler.Login)
 	r.Post("/api/auth/mcp-login", authHandler.LoginMCP)
 
 	// File uploads & static file serving

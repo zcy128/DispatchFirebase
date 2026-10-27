@@ -106,8 +106,47 @@ export interface BusRoute {
   totalStudents: number;
   autoMarryup?: boolean;
   instructions?: string;
+  assignedEmployeeIds?: string[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+export function extractRouteAssignedEmployeeIds(route: {
+  driverId?: string;
+  driverName?: string;
+  attendantId?: string;
+  attendantName?: string;
+}): string[] {
+  const set = new Set<string>();
+  if (route.driverId) {
+    const dId = route.driverId.trim();
+    if (dId && dId !== '0' && dId.toLowerCase() !== 'tbd' && dId.toLowerCase() !== 'unassigned') {
+      set.add(dId);
+      set.add(dId.toLowerCase());
+    }
+  }
+  if (route.driverName) {
+    const dName = route.driverName.trim();
+    if (dName && dName.toLowerCase() !== 'tbd' && dName.toLowerCase() !== 'unassigned' && dName.toLowerCase() !== 'non assigné') {
+      set.add(dName);
+      set.add(dName.toLowerCase());
+    }
+  }
+  if (route.attendantId) {
+    const aId = route.attendantId.trim();
+    if (aId && aId !== '0' && aId.toLowerCase() !== 'tbd' && aId.toLowerCase() !== 'unassigned') {
+      set.add(aId);
+      set.add(aId.toLowerCase());
+    }
+  }
+  if (route.attendantName) {
+    const aName = route.attendantName.trim();
+    if (aName && aName.toLowerCase() !== 'tbd' && aName.toLowerCase() !== 'unassigned' && aName.toLowerCase() !== 'non assigné') {
+      set.add(aName);
+      set.add(aName.toLowerCase());
+    }
+  }
+  return Array.from(set);
 }
 
 export const isAutoMarryupEnabled = (route: BusRoute): boolean => {

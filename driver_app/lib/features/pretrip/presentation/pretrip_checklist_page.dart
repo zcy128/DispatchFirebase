@@ -817,9 +817,9 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
               disabledBackgroundColor:
                   isDark ? Colors.grey.shade800 : Colors.grey.shade300,
               disabledForegroundColor: Colors.grey,
-              minimumSize: const Size(double.infinity, 48),
+              minimumSize: const Size(double.infinity, 52),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
           );
@@ -1532,7 +1532,10 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: const Color(0xFF0F172A),
-                minimumSize: const Size(0, 44),
+                minimumSize: const Size(0, 50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),
@@ -1561,7 +1564,10 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                     disabledBackgroundColor:
                         isDark ? Colors.grey.shade800 : Colors.grey.shade300,
                     disabledForegroundColor: Colors.grey,
-                    minimumSize: const Size(0, 44),
+                    minimumSize: const Size(0, 50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 20, vertical: 12),
                   ),

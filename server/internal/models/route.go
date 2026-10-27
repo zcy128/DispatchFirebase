@@ -1,5 +1,7 @@
 package models
 
+import "strings"
+
 // StopStudent represents a student boarding/alighting at a stop (lightweight reference)
 type StopStudent struct {
 	StudentID   int    `json:"studentId" firestore:"studentId"`
@@ -113,8 +115,38 @@ type BusRoute struct {
 	TotalStudents   int            `json:"totalStudents" firestore:"totalStudents"`
 	AutoMarryup     *bool          `json:"autoMarryup,omitempty" firestore:"autoMarryup,omitempty"`
 	Instructions    string         `json:"instructions,omitempty" firestore:"instructions,omitempty"`
+	AssignedEmployeeIds []string   `json:"assignedEmployeeIds,omitempty" firestore:"assignedEmployeeIds,omitempty"`
 	CreatedAt       interface{}    `json:"createdAt,omitempty" firestore:"createdAt,omitempty"`
 	UpdatedAt       interface{}    `json:"updatedAt,omitempty" firestore:"updatedAt,omitempty"`
+}
+
+// ComputeAssignedEmployeeIds computes normalized employee identifiers for database-level index filtering
+func (r *BusRoute) ComputeAssignedEmployeeIds() []string {
+	seen := make(map[string]bool)
+	var list []string
+	add := func(v string) {
+		t := strings.TrimSpace(v)
+		if t == "" {
+			return
+		}
+		low := strings.ToLower(t)
+		if low == "0" || low == "tbd" || low == "unassigned" || low == "non assigné" {
+			return
+		}
+		if !seen[t] {
+			seen[t] = true
+			list = append(list, t)
+		}
+		if !seen[low] {
+			seen[low] = true
+			list = append(list, low)
+		}
+	}
+	add(r.DriverID)
+	add(r.DriverName)
+	add(r.AttendantID)
+	add(r.AttendantName)
+	return list
 }
 
 // UpdateRouteRequest specifies updates for route configuration and metadata
