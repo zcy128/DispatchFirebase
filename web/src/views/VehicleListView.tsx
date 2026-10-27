@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Vehicle, VehicleStats } from '../types/vehicle';
 import { useI18n } from '../contexts/I18nContext';
 import {
@@ -112,6 +113,22 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 
     return true;
   });
+
+  // Virtual scrolling for 1,000+ fleet vehicles
+  const vehicleTableContainerRef = useRef<HTMLDivElement>(null);
+
+  const vehicleTableVirtualizer = useVirtualizer({
+    count: filteredVehicles.length,
+    getScrollElement: () => vehicleTableContainerRef.current,
+    estimateSize: () => 64,
+    overscan: 8,
+  });
+
+  const virtualVehicles = vehicleTableVirtualizer.getVirtualItems();
+  const vehPaddingTop = virtualVehicles.length > 0 ? virtualVehicles[0]?.start || 0 : 0;
+  const vehPaddingBottom = virtualVehicles.length > 0
+    ? vehicleTableVirtualizer.getTotalSize() - (virtualVehicles[virtualVehicles.length - 1]?.end || 0)
+    : 0;
 
   const GRID_DISPLAYED_FIELD_KEYS = new Set([
     'unitNumber',
@@ -382,10 +399,20 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
             <div className="text-xs text-slate-600">Try changing vehicle type, fuel, or search terms</div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 font-semibold uppercase tracking-wider">
+          <div ref={vehicleTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+            <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1240px]">
+              <colgroup>
+                <col style={{ width: '190px' }} />
+                <col style={{ width: '180px' }} />
+                <col style={{ width: '150px' }} />
+                <col style={{ width: '130px' }} />
+                <col style={{ width: '170px' }} />
+                <col style={{ width: '170px' }} />
+                <col style={{ width: '120px' }} />
+                <col style={{ width: '130px' }} />
+              </colgroup>
+              <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider text-[11px] shadow-xs">
+                <tr>
                   <th className="py-3 px-4">Unit # & Type</th>
                   <th className="py-3 px-4">Make, Model & Year</th>
                   <th className="py-3 px-4">Terminal / Yard</th>
@@ -397,7 +424,14 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredVehicles.map((v) => {
+                {vehPaddingTop > 0 && (
+                  <tr>
+                    <td style={{ height: `${vehPaddingTop}px`, padding: 0, border: 0 }} colSpan={8} />
+                  </tr>
+                )}
+                {virtualVehicles.map((virtualRow) => {
+                  const v = filteredVehicles[virtualRow.index];
+                  if (!v) return null;
                   const isBus = v.unitType.toLowerCase().includes('bus');
                   const isVan = v.unitType.toLowerCase().includes('van');
                   const isAssigned = !!v.assignedRouteId;
@@ -406,10 +440,10 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                     <tr
                       key={v.id}
                       onClick={() => onSelectVehicle(v)}
-                      className="hover:bg-slate-800/40 transition cursor-pointer group"
+                      className="h-16 hover:bg-slate-800/40 transition cursor-pointer group"
                     >
                       {/* Unit # & Type */}
-                      <td className="py-3 px-4">
+                      <td className="py-2.5 px-4 align-middle h-16">
                         <div className="flex items-center space-x-3">
                           <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400 text-xs">
                             {isBus ? <Bus className="w-5 h-5" /> : isVan ? <Truck className="w-5 h-5" /> : <Car className="w-5 h-5" />}
@@ -427,7 +461,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                       </td>
 
                       {/* Make, Model & Year */}
-                      <td className="py-3 px-4">
+                      <td className="py-2.5 px-4 align-middle h-16">
                         <div className="font-medium text-slate-200">
                           {v.manufacturer} {v.model}
                         </div>
@@ -442,7 +476,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                       </td>
 
                       {/* Terminal / Yard */}
-                      <td className="py-3 px-4">
+                      <td className="py-2.5 px-4 align-middle h-16">
                         <div className="flex items-center space-x-1.5 text-slate-300 font-medium">
                           <Building2 className="w-3.5 h-3.5 text-slate-500" />
                           <span>{v.yardName}</span>
@@ -453,7 +487,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                       </td>
 
                       {/* Capacities */}
-                      <td className="py-3 px-4">
+                      <td className="py-2.5 px-4 align-middle h-16">
                         <div className="inline-flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-semibold">
                           <span className="text-slate-200">{v.seatCap} seats</span>
                           {v.wheelchairCap > 0 && (
@@ -466,7 +500,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                       </td>
 
                       {/* Assigned Route */}
-                      <td className="py-3 px-4">
+                      <td className="py-2.5 px-4 align-middle h-16">
                         {v.assignedRouteNo ? (
                           <div className="space-y-0.5">
                             <div
@@ -491,7 +525,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                       </td>
 
                       {/* Assigned Driver */}
-                      <td className="py-3 px-4">
+                      <td className="py-2.5 px-4 align-middle h-16">
                         {v.driverName ? (
                           <div className="space-y-0.5">
                             <div className="font-bold text-slate-200 flex items-center space-x-1">
@@ -515,7 +549,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                       </td>
 
                       {/* Status Badge */}
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-2.5 px-4 text-center align-middle h-16">
                         <span
                           className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${
                             isAssigned
@@ -528,7 +562,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                       </td>
 
                       {/* Action */}
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-2.5 px-4 text-right align-middle h-16">
                         <div className="flex items-center justify-end space-x-1">
                           {onEditVehicle && (
                             <button
@@ -563,6 +597,11 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                     </tr>
                   );
                 })}
+                {vehPaddingBottom > 0 && (
+                  <tr>
+                    <td style={{ height: `${vehPaddingBottom}px`, padding: 0, border: 0 }} colSpan={8} />
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
