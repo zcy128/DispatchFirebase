@@ -215,7 +215,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
     getScrollElement: () => routeTableContainerRef.current,
     estimateSize: (index) => {
       const r = filteredRoutes[index];
-      return expandedRouteIds[r?.id] ? 380 : 54;
+      return expandedRouteIds[r?.id] ? 380 : 68;
     },
     overscan: 8,
   });
@@ -491,10 +491,19 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
           <>
             {/* Desktop Table View (visible on md screens and up) */}
             <div ref={routeTableContainerRef} className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1150px]">
+                <colgroup>
+                  <col style={{ width: '48px' }} />
+                  <col style={{ width: '230px' }} />
+                  <col style={{ width: '140px' }} />
+                  <col style={{ width: '180px' }} />
+                  <col style={{ minWidth: '240px' }} />
+                  <col style={{ width: '130px' }} />
+                  <col style={{ width: '210px' }} />
+                </colgroup>
                 <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider text-[11px] shadow-xs">
                   <tr>
-                    <th className="py-3 px-3 w-10 text-center">#</th>
+                    <th className="py-3 px-3 w-12 text-center">#</th>
                     <th className="py-3 px-4">Route Info</th>
                     <th className="py-3 px-4">Board & Yard</th>
                     <th className="py-3 px-4">Assigned Crew</th>
@@ -523,7 +532,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                           }`}
                         >
                           {/* Expand / Collapse Toggle */}
-                          <td className="py-3 px-3 text-center">
+                          <td className="py-2 px-3 text-center align-middle h-[68px]">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -546,7 +555,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                           </td>
 
                           {/* Route No & Name */}
-                          <td className="py-3 px-4">
+                          <td className="py-2.5 px-4 align-middle h-[68px]">
                             <div className="flex items-center space-x-3">
                               <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400 text-xs flex-shrink-0">
                                 <Bus className="w-5 h-5" />
@@ -568,7 +577,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                           </td>
 
                           {/* Board & Yard */}
-                          <td className="py-3 px-4">
+                          <td className="py-2.5 px-4 align-middle h-[68px]">
                             <div className="font-medium text-slate-200">
                               {r.schoolBoardCode || 'OCDSB'}
                             </div>
@@ -579,7 +588,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                           </td>
 
                           {/* Assigned Crew (Driver & Bus) */}
-                          <td className="py-3 px-4">
+                          <td className="py-2.5 px-4 align-middle h-[68px]">
                             <div className="space-y-0.5">
                               <div className="font-bold text-slate-200 flex items-center space-x-1">
                                 <User className="w-3.5 h-3.5 text-amber-400" />
@@ -605,7 +614,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                           </td>
 
                           {/* Operational Shifts (Dynamic Shift Badges Flow) */}
-                          <td className="py-3 px-4">
+                          <td className="py-2.5 px-4 align-middle h-[68px]">
                             <div className="flex flex-wrap items-center gap-1.5 max-w-[380px]">
                               {r.shifts && r.shifts.length > 0 ? (
                                 r.shifts.map((s) => {
@@ -647,7 +656,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                           </td>
 
                           {/* Stops / Riders */}
-                          <td className="py-3 px-4 text-center">
+                          <td className="py-2.5 px-4 text-center align-middle h-[68px]">
                             <div className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200">
                               <span>{r.totalStops} stops</span>
                               <span>•</span>
@@ -656,7 +665,7 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                           </td>
 
                           {/* Actions (Drawer & Expand) */}
-                          <td className="py-3 px-4 text-right">
+                          <td className="py-2.5 px-4 text-right align-middle h-[68px]">
                             <div className="flex items-center justify-end space-x-1.5">
                               {/* Edit Route Button */}
                               <button
