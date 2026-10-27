@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Calendar,
   ChevronLeft,
@@ -74,6 +75,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
 
   // Additional Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
+
   const [roleFilter, setRoleFilter] = useState<'all' | 'driver' | 'attendant'>('all');
   const [payOptionFilter, setPayOptionFilter] = useState<string>('all');
 
@@ -325,6 +327,21 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
       return true;
     });
   }, [payrolls, category, roleFilter, payOptionFilter, searchQuery]);
+
+  // Virtual scrolling for 1,000+ daily dispatch payroll items
+  const payrollTableContainerRef = useRef<HTMLDivElement>(null);
+  const payrollVirtualizer = useVirtualizer({
+    count: filteredPayrolls.length,
+    getScrollElement: () => payrollTableContainerRef.current,
+    estimateSize: () => 54,
+    overscan: 10,
+  });
+
+  const virtualPayrolls = payrollVirtualizer.getVirtualItems();
+  const payrollPaddingTop = virtualPayrolls.length > 0 ? virtualPayrolls[0]?.start || 0 : 0;
+  const payrollPaddingBottom = virtualPayrolls.length > 0
+    ? payrollVirtualizer.getTotalSize() - (virtualPayrolls[virtualPayrolls.length - 1]?.end || 0)
+    : 0;
 
   // Counts for category badges
   const withCommentsCount = useMemo(() => {
@@ -748,9 +765,9 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
 
       {/* Main Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
+        <div ref={payrollTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50/75 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800">
+            <thead className="sticky top-0 z-10 bg-slate-50/95 dark:bg-slate-800/95 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 backdrop-blur-xs">
               <tr>
                 <th className="py-3.5 px-4">Route & Shift</th>
                 <th className="py-3.5 px-4">Role</th>
@@ -793,7 +810,15 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                   </td>
                 </tr>
               ) : (
-                filteredPayrolls.map((rec) => {
+                <>
+                  {payrollPaddingTop > 0 && (
+                    <tr>
+                      <td style={{ height: `${payrollPaddingTop}px`, padding: 0, border: 0 }} colSpan={10} />
+                    </tr>
+                  )}
+                  {virtualPayrolls.map((virtualRow) => {
+                    const rec = filteredPayrolls[virtualRow.index];
+                    if (!rec) return null;
                   const hasComm = Boolean(rec.hasComments || (rec.payrollComments && rec.payrollComments.trim() !== ''));
                   return (
                     <tr
@@ -948,7 +973,13 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                       </td>
                     </tr>
                   );
-                })
+                })}
+                  {payrollPaddingBottom > 0 && (
+                    <tr>
+                      <td style={{ height: `${payrollPaddingBottom}px`, padding: 0, border: 0 }} colSpan={10} />
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>
