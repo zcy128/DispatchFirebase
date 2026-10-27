@@ -434,7 +434,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     dashboard: 'readonly',
     dispatch: 'readonly',
     charter: 'readonly',
-    dispatch_payroll: 'readwrite',
+    dispatch_payroll: 'readonly',
     dispatch_log: 'readonly',
     temporary_assignments: 'readonly',
     assignment_history: 'readonly',
@@ -508,31 +508,31 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
 
   driver: {
     dashboard: 'none',
-    dispatch: 'none',
-    charter: 'none',
+    dispatch: 'readwrite',
+    charter: 'readwrite',
     dispatch_payroll: 'none',
     dispatch_log: 'none',
     temporary_assignments: 'readonly',
     assignment_history: 'none',
-    routes: 'none',
+    routes: 'readonly',
     staging_routes: 'none',
-    route_assessments: 'none',
-    defects: 'none',
-    vehicle_signouts: 'none',
-    student_incidents: 'none',
-    hazards: 'none',
+    route_assessments: 'readwrite',
+    defects: 'readwrite',
+    vehicle_signouts: 'readwrite',
+    student_incidents: 'readwrite',
+    hazards: 'readwrite',
     employees: 'none',
-    students: 'none',
-    student_absences: 'none',
-    schools: 'none',
-    calendar: 'none',
-    vehicles: 'none',
-    vehicle_inspections: 'none',
-    yards: 'none',
+    students: 'readonly',
+    student_absences: 'readonly',
+    schools: 'readonly',
+    calendar: 'readonly',
+    vehicles: 'readonly',
+    vehicle_inspections: 'readonly',
+    yards: 'readonly',
     compliance: 'none',
-    time_off: 'none',
-    training: 'none',
-    expenses: 'none',
+    time_off: 'readwrite',
+    training: 'readonly',
+    expenses: 'readwrite',
     payroll: 'none',
     biweekly_payroll: 'none',
     payroll_dept_log: 'none',
@@ -546,31 +546,31 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
 
   helper: {
     dashboard: 'none',
-    dispatch: 'none',
+    dispatch: 'readonly',
     charter: 'none',
     dispatch_payroll: 'none',
     dispatch_log: 'none',
     temporary_assignments: 'readonly',
     assignment_history: 'none',
-    routes: 'none',
+    routes: 'readonly',
     staging_routes: 'none',
     route_assessments: 'none',
     defects: 'none',
     vehicle_signouts: 'none',
-    student_incidents: 'none',
-    hazards: 'none',
+    student_incidents: 'readwrite',
+    hazards: 'readwrite',
     employees: 'none',
-    students: 'none',
-    student_absences: 'none',
-    schools: 'none',
-    calendar: 'none',
+    students: 'readonly',
+    student_absences: 'readonly',
+    schools: 'readonly',
+    calendar: 'readonly',
     vehicles: 'none',
     vehicle_inspections: 'none',
-    yards: 'none',
+    yards: 'readonly',
     compliance: 'none',
-    time_off: 'none',
-    training: 'none',
-    expenses: 'none',
+    time_off: 'readwrite',
+    training: 'readonly',
+    expenses: 'readwrite',
     payroll: 'none',
     biweekly_payroll: 'none',
     payroll_dept_log: 'none',
@@ -771,7 +771,7 @@ export function getPagePermission(
   if (role === 'admin') return 'readwrite';
 
   // Check specific override passed directly or from user record
-  const overrides = customOverrides || user.pagePermissions;
+  const overrides = customOverrides || user.overrides || (user as any).pagePermissions;
   if (overrides && overrides[pageId]) {
     const overrideVal = overrides[pageId];
     if (overrideVal === 'readwrite' || overrideVal === 'readonly' || overrideVal === 'none') {
@@ -811,6 +811,7 @@ export function hasPageAccess(
   pageId: NavTab,
   customOverrides?: Record<string, PermissionLevel>
 ): boolean {
+  if (!user) return false;
   const perm = getPagePermission(user, pageId, customOverrides);
   return perm === 'readonly' || perm === 'readwrite';
 }
@@ -823,6 +824,7 @@ export function canEditPage(
   pageId: NavTab,
   customOverrides?: Record<string, PermissionLevel>
 ): boolean {
+  if (!user) return false;
   const perm = getPagePermission(user, pageId, customOverrides);
   return perm === 'readwrite';
 }

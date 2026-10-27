@@ -282,6 +282,8 @@ class DispatchRepository {
   }
 
   /// Listens to real-time updates directly from Firestore dispatch_shifts collection.
+  /// Uses database-level assignedEmployeeIds index filtering when driverId is provided,
+  /// completely avoiding downloading all shifts across the company.
   Stream<List<DispatchRecord>> watchDispatchesForDate(
     DateTime date, {
     String? driverId,
@@ -293,19 +295,39 @@ class DispatchRepository {
     }
 
     try {
-      final query = FirebaseFirestore.instance
-          .collection('dispatch_shifts')
-          .where('dispatchDate', isEqualTo: dateStr);
+      final cleanDriver = driverId?.trim() ?? '';
+      final norm = cleanDriver.toLowerCase();
+      final empId = cleanDriver.isNotEmpty ? RouteRepository.resolveEmployeeId(cleanDriver) : '';
+
+      final queryKeys = <String>{
+        if (cleanDriver.isNotEmpty) cleanDriver,
+        if (norm.isNotEmpty) norm,
+        if (empId.isNotEmpty) empId,
+        if (empId.isNotEmpty) empId.toLowerCase(),
+      }.where((s) => s.isNotEmpty && s != 'tbd' && s != 'unassigned').toList();
+
+      final query = queryKeys.isNotEmpty
+          ? FirebaseFirestore.instance
+              .collection('dispatch_shifts')
+              .where('assignedEmployeeIds', arrayContainsAny: queryKeys)
+          : FirebaseFirestore.instance
+              .collection('dispatch_shifts')
+              .where('dispatchDate', isEqualTo: dateStr);
 
       return query.snapshots().asyncMap((snapshot) async {
         final records = <DispatchRecord>[];
         for (final doc in snapshot.docs) {
           final data = Map<String, dynamic>.from(doc.data());
           data['id'] = doc.id;
+          final shiftDate = (data['dispatchDate'] ?? '').toString();
+          if (shiftDate != dateStr) {
+            continue;
+          }
           final shiftDriverId = (data['driverId'] ?? '').toString();
-          if (driverId != null &&
-              driverId.isNotEmpty &&
-              !RouteRepository.matchesDriver(shiftDriverId, driverId)) {
+          final shiftDriverName = (data['driverName'] ?? '').toString();
+          if (cleanDriver.isNotEmpty &&
+              !RouteRepository.matchesDriver(shiftDriverId, cleanDriver) &&
+              !RouteRepository.matchesDriver(shiftDriverName, cleanDriver)) {
             continue;
           }
 
@@ -337,7 +359,11 @@ class DispatchRepository {
   }) async {
     try {
       final dateStr = formatDate(date);
-      final uri = Uri.parse('$apiBaseUrl/api/public/dispatch/shifts?date=$dateStr');
+      var urlStr = '$apiBaseUrl/api/public/dispatch/shifts?date=$dateStr';
+      if (driverId != null && driverId.trim().isNotEmpty) {
+        urlStr += '&driver=${Uri.encodeComponent(driverId.trim())}';
+      }
+      final uri = Uri.parse(urlStr);
       final res = await _httpClient.get(uri).timeout(const Duration(seconds: 4));
       if (res.statusCode != 200) {
         return getDispatchesForDate(date, driverId: driverId);
@@ -349,9 +375,11 @@ class DispatchRepository {
       for (final raw in shiftsJson) {
         final s = Map<String, dynamic>.from(raw as Map);
         final shiftDriverId = (s['driverId'] ?? '').toString();
+        final shiftDriverName = (s['driverName'] ?? '').toString();
         if (driverId != null &&
-            driverId.isNotEmpty &&
-            !RouteRepository.matchesDriver(shiftDriverId, driverId)) {
+            driverId.trim().isNotEmpty &&
+            !RouteRepository.matchesDriver(shiftDriverId, driverId) &&
+            !RouteRepository.matchesDriver(shiftDriverName, driverId)) {
           continue;
         }
 

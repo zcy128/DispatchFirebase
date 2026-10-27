@@ -825,6 +825,7 @@ func (r *FirestoreDispatchRepository) CreateDay(ctx context.Context, date string
 					CreatedAt:            now,
 					UpdatedAt:            now,
 				}
+				ds.AssignedEmployeeIds = ds.ComputeAssignedEmployeeIds()
 
 				if _, err := r.client.Collection(r.dispatchColl).Doc(dispatchID).Set(ctx, ds); err == nil {
 					createdCount++
@@ -996,6 +997,7 @@ func (r *FirestoreDispatchRepository) CreateDay(ctx context.Context, date string
 					CreatedAt:            now,
 					UpdatedAt:            now,
 				}
+				ds.AssignedEmployeeIds = ds.ComputeAssignedEmployeeIds()
 
 				if _, err := r.client.Collection(r.dispatchColl).Doc(dispatchID).Set(ctx, ds); err == nil {
 					createdCount++
@@ -1873,6 +1875,10 @@ func (r *FirestoreDispatchRepository) UpdateShift(ctx context.Context, id string
 	}
 	updates = append(updates, firestore.Update{Path: "health", Value: health})
 	ds.Health = health
+
+	empIds := ds.ComputeAssignedEmployeeIds()
+	updates = append(updates, firestore.Update{Path: "assignedEmployeeIds", Value: empIds})
+	ds.AssignedEmployeeIds = empIds
 
 	// Crew change detection: If driver changed, delete previous driver payroll
 	driverChanged := (req.DriverID != nil && *req.DriverID != oldDriverID) || (req.DriverName != nil && *req.DriverName != oldDriverName)

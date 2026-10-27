@@ -1,7 +1,7 @@
-import { collection, onSnapshot, query, orderBy, where, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, where, getDocs, setDoc, doc } from 'firebase/firestore';
 import { db } from './firebase';
 import { apiRequest } from './api';
-import { BusRoute, BusRouteShift, RouteStats } from '../types/route';
+import { BusRoute, BusRouteShift, RouteStats, extractRouteAssignedEmployeeIds } from '../types/route';
 
 export const calculateRouteStats = (routes: BusRoute[]): RouteStats => {
   const total = routes.length;
@@ -49,11 +49,16 @@ export const RouteService = {
         q,
         (snapshot) => {
           const list: BusRoute[] = [];
-          snapshot.forEach((doc) => {
-            const data = doc.data() as BusRoute;
+          snapshot.forEach((d) => {
+            const data = d.data() as BusRoute;
+            // Auto-heal missing assignedEmployeeIds for Firestore index-level driver queries
+            if (db && !data.assignedEmployeeIds && (data.driverId || data.driverName || data.attendantId || data.attendantName)) {
+              const ids = extractRouteAssignedEmployeeIds(data);
+              setDoc(doc(db, 'routes', d.id), { assignedEmployeeIds: ids }, { merge: true }).catch(() => {});
+            }
             list.push({
               ...data,
-              id: doc.id
+              id: d.id
             });
           });
           onUpdate(list);
@@ -73,13 +78,14 @@ export const RouteService = {
     }
   },
 
-  list: async (params?: { search?: string; status?: string; yardId?: string }): Promise<BusRoute[]> => {
+  list: async (params?: { search?: string; status?: string; yardId?: string; driver?: string }): Promise<BusRoute[]> => {
     let queryStr = '';
     if (params) {
       const searchParams = new URLSearchParams();
       if (params.search) searchParams.append('search', params.search);
       if (params.status) searchParams.append('status', params.status);
       if (params.yardId) searchParams.append('yardId', params.yardId);
+      if (params.driver) searchParams.append('driver', params.driver);
       const str = searchParams.toString();
       if (str) queryStr = `?${str}`;
     }

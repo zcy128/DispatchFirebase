@@ -272,26 +272,58 @@ class CharterAssignmentModel {
     this.notes,
   });
 
-  bool matchesUser(String employeeId, String username) {
-    final cleanEmp = employeeId.trim().toLowerCase();
-    final cleanUser = username.trim().toLowerCase();
+  bool get hasDriverAssigned {
     final dId = driverId.trim().toLowerCase();
     final dName = driverName.trim().toLowerCase();
+    final hasValidId = dId.isNotEmpty && dId != '0' && dId != 'tbd' && dId != 'unassigned';
+    final hasValidName = dName.isNotEmpty && dName != 'tbd' && dName != 'unassigned' && dName != 'non assigné';
+    return hasValidId || hasValidName;
+  }
+
+  bool get hasAttendantAssigned {
     final aId = attendantId.trim().toLowerCase();
     final aName = attendantName.trim().toLowerCase();
+    final hasValidId = aId.isNotEmpty && aId != '0' && aId != 'tbd' && aId != 'unassigned';
+    final hasValidName = aName.isNotEmpty && aName != 'tbd' && aName != 'unassigned' && aName != 'non assigné';
+    return hasValidId || hasValidName;
+  }
 
-    return (cleanEmp.isNotEmpty && (dId == cleanEmp || aId == cleanEmp)) ||
-        (cleanUser.isNotEmpty && (dName == cleanUser || aName == cleanUser || dName.contains(cleanUser) || cleanUser.contains(dName)));
+  bool matchesUser(String employeeId, String username) {
+    return isUserDriver(employeeId, username) || isUserAttendant(employeeId, username);
   }
 
   bool isUserDriver(String employeeId, String username) {
+    if (!hasDriverAssigned) return false;
     final cleanEmp = employeeId.trim().toLowerCase();
     final cleanUser = username.trim().toLowerCase();
     final dId = driverId.trim().toLowerCase();
     final dName = driverName.trim().toLowerCase();
 
-    return (cleanEmp.isNotEmpty && dId == cleanEmp) ||
-        (cleanUser.isNotEmpty && (dName == cleanUser || dName.contains(cleanUser) || cleanUser.contains(dName)));
+    final matchesId = cleanEmp.isNotEmpty && dId.isNotEmpty && dId == cleanEmp;
+    final matchesName = cleanUser.isNotEmpty &&
+        dName.isNotEmpty &&
+        dName != 'tbd' &&
+        dName != 'unassigned' &&
+        (dName == cleanUser || dName.contains(cleanUser) || cleanUser.contains(dName));
+
+    return matchesId || matchesName;
+  }
+
+  bool isUserAttendant(String employeeId, String username) {
+    if (!hasAttendantAssigned) return false;
+    final cleanEmp = employeeId.trim().toLowerCase();
+    final cleanUser = username.trim().toLowerCase();
+    final aId = attendantId.trim().toLowerCase();
+    final aName = attendantName.trim().toLowerCase();
+
+    final matchesId = cleanEmp.isNotEmpty && aId.isNotEmpty && aId == cleanEmp;
+    final matchesName = cleanUser.isNotEmpty &&
+        aName.isNotEmpty &&
+        aName != 'tbd' &&
+        aName != 'unassigned' &&
+        (aName == cleanUser || aName.contains(cleanUser) || cleanUser.contains(aName));
+
+    return matchesId || matchesName;
   }
 
   factory CharterAssignmentModel.fromMap(Map<String, dynamic> map, {String tripId = ''}) {
@@ -396,6 +428,7 @@ class CharterTripModel {
   final bool roundTrip;
   final List<CharterStopModel> stops;
   final List<CharterAssignmentModel> assignments;
+  final List<String> assignedEmployeeIds;
   final String createdAt;
   final String updatedAt;
 
@@ -421,9 +454,37 @@ class CharterTripModel {
     this.roundTrip = true,
     this.stops = const [],
     this.assignments = const [],
+    this.assignedEmployeeIds = const [],
     this.createdAt = '',
     this.updatedAt = '',
   });
+
+  static List<String> extractAssignedEmployeeIds(List<CharterAssignmentModel> assignments) {
+    final set = <String>{};
+    for (final asg in assignments) {
+      final dId = asg.driverId.trim();
+      if (dId.isNotEmpty && dId != '0' && dId.toLowerCase() != 'tbd' && dId.toLowerCase() != 'unassigned') {
+        set.add(dId);
+        set.add(dId.toLowerCase());
+      }
+      final dName = asg.driverName.trim();
+      if (dName.isNotEmpty && dName.toLowerCase() != 'tbd' && dName.toLowerCase() != 'unassigned' && dName.toLowerCase() != 'non assigné') {
+        set.add(dName);
+        set.add(dName.toLowerCase());
+      }
+      final aId = asg.attendantId.trim();
+      if (aId.isNotEmpty && aId != '0' && aId.toLowerCase() != 'tbd' && aId.toLowerCase() != 'unassigned') {
+        set.add(aId);
+        set.add(aId.toLowerCase());
+      }
+      final aName = asg.attendantName.trim();
+      if (aName.isNotEmpty && aName.toLowerCase() != 'tbd' && aName.toLowerCase() != 'unassigned' && aName.toLowerCase() != 'non assigné') {
+        set.add(aName);
+        set.add(aName.toLowerCase());
+      }
+    }
+    return set.toList();
+  }
 
   String get tripTypeLabel {
     switch (tripType) {
@@ -570,6 +631,10 @@ class CharterTripModel {
       roundTrip: isRoundTrip,
       stops: stops,
       assignments: assignments,
+      assignedEmployeeIds: (map['assignedEmployeeIds'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          extractAssignedEmployeeIds(assignments),
       createdAt: map['createdAt']?.toString() ?? '',
       updatedAt: map['updatedAt']?.toString() ?? '',
     );
@@ -598,6 +663,9 @@ class CharterTripModel {
       'roundTrip': roundTrip,
       'stops': stops.map((s) => s.toMap()).toList(),
       'assignments': assignments.map((a) => a.toMap()).toList(),
+      'assignedEmployeeIds': assignedEmployeeIds.isNotEmpty
+          ? assignedEmployeeIds
+          : extractAssignedEmployeeIds(assignments),
       'createdAt': createdAt,
       'updatedAt': updatedAt,
     };

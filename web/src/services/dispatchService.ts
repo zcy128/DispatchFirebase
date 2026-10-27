@@ -22,6 +22,7 @@ import {
   CheckInReminderSettings,
   SimulationSettings,
   SimulationRunResult,
+  extractDispatchAssignedEmployeeIds,
 } from '../types/dispatch';
 import { DefectService } from './defectService';
 import { VehicleInspectionService } from './vehicleInspectionService';
@@ -54,6 +55,11 @@ export const DispatchService = {
           const list: DispatchShift[] = [];
           snapshot.forEach((d) => {
             const data = d.data() as DispatchShift;
+            // Auto-heal missing assignedEmployeeIds for Firestore index-level driver queries
+            if (db && !data.assignedEmployeeIds && (data.driverId || data.driverName || data.attendantId || data.attendantName)) {
+              const ids = extractDispatchAssignedEmployeeIds(data);
+              setDoc(doc(db, 'dispatch_shifts', d.id), { assignedEmployeeIds: ids }, { merge: true }).catch(() => {});
+            }
             list.push({
               ...data,
               id: d.id,
@@ -1172,6 +1178,12 @@ export const DispatchService = {
         if (finalDriver && finalUnit && dData.health === 'red') {
           patch.health = 'green';
         }
+        patch.assignedEmployeeIds = extractDispatchAssignedEmployeeIds({
+          driverId: patch.driverId !== undefined ? patch.driverId : dData.driverId,
+          driverName: patch.driverName !== undefined ? patch.driverName : dData.driverName,
+          attendantId: patch.attendantId !== undefined ? patch.attendantId : dData.attendantId,
+          attendantName: patch.attendantName !== undefined ? patch.attendantName : dData.attendantName,
+        });
         await setDoc(doc(db, 'dispatch_shifts', dDoc.id), patch, { merge: true });
       }
     } catch (err) {
@@ -1319,6 +1331,12 @@ export const DispatchService = {
           if (finalDriver && finalUnit && shift.health === 'red' && patch.health !== 'red') {
             patch.health = 'green';
           }
+          patch.assignedEmployeeIds = extractDispatchAssignedEmployeeIds({
+            driverId: patch.driverId !== undefined ? patch.driverId : shift.driverId,
+            driverName: patch.driverName !== undefined ? patch.driverName : shift.driverName,
+            attendantId: patch.attendantId !== undefined ? patch.attendantId : shift.attendantId,
+            attendantName: patch.attendantName !== undefined ? patch.attendantName : shift.attendantName,
+          });
           patch.updatedAt = nowIso;
           await setDoc(doc(db, 'dispatch_shifts', dDoc.id), patch, { merge: true });
         }

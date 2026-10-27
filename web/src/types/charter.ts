@@ -97,10 +97,47 @@ export interface CharterTrip {
   roundTrip: boolean;
   stops: CharterStop[];
   assignments: CharterAssignment[];
+  assignedEmployeeIds?: string[];
   createdByUserId?: string;
   createdByName?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export function extractAssignedEmployeeIds(assignments?: CharterAssignment[]): string[] {
+  if (!assignments || !Array.isArray(assignments)) return [];
+  const set = new Set<string>();
+  for (const asg of assignments) {
+    if (asg.driverId) {
+      const dId = asg.driverId.trim();
+      if (dId && dId !== '0' && dId.toLowerCase() !== 'tbd' && dId.toLowerCase() !== 'unassigned') {
+        set.add(dId);
+        set.add(dId.toLowerCase());
+      }
+    }
+    if (asg.driverName) {
+      const dName = asg.driverName.trim();
+      if (dName && dName.toLowerCase() !== 'tbd' && dName.toLowerCase() !== 'unassigned' && dName.toLowerCase() !== 'non assigné') {
+        set.add(dName);
+        set.add(dName.toLowerCase());
+      }
+    }
+    if (asg.attendantId) {
+      const aId = asg.attendantId.trim();
+      if (aId && aId !== '0' && aId.toLowerCase() !== 'tbd' && aId.toLowerCase() !== 'unassigned') {
+        set.add(aId);
+        set.add(aId.toLowerCase());
+      }
+    }
+    if (asg.attendantName) {
+      const aName = asg.attendantName.trim();
+      if (aName && aName.toLowerCase() !== 'tbd' && aName.toLowerCase() !== 'unassigned' && aName.toLowerCase() !== 'non assigné') {
+        set.add(aName);
+        set.add(aName.toLowerCase());
+      }
+    }
+  }
+  return Array.from(set);
 }
 
 export function getCharterTripTypeLabel(type: CharterTripType, isFrench: boolean): string {

@@ -37,6 +37,7 @@ import {
   buildCharterSimpleStops,
   formatCharterStopTime,
   addMinutesToCharterTime,
+  extractAssignedEmployeeIds,
 } from '../types/charter';
 import { RouteOpening, RouteOpeningRole } from '../types/routeOpening';
 import { RouteOpeningService } from '../services/routeOpeningService';
@@ -333,6 +334,17 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
   const migratedIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     trips.forEach((tr) => {
+      // Auto-populate redundant assignedEmployeeIds for Firestore index-level driver queries
+      if (!migratedIdsRef.current.has(`empIds:${tr.id}`)) {
+        migratedIdsRef.current.add(`empIds:${tr.id}`);
+        const expectedIds = extractAssignedEmployeeIds(tr.assignments);
+        const currentIds = tr.assignedEmployeeIds || [];
+        const isMatch = currentIds.length === expectedIds.length && currentIds.every((id) => expectedIds.includes(id));
+        if (!isMatch) {
+          CharterService.updateTrip(tr.id, { assignedEmployeeIds: expectedIds }, actorName).catch(() => {});
+        }
+      }
+
       if (
         tr.roundTrip !== false &&
         tr.stops &&

@@ -132,8 +132,47 @@ export interface DispatchShift {
   pretripReminderSentAt?: string;
   parentNotifications?: SentParentNotificationRecord[];
   stops: DispatchShiftStop[];
+  assignedEmployeeIds?: string[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+export function extractDispatchAssignedEmployeeIds(shift: {
+  driverId?: string;
+  driverName?: string;
+  attendantId?: string;
+  attendantName?: string;
+}): string[] {
+  const set = new Set<string>();
+  if (shift.driverId) {
+    const dId = shift.driverId.trim();
+    if (dId && dId !== '0' && dId.toLowerCase() !== 'tbd' && dId.toLowerCase() !== 'unassigned') {
+      set.add(dId);
+      set.add(dId.toLowerCase());
+    }
+  }
+  if (shift.driverName) {
+    const dName = shift.driverName.trim();
+    if (dName && dName.toLowerCase() !== 'tbd' && dName.toLowerCase() !== 'unassigned' && dName.toLowerCase() !== 'non assigné') {
+      set.add(dName);
+      set.add(dName.toLowerCase());
+    }
+  }
+  if (shift.attendantId) {
+    const aId = shift.attendantId.trim();
+    if (aId && aId !== '0' && aId.toLowerCase() !== 'tbd' && aId.toLowerCase() !== 'unassigned') {
+      set.add(aId);
+      set.add(aId.toLowerCase());
+    }
+  }
+  if (shift.attendantName) {
+    const aName = shift.attendantName.trim();
+    if (aName && aName.toLowerCase() !== 'tbd' && aName.toLowerCase() !== 'unassigned' && aName.toLowerCase() !== 'non assigné') {
+      set.add(aName);
+      set.add(aName.toLowerCase());
+    }
+  }
+  return Array.from(set);
 }
 
 export interface DriverCheckInRequest {

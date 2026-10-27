@@ -24,7 +24,8 @@ func (h *RouteHandler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	filter := repository.RouteFilter{
-		Search: q.Get("search"),
+		Search:       q.Get("search"),
+		DriverFilter: q.Get("driver"),
 	}
 
 	if yStr := q.Get("yardId"); yStr != "" {

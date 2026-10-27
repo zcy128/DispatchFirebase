@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "postbuild": "node -e \"const fs=require('fs'),path=require('path');for(const [src,dest] of [['../driver_app/build/web','dist/driver'],['../parent_app/build/web','dist/parent']]){if(fs.existsSync(src))fs.cpSync(src,dest,{recursive:true});}\"",
+    "postbuild": "node scripts/copy-apps.js",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -21,8 +21,10 @@ type AuthUser struct {
 	FullName        string                 `json:"fullName,omitempty"`
 	Role            string                 `json:"role"`
 	EmployeeID      string                 `json:"employeeId"`
-	PagePermissions map[string]string      `json:"pagePermissions,omitempty"`
-	Claims          map[string]interface{} `json:"claims"`
+	YardID          string                 `json:"yardId,omitempty"`
+	Overrides       map[string]string      `json:"overrides"`
+	PagePermissions map[string]string      `json:"-"`
+	Claims          map[string]interface{} `json:"-"`
 }
 
 // UserResolverFunc looks up the latest Employee state (active status, role, pagePermissions) on the API server.

@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Direction C: Mission Sheet & Flow · PCY Driver App</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+    body {
+      background: #0B0F19;
+      color: #E2E8F0;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    .mono-num { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body class="min-h-screen py-10 px-6">
+  <div class="max-w-[1720px] mx-auto">
+    <!-- Header Banner -->
+    <header class="mb-8 flex flex-col md:flex-row md:items-end justify-between border-b border-slate-800 pb-6 gap-4">
+      <div>
+        <div class="flex items-center gap-2.5 mb-2">
+          <span class="px-2.5 py-0.5 rounded text-[11px] font-black tracking-wider bg-purple-500 text-black uppercase">Direction C</span>
+          <span class="text-xs font-bold text-purple-400">MISSION EFB SHEET // TASK-CENTRIC</span>
+          <span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">单任务绝对聚焦 · 自动折叠防过载 · 航空检查单</span>
+        </div>
+        <h1 class="text-3xl font-extrabold text-white tracking-tight">任务流折叠看板 · 零心智负荷方案</h1>
+        <p class="text-slate-400 text-sm mt-1 max-w-2xl">
+          借鉴 Uber Driver 与民航飞行员 EFB 检查单理念。司机行车时界面仅放大当前唯一步骤（Current Mission），已完成步骤收缩为顶部微型进度条，未来任务收纳于底部即开即关抽屉中，杜绝任何信息干扰与误操作。
+        </p>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="Direction-B-Apple-HIG-Glass.html" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg transition-colors">← 查看方向 B</a>
+        <a href="thumbs.html" class="px-4 py-2 bg-purple-500 hover:bg-purple-400 text-black text-xs font-bold rounded-lg transition-colors">全览候选画廊 →</a>
+      </div>
+    </header>
+
+    <div id="root"></div>
+  </div>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    const iosFrameStyles = {
+      wrapper: {
+        display: 'inline-block',
+        padding: 12,
+        background: '#0F172A',
+        borderRadius: 56,
+        boxShadow: '0 0 0 2px #334155, 0 25px 60px -15px rgba(0,0,0,0.8)',
+        position: 'relative',
+      },
+      screen: {
+        position: 'relative',
+        borderRadius: 44,
+        overflow: 'hidden',
+        background: '#0B0F19',
+      },
+      statusBar: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 50,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 28px',
+        fontSize: 14,
+        fontWeight: 600,
+        color: '#94A3B8',
+        zIndex: 20,
+        pointerEvents: 'none',
+      },
+      dynamicIsland: {
+        position: 'absolute',
+        top: 10,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 120,
+        height: 32,
+        background: '#000',
+        borderRadius: 999,
+        zIndex: 30,
+      },
+      content: {
+        position: 'absolute',
+        top: 50,
+        left: 0,
+        right: 0,
+        bottom: 24,
+        overflowY: 'auto',
+      },
+      homeIndicator: {
+        position: 'absolute',
+        bottom: 8,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 130,
+        height: 4,
+        background: 'rgba(255,255,255,0.2)',
+        borderRadius: 999,
+        zIndex: 10,
+      },
+    };
+
+    function IosFrame({ children, width = 375, height = 780, time = '08:15', battery = 88 }) {
+      return (
+        <div style={iosFrameStyles.wrapper}>
+          <div style={{ ...iosFrameStyles.screen, width, height }}>
+            <div style={iosFrameStyles.statusBar}>
+              <span>{time}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="text-[11px] font-semibold text-emerald-400">GPS LIVE</span>
+                <span className="text-[11px] font-bold text-white">{battery}%</span>
+              </div>
+            </div>
+            <div style={iosFrameStyles.dynamicIsland} />
+            <div style={iosFrameStyles.content}>{children}</div>
+            <div style={iosFrameStyles.homeIndicator} />
+          </div>
+        </div>
+      );
+    }
+
+    // --- Screen 1: Active Mission Card (En-Route to Stop 2) ---
+    function MissionActiveScreen() {
+      const [drawerOpen, setDrawerOpen] = useState(false);
+
+      return (
+        <div className="p-4 flex flex-col h-full justify-between relative">
+          <div>
+            {/* Top Compact Micro-Stepper (4 Stops Progress Bar) */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono mb-1.5">
+                <span>MISSION STEP 2 / 4</span>
+                <span className="text-amber-400 font-bold">50% EN-ROUTE</span>
+              </div>
+              <div className="flex gap-1.5 h-2">
+                <div className="flex-1 bg-emerald-500 rounded-full"></div>
+                <div className="flex-1 bg-amber-500 rounded-full animate-pulse"></div>
+                <div className="flex-1 bg-slate-800 rounded-full"></div>
+                <div className="flex-1 bg-slate-800 rounded-full"></div>
+              </div>
+            </div>
+
+            {/* Core Mission Hero Focus Card */}
+            <div className="p-5 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-700/80 rounded-3xl shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
+              
+              <div className="flex justify-between items-center mb-2">
+                <span className="px-3 py-1 bg-amber-500 text-black text-xs font-black rounded-full uppercase tracking-wider">
+                  ACTIVE LEG
+                </span>
+                <span className="text-sm font-extrabold text-amber-400 font-mono">ETA 08:30</span>
+              </div>
+
+              <div className="text-2xl font-black text-white mt-2 leading-tight">
+                Stop #2: Museum Dropoff
+              </div>
+              <div className="text-xs text-slate-300 mt-1">
+                Ontario Science Centre (Group Drop-off Zone)
+              </div>
+
+              {/* Passenger Quick Counter */}
+              <div className="mt-4 p-3 bg-slate-800/80 rounded-2xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-slate-400 uppercase font-bold">STUDENTS ON BOARD</div>
+                  <div className="text-xl font-black text-emerald-400 font-mono">45 / 45</div>
+                </div>
+                <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-bold rounded-lg">
+                  All Boarded ✓
+                </span>
+              </div>
+
+              <div className="mt-4 flex gap-2">
+                <button className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white rounded-xl flex items-center justify-center gap-1.5 border border-slate-700">
+                  <span>🗺️</span> Full Screen GPS
+                </button>
+                <button className="px-4 py-3 bg-slate-800 text-slate-300 text-xs font-bold rounded-xl border border-slate-700">
+                  Call School
+                </button>
+              </div>
+            </div>
+
+            {/* Collapsible Upcoming Drawer Header */}
+            <div 
+              onClick={() => setDrawerOpen(!drawerOpen)}
+              className="mt-4 p-3.5 bg-slate-900/80 border border-slate-800 rounded-2xl flex items-center justify-between cursor-pointer active:bg-slate-800 transition-colors"
+            >
+              <div className="flex items-center gap-2.5 text-xs font-bold text-slate-300">
+                <span>📋</span>
+                <span>Next: Stop #3 Return Pickup (15:00)</span>
+              </div>
+              <span className="text-xs text-purple-400 font-bold">{drawerOpen ? 'Close ▾' : 'Expand ▴'}</span>
+            </div>
+
+            {/* Collapsed Items */}
+            {drawerOpen && (
+              <div className="mt-2 p-3 bg-slate-950 border border-slate-800 rounded-2xl text-xs space-y-2">
+                <div className="flex justify-between text-slate-400 py-1 border-b border-slate-800">
+                  <span>#3 Afternoon Pickup @ Museum</span>
+                  <span className="text-white font-mono">15:00</span>
+                </div>
+                <div className="flex justify-between text-slate-400 py-1">
+                  <span>#4 Return Dropoff @ School</span>
+                  <span className="text-white font-mono">15:30</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-3">
+            <button className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-sm tracking-wider uppercase rounded-2xl shadow-xl active:scale-[0.98]">
+              MARK ARRIVED AT DESTINATION
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Screen 2: Pre-Trip Inspection Mission ---
+    function MissionPreTripScreen() {
+      return (
+        <div className="p-4 flex flex-col h-full justify-between">
+          <div>
+            <div className="mb-4">
+              <span className="text-[11px] font-mono text-purple-400 uppercase font-bold tracking-wider">MANDATORY GATE</span>
+              <h2 className="text-xl font-extrabold text-white">Pre-Trip Departure Check</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Bus #102 · Sign-off required before wheel roll</p>
+            </div>
+
+            {/* Odometer Hero */}
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl mb-3 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold">ODOMETER (KM)</span>
+                <div className="text-2xl font-black font-mono text-white mt-0.5">142,850</div>
+              </div>
+              <button className="px-3 py-1.5 bg-slate-800 text-xs font-bold text-slate-300 rounded-lg">EDIT</button>
+            </div>
+
+            {/* 3 Grouped Sections */}
+            <div className="space-y-2">
+              <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-white">1. Safety & Emergency Exits</div>
+                  <div className="text-[10px] text-slate-500">Doors, buzzer, roof hatches</div>
+                </div>
+                <span className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs">✓</span>
+              </div>
+
+              <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-white">2. Brakes & Air Pressure</div>
+                  <div className="text-[10px] text-slate-500">Air governor, leakage test</div>
+                </div>
+                <span className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs">✓</span>
+              </div>
+
+              <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-white">3. Lights & Stop Arm</div>
+                  <div className="text-[10px] text-slate-500">Alternating reds, amber flashers</div>
+                </div>
+                <span className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs">✓</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-3">
+            <button className="w-full py-4 bg-purple-500 hover:bg-purple-400 text-black font-extrabold text-sm uppercase rounded-2xl shadow-lg">
+              CONFIRM ZERO DEFECTS (RELEASE)
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Screen 3: Student Boarding Manifest Counter ---
+    function MissionStudentScreen() {
+      const students = [
+        { name: "Lucas Vance", grade: "Gr. 10", boarded: true },
+        { name: "Emma Watson", grade: "Gr. 10", boarded: true },
+        { name: "Noah Miller", grade: "Gr. 11", boarded: false },
+        { name: "Sophia Zhang", grade: "Gr. 10", boarded: true },
+      ];
+
+      return (
+        <div className="p-4 flex flex-col h-full justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <span className="text-[11px] font-mono text-emerald-400 uppercase font-bold">STOP #1 BOARDING</span>
+                <h2 className="text-xl font-extrabold text-white">Student Manifest</h2>
+              </div>
+              <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 font-mono text-xs font-bold rounded-lg">
+                42 / 45 Present
+              </span>
+            </div>
+
+            <div className="p-3 bg-slate-900 border border-slate-800 rounded-2xl mb-3 flex gap-2">
+              <button className="flex-1 py-2 bg-emerald-500 text-black font-extrabold text-xs rounded-xl flex items-center justify-center gap-1">
+                <span>📷</span> Scan Barcode
+              </button>
+              <button className="flex-1 py-2 bg-slate-800 text-slate-200 font-bold text-xs rounded-xl">
+                Manual Tap Check
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {students.map((s, i) => (
+                <div key={i} className="p-3 bg-slate-900/70 border border-slate-800 rounded-xl flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-bold text-white">{s.name}</div>
+                    <div className="text-[10px] text-slate-400">{s.grade}</div>
+                  </div>
+                  <button className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                    s.boarded ? 'bg-emerald-500 text-black' : 'bg-slate-800 text-slate-400'
+                  }`}>
+                    {s.boarded ? 'BOARDED ✓' : 'TAP TO BOARD'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-3">
+            <button className="w-full py-4 bg-emerald-500 text-black font-extrabold text-sm uppercase rounded-2xl">
+              FINISH BOARDING (CLOSE DOORS)
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Screen 4: Route Bidding Flow ---
+    function MissionBiddingScreen() {
+      return (
+        <div className="p-4 flex flex-col h-full justify-between">
+          <div>
+            <div className="mb-4">
+              <span className="text-[11px] font-mono text-amber-400 uppercase font-bold">EXTRA WORK</span>
+              <h2 className="text-xl font-extrabold text-white">Charter Bidding</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Claim open shifts to boost earnings</p>
+            </div>
+
+            <div className="p-4 bg-slate-900 border border-amber-500/40 rounded-3xl mb-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className="px-2 py-0.5 bg-amber-500 text-black text-[10px] font-black rounded">OPEN NOW</span>
+                <span className="text-lg font-black font-mono text-emerald-400">$160.00</span>
+              </div>
+              <div className="text-base font-extrabold text-white mt-1">Athletic Convoi #2</div>
+              <div className="text-xs text-slate-400 mt-0.5">Tomorrow · 09:00 - 16:30</div>
+
+              <div className="mt-3 p-2.5 bg-slate-950 rounded-xl text-xs space-y-1">
+                <div className="text-slate-400">4-Stop Round Trip · Bus #108</div>
+                <div className="text-emerald-400 font-bold">Est. 5.5h EI Insurable</div>
+              </div>
+
+              <button className="mt-3 w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase rounded-xl">
+                ONE-CLICK CLAIM SHIFT
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-3 text-center text-xs text-slate-500 font-mono">
+            UPDATED IN REAL-TIME FROM DISPATCH
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      return (
+        <div>
+          <div className="flex flex-wrap gap-8 justify-center items-start py-6">
+            
+            {/* Screen 1 */}
+            <div className="flex flex-col items-center">
+              <div className="mb-3 text-center">
+                <span className="text-xs font-mono font-bold text-amber-400 tracking-wider uppercase">01 / ACTIVE LEG FOCUS</span>
+                <div className="text-sm font-bold text-slate-200">当前任务绝对聚焦（折叠未来行程）</div>
+              </div>
+              <IosFrame time="08:22" battery={88}>
+                <MissionActiveScreen />
+              </IosFrame>
+            </div>
+
+            {/* Screen 2 */}
+            <div className="flex flex-col items-center">
+              <div className="mb-3 text-center">
+                <span className="text-xs font-mono font-bold text-purple-400 tracking-wider uppercase">02 / PRE-TRIP GATE</span>
+                <div className="text-sm font-bold text-slate-200">出车前强制合规放行卡</div>
+              </div>
+              <IosFrame time="07:35" battery={97}>
+                <MissionPreTripScreen />
+              </IosFrame>
+            </div>
+
+            {/* Screen 3 */}
+            <div className="flex flex-col items-center">
+              <div className="mb-3 text-center">
+                <span className="text-xs font-mono font-bold text-emerald-400 tracking-wider uppercase">03 / STUDENT MANIFEST</span>
+                <div className="text-sm font-bold text-slate-200">乘降点学生扫码与考勤计数</div>
+              </div>
+              <IosFrame time="08:02" battery={94}>
+                <MissionStudentScreen />
+              </IosFrame>
+            </div>
+
+            {/* Screen 4 */}
+            <div className="flex flex-col items-center">
+              <div className="mb-3 text-center">
+                <span className="text-xs font-mono font-bold text-cyan-400 tracking-wider uppercase">04 / SHIFT BIDDING</span>
+                <div className="text-sm font-bold text-slate-200">一键申领空缺增援班次</div>
+              </div>
+              <IosFrame time="11:40" battery={76}>
+                <MissionBiddingScreen />
+              </IosFrame>
+            </div>
+
+          </div>
+
+          <footer className="mt-12 p-6 bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl mx-auto text-xs text-slate-400 space-y-2">
+            <div className="font-bold text-white uppercase text-sm mb-1">方向 C · 任务流折叠看板设计说明 (Design Notes)</div>
+            <p>1. <strong>消除认知负荷</strong>：任何时刻司机只关注“当前这一站”。将复杂的长列表全部收进折叠抽屉，防止行车分心。</p>
+            <p>2. <strong>航空级进度可视化</strong>：顶部 4 阶段进度条实时反馈当前 Leg，司机无需记忆复杂日程表。</p>
+          </footer>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

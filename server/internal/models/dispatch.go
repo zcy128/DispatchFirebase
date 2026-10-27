@@ -120,8 +120,38 @@ type DispatchShift struct {
 	PretripReminderSentAt   *time.Time       `json:"pretripReminderSentAt,omitempty" firestore:"pretripReminderSentAt,omitempty"`
 	ParentNotifications  []SentParentNotificationRecord `json:"parentNotifications,omitempty" firestore:"parentNotifications,omitempty"`
 	Stops              []DispatchShiftStop `json:"stops" firestore:"stops"`
+	AssignedEmployeeIds []string           `json:"assignedEmployeeIds,omitempty" firestore:"assignedEmployeeIds,omitempty"`
 	CreatedAt          interface{}         `json:"createdAt,omitempty" firestore:"createdAt,omitempty"`
 	UpdatedAt          interface{}         `json:"updatedAt,omitempty" firestore:"updatedAt,omitempty"`
+}
+
+// ComputeAssignedEmployeeIds returns normalized driver and attendant identifiers for index-level filtering
+func (s *DispatchShift) ComputeAssignedEmployeeIds() []string {
+	seen := make(map[string]bool)
+	var list []string
+	add := func(v string) {
+		t := strings.TrimSpace(v)
+		if t == "" {
+			return
+		}
+		low := strings.ToLower(t)
+		if low == "0" || low == "tbd" || low == "unassigned" || low == "non assigné" {
+			return
+		}
+		if !seen[t] {
+			seen[t] = true
+			list = append(list, t)
+		}
+		if !seen[low] {
+			seen[low] = true
+			list = append(list, low)
+		}
+	}
+	add(s.DriverID)
+	add(s.DriverName)
+	add(s.AttendantID)
+	add(s.AttendantName)
+	return list
 }
 
 // SentParentNotificationRecord defines a dispatched alert sent to parents

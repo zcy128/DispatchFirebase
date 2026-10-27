@@ -15,7 +15,11 @@ export async function getAuthToken(): Promise<string> {
     }
   }
 
-  // 2. Stored mock admin token
+  // 2. Stored auth or mock token
+  const authToken = localStorage.getItem('dispatch_auth_token');
+  if (authToken) {
+    return authToken;
+  }
   const mockToken = localStorage.getItem('dispatch_mock_token');
   if (mockToken) {
     return mockToken;

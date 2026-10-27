@@ -24,7 +24,7 @@
 | 模块 | 在线体验地址 | 登录方式与操作说明 |
 | :--- | :--- | :--- |
 | **调度中心控制台 (`web`)** | [schoolbus.pcytech.ca](https://schoolbus.pcytech.ca/)<br>*(备用: [schoolbusdispatchapp.web.app](https://schoolbusdispatchapp.web.app/))* | 页面提供 **「1-Click Launch as Operations Admin」** 快捷按钮，点击即可直接以超级管理员身份免密进入控制中心体验全部调度、排班与合规管理功能。<br>*(注：访问 `/?mode=ai` 可直接以全屏独立 PWA 模式打开 AI 调度助手)* |
-| **司机与跟车员端 (`driver_app`)** | [schoolbus.pcytech.ca/driver](https://schoolbus.pcytech.ca/driver)<br>*(备用: [schoolbusdispatchapp.web.app/driver](https://schoolbusdispatchapp.web.app/driver))* | 在登录界面点击下方的 **「Quick Demo Credentials」**（填充演示凭据）按钮即可自动填入演示账号（`driver@example.com` / `password123`），角色选择「Driver」或「Attendant」，点击 **Sign In** 即可进入排班看板、Pre-trip 检查与学生签到界面。 |
+| **司机与跟车员端 (`driver_app`)** | [schoolbus.pcytech.ca/driver](https://schoolbus.pcytech.ca/driver)<br>*(备用: [schoolbusdispatchapp.web.app/driver](https://schoolbusdispatchapp.web.app/driver))* | 在登录界面点击下方的 **「Quick Demo Credentials」**（填充演示凭据）按钮即可自动填入演示账号（`driver1d` / `Dispatch2026!`），角色选择「Driver」或「Attendant」，点击 **Sign In** 即可进入排班看板、Pre-trip 检查与学生签到界面。 |
 | **家长实时追踪端 (`parent_app`)** | [schoolbus.pcytech.ca/parent](https://schoolbus.pcytech.ca/parent)<br>*(备用: [schoolbusdispatchapp.web.app/parent](https://schoolbusdispatchapp.web.app/parent))* | 采用无密码安全验证码机制。在登录页面直接点击 **「Demo Phone」** 或 **「Demo Email」** 按钮自动填入，点击 **Continue** 后，在验证码输入页轻点黄色的 **「Dev Passcode (Tap to autofill)」** 即可自动填充验证码并登录，立即查看校车实时 GPS 地图轨迹与到站预计。 |
 | **MCP 模型上下文协议端点** | `https://dispatch-api-kv7qum3dca-nn.a.run.app/api/mcp` | 标准 Anthropic MCP 协议服务端点，供 Claude Desktop、Cursor、Gemini 等外部 AI 客户端通过 MCP Token 接入直接对话调度系统。 |
 
@@ -163,8 +163,12 @@
 - **外部 AI Agent 无缝接入**：外部 AI 工具（如 Claude Desktop、Cursor、Gemini CLI 或自主 Agent）可通过 MCP 协议直接与校车调度系统握手，执行安全读取班次、查询空缺路线、核查车辆驾照合规性及下发调度指令。
 - **安全隔离与 Token 鉴权**：在系统的 **系统设置 (Settings)** 页面支持自主生成带有效期的专用 MCP Token，采用 SHA-256 哈希安全存储，严格遵循当前操作员的 RBAC 角色权限。
 
-### 11. 细粒度 RBAC 页面级权限隔离
-- 严密的基于角色权限控制（Role-Based Access Control），可精细化配置不同角色（管理员、调度员、车场主管、安全员、财务会计、司机、家长）对每一个菜单和数据页面的读写权限。
+### 11. 极简差量 RBAC 架构与零额外开销行级安全 (Row-Level Security)
+- **彻底极简 Token 声明架构（Role + Overrides 差量）**：覆盖 12 个角色跨 34 个功能模块。严格遵守 Firebase Auth 1000 字节自定义声明上限，Token Claims 仅存储员工基础 `role` 及与默认基准存在差异的 `ovr` 差量配置（体积通常 < 50 字节），杜绝多次数据库回查。
+- **生产级行级安全规则 (`firestore.rules`)**：依托内存零计费匹配，实现严密的数据所有权校验：
+  - **业务表单行级隔离**：司机与跟车员仅能读取与提交属于本人创建的请假单、车辆故障报修、学生违纪事件、道路隐患报告、钥匙领用及费用报销，严禁跨人查看与全表拉取。
+  - **派工与路线范围受限**：一线司乘仅能获取指派给自身工号的路线、站点乘车学生及当日派工班次（`myEmployeeId in assignedEmployeeIds`）。
+  - **财务与密钥集合隔离**：工时审批表 (`dispatch_payrolls`) 仅允许调度员审批、财务专员只读；所有系统密钥、集成临时暂存集合对任何前端客户端完全拒绝访问。
 
 ### 12. BigQuery 冷热数据归档与灾备
 - 运行期活跃数据存放于 Firestore 保证高性能与毫秒级推送；
@@ -308,7 +312,7 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
 ## 安全与开源规范
 
 - **凭证安全**：请**切勿**将包含真实密钥的 `serviceAccountKey.json`、`firebase_options.dart`、`.env` 提交至代码仓库。所有此类文件已被 `.gitignore` 严格排除。
-- **Firestore 规则收紧**：在将系统投入正式商用或连接线上数据库前，请务必根据业务权限需求更新 `firestore.rules` 中的安全鉴权条件，以防未授权访问。
+- **Firestore 生产级规则与行级防泄露**：内置完整的生产级 `firestore.rules`，通过内存动态裁决模块覆盖与行级所有权（零额外读计费）；客户端严格配合使用 `where('employeeId', '==', id)` 定向检索，彻底避免越权与数据泄露。
 - **对接密钥**：BusPlanner、Zonar、BambooHR 的凭据，以及 BusPlanner staging 集合，只允许 API 读取。Firestore 规则拒绝浏览器访问。
 - **MCP Token 安全**：MCP Token 存储于 Firestore 私有集合中并采用安全加盐哈希，客户端只在生成时可见一次，避免长效明文泄露。
 

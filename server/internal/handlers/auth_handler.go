@@ -33,40 +33,49 @@ func NewAuthHandler(repo repository.EmployeeRepository, authClient *firebaseAuth
 
 // ResolveEmployeeAuthUser enriches AuthUser with the latest Employee role, active status, and pagePermissions from the database.
 func (h *AuthHandler) ResolveEmployeeAuthUser(ctx context.Context, user *auth.AuthUser) (*auth.AuthUser, error) {
-	if user == nil || h.repo == nil {
-		return user, nil
-	}
-
-	emp := h.findEmployeeForUser(ctx, user)
-	if emp == nil {
-		return user, nil
-	}
-
-	if !emp.IsActive {
-		return nil, errors.New("employee account is deactivated")
+	if user == nil {
+		return nil, nil
 	}
 
 	cloned := *user
-	if emp.Role != "" {
-		cloned.Role = emp.Role
+	if h.repo != nil {
+		emp := h.findEmployeeForUser(ctx, user)
+		if emp != nil {
+			if !emp.IsActive {
+				return nil, errors.New("employee account is deactivated")
+			}
+			if emp.Role != "" {
+				cloned.Role = emp.Role
+			}
+			if emp.EmployeeNumber != "" {
+				cloned.EmployeeID = emp.EmployeeNumber
+			} else if emp.ID != "" && cloned.EmployeeID == "" {
+				cloned.EmployeeID = emp.ID
+			}
+			if emp.Username != "" {
+				cloned.Username = emp.Username
+			}
+			if emp.FullName != "" {
+				cloned.FullName = emp.FullName
+			}
+			if emp.WorkEmail != "" && cloned.Email == "" {
+				cloned.Email = emp.WorkEmail
+			}
+			if emp.YardID != "" {
+				cloned.YardID = emp.YardID
+			}
+			if emp.PagePermissions != nil {
+				cloned.PagePermissions = emp.PagePermissions
+			}
+		}
 	}
-	if emp.EmployeeNumber != "" {
-		cloned.EmployeeID = emp.EmployeeNumber
-	} else if emp.ID != "" && cloned.EmployeeID == "" {
-		cloned.EmployeeID = emp.ID
+
+	// Compute diff overrides against role factory defaults
+	cloned.Overrides = auth.ComputeOverrides(cloned.Role, cloned.PagePermissions)
+	if cloned.Overrides == nil {
+		cloned.Overrides = make(map[string]string)
 	}
-	if emp.Username != "" {
-		cloned.Username = emp.Username
-	}
-	if emp.FullName != "" {
-		cloned.FullName = emp.FullName
-	}
-	if emp.WorkEmail != "" && cloned.Email == "" {
-		cloned.Email = emp.WorkEmail
-	}
-	if emp.PagePermissions != nil {
-		cloned.PagePermissions = emp.PagePermissions
-	}
+
 	return &cloned, nil
 }
 
@@ -479,6 +488,165 @@ func (h *AuthHandler) IssueMCPToken(w http.ResponseWriter, r *http.Request) {
 		User:       resolvedUser,
 		ServerURL:  baseURL,
 		MCPHttpURL: baseURL + "/api/mcp",
+	})
+}
+
+type LoginRequest struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type LoginResponse struct {
+	Success bool           `json:"success"`
+	Token   string         `json:"token"`
+	User    *auth.AuthUser `json:"user"`
+}
+
+// Login authenticates a user by username/email + password and returns their profile with role and allowed modules.
+func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid login payload"}`, http.StatusBadRequest)
+		return
+	}
+
+	identifier := strings.ToLower(strings.TrimSpace(req.Username))
+	if identifier == "" {
+		identifier = strings.ToLower(strings.TrimSpace(req.Email))
+	}
+	password := req.Password
+	if identifier == "" || password == "" {
+		http.Error(w, `{"error":"username and password are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	loginEmail := identifier
+	usernamePart := identifier
+	if !strings.Contains(identifier, "@") {
+		loginEmail = identifier + AuthEmailDomain
+	} else if idx := strings.Index(identifier, "@"); idx > 0 {
+		usernamePart = identifier[:idx]
+	}
+
+	ctx := r.Context()
+	var verifiedUser *auth.AuthUser
+	var idToken string
+
+	// 1. If Firebase Web API Key is configured, verify password against Firebase Identity Toolkit
+	if h.cfg != nil && h.cfg.FirebaseWebAPIKey != "" {
+		fbUser, err := h.verifyPasswordWithFirebaseREST(ctx, loginEmail, password)
+		if err == nil && fbUser != nil {
+			verifiedUser = fbUser
+		} else if !h.cfg.AllowsDemo() {
+			http.Error(w, `{"error":"invalid username or password"}`, http.StatusUnauthorized)
+			return
+		}
+	}
+
+	// 2. Demo/Local fallback password verification if not yet verified
+	if verifiedUser == nil {
+		if h.cfg != nil && !h.cfg.AllowsDemo() {
+			http.Error(w, `{"error":"invalid username or password"}`, http.StatusUnauthorized)
+			return
+		}
+
+		// Demo mode credential check
+		validDemoPass := password == DefaultInitialPassword ||
+			password == "Admin@Dispatch2026!" ||
+			password == "demo" ||
+			password == "password" ||
+			(h.cfg != nil && h.cfg.AdminPassword != "" && password == h.cfg.AdminPassword)
+		if !validDemoPass {
+			http.Error(w, `{"error":"invalid username or password"}`, http.StatusUnauthorized)
+			return
+		}
+
+		if usernamePart == "admin" || loginEmail == "admin@dispatch.local" || (h.cfg != nil && strings.EqualFold(loginEmail, h.cfg.AdminEmail)) {
+			verifiedUser = &auth.AuthUser{
+				UID:        "mock-admin-uid-001",
+				Email:      loginEmail,
+				Username:   "admin",
+				FullName:   "System Admin",
+				Role:       "admin",
+				EmployeeID: "EMP-ADMIN-001",
+			}
+		} else if h.repo != nil {
+			emp, _ := h.repo.GetByUsername(ctx, usernamePart)
+			if emp == nil {
+				emp, _ = h.repo.GetByEmployeeNumber(ctx, strings.ToUpper(usernamePart))
+			}
+			if emp == nil {
+				emp, _ = h.repo.GetByID(ctx, usernamePart)
+			}
+			if emp == nil {
+				http.Error(w, `{"error":"user account not found"}`, http.StatusUnauthorized)
+				return
+			}
+			if !emp.IsActive {
+				http.Error(w, `{"error":"employee account is deactivated"}`, http.StatusForbidden)
+				return
+			}
+			verifiedUser = &auth.AuthUser{
+				UID:             emp.FirebaseUID,
+				Email:           emp.WorkEmail,
+				Username:        emp.Username,
+				FullName:        emp.FullName,
+				Role:            emp.Role,
+				EmployeeID:      emp.EmployeeNumber,
+				YardID:          emp.YardID,
+				PagePermissions: emp.PagePermissions,
+			}
+			if verifiedUser.UID == "" {
+				verifiedUser.UID = "mock-uid-" + emp.Username
+			}
+		}
+	}
+
+	if verifiedUser == nil {
+		http.Error(w, `{"error":"authentication failed"}`, http.StatusUnauthorized)
+		return
+	}
+
+	resolvedUser, err := h.ResolveEmployeeAuthUser(ctx, verifiedUser)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusForbidden)
+		return
+	}
+
+	// 3. Sync Firebase Custom Claims if Firebase Admin client is active and user has a real UID
+	if h.authClient != nil && resolvedUser.UID != "" && !strings.HasPrefix(resolvedUser.UID, "mock-") {
+		claims := map[string]interface{}{
+			"role":       resolvedUser.Role,
+			"employeeId": resolvedUser.EmployeeID,
+			"username":   resolvedUser.Username,
+			"yardId":     resolvedUser.YardID,
+			"ovr":        resolvedUser.Overrides,
+		}
+		_ = h.authClient.SetCustomUserClaims(ctx, resolvedUser.UID, claims)
+	}
+
+	// 4. Generate Auth Token
+	secret := ""
+	if h.cfg != nil {
+		secret = h.cfg.MCPTokenSecret
+	}
+	token := idToken
+	if token == "" {
+		generatedToken, _, genErr := auth.GenerateMCPToken(secret, resolvedUser, 30*24*time.Hour)
+		if genErr == nil {
+			token = generatedToken
+		} else {
+			token = "mock-token-" + resolvedUser.Username
+		}
+	}
+
+	json.NewEncoder(w).Encode(LoginResponse{
+		Success: true,
+		Token:   token,
+		User:    resolvedUser,
 	})
 }
 

@@ -20,17 +20,31 @@ class CharterRepository {
       _firestore.collection('payroll_logs');
 
   /// Stream charter trips assigned to the specified driver or attendant
+  /// Uses Firestore database-level array-contains filtering so only trips where
+  /// this employee is assigned are downloaded over the network.
   Stream<List<CharterTripModel>> streamAssignedTrips({
     required String driverId,
     required String username,
   }) {
+    final queryKeys = <String>{
+      driverId.trim(),
+      driverId.trim().toLowerCase(),
+      username.trim(),
+      username.trim().toLowerCase(),
+    }.where((s) => s.isNotEmpty && s != 'tbd' && s != 'unassigned').toList();
+
+    if (queryKeys.isEmpty) {
+      return Stream.value(<CharterTripModel>[]);
+    }
+
     return _tripsRef
-        .where('status', isNotEqualTo: 5) // Exclude cancelled
+        .where('assignedEmployeeIds', arrayContainsAny: queryKeys)
         .snapshots()
         .map((snapshot) {
       final list = <CharterTripModel>[];
       for (final doc in snapshot.docs) {
         final trip = CharterTripModel.fromMap(doc.data(), doc.id);
+        if (trip.status == 5) continue; // Exclude cancelled
         if (trip.getAssignmentForUser(driverId, username) != null) {
           list.add(trip);
         }
@@ -164,6 +178,7 @@ class CharterRepository {
 
     final updatedTripMap = trip.toMap();
     updatedTripMap['assignments'] = assignments.map((a) => a.toMap()).toList();
+    updatedTripMap['assignedEmployeeIds'] = CharterTripModel.extractAssignedEmployeeIds(assignments);
     if (trip.status < 2) {
       updatedTripMap['status'] = 2; // Assigned
     }

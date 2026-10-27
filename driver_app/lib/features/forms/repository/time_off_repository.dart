@@ -40,23 +40,66 @@ class TimeOffRepository {
     final cached = getTimeOffRequests(employeeId: employeeId);
     controller.add(cached);
 
+    // 2. Trigger asynchronous background sync from REST API if available
+    syncTimeOffFromBackend(employeeId).then((_) {
+      if (!controller.isClosed) {
+        controller.add(getTimeOffRequests(employeeId: employeeId));
+      }
+    }).catchError((_) {});
+
     if (!isFirestoreAvailable) {
       return controller.stream;
     }
 
     StreamSubscription? sub;
     try {
-      final normTargetId = RouteRepository.resolveEmployeeId(employeeId);
-      final coll = FirebaseFirestore.instance.collection('time_off_requests');
+      final clean = employeeId.trim();
+      final normTargetId = RouteRepository.resolveEmployeeId(clean);
+      final digits = clean.replaceAll(RegExp(r'\D'), '');
+      final numVal = int.tryParse(digits);
 
-      sub = coll.snapshots().listen(
+      final queryKeys = <String>{
+        if (clean.isNotEmpty) clean,
+        if (clean.isNotEmpty) clean.toLowerCase(),
+        if (clean.isNotEmpty) clean.toUpperCase(),
+        if (normTargetId.isNotEmpty) ...[
+          normTargetId,
+          normTargetId.toLowerCase(),
+          normTargetId.toUpperCase(),
+        ],
+        if (digits.isNotEmpty) digits,
+        if (numVal != null) ...[
+          '$numVal',
+          numVal.toString().padLeft(3, '0'),
+          numVal.toString().padLeft(4, '0'),
+          'EMP-${numVal.toString().padLeft(3, '0')}',
+          'EMP-${numVal.toString().padLeft(4, '0')}',
+          'DRV-${numVal.toString().padLeft(3, '0')}',
+          'DRV-${numVal.toString().padLeft(4, '0')}',
+        ],
+      }.where((s) => s.isNotEmpty && s != 'tbd' && s != 'unassigned').take(30).toList();
+
+      if (queryKeys.isEmpty) {
+        return controller.stream;
+      }
+
+      final query = FirebaseFirestore.instance
+          .collection('time_off_requests')
+          .where('employeeId', whereIn: queryKeys);
+
+      sub = query.snapshots().listen(
         (snapshot) {
           final list = <TimeOffRequestModel>[];
           for (final doc in snapshot.docs) {
             final data = doc.data();
             final docEmpId = data['employeeId']?.toString() ?? '';
-            if (RouteRepository.matchesDriver(docEmpId, normTargetId) ||
-                RouteRepository.matchesDriver(docEmpId, employeeId)) {
+            final docEmpNum = data['employeeNumber']?.toString() ?? '';
+            if (queryKeys.contains(docEmpId) ||
+                queryKeys.contains(docEmpNum) ||
+                RouteRepository.matchesDriver(docEmpId, normTargetId) ||
+                RouteRepository.matchesDriver(docEmpId, employeeId) ||
+                RouteRepository.matchesDriver(docEmpNum, normTargetId) ||
+                RouteRepository.matchesDriver(docEmpNum, employeeId)) {
               list.add(TimeOffRequestModel.fromMap(data, doc.id));
             }
           }
@@ -86,6 +129,30 @@ class TimeOffRepository {
     };
 
     return controller.stream;
+  }
+
+  /// Asynchronously syncs the employee's time-off requests from the REST API to Hive.
+  Future<void> syncTimeOffFromBackend(String employeeId) async {
+    try {
+      final clean = employeeId.trim();
+      final normTargetId = RouteRepository.resolveEmployeeId(clean);
+      final queryId = normTargetId.isNotEmpty ? normTargetId : clean;
+      if (queryId.isEmpty) return;
+
+      final uri = Uri.parse(
+          '$serverBaseUrl/api/public/dispatch/time-off-requests?employeeId=${Uri.encodeComponent(queryId)}');
+      final res = await http.get(uri).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        final list = jsonDecode(res.body) as List<dynamic>;
+        final models = list
+            .map((item) =>
+                TimeOffRequestModel.fromMap(item as Map<String, dynamic>))
+            .toList();
+        _cacheRequests(models);
+      }
+    } catch (e) {
+      debugPrint('REST syncTimeOffFromBackend notice: $e');
+    }
   }
 
   /// Returns cached time-off requests filtered by employeeId.

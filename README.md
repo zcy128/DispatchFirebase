@@ -24,7 +24,7 @@ A fully interactive public demo environment is available online with zero setup 
 | Application Module | Public Live URL | Access & Login Instructions |
 | :--- | :--- | :--- |
 | **Dispatch Office Console (`web`)** | [schoolbus.pcytech.ca](https://schoolbus.pcytech.ca/)<br>*(Mirror: [schoolbusdispatchapp.web.app](https://schoolbusdispatchapp.web.app/))* | Click the **"1-Click Launch as Operations Admin"** button on the sign-in screen to instantly enter the desktop console with full administrative, dispatch, and compliance privileges.<br>*(Note: Navigate to `/?mode=ai` to directly open the full-screen standalone AI Copilot PWA)* |
-| **Driver & Monitor App (`driver_app`)** | [schoolbus.pcytech.ca/driver](https://schoolbus.pcytech.ca/driver)<br>*(Mirror: [schoolbusdispatchapp.web.app/driver](https://schoolbusdispatchapp.web.app/driver))* | Click **"Quick Demo Credentials"** at the bottom of the login form to autofill demo credentials (`driver@example.com` / `password123`), choose your role as **Driver** or **Attendant**, and tap **Sign In** to experience the shift schedule, pre-trip inspections, and student boarding check-in. |
+| **Driver & Monitor App (`driver_app`)** | [schoolbus.pcytech.ca/driver](https://schoolbus.pcytech.ca/driver)<br>*(Mirror: [schoolbusdispatchapp.web.app/driver](https://schoolbusdispatchapp.web.app/driver))* | Click **"Quick Demo Credentials"** at the bottom of the login form to autofill demo credentials (`driver1d` / `Dispatch2026!`), choose your role as **Driver** or **Attendant**, and tap **Sign In** to experience the shift schedule, pre-trip inspections, and student boarding check-in. |
 | **Parent Bus Tracker App (`parent_app`)** | [schoolbus.pcytech.ca/parent](https://schoolbus.pcytech.ca/parent)<br>*(Mirror: [schoolbusdispatchapp.web.app/parent](https://schoolbusdispatchapp.web.app/parent))* | Features passwordless passcode verification. Click **"Demo Phone"** or **"Demo Email"** to fill in demo credentials, tap **Continue**, then on the verification screen tap the amber **"Dev Passcode (Tap to autofill)"** banner to log in immediately and track the live school bus GPS route and arrival ETA. |
 | **Model Context Protocol (MCP) Endpoint** | `https://dispatch-api-kv7qum3dca-nn.a.run.app/api/mcp` | Standard Anthropic MCP protocol server endpoint, allowing external AI clients (Claude Desktop, Cursor, Gemini CLI) to connect via MCP Token and inspect or run dispatch operations. |
 
@@ -163,8 +163,12 @@ The platform consists of a deeply integrated ecosystem of specialized applicatio
 - **External AI Agent Connectivity**: External AI tools (such as Claude Desktop, Cursor, Gemini CLI, or custom autonomous agents) can securely inspect live dispatch shifts, check vacant routes, verify driver/vehicle compliance, and trigger driver assignments.
 - **Secure Token Management**: Operators can generate dedicated MCP Tokens with custom expirations in the **Settings** view, protected by SHA-256 hash storage and scoped to the user's RBAC role.
 
-### 11. Granular Page-Level Access Control (RBAC)
-- Fine-grained role-based permission matrix governing exact read/write access for Administrators, Dispatchers, Yard Supervisors, Safety Officers, Payroll Accountants, Drivers, and Parents.
+### 11. Granular RBAC & Zero-Overhead Row-Level Security
+- **Ultra-Lean Claims Architecture (`Role + Overrides`)**: Manages 34 granular operational modules across 12 roles. To comply strictly with Firebase Auth's 1,000-byte token claim ceiling, Custom Claims only store the employee's base role and delta diffs (`ovr`), keeping token payloads ultra-compact (< 50 bytes) with zero redundant database queries.
+- **Production Row-Level Security Rules**: Firestore security rules (`firestore.rules`) enforce in-memory ownership checks:
+  - **Operational Forms Isolation**: Drivers and attendants can only query and submit their own time-off requests, defect reports, student incident reports, roadside hazard notices, vehicle sign-outs, and expense reimbursements.
+  - **Assigned Route & Shift Scoping**: Field crews only read route manifests, student passenger alerts, and dispatch shifts assigned to their employee ID (`resource.data.assignedEmployeeIds`).
+  - **High-Security Financial & Staging Isolation**: Dispatch payroll approvals are reserved for dispatchers and audited by payroll accountants; credentials, secrets, and raw staging collections reject all direct client requests.
 
 ### 12. BigQuery Cold Archiving & Disaster Recovery
 - Active operational records reside in Firestore for sub-second latency and real-time streaming.
@@ -308,7 +312,8 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
 ## Security & Open Source Guidelines
 
 - **Credential Hygiene**: **Never** commit files containing actual private keys or secrets (`serviceAccountKey.json`, `firebase_options.dart`, `.env`). All such files are strictly excluded via `.gitignore`.
-- **Firestore Security Rules**: Before deploying to production or connecting to a live cloud database, ensure you tighten `firestore.rules` to enforce strict authorization controls.
+- **Firestore Security Rules**: Production-grade security rules (`firestore.rules`) enforce granular module-level overrides, role inheritance, and row-level document ownership checks entirely in memory with 0 extra billing reads.
+- **Client Query Scoping**: All mobile and web clients query collections with scoped filters (e.g. `where('employeeId', '==', id)`), ensuring Firestore rules can validate operations without permission denial or over-fetching.
 - **Integration secrets**: BusPlanner, Zonar, and BambooHR credentials, and the BusPlanner staging collections, are readable only by the API. Firestore rules deny browser access.
 - **MCP Token Security**: MCP Tokens are hashed with SHA-256 before storing in Firestore. The raw token is only returned to the administrator once upon creation.
 

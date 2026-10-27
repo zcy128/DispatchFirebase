@@ -651,10 +651,72 @@ class _RouteTabState extends State<RouteTab> {
     }
 
     return Column(
-      children: List.generate(
-        stops.length,
-        (idx) => _buildStopItem(context, stops[idx], idx, isDark),
-      ),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Direction C: Micro-Stepper Progress Indicator
+        Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF141926) : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'ROUTE STOPS PROGRESS: ${stops.length} STOPS',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                      color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                    ),
+                  ),
+                  Text(
+                    '${state.selectedShiftType} RUN',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: List.generate(stops.length, (idx) {
+                  final isFocused = _selectedMapStopIndex == idx;
+                  return Expanded(
+                    child: Container(
+                      height: 4,
+                      margin: EdgeInsets.only(right: idx == stops.length - 1 ? 0 : 2),
+                      decoration: BoxDecoration(
+                        color: isFocused
+                            ? AppColors.primary
+                            : (idx == 0
+                                ? AppColors.success
+                                : (isDark ? Colors.grey.shade800 : Colors.grey.shade300)),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ],
+          ),
+        ),
+        ...List.generate(
+          stops.length,
+          (idx) => _buildStopItem(context, stops[idx], idx, isDark),
+        ),
+      ],
     );
   }
 

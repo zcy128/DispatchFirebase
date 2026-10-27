@@ -96,6 +96,9 @@ export interface AuthUser {
   role: string;
   employeeId?: string;
   displayName?: string;
+  username?: string;
+  fullName?: string;
   yardId?: string;
+  overrides?: Record<string, PermissionLevel>;
   pagePermissions?: Record<string, PermissionLevel>;
 }

@@ -1,308 +1,401 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Employee Master Collection
-    // CQRS Architecture:
-    // - READ: Open to dispatch clients via onSnapshot for real-time push
-    // - WRITE: Strictly PROHIBITED from browser clients. 
-    //          All creates/updates/deletes must go through the Go API Server (Cloud Run).
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 1. 核心鉴权与权限辅助函数 (Core Auth & Permission Helpers)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function myEmployeeId() {
+      return isAuthenticated() && request.auth.token.employeeId != null
+        ? request.auth.token.employeeId
+        : '';
+    }
+
+    function isMyRecord(empId) {
+      return isAuthenticated() && (
+        request.auth.token.employeeId == empId ||
+        request.auth.uid == empId
+      );
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.role == 'admin';
+    }
+
+    // 检查模块读权限：
+    // 1. 系统管理员拥有最高全权限
+    // 2. 如果 Token 包含该模块的个性化覆盖 (ovr)，以覆盖为最高准则 ('readonly' 或 'readwrite')
+    // 3. 否则继承角色默认权限（未被标记为 'none' 且角色属于默认授权列表）
+    function canRead(moduleName, defaultAllowedRoles) {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' ||
+        (request.auth.token.ovr != null && request.auth.token.ovr[moduleName] in ['readonly', 'readwrite']) ||
+        (
+          (request.auth.token.ovr == null || request.auth.token.ovr[moduleName] != 'none') &&
+          request.auth.token.role in defaultAllowedRoles
+        )
+      );
+    }
+
+    // 检查模块写权限：
+    // 1. 系统管理员拥有最高权限
+    // 2. 显式覆盖项必须等于 'readwrite'
+    // 3. 默认角色要求非降权 (not 'readonly' and not 'none')
+    function canWrite(moduleName, defaultAllowedRoles) {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' ||
+        (request.auth.token.ovr != null && request.auth.token.ovr[moduleName] == 'readwrite') ||
+        (
+          (request.auth.token.ovr == null || (request.auth.token.ovr[moduleName] != 'readonly' && request.auth.token.ovr[moduleName] != 'none')) &&
+          request.auth.token.role in defaultAllowedRoles
+        )
+      );
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 2. 员工主数据 (Employee Master Records)
+    // ═════════════════════════════════════════════════════════════════════════
+
     match /employees/{employeeId} {
-      allow read: if true;
-      allow write: if false;
+      // 管理人员与调度可查看全量员工；司机只能查看自己本人的档案
+      allow read: if canRead('employees', ['dispatcher', 'HR', 'office staff', 'manager', 'supervisor']) ||
+                     isMyRecord(resource.data.employeeNumber) ||
+                     isMyRecord(employeeId);
+      // 主数据修改严格限制为 HR 和 Admin，或通过 Go 后端 Admin SDK
+      allow write: if canWrite('employees', ['HR']);
     }
 
-    // Student Master Collection
+    // ═════════════════════════════════════════════════════════════════════════
+    // 3. 学生档案与接送学校 (Student & School Master Collections)
+    // ═════════════════════════════════════════════════════════════════════════
+
     match /students/{studentId} {
-      allow read: if true;
-      allow write: if false;
+      // 敏感数据：调度员、学生关怀专员可读；司机仅能读取分配给自己线路上的学生
+      allow read: if canRead('students', ['dispatcher', 'studentcare', 'office staff', 'manager']) ||
+                     (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
+                      resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+      allow write: if canWrite('students', ['dispatcher', 'studentcare']);
     }
 
-    // School Master Collection
     match /schools/{schoolId} {
-      allow read: if true;
-      allow write: if false;
+      allow read: if isAuthenticated();
+      allow write: if canWrite('schools', ['dispatcher']);
     }
 
-    // School Boards Collection
     match /school_boards/{boardId} {
-      allow read: if true;
-      allow write: if false;
+      allow read: if isAuthenticated();
+      allow write: if canWrite('schools', ['dispatcher']);
     }
 
-    // Route & Shift Collections (CQRS: onSnapshot client read, server write)
+    match /calendars/{calendarId} {
+      allow read: if isAuthenticated();
+      allow write: if canWrite('calendar', ['dispatcher']);
+    }
+
+    match /yards/{yardId} {
+      allow read: if isAuthenticated();
+      allow write: if canWrite('yards', ['fleet', 'dispatcher']);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 4. 固定路线与班次 (Routes & Route Shifts)
+    // ═════════════════════════════════════════════════════════════════════════
+
     match /routes/{routeId} {
-      allow read: if true;
-      allow write: if false;
+      // 调度与管理人员看所有路线；司机与随车人员只能看安排给自己的路线
+      allow read: if canRead('routes', ['dispatcher', 'manager', 'supervisor', 'fleet', 'office staff']) ||
+                     (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
+                      resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+      // 路线规划修改仅限调度员
+      allow write: if canWrite('routes', ['dispatcher']);
     }
 
     match /route_shifts/{shiftId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if canRead('routes', ['dispatcher', 'manager', 'supervisor', 'fleet']) ||
+                     (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
+                      resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+      allow write: if canWrite('routes', ['dispatcher']);
     }
 
-    // Vehicle Fleet Collection
-    match /vehicles/{vehicleId} {
-      allow read: if true;
-      allow write: if false;
-    }
+    // ═════════════════════════════════════════════════════════════════════════
+    // 5. 每日派工工作台 (Daily Dispatch Shifts)
+    // ═════════════════════════════════════════════════════════════════════════
 
-    // Yards Collection
-    match /yards/{yardId} {
-      allow read: if true;
-      allow write: if false;
-    }
-
-    // Calendars Collection
-    match /calendars/{calendarId} {
-      allow read: if true;
-      allow write: if false;
-    }
-
-    // Payroll Rates Collections
-    match /payroll_rates/{rateId} {
-      allow read: if true;
-      allow write: if false;
-    }
-
-    match /payroll_base_rates/{rateId} {
-      allow read: if true;
-      allow write: if false;
-    }
-
-    match /payroll_custom_rates/{rateId} {
-      allow read: if true;
-      allow write: if false;
-    }
-
-    // Dispatch Workbench Shifts Collection
     match /dispatch_shifts/{shiftId} {
-      allow read: if true;
-      allow write: if false;
+      // 调度台看全天班次；财务专员、车队、学生关怀员等可查看派工；司机仅能看分配给自己的班次
+      allow read: if canRead('dispatch', ['dispatcher', 'manager', 'supervisor', 'office staff', 'fleet', 'payroll', 'studentcare']) ||
+                     (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
+                      resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+      // 调度员可调配班次；司机仅可打卡/更新属于自己的班次状态
+      allow write: if canWrite('dispatch', ['dispatcher']) ||
+                      (isAuthenticated() && request.auth.token.role == 'driver' &&
+                       resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
     }
 
-    // Dispatch Change Logs
-    match /dispatch_change_logs/{logId} {
-      allow read: if true;
-      allow write: if true;
-    }
+    // ═════════════════════════════════════════════════════════════════════════
+    // 6. 包车业务 (Charter Operations)
+    // ═════════════════════════════════════════════════════════════════════════
 
-    // Route Audit & Change Logs (Tracks changes to route, shifts, stops, and students)
-    match /route_change_logs/{id} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Entity Operation Logs (CRUD history for students and vehicles)
-    match /entity_operation_logs/{id} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Payroll Operation Logs (Rate modifications, custom rules, approvals, finance sync)
-    match /payroll_operation_logs/{id} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Operational & Safety Activity Logs (Time off, defects, hazards, incidents, signouts)
-    match /operational_safety_logs/{id} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Confirmed Dispatch Payrolls
-    match /dispatch_payrolls/{id} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Finance Department Payroll Logs
-    match /payroll_logs/{id} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Temporary Route/Shift Assignments
-    match /temporary_assignments/{id} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Route Openings & Bidding Postings
-    match /route_openings/{id} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Charter Operations: Clients & Trips
     match /charter_clients/{id} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if canRead('charter', ['dispatcher', 'manager']);
+      allow write: if canWrite('charter', ['dispatcher']);
     }
 
     match /charter_trips/{id} {
-      allow read: if true;
-      allow write: if true;
+      // 调度员看全量包车；司机仅可查看并签到指派给自己的包车任务
+      allow read: if canRead('charter', ['dispatcher', 'manager', 'supervisor', 'fleet']) ||
+                     (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
+                      resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+      allow write: if canWrite('charter', ['dispatcher']) ||
+                      (isAuthenticated() && request.auth.token.role == 'driver' &&
+                       resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
     }
 
-    // Time Off Requests Collection
-    match /time_off_requests/{id} {
-      allow read: if true;
-      allow write: if true;
+    // ═════════════════════════════════════════════════════════════════════════
+    // 7. 车辆资产与车检 (Fleet Vehicles & Inspections)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    match /vehicles/{vehicleId} {
+      allow read: if isAuthenticated();
+      allow write: if canWrite('vehicles', ['fleet']);
     }
 
-    // System configuration & audit logs
-    match /system/{doc} {
-      allow read: if true;
-      allow write: if false;
-    }
-
-    // System settings & notifications configuration
-    match /system_settings/{doc} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Training Courses & Types Collections
-    match /training_courses/{id} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /training_types/{id} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Pre-Trip Vehicle Inspections
     match /pretrip_inspections/{id} {
-      allow read: if true;
-      allow write: if true;
+      // 出车前检查记录：车队与调度可审核；司机可提交与查看
+      allow read: if isAuthenticated();
+      allow write: if canWrite('defects', ['fleet', 'dispatcher']) ||
+                      (isAuthenticated() && request.auth.token.role in ['driver', 'helper']);
     }
 
-    // Vehicle Defect Reports & Fleet Assessment
     match /vehicle_defects/{id} {
-      allow read: if true;
-      allow write: if true;
+      // 车辆报修与 DVIR 报告：车队全面管理；司机只能查看自己提交的报修
+      allow read: if canRead('defects', ['dispatcher', 'fleet', 'manager']) ||
+                     (isAuthenticated() && resource.data.reportedByUserId == myEmployeeId());
+      allow create: if canWrite('defects', ['fleet', 'dispatcher']) ||
+                       (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
+                        request.resource.data.reportedByUserId == myEmployeeId());
+      allow update, delete: if canWrite('defects', ['fleet', 'dispatcher']);
     }
 
-    // Student Incident Reports & Office Follow-up
+    match /vehicle_signouts/{id} {
+      // 车辆钥匙领用与交接：车队管理；司机只能提交并查看自己名下的交接
+      allow read: if canRead('vehicle_signouts', ['dispatcher', 'fleet', 'manager']) ||
+                     (isAuthenticated() && isMyRecord(resource.data.employeeId));
+      allow create: if canWrite('vehicle_signouts', ['dispatcher', 'fleet']) ||
+                       (isAuthenticated() && request.auth.token.role == 'driver' &&
+                        isMyRecord(request.resource.data.employeeId));
+      allow update, delete: if canWrite('vehicle_signouts', ['dispatcher', 'fleet']);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 8. 司乘人员业务表单 (Driver Operational Forms)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    // 8.1 请假申请 (Time Off Requests)
+    match /time_off_requests/{id} {
+      // 调度与 HR 审批所有人；员工本人只能读写自己的假条
+      allow read: if canRead('time_off', ['dispatcher', 'HR', 'manager']) ||
+                     (isAuthenticated() && isMyRecord(resource.data.employeeId));
+      allow create: if canWrite('time_off', ['dispatcher', 'HR']) ||
+                       (isAuthenticated() && isMyRecord(request.resource.data.employeeId));
+      allow update: if canWrite('time_off', ['dispatcher', 'HR']) ||
+                       (isAuthenticated() && isMyRecord(resource.data.employeeId) &&
+                        request.resource.data.status == 'cancelled');
+      allow delete: if isAdmin();
+    }
+
+    // 8.2 学生违纪与车上安全事故 (Student Incidents)
     match /student_incidents/{id} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if canRead('student_incidents', ['dispatcher', 'studentcare', 'manager']) ||
+                     (isAuthenticated() && resource.data.driverId == myEmployeeId());
+      allow create: if canWrite('student_incidents', ['dispatcher', 'studentcare']) ||
+                       (isAuthenticated() && request.resource.data.driverId == myEmployeeId());
+      allow update, delete: if canWrite('student_incidents', ['dispatcher', 'studentcare']);
     }
 
-    // Expense Reimbursements & Categories
+    // 8.3 费用报销申报 (Expense Reimbursements)
     match /expense_reimbursements/{id} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if canRead('expenses', ['HR', 'payroll', 'manager']) ||
+                     (isAuthenticated() && isMyRecord(resource.data.employeeId));
+      allow create: if canWrite('expenses', ['HR']) ||
+                       (isAuthenticated() && isMyRecord(request.resource.data.employeeId));
+      allow update, delete: if canWrite('expenses', ['HR', 'payroll']);
     }
 
     match /expense_categories/{id} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAuthenticated();
+      allow write: if canWrite('expenses', ['HR', 'payroll']);
     }
 
-    // Hazard & Near-Miss Reports
+    // 8.4 道路与环境隐患报告 (Hazard Reports)
     match /hazard_reports/{id} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if canRead('hazards', ['dispatcher', 'studentcare', 'manager']) ||
+                     (isAuthenticated() && resource.data.reportedByEmployeeId == myEmployeeId());
+      allow create: if canWrite('hazards', ['dispatcher', 'studentcare']) ||
+                       (isAuthenticated() && request.resource.data.reportedByEmployeeId == myEmployeeId());
+      allow update, delete: if canWrite('hazards', ['dispatcher', 'studentcare']);
     }
 
-    // School Bus Route Safety Assessments
+    // 8.5 路线安全评估单 (Route Safety Assessments)
     match /route_assessments/{id} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if canRead('route_assessments', ['dispatcher', 'manager']) ||
+                     (isAuthenticated() && resource.data.conductedByEmployeeId == myEmployeeId());
+      allow create: if canWrite('route_assessments', ['dispatcher']) ||
+                       (isAuthenticated() && request.resource.data.conductedByEmployeeId == myEmployeeId());
+      allow update, delete: if canWrite('route_assessments', ['dispatcher']);
     }
 
-    // Vehicle Sign-Out / Handover Records
-    match /vehicle_signouts/{id} {
-      allow read: if true;
-      allow write: if true;
+    // 8.6 缺班顶岗抢单与临时分派 (Temporary Assignments & Openings)
+    match /temporary_assignments/{id} {
+      allow read: if isAuthenticated();
+      allow write: if canWrite('temporary_assignments', ['dispatcher']);
     }
 
-    // Operations Chat & Instant Messaging
+    match /route_openings/{id} {
+      allow read: if isAuthenticated();
+      allow write: if canWrite('temporary_assignments', ['dispatcher']);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 9. 薪酬与财务数据 (Payroll & Compensation - Highly Restricted)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    match /payroll_rates/{rateId} {
+      allow read, write: if canRead('payroll', ['payroll']);
+    }
+
+    match /payroll_base_rates/{rateId} {
+      allow read, write: if canRead('payroll', ['payroll']);
+    }
+
+    match /payroll_custom_rates/{rateId} {
+      allow read, write: if canRead('payroll', ['payroll']);
+    }
+
+    match /dispatch_payrolls/{id} {
+      // 调度员使用的日常审批页面；财务专员(payroll)可以查看；管理人员亦可查看
+      allow read: if canRead('dispatch_payroll', ['dispatcher', 'payroll', 'manager', 'supervisor']);
+      // 审批修改仅限调度员（及系统管理员）
+      allow write: if canWrite('dispatch_payroll', ['dispatcher']);
+    }
+
+    match /payroll_logs/{id} {
+      allow read, write: if canRead('payroll', ['payroll']);
+    }
+
+    match /payroll_operation_logs/{id} {
+      allow read, write: if canRead('payroll', ['payroll']);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 10. 培训与证书合规 (Training & Compliance)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    match /training_courses/{id} {
+      allow read: if isAuthenticated();
+      allow write: if canWrite('training', ['training']);
+    }
+
+    match /training_types/{id} {
+      allow read: if isAuthenticated();
+      allow write: if canWrite('training', ['training']);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 11. 即时通讯与位置轨迹 (Chat & Vehicle Live Telemetry)
+    // ═════════════════════════════════════════════════════════════════════════
+
     match /chat_channels/{channelId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
 
       match /messages/{messageId} {
-        allow read: if true;
-        allow write: if true;
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
       }
     }
 
-    // Vehicle Live GPS Telemetry for Parent App Tracking
     match /vehicle_locations/{unitNumber} {
-      allow read: if true;
-      allow write: if true; // Updated by driver app / server
+      allow read: if isAuthenticated();
+      // 司机 App 和调度员均可上报/刷新车辆 GPS 经纬度
+      allow write: if isAuthenticated() && request.auth.token.role in ['driver', 'dispatcher', 'admin'];
     }
 
-    // Parent App User Profiles & Preferences
-    match /parent_users/{parentId} {
+    // 家长端只读车辆追踪位置
+    match /gps_current/{unitNumber} {
       allow read: if true;
-      allow write: if false; // Must be managed via Go Server
+      allow write: if false; // 仅由 Go 后端或云函数写入
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 12. 系统审计与日志 (Audit & System Security)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    match /dispatch_change_logs/{logId} {
+      allow read: if canRead('dispatch_log', ['dispatcher', 'manager', 'supervisor']);
+      allow write: if isAuthenticated();
+    }
+
+    match /route_change_logs/{id} {
+      allow read: if canRead('dispatch_log', ['dispatcher', 'manager']);
+      allow write: if isAuthenticated();
+    }
+
+    match /entity_operation_logs/{id} {
+      allow read: if canRead('audit_logs', ['admin']);
+      allow write: if isAuthenticated();
+    }
+
+    match /operational_safety_logs/{id} {
+      allow read: if canRead('audit_logs', ['admin', 'manager']);
+      allow write: if isAuthenticated();
+    }
+
+    match /login_logs/{id} {
+      allow read: if canRead('login_logs', ['admin']);
+      allow create: if true; // 允许登录时记录审计日志
+      allow update, delete: if isAdmin();
+    }
+
+    match /system/{doc} {
+      allow read, write: if isAdmin();
+    }
+
+    match /system_settings/{doc} {
+      allow read, write: if isAdmin();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 13. 家长端与第三方外部同步隔离 (Parent Portal & Integrations)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    match /parent_users/{parentId} {
+      allow read: if isAuthenticated() && request.auth.uid == parentId;
+      allow write: if false;
     }
 
     match /parent_otp_sessions/{contact} {
-      allow read: if false; // Strictly private to Go Server
-      allow write: if false;
+      allow read, write: if false; // 严禁客户端直连，严格限于 Go 后端
     }
 
     match /parent_preferences/{parentId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if isAuthenticated() && request.auth.uid == parentId;
     }
 
-    // BambooHR API key. Server admin SDK only. Never readable from the browser.
-    match /bamboohr_secrets/{doc} {
-      allow read: if false;
-      allow write: if false;
-    }
-
-    // Latest Zonar position for each vehicle. One document per unit number. Server writes only.
-    match /gps_current/{unitNumber} {
-      allow read: if true;
-      allow write: if false;
-    }
-
-    // Zonar password. Server admin SDK only. Never readable from the browser.
-    match /zonar_secrets/{doc} {
-      allow read: if false;
-      allow write: if false;
-    }
-
-    // BusPlanner password. Server admin SDK only. Never readable from the browser.
-    match /busplanner_secrets/{doc} {
-      allow read: if false;
-      allow write: if false;
-    }
-
-    // BusPlanner staging. Server writes only. Not the live route, school, or student records.
-    match /busplanner_staging_routes/{id} {
-      allow read: if false;
-      allow write: if false;
-    }
-    match /busplanner_staging_runs/{id} {
-      allow read: if false;
-      allow write: if false;
-    }
-    match /busplanner_staging_schools/{id} {
-      allow read: if false;
-      allow write: if false;
-    }
-    match /busplanner_staging_stops/{id} {
-      allow read: if false;
-      allow write: if false;
-    }
-    match /busplanner_staging_student_stops/{id} {
-      allow read: if false;
-      allow write: if false;
-    }
-    match /busplanner_staging_students/{id} {
-      allow read: if false;
-      allow write: if false;
-    }
+    // 敏感集成凭据与临时暂存区：客户端绝对不可访问，完全由 Go Server Admin SDK 操作
+    match /bamboohr_secrets/{doc} { allow read, write: if false; }
+    match /zonar_secrets/{doc} { allow read, write: if false; }
+    match /busplanner_secrets/{doc} { allow read, write: if false; }
+    match /busplanner_staging_routes/{id} { allow read, write: if false; }
+    match /busplanner_staging_runs/{id} { allow read, write: if false; }
+    match /busplanner_staging_schools/{id} { allow read, write: if false; }
+    match /busplanner_staging_stops/{id} { allow read, write: if false; }
+    match /busplanner_staging_student_stops/{id} { allow read, write: if false; }
+    match /busplanner_staging_students/{id} { allow read, write: if false; }
   }
 }

@@ -399,7 +399,7 @@ export const AppContent: React.FC = () => {
           currentUser.role = matchedEmp.role;
         }
         if (matchedEmp.pagePermissions) {
-          currentUser.pagePermissions = matchedEmp.pagePermissions;
+          currentUser.overrides = matchedEmp.pagePermissions;
         }
         if (matchedEmp.yardId) {
           currentUser.yardId = matchedEmp.yardId;
