@@ -839,6 +839,22 @@ export const DispatchService = {
     }
   },
 
+  syncCleanPayrollsForDate: async (date: string): Promise<{ success: boolean; date: string; synced: number }> => {
+    try {
+      return await apiRequest<{ success: boolean; date: string; synced: number }>(`/api/dispatch/payroll-logs/sync-day`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date }),
+      });
+    } catch {
+      return await apiRequest<{ success: boolean; date: string; synced: number }>(`/api/public/dispatch/payroll-logs/sync-day`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date }),
+      });
+    }
+  },
+
   updatePayrollDepartmentLog: async (
     logId: string,
     payload: UpdatePayrollDepartmentLogPayload

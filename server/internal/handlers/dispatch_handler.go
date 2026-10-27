@@ -158,6 +158,35 @@ func (h *DispatchHandler) UpdateShift(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(updated)
 }
 
+// SyncCleanPayrollsForDate explicitly triggers synchronization of routine/clean dispatch payrolls to the finance log for a given date
+func (h *DispatchHandler) SyncCleanPayrollsForDate(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		Date string `json:"date"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	date := req.Date
+	if date == "" {
+		date = r.URL.Query().Get("date")
+	}
+	if date == "" {
+		http.Error(w, `{"error":"date is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	count, err := h.repo.SyncCleanPayrollsForDate(r.Context(), date)
+	if err != nil {
+		http.Error(w, `{"error":"failed to sync clean payrolls: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"date":    date,
+		"synced":  count,
+	})
+}
+
 // RecordStopArrival records stop arrival time and recalculates lateness
 func (h *DispatchHandler) RecordStopArrival(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
