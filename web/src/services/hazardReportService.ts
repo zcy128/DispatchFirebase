@@ -93,12 +93,24 @@ export const HazardReportService = {
     employeeId?: string;
     status?: string | number;
     officeHazardType?: string;
+    unitNumber?: string;
+    routeId?: string;
+    query?: string;
+    timeRange?: string;
+    startDate?: string;
+    endDate?: string;
   }): Promise<HazardReport[]> => {
     try {
       const params = new URLSearchParams();
       if (filters?.employeeId) params.append('employeeId', filters.employeeId);
       if (filters?.status !== undefined) params.append('status', String(filters.status));
       if (filters?.officeHazardType) params.append('officeHazardType', filters.officeHazardType);
+      if (filters?.unitNumber) params.append('unitNumber', filters.unitNumber);
+      if (filters?.routeId) params.append('routeId', filters.routeId);
+      if (filters?.query) params.append('query', filters.query);
+      if (filters?.timeRange) params.append('timeRange', filters.timeRange);
+      if (filters?.startDate) params.append('startDate', filters.startDate);
+      if (filters?.endDate) params.append('endDate', filters.endDate);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
       const res = await apiRequest<HazardReport[]>(`/api/public/dispatch/hazard-reports${qs}`);
@@ -110,8 +122,18 @@ export const HazardReportService = {
       if (db) {
         try {
           const snapshot = await getDocs(collection(db, 'hazard_reports'));
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - 365);
+          const cutoffStr = cutoffDate.toISOString().slice(0, 10);
           const items: HazardReport[] = [];
-          snapshot.forEach((d) => items.push(normalizeHazardRecord(d.data(), d.id)));
+          snapshot.forEach((d) => {
+            const rec = normalizeHazardRecord(d.data(), d.id);
+            if (!filters?.timeRange || filters.timeRange === '1year') {
+              const rDate = rec.eventTime?.slice(0, 10) || rec.createdAt.slice(0, 10);
+              if (rDate && rDate < cutoffStr) return;
+            }
+            items.push(rec);
+          });
           items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           return items;
         } catch (e) {
@@ -240,10 +262,14 @@ export const HazardReportService = {
       callback(merged);
     };
 
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 365);
+    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+
     const fetchLatestRest = async () => {
       if (!isSubscribed) return;
       try {
-        const data = await HazardReportService.listReports();
+        const data = await HazardReportService.listReports({ timeRange: '1year' });
         if (isSubscribed) {
           restReports = data;
           emitMerged();
@@ -259,7 +285,7 @@ export const HazardReportService = {
     // 2. Poll every 5s to guarantee fresh updates even if submitted via REST
     pollTimer = setInterval(fetchLatestRest, pollingIntervalMs);
 
-    // 3. Real-time Firestore onSnapshot listener for instant 0-second push
+    // 3. Real-time Firestore onSnapshot listener for instant 0-second push (live data <= 1 year)
     if (db) {
       try {
         const collRef = collection(db, 'hazard_reports');
@@ -269,7 +295,11 @@ export const HazardReportService = {
             if (!isSubscribed) return;
             const items: HazardReport[] = [];
             snapshot.forEach((d) => {
-              items.push(normalizeHazardRecord(d.data(), d.id));
+              const rec = normalizeHazardRecord(d.data(), d.id);
+              const rDate = rec.eventTime?.slice(0, 10) || rec.createdAt.slice(0, 10);
+              if (!rDate || rDate >= cutoffStr) {
+                items.push(rec);
+              }
             });
             firestoreReports = items;
             emitMerged();

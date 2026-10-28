@@ -318,12 +318,23 @@ export const DispatchService = {
   subscribeToChangeLogs: (
     date: string,
     onUpdate: (logs: DispatchChangeLog[]) => void,
-    onError?: (err: Error) => void
+    onError?: (err: Error) => void,
+    filterParams?: { routeNo?: string; employee?: string; scope?: string }
   ) => {
-    if (!db) {
-      DispatchService.listChangeLogs(date)
+    // 1. Cold Data Handling:
+    // Operational logs older than 7 days are archived to BigQuery and deleted from Firestore.
+    // Also targeted queries (Route/Employee) or scope='all' use the backend REST API directly.
+    const cutoff7DaysAgo = new Date();
+    cutoff7DaysAgo.setDate(cutoff7DaysAgo.getDate() - 7);
+    const cutoffDateStr = cutoff7DaysAgo.toISOString().slice(0, 10);
+    const isColdDate = Boolean(date && date < cutoffDateStr);
+
+    if (isColdDate || filterParams?.routeNo || filterParams?.employee || filterParams?.scope === 'all' || !db) {
+      DispatchService.listChangeLogs(date, filterParams)
         .then((logs) => onUpdate(Array.isArray(logs) ? logs : []))
-        .catch(onError);
+        .catch((err) => {
+          if (onError) onError(err);
+        });
       return () => {};
     }
 
@@ -335,6 +346,14 @@ export const DispatchService = {
       const unsubscribe = onSnapshot(
         q,
         (snapshot) => {
+          // If Firestore returns 0 documents, it may have already been archived to BigQuery cold storage
+          if (snapshot.empty) {
+            DispatchService.listChangeLogs(date, filterParams)
+              .then((logs) => onUpdate(Array.isArray(logs) ? logs : []))
+              .catch(() => onUpdate([]));
+            return;
+          }
+
           const list: DispatchChangeLog[] = [];
           snapshot.forEach((d) => {
             const data = d.data() as DispatchChangeLog;
@@ -344,32 +363,57 @@ export const DispatchService = {
             });
           });
           list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-          onUpdate(list || []);
+
+          // By default, filter down to macro-level dispatch operations (Day Generated, Day Deleted, etc.)
+          const macroTypes = new Set([
+            'Day Generated',
+            'Day Deleted',
+            'Schedule Locked',
+            'Schedule Unlocked',
+            'Batch Assignment',
+            'Day Sheet Created',
+            'Day Sheet Deleted',
+          ]);
+          const filtered = list.filter((l) => !l.shiftId || !l.routeNo || macroTypes.has(l.type));
+          onUpdate(filtered || []);
         },
         (error) => {
-          console.error('[DispatchService] Change logs onSnapshot error:', error);
-          if (onError) onError(error);
-          DispatchService.listChangeLogs(date)
+          console.warn('[DispatchService] Change logs onSnapshot fallback to API:', error);
+          DispatchService.listChangeLogs(date, filterParams)
             .then((logs) => onUpdate(Array.isArray(logs) ? logs : []))
-            .catch(console.error);
+            .catch((apiErr) => {
+              console.error('[DispatchService] Change logs fallback failed:', apiErr);
+              if (onError) onError(apiErr);
+            });
         }
       );
       return unsubscribe;
     } catch (e) {
-      console.error('[DispatchService] Exception in change log listener:', e);
-      DispatchService.listChangeLogs(date)
+      console.warn('[DispatchService] Exception in change log listener, fallback to API:', e);
+      DispatchService.listChangeLogs(date, filterParams)
         .then((logs) => onUpdate(Array.isArray(logs) ? logs : []))
-        .catch(onError);
+        .catch((apiErr) => {
+          if (onError) onError(apiErr);
+        });
       return () => {};
     }
   },
 
-  listChangeLogs: async (date: string): Promise<DispatchChangeLog[]> => {
+  listChangeLogs: async (
+    date: string,
+    params?: { routeNo?: string; employee?: string; scope?: string }
+  ): Promise<DispatchChangeLog[]> => {
+    const q = new URLSearchParams({ date });
+    if (params?.routeNo) q.set('routeNo', params.routeNo);
+    if (params?.employee) q.set('employee', params.employee);
+    if (params?.scope) q.set('scope', params.scope);
+    const qStr = q.toString();
+
     try {
-      const res = await apiRequest<DispatchChangeLog[]>(`/api/dispatch/change-logs?date=${encodeURIComponent(date)}`);
+      const res = await apiRequest<DispatchChangeLog[]>(`/api/dispatch/change-logs?${qStr}`);
       return Array.isArray(res) ? res : [];
     } catch {
-      const res = await apiRequest<DispatchChangeLog[]>(`/api/public/dispatch/change-logs?date=${encodeURIComponent(date)}`);
+      const res = await apiRequest<DispatchChangeLog[]>(`/api/public/dispatch/change-logs?${qStr}`);
       return Array.isArray(res) ? res : [];
     }
   },
@@ -822,19 +866,23 @@ export const DispatchService = {
           onUpdate(list || []);
         },
         (error) => {
-          console.error('[DispatchService] Payroll department logs onSnapshot error:', error);
-          if (onError) onError(error);
+          console.warn('[DispatchService] Payroll department logs onSnapshot fallback to API:', error);
           DispatchService.listPayrollDepartmentLogs(date ? { date } : undefined)
             .then((logs) => onUpdate(Array.isArray(logs) ? logs : []))
-            .catch(console.error);
+            .catch((apiErr) => {
+              console.error('[DispatchService] Payroll department logs fallback failed:', apiErr);
+              if (onError) onError(apiErr);
+            });
         }
       );
       return unsubscribe;
     } catch (e) {
-      console.error('[DispatchService] Exception in payroll log listener:', e);
+      console.warn('[DispatchService] Exception in payroll log listener, fallback to API:', e);
       DispatchService.listPayrollDepartmentLogs(date ? { date } : undefined)
         .then((logs) => onUpdate(Array.isArray(logs) ? logs : []))
-        .catch(onError);
+        .catch((apiErr) => {
+          if (onError) onError(apiErr);
+        });
       return () => {};
     }
   },

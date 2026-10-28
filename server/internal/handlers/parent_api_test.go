@@ -37,6 +37,18 @@ func setupTestEnvironment() (*handlers.ParentHandler, *handlers.TwilioWebhookHan
 	parentHandler := handlers.NewParentHandler(cfg, studentRepo, parentRepo, dispatchRepo, routeRepo, twilioService, emailService, etaService, nil)
 	twilioWebhookHandler := handlers.NewTwilioWebhookHandler(cfg, studentRepo, dispatchRepo, parentRepo, twilioService, etaService)
 
+	// Determine current Toronto time and AM/PM shift window
+	loc, errLoc := time.LoadLocation("America/Toronto")
+	if errLoc != nil {
+		loc = time.FixedZone("EDT", -4*3600)
+	}
+	now := time.Now().In(loc)
+	todayStr := now.Format("2006-01-02")
+	currentShift := "AM"
+	if now.Hour() >= 12 {
+		currentShift = "PM"
+	}
+
 	// Seed test student
 	ctx := context.Background()
 	s1 := &models.Student{
@@ -66,20 +78,18 @@ func setupTestEnvironment() (*handlers.ParentHandler, *handlers.TwilioWebhookHan
 				Type:     "HomePickup",
 				Location: "Woodroffe & Baseline",
 				Route:    "OCDSB-001",
-				Shift:    "AM",
+				Shift:    currentShift,
 			},
 		},
 	}
 	_ = studentRepo.Create(ctx, s1)
 
 	// Seed active dispatch shift
-	loc, _ := time.LoadLocation("America/Toronto")
-	todayStr := time.Now().In(loc).Format("2006-01-02")
 	dispatchRepo.AddShift(&models.DispatchShift{
 		ID:           "DS-TODAY-001",
 		DispatchDate: todayStr,
 		RouteNo:      "OCDSB-001",
-		ShiftType:    "AM",
+		ShiftType:    currentShift,
 		UnitNumber:   "42",
 		DriverName:   "Mike Ross",
 		LateMinutes:  0,

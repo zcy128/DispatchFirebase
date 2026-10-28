@@ -31,6 +31,7 @@ export const SYSTEM_PAGES: PageDefinition[] = [
   { id: 'schools', label: 'Schools & Bell Times', category: 'masterData', description: 'Educational institutions, bell schedules and yard contacts' },
   { id: 'calendar', label: 'School Calendar', category: 'masterData', description: 'District academic calendars, holidays, and closures' },
   { id: 'vehicles', label: 'Fleet Vehicles', category: 'masterData', description: 'Bus fleet assets, odometer tracking and inspections' },
+  { id: 'pretrip_checks', label: 'Pre-Trip Vehicle Inspections', category: 'masterData', description: 'Daily pre-trip circle check monitoring, missing inspection detection, and MTO/CVOR audit export' },
   { id: 'vehicle_inspections', label: 'Vehicle Mechanical Inspections', category: 'masterData', description: 'Semi-annual safety inspections, end-of-month validity, attachments, and BigQuery archival' },
   { id: 'yards', label: 'Operational Yards', category: 'masterData', description: 'Bus terminal depots, yard supervisors and dispatch zones' },
   { id: 'compliance', label: 'CDL License Compliance', category: 'masterData', description: 'Commercial driver license expiry and medical certification' },
@@ -147,6 +148,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'readwrite',
     calendar: 'readwrite',
     vehicles: 'readwrite',
+    pretrip_checks: 'readwrite',
     vehicle_inspections: 'readwrite',
     yards: 'readwrite',
     compliance: 'readwrite',
@@ -185,6 +187,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'readonly',
     calendar: 'readonly',
     vehicles: 'readonly',
+    pretrip_checks: 'readonly',
     vehicle_inspections: 'readonly',
     yards: 'readonly',
     compliance: 'readonly',
@@ -223,6 +226,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'readwrite',   // Accessible schools
     calendar: 'readwrite',
     vehicles: 'readonly',
+    pretrip_checks: 'readonly',
     vehicle_inspections: 'readonly',
     yards: 'readonly',
     compliance: 'readonly',
@@ -261,6 +265,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'readonly',
     calendar: 'readonly',
     vehicles: 'readonly',
+    pretrip_checks: 'readonly',
     vehicle_inspections: 'readonly',
     yards: 'readonly',
     compliance: 'readonly',
@@ -299,6 +304,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'readonly',
     calendar: 'readonly',
     vehicles: 'none',
+    pretrip_checks: 'none',
     vehicle_inspections: 'none',
     yards: 'none',
     compliance: 'none',
@@ -337,6 +343,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'none',
     calendar: 'none',
     vehicles: 'readwrite',          // Read/write vehicles
+    pretrip_checks: 'readwrite',
     vehicle_inspections: 'readwrite',
     yards: 'readonly',
     compliance: 'readonly',
@@ -375,6 +382,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'none',
     calendar: 'readonly',
     vehicles: 'readonly',           // Read-only yard vehicles
+    pretrip_checks: 'readonly',
     vehicle_inspections: 'readonly',
     yards: 'readonly',
     compliance: 'readonly',
@@ -413,6 +421,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'readonly',
     calendar: 'readonly',
     vehicles: 'readonly',
+    pretrip_checks: 'readonly',
     vehicle_inspections: 'readonly',
     yards: 'readonly',
     compliance: 'readonly',
@@ -451,6 +460,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'readonly',
     calendar: 'readonly',
     vehicles: 'readonly',
+    pretrip_checks: 'readonly',
     vehicle_inspections: 'readonly',
     yards: 'readonly',
     compliance: 'readonly',
@@ -489,6 +499,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'readonly',
     calendar: 'readonly',
     vehicles: 'readonly',
+    pretrip_checks: 'readonly',
     vehicle_inspections: 'readonly',
     yards: 'readonly',
     compliance: 'readonly',
@@ -527,6 +538,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'readonly',
     calendar: 'readonly',
     vehicles: 'readonly',
+    pretrip_checks: 'readonly',
     vehicle_inspections: 'readonly',
     yards: 'readonly',
     compliance: 'none',
@@ -565,6 +577,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     schools: 'readonly',
     calendar: 'readonly',
     vehicles: 'none',
+    pretrip_checks: 'none',
     vehicle_inspections: 'none',
     yards: 'readonly',
     compliance: 'none',
@@ -795,6 +808,9 @@ export function getPagePermission(
   }
   if (pageId === 'student_absences') {
     return roleDefaults?.['students'] || roleDefaults?.['dispatch'] || (role === 'dispatcher' ? 'readwrite' : 'readonly');
+  }
+  if (pageId === 'pretrip_checks') {
+    return roleDefaults?.['vehicles'] || (role === 'fleet' || role === 'dispatcher' ? 'readwrite' : 'readonly');
   }
   if (pageId === 'vehicle_inspections') {
     return roleDefaults?.['vehicles'] || (role === 'fleet' ? 'readwrite' : 'readonly');

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Receipt,
   Search,
@@ -18,6 +19,7 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
+  Database,
 } from 'lucide-react';
 import {
   ExpenseReimbursement,
@@ -64,25 +66,67 @@ export const ExpenseReimbursementsView: React.FC = () => {
   const [reviewerName, setReviewerName] = useState<string>('');
   const [approvalNotes, setApprovalNotes] = useState<string>('');
 
-  useEffect(() => {
-    setLoading(true);
-    const unsubscribe = ExpenseReimbursementService.subscribeClaims((data) => {
-      setClaims(data);
+  // 1. 超过6个月是bigquery冷数据
+  const [timeRange, setTimeRange] = useState<'6months' | 'all'>('6months');
+
+  const isArchivedDate = (claimDate?: string) => {
+    return ExpenseReimbursementService.isColdClaim(claimDate);
+  };
+
+  const loadClaims = async (targetQuery?: string) => {
+    const q = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
+    if (timeRange === 'all' && !q) {
+      setClaims([]);
       setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  const refreshData = async () => {
+      return;
+    }
     setLoading(true);
     try {
-      const data = await ExpenseReimbursementService.listClaims();
+      const params: Record<string, string> = { timeRange };
+      if (q) {
+        params.query = q;
+      }
+      if (statusFilter !== 'all') {
+        params.status = statusFilter;
+      }
+      const data = await ExpenseReimbursementService.listClaims(params);
       setClaims(data);
     } catch (err) {
-      console.error('Failed to refresh expense claims:', err);
+      console.error('Failed to load expense claims:', err);
+      setClaims([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Subscribe to real-time updates (live data <= 6 months) or load targeted archives
+  useEffect(() => {
+    if (timeRange === '6months') {
+      setLoading(true);
+      const unsubscribe = ExpenseReimbursementService.subscribeClaims((data) => {
+        setClaims(data);
+        setLoading(false);
+      });
+      return () => unsubscribe();
+    } else {
+      if (searchQuery.trim()) {
+        loadClaims(searchQuery.trim());
+      } else {
+        setClaims([]);
+        setLoading(false);
+      }
+    }
+  }, [timeRange]);
+
+  const refreshData = async () => {
+    if (timeRange === 'all') {
+      if (searchQuery.trim()) {
+        loadClaims(searchQuery.trim());
+      } else {
+        setClaims([]);
+      }
+    } else {
+      loadClaims();
     }
   };
 
@@ -102,9 +146,9 @@ export const ExpenseReimbursementsView: React.FC = () => {
     return { total, pending, approved, rejected, approvedDollars, pendingDollars };
   }, [claims]);
 
-  // Filtered claims
+  // 3. 按照日期逆序 (Newest claim date first)
   const filteredClaims = useMemo(() => {
-    return claims.filter((c) => {
+    const list = claims.filter((c) => {
       if (statusFilter !== 'all' && c.status !== statusFilter) {
         return false;
       }
@@ -132,7 +176,28 @@ export const ExpenseReimbursementsView: React.FC = () => {
       }
       return true;
     });
+
+    return list.sort((a, b) => {
+      const dateA = a.claimDate || a.createdAt || '';
+      const dateB = b.claimDate || b.createdAt || '';
+      if (dateA !== dateB) return dateB.localeCompare(dateA);
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    });
   }, [claims, statusFilter, searchQuery]);
+
+  // 2. 虚拟滚动 (Virtual Scrolling for large expense roster)
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filteredClaims.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 64,
+    overscan: 10,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start || 0 : 0;
+  const paddingBottom = virtualRows.length > 0
+    ? rowVirtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1]?.end || 0)
+    : 0;
 
   const openReviewModal = (claim: ExpenseReimbursement) => {
     setSelectedClaim(claim);
@@ -184,10 +249,17 @@ export const ExpenseReimbursementsView: React.FC = () => {
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               Expense Reimbursements
-              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live Sync
-              </span>
+              {timeRange === '6months' ? (
+                <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Data (≤6 Months)
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800">
+                  <Database className="w-3.5 h-3.5 text-sky-500" />
+                  BigQuery Historical Archive (&gt;6 Months)
+                </span>
+              )}
             </h1>
             <p className="text-sm text-slate-500 dark:text-slate-400">
               Review driver receipts, verify expenses, and approve reimbursement payouts.
@@ -199,7 +271,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
           <button
             onClick={refreshData}
             disabled={loading}
-            className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors shadow-sm cursor-pointer"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -272,13 +344,49 @@ export const ExpenseReimbursementsView: React.FC = () => {
 
       {/* ─── Search and Filters Bar ────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        {/* 1. TimeRange Tier Selector (6 Months Live vs BigQuery All History) */}
+        <div className="flex items-center bg-slate-100 dark:bg-slate-750 p-1 rounded-lg shrink-0">
+          <button
+            type="button"
+            onClick={() => setTimeRange('6months')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
+              timeRange === '6months'
+                ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            ⏱️ Live (&le;6 Months)
+          </button>
+          <button
+            type="button"
+            onClick={() => setTimeRange('all')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+              timeRange === 'all'
+                ? 'bg-white dark:bg-slate-800 text-sky-700 dark:text-sky-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5 text-sky-500" />
+            <span>All History (BigQuery)</span>
+          </button>
+        </div>
+
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search by driver, employee ID, route, receipt notes..."
+            placeholder={
+              timeRange === 'all'
+                ? "Search BigQuery archives by driver, ID, route, receipt notes..."
+                : "Search by driver, employee ID, route, receipt notes..."
+            }
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              if (timeRange === 'all') {
+                loadClaims(e.target.value);
+              }
+            }}
             className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
           />
         </div>
@@ -288,7 +396,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             aria-label="Filter expense claims by status"
-            className="px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+            className="px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
           >
             <option value="all">All Statuses</option>
             <option value="pending">Pending Review</option>
@@ -299,11 +407,11 @@ export const ExpenseReimbursementsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ─── Claims Table ──────────────────────────────────────────────────── */}
+      {/* ─── Claims Table (2. 虚拟滚动) ──────────────────────────────────────────── */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] min-h-[350px]">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-900/40 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700 shadow-xs backdrop-blur-xs">
               <tr>
                 <th className="px-4 py-3.5 font-semibold">Date & Claim</th>
                 <th className="px-4 py-3.5 font-semibold">Driver</th>
@@ -316,7 +424,19 @@ export const ExpenseReimbursementsView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
-              {loading && claims.length === 0 ? (
+              {timeRange === 'all' && !searchQuery.trim() ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-14 text-center text-slate-500">
+                    <Database className="w-10 h-10 text-sky-400 mx-auto mb-3" />
+                    <p className="font-semibold text-slate-800 dark:text-slate-200 text-sm">
+                      BigQuery Historical Cold Archive
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mt-1">
+                      To protect system performance across multi-year archives, please enter a search term (driver name, employee ID, route #, or claim ID) above to query BigQuery.
+                    </p>
+                  </td>
+                </tr>
+              ) : loading && claims.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-teal-600" />
@@ -336,148 +456,171 @@ export const ExpenseReimbursementsView: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredClaims.map((claim) => {
-                  const statusColors = EXPENSE_CLAIM_STATUS_COLORS[claim.status] || {
-                    bg: 'bg-slate-100',
-                    text: 'text-slate-700',
-                    border: 'border-slate-300',
-                  };
-
-                  const uniqueCategories = Array.from(
-                    new Set(
-                      claim.lines.map(
-                        (l) => l.categoryDisplayName || l.categoryCode || 'Expense'
-                      )
-                    )
-                  );
-
-                  return (
-                    <tr
-                      key={claim.id}
-                      className="hover:bg-slate-50/70 dark:hover:bg-slate-700/30 transition-colors"
-                    >
-                      <td className="px-4 py-3.5">
-                        <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                          {claim.claimDate}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-slate-400 font-mono">
-                            #{claim.id.slice(-8)}
-                          </span>
-                          {claim.attachmentUrls && claim.attachmentUrls.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setLightbox({
-                                  urls: claim.attachmentUrls!,
-                                  currentIndex: 0,
-                                  claimTitle: `${claim.employeeName || 'Driver'} - ${claim.claimDate} (#${claim.id.slice(-6)})`,
-                                });
-                              }}
-                              title={`View ${claim.attachmentUrls.length} receipt photo(s) directly`}
-                              className="group inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold bg-teal-50 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-700/60 hover:bg-teal-100 dark:hover:bg-teal-800/60 hover:ring-2 hover:ring-teal-400/30 transition-all cursor-pointer shadow-xs"
-                            >
-                              <div className="w-4 h-4 rounded overflow-hidden bg-slate-200 shrink-0 border border-teal-300 dark:border-teal-600">
-                                <img
-                                  src={claim.attachmentUrls[0]}
-                                  alt="Thumbnail"
-                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                                />
-                              </div>
-                              <Paperclip className="w-3 h-3" />
-                              <span>{claim.attachmentUrls.length}</span>
-                              <Eye className="w-3 h-3 text-teal-500 opacity-60 group-hover:opacity-100" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <div className="font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <User className="w-3.5 h-3.5 text-slate-400" />
-                          {claim.employeeName || 'Unknown Driver'}
-                        </div>
-                        <div className="text-xs text-slate-400">
-                          ID: {claim.employeeId || 'N/A'}
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        {claim.routeNo ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700/50">
-                            <RouteIcon className="w-3 h-3" />
-                            {claim.routeNo}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-400">None</span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <div className="flex flex-wrap gap-1 max-w-[220px]">
-                          {uniqueCategories.slice(0, 2).map((cat, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
-                            >
-                              <Tag className="w-2.5 h-2.5 text-slate-400" />
-                              {cat}
-                            </span>
-                          ))}
-                          {uniqueCategories.length > 2 && (
-                            <span className="text-xs text-slate-400 self-center">
-                              +{uniqueCategories.length - 2} more
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <span className="text-slate-700 dark:text-slate-300 font-medium">
-                          {claim.lines.length}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <span className="text-base font-bold text-slate-900 dark:text-white">
-                          ${(claim.totalAmount || 0).toFixed(2)}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${statusColors.bg} ${statusColors.text} ${statusColors.border}`}
-                        >
-                          {claim.status === 'approved' && (
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          )}
-                          {claim.status === 'rejected' && (
-                            <XCircle className="w-3 h-3 text-rose-600" />
-                          )}
-                          {claim.status === 'pending' && (
-                            <Clock className="w-3 h-3 text-amber-600" />
-                          )}
-                          {EXPENSE_CLAIM_STATUS_LABELS[claim.status] || claim.status}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3.5 text-right">
-                        <button
-                          onClick={() => openReviewModal(claim)}
-                          className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shadow-sm ${
-                            claim.status === 'pending'
-                              ? 'bg-teal-600 hover:bg-teal-700 text-white'
-                              : 'bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200'
-                          }`}
-                        >
-                          {claim.status === 'pending' ? 'Review Claim' : 'View Details'}
-                        </button>
-                      </td>
+                <>
+                  {paddingTop > 0 && (
+                    <tr>
+                      <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={8} />
                     </tr>
-                  );
-                })
+                  )}
+                  {virtualRows.map((virtualRow) => {
+                    const claim = filteredClaims[virtualRow.index];
+                    if (!claim) return null;
+
+                    const statusColors = EXPENSE_CLAIM_STATUS_COLORS[claim.status] || {
+                      bg: 'bg-slate-100',
+                      text: 'text-slate-700',
+                      border: 'border-slate-300',
+                    };
+
+                    const uniqueCategories = Array.from(
+                      new Set(
+                        claim.lines.map(
+                          (l) => l.categoryDisplayName || l.categoryCode || 'Expense'
+                        )
+                      )
+                    );
+
+                    const isCold = isArchivedDate(claim.claimDate);
+
+                    return (
+                      <tr
+                        key={claim.id}
+                        className="hover:bg-slate-50/70 dark:hover:bg-slate-700/30 transition-colors"
+                      >
+                        <td className="px-4 py-3.5">
+                          <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{claim.claimDate}</span>
+                            {isCold && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.2 rounded bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800">
+                                <Database className="w-2.5 h-2.5" />
+                                BigQuery
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-slate-400 font-mono">
+                              #{claim.id.slice(-8)}
+                            </span>
+                            {claim.attachmentUrls && claim.attachmentUrls.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setLightbox({
+                                    urls: claim.attachmentUrls!,
+                                    currentIndex: 0,
+                                    claimTitle: `${claim.employeeName || 'Driver'} - ${claim.claimDate} (#${claim.id.slice(-6)})`,
+                                  });
+                                }}
+                                title={`View ${claim.attachmentUrls.length} receipt photo(s) directly`}
+                                className="group inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold bg-teal-50 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-700/60 hover:bg-teal-100 dark:hover:bg-teal-800/60 hover:ring-2 hover:ring-teal-400/30 transition-all cursor-pointer shadow-xs"
+                              >
+                                <div className="w-4 h-4 rounded overflow-hidden bg-slate-200 shrink-0 border border-teal-300 dark:border-teal-600">
+                                  <img
+                                    src={claim.attachmentUrls[0]}
+                                    alt="Thumbnail"
+                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                                  />
+                                </div>
+                                <Paperclip className="w-3 h-3" />
+                                <span>{claim.attachmentUrls.length}</span>
+                                <Eye className="w-3 h-3 text-teal-500 opacity-60 group-hover:opacity-100" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <div className="font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-400" />
+                            {claim.employeeName || 'Unknown Driver'}
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            ID: {claim.employeeId || 'N/A'}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          {claim.routeNo ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700/50">
+                              <RouteIcon className="w-3 h-3" />
+                              {claim.routeNo}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">None</span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <div className="flex flex-wrap gap-1 max-w-[220px]">
+                            {uniqueCategories.slice(0, 2).map((cat, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
+                              >
+                                <Tag className="w-2.5 h-2.5 text-slate-400" />
+                                {cat}
+                              </span>
+                            ))}
+                            {uniqueCategories.length > 2 && (
+                              <span className="text-xs text-slate-400 self-center">
+                                +{uniqueCategories.length - 2} more
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <span className="text-slate-700 dark:text-slate-300 font-medium">
+                            {claim.lines.length}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <span className="text-base font-bold text-slate-900 dark:text-white">
+                            ${(claim.totalAmount || 0).toFixed(2)}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${statusColors.bg} ${statusColors.text} ${statusColors.border}`}
+                          >
+                            {claim.status === 'approved' && (
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            )}
+                            {claim.status === 'rejected' && (
+                              <XCircle className="w-3 h-3 text-rose-600" />
+                            )}
+                            {claim.status === 'pending' && (
+                              <Clock className="w-3 h-3 text-amber-600" />
+                            )}
+                            {EXPENSE_CLAIM_STATUS_LABELS[claim.status] || claim.status}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3.5 text-right">
+                          <button
+                            onClick={() => openReviewModal(claim)}
+                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shadow-sm cursor-pointer ${
+                              claim.status === 'pending'
+                                ? 'bg-teal-600 hover:bg-teal-700 text-white'
+                                : 'bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200'
+                            }`}
+                          >
+                            {claim.status === 'pending' ? 'Review Claim' : 'View Details'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {paddingBottom > 0 && (
+                    <tr>
+                      <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={8} />
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>

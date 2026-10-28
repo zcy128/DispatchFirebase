@@ -803,7 +803,7 @@ func main() {
 				}
 				go func() {
 					ctx := context.Background()
-					log.Printf("[ARCHIVER] Starting unified BigQuery sync-all (rolling %d days + weekly logs)...", days)
+					log.Printf("[ARCHIVER] Starting unified BigQuery sync-all (rolling %d days + weekly logs + time-off + 180-day incidents)...", days)
 					if err := arc.SyncRolling(ctx, days); err != nil {
 						log.Printf("[ARCHIVER] SyncRolling error in sync-all: %v", err)
 					} else {
@@ -819,9 +819,39 @@ func main() {
 					} else {
 						log.Printf("[ARCHIVER] ArchiveTimeOff in sync-all completed: %d synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
 					}
+					if synced, deleted, err := arc.ArchiveIncidentsOlderThan(ctx, 180); err != nil {
+						log.Printf("[ARCHIVER] ArchiveIncidentsOlderThan error in sync-all: %v", err)
+					} else {
+						log.Printf("[ARCHIVER] ArchiveIncidentsOlderThan in sync-all completed: %d defects & incidents synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+					}
+					if synced, deleted, err := arc.ArchiveHazardsOlderThan(ctx, 12); err != nil {
+						log.Printf("[ARCHIVER] ArchiveHazardsOlderThan error in sync-all: %v", err)
+					} else {
+						log.Printf("[ARCHIVER] ArchiveHazardsOlderThan in sync-all completed: %d hazard reports synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+					}
+					if synced, deleted, err := arc.ArchiveRouteAssessmentsOlderThan(ctx, 12); err != nil {
+						log.Printf("[ARCHIVER] ArchiveRouteAssessmentsOlderThan error in sync-all: %v", err)
+					} else {
+						log.Printf("[ARCHIVER] ArchiveRouteAssessmentsOlderThan in sync-all completed: %d route assessments synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+					}
+					if synced, deleted, err := arc.ArchiveVehicleSignoutsOlderThan(ctx, 12); err != nil {
+						log.Printf("[ARCHIVER] ArchiveVehicleSignoutsOlderThan error in sync-all: %v", err)
+					} else {
+						log.Printf("[ARCHIVER] ArchiveVehicleSignoutsOlderThan in sync-all completed: %d vehicle handovers synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+					}
+					if synced, deleted, err := arc.ArchivePretripsOlderThan(ctx, 14); err != nil {
+						log.Printf("[ARCHIVER] ArchivePretripsOlderThan error in sync-all: %v", err)
+					} else {
+						log.Printf("[ARCHIVER] ArchivePretripsOlderThan in sync-all completed: %d pretrip inspections synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+					}
+					if synced, deleted, err := arc.ArchiveExpensesOlderThan(ctx, 6); err != nil {
+						log.Printf("[ARCHIVER] ArchiveExpensesOlderThan error in sync-all: %v", err)
+					} else {
+						log.Printf("[ARCHIVER] ArchiveExpensesOlderThan in sync-all completed: %d expense claims synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+					}
 					log.Printf("[ARCHIVER] Unified BigQuery sync-all finished.")
 				}()
-				w.Write([]byte(fmt.Sprintf(`{"success":true,"message":"unified sync initiated for past %d days, operational logs, and time-off archive (past 30 days)"}`, days)))
+				w.Write([]byte(fmt.Sprintf(`{"success":true,"message":"unified sync initiated for past %d days, operational logs, 14-day pre-trip inspections, 6-month expense claims, time-off archive, 180-day defects/incidents, and 12-month hazards/assessments/handovers (sync & cleanup)"}`, days)))
 			})
 
 			adminRoute.Post("/api/admin/archive/cleanup-logs", func(w http.ResponseWriter, r *http.Request) {

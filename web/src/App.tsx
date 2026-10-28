@@ -64,6 +64,7 @@ import { HazardReportsView } from './views/HazardReportsView';
 import { RouteAssessmentsView } from './views/RouteAssessmentsView';
 import { VehicleSignoutView } from './views/VehicleSignoutView';
 import { VehicleInspectionsView } from './views/VehicleInspectionsView';
+import { PreTripInspectionsView } from './views/PreTripInspectionsView';
 import { BottomNav } from './components/common/BottomNav';
 import { MobileDrawer } from './components/common/MobileDrawer';
 import { getLocalTodayString } from './utils/dateUtils';
@@ -1035,6 +1036,10 @@ export const AppContent: React.FC = () => {
               }}
               onRefresh={handleVehicleRefresh}
             />
+          )}
+
+          {currentTab === 'pretrip_checks' && (
+            <PreTripInspectionsView />
           )}
 
           {currentTab === 'vehicle_inspections' && (

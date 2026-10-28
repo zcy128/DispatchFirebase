@@ -1681,7 +1681,22 @@ export const BiweeklyPayrollView: React.FC = () => {
       {/* Main Payroll Table */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
-          <table className="w-full border-collapse text-left text-sm">
+          <table className="w-full border-collapse text-left text-sm table-fixed min-w-[1360px]">
+            <colgroup>
+              <col style={{ width: '150px' }} /> {/* Route */}
+              <col style={{ width: '90px' }} />  {/* Rate */}
+              <col style={{ width: '95px' }} />  {/* Week 1 Runs */}
+              <col style={{ width: '105px' }} /> {/* Week 1 Pay */}
+              <col style={{ width: '95px' }} />  {/* Week 2 Runs */}
+              <col style={{ width: '105px' }} /> {/* Week 2 Pay */}
+              <col style={{ width: '95px' }} />  {/* Total Runs */}
+              <col style={{ width: '110px' }} /> {/* Sub Total */}
+              <col style={{ width: '95px' }} />  {/* Hourly Rate */}
+              <col style={{ width: '95px' }} />  {/* Hours */}
+              <col style={{ width: '105px' }} /> {/* Week 1 Hours */}
+              <col style={{ width: '105px' }} /> {/* Week 2 Hours */}
+              <col style={{ width: '115px' }} /> {/* Sub Total */}
+            </colgroup>
             <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800 shadow-2xs">
               <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 text-xs font-semibold select-none">
                 <th className="py-3 px-4 min-w-[150px]">Route</th>

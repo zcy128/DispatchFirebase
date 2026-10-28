@@ -63,6 +63,18 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Keep track of data signature to prevent unnecessary re-renders and flicker
+  const prevSignatureRef = useRef<string>('');
+
+  const updateLogsIfChanged = (newLogs: PayrollDepartmentLogRecord[]) => {
+    const safeList = Array.isArray(newLogs) ? newLogs : [];
+    const sig = safeList.map(i => `${i.id}_${i.payAmount}_${i.eiHours}_${i.status}_${i.updatedAt}`).join('|');
+    if (sig !== prevSignatureRef.current) {
+      prevSignatureRef.current = sig;
+      setLogs(safeList);
+    }
+  };
+
   // Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'driver' | 'attendant'>('all');
@@ -82,25 +94,25 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
     setLoading(true);
     setError(null);
 
-    DispatchService.listPayrollDepartmentLogs(selectedDate ? { date: selectedDate } : undefined)
-      .then((records) => {
-        setLogs(Array.isArray(records) ? records : []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error('Failed to load payroll department logs:', err);
-        setError('Failed to fetch payroll department records.');
-        setLoading(false);
-      });
-
+    // Real-time subscription as the primary reactive source
     const unsubscribe = DispatchService.subscribeToPayrollDepartmentLogs(
       selectedDate,
       (updatedList) => {
-        setLogs(updatedList);
+        updateLogsIfChanged(updatedList);
         setLoading(false);
       },
       (err) => {
-        console.warn('Realtime payroll log subscription error, fallback to polled:', err);
+        console.warn('Realtime payroll log subscription error, fallback to REST:', err);
+        DispatchService.listPayrollDepartmentLogs(selectedDate ? { date: selectedDate } : undefined)
+          .then((records) => {
+            updateLogsIfChanged(records);
+            setLoading(false);
+          })
+          .catch((fetchErr) => {
+            console.error('Failed to load payroll department logs:', fetchErr);
+            setError('Failed to fetch payroll department records.');
+            setLoading(false);
+          });
       }
     );
 
@@ -116,7 +128,7 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
       const records = await DispatchService.listPayrollDepartmentLogs(
         selectedDate ? { date: selectedDate } : undefined
       );
-      setLogs(Array.isArray(records) ? records : []);
+      updateLogsIfChanged(records);
     } catch (err) {
       console.error('Failed to refresh payroll department logs:', err);
       setError('Failed to refresh records.');
@@ -572,7 +584,22 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
       {/* Main Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
         <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-sm table-fixed min-w-[1440px] border-collapse">
+            <colgroup>
+              <col style={{ width: '130px' }} /> {/* Route & Shift */}
+              <col style={{ width: '80px' }} />  {/* Role */}
+              <col style={{ width: '180px' }} /> {/* Employee */}
+              <col style={{ width: '80px' }} />  {/* Unit # */}
+              <col style={{ width: '140px' }} /> {/* Check-in / Out */}
+              <col style={{ width: '100px' }} /> {/* Dispatch Rate */}
+              <col style={{ width: '110px' }} /> {/* Pay Amount */}
+              <col style={{ width: '80px' }} />  {/* EI Hours */}
+              <col style={{ width: '160px' }} /> {/* Dispatch Comments */}
+              <col style={{ width: '160px' }} /> {/* Payroll Notes */}
+              <col style={{ width: '90px' }} />  {/* Status */}
+              <col style={{ width: '160px' }} /> {/* Modified By / At */}
+              <col style={{ width: '70px' }} />  {/* Action */}
+            </colgroup>
             <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 shadow-2xs">
               <tr>
                 <th className="py-3.5 px-4">Route & Shift</th>

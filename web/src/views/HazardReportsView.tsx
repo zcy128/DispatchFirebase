@@ -23,6 +23,7 @@ import {
   Flame,
   Printer,
   FileSpreadsheet,
+  Info,
 } from 'lucide-react';
 import {
   HazardReport,
@@ -90,25 +91,66 @@ export const HazardReportsView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightbox]);
 
-  // Subscribe to real-time updates
-  useEffect(() => {
-    setLoading(true);
-    const unsubscribe = HazardReportService.subscribeHazardReports((data) => {
-      setReports(data);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
+  const [timeRange, setTimeRange] = useState<'1year' | 'all'>('1year');
 
-  const refreshData = async () => {
+  const isArchivedDate = (d?: string) => {
+    if (!d) return false;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 365);
+    return d.slice(0, 10) < cutoff.toISOString().slice(0, 10);
+  };
+
+  const loadReports = async (targetQuery?: string) => {
+    const q = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
+    if (timeRange === 'all' && !q) {
+      setReports([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const data = await HazardReportService.listReports();
+      const params: Record<string, string> = { timeRange };
+      if (q) {
+        params.query = q;
+      }
+      const data = await HazardReportService.listReports(params);
       setReports(data);
     } catch (err) {
-      console.error('Failed to refresh hazard reports:', err);
+      console.error('Failed to load hazard reports:', err);
+      setReports([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Subscribe to real-time updates (live data <= 1 year) or load targeted archives
+  useEffect(() => {
+    if (timeRange === '1year') {
+      setLoading(true);
+      const unsubscribe = HazardReportService.subscribeHazardReports((data) => {
+        setReports(data);
+        setLoading(false);
+      });
+      return () => unsubscribe();
+    } else {
+      if (searchQuery.trim()) {
+        loadReports(searchQuery.trim());
+      } else {
+        setReports([]);
+        setLoading(false);
+      }
+    }
+  }, [timeRange]);
+
+  const refreshData = async () => {
+    if (timeRange === 'all') {
+      if (searchQuery.trim()) {
+        loadReports(searchQuery.trim());
+      } else {
+        setReports([]);
+      }
+    } else {
+      loadReports();
     }
   };
 
@@ -491,24 +533,71 @@ export const HazardReportsView: React.FC = () => {
       <div className="p-4 rounded-2xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 space-y-3.5 shadow-xs">
         <div className="flex flex-col md:flex-row gap-3">
           {/* Keyword Search */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search driver, route, unit #, location, person involved, or description..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
-            {searchQuery && (
+          <div className="flex items-center gap-2 flex-1">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder={
+                  timeRange === 'all'
+                    ? 'Location, route, unit #, or keyword to search archive...'
+                    : 'Search driver, route, unit #, location, person involved, or description...'
+                }
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && timeRange === 'all') {
+                    loadReports(searchQuery.trim());
+                  }
+                }}
+                className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            {timeRange === 'all' && (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                onClick={() => loadReports(searchQuery.trim())}
+                disabled={loading || !searchQuery.trim()}
+                className="px-3.5 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-900 rounded-xl transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5"
               >
-                <X className="w-4 h-4" />
+                <Search className="w-3.5 h-3.5" />
+                Search Archive
               </button>
             )}
+          </div>
+
+          {/* Time Range Selector */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-900/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 px-2 flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-blue-500" />
+              Range:
+            </span>
+            {[
+              { id: '1year', label: '1 Year (Live)' },
+              { id: 'all', label: 'All History' },
+            ].map((rng) => (
+              <button
+                key={rng.id}
+                type="button"
+                onClick={() => setTimeRange(rng.id as any)}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
+                  timeRange === rng.id
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                {rng.label}
+              </button>
+            ))}
           </div>
 
           {/* Status Filter */}
@@ -567,6 +656,22 @@ export const HazardReportsView: React.FC = () => {
         </div>
       </div>
 
+      {/* 10-Year Safe Scan Notice Banner */}
+      {timeRange === 'all' && (
+        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl flex items-start gap-3 text-xs text-amber-800 dark:text-amber-200">
+          <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
+              <span>All History Mode (BigQuery Cold Archive)</span>
+              <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">10-Year Safe Scan</span>
+            </div>
+            <p className="text-amber-700 dark:text-amber-300">
+              Live hazard reports cover the most recent 1 year. Older data is stored in BigQuery cold archives. To avoid massive 10-year database scans, please enter a <strong>Location</strong>, <strong>Description</strong>, <strong>Vehicle Unit #</strong>, or <strong>Route #</strong> to query historical archive records.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ─── Main Reports Table ───────────────────────────────────────────── */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
@@ -588,13 +693,21 @@ export const HazardReportsView: React.FC = () => {
                   <td colSpan={7} className="px-6 py-12 text-center text-slate-400">
                     <div className="max-w-sm mx-auto space-y-2">
                       <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-400">
-                        <AlertTriangle className="w-6 h-6" />
+                        {timeRange === 'all' && !searchQuery.trim() ? (
+                          <Search className="w-6 h-6 text-amber-500" />
+                        ) : (
+                          <AlertTriangle className="w-6 h-6" />
+                        )}
                       </div>
                       <div className="font-semibold text-slate-700 dark:text-slate-300">
-                        No Hazard Reports Found
+                        {timeRange === 'all' && !searchQuery.trim()
+                          ? 'Search Hazard Report History'
+                          : 'No Hazard Reports Found'}
                       </div>
                       <p className="text-xs text-slate-400">
-                        {searchQuery || statusFilter !== 'all' || officeTypeFilter !== 'all'
+                        {timeRange === 'all' && !searchQuery.trim()
+                          ? 'Enter a location, unit #, route #, or keyword above to query historical records from BigQuery archives.'
+                          : searchQuery || statusFilter !== 'all' || officeTypeFilter !== 'all'
                           ? 'Try clearing active filters or search terms.'
                           : 'Drivers & crew members can submit reports directly from the Driver App.'}
                       </p>
@@ -619,6 +732,14 @@ export const HazardReportsView: React.FC = () => {
                           {report.eventTime
                             ? report.eventTime.replace('T', ' ').slice(0, 16)
                             : report.createdAt.slice(0, 10)}
+                          {isArchivedDate(report.eventTime || report.createdAt) && (
+                            <span
+                              title="Record is older than 1 year and retrieved from BigQuery cold archive"
+                              className="ml-1 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800"
+                            >
+                              BigQuery
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-slate-400 font-mono mt-0.5 flex items-center gap-2">
                           <span>#{report.id.slice(-6)}</span>

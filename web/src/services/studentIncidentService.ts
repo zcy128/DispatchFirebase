@@ -5,6 +5,8 @@ import {
   getDocs,
   setDoc,
   onSnapshot,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { apiRequest } from './api';
@@ -212,15 +214,29 @@ export const StudentIncidentService = {
     }
   },
 
+  listStudentIncidentsForYear: async (studentId: number): Promise<StudentIncident[]> => {
+    return StudentIncidentService.listIncidents({ studentId: String(studentId), timeRange: '1year' });
+  },
+
+  listStudentIncidents: async (params?: Record<string, string>): Promise<StudentIncident[]> => {
+    return StudentIncidentService.listIncidents(params);
+  },
+
   subscribeToIncidents: (callback: (data: StudentIncident[]) => void): (() => void) => {
     if (!db) {
-      StudentIncidentService.listIncidents().then(callback).catch(console.error);
+      StudentIncidentService.listIncidents({ timeRange: '6months' }).then(callback).catch(console.error);
       return () => {};
     }
 
+    // Default hot subscription: last 6 months (180 days)
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 180);
+    const cutoffDateStr = cutoffDate.toISOString().slice(0, 10);
+
     const colRef = collection(db, 'student_incidents');
+    const q = query(colRef, where('incidentDate', '>=', cutoffDateStr));
     return onSnapshot(
-      colRef,
+      q,
       (snapshot) => {
         const list: StudentIncident[] = [];
         snapshot.forEach((d) => {
@@ -231,7 +247,7 @@ export const StudentIncidentService = {
       },
       (error) => {
         console.warn('[StudentIncidentService] onSnapshot listener error, falling back:', error);
-        StudentIncidentService.listIncidents().then(callback).catch(console.error);
+        StudentIncidentService.listIncidents({ timeRange: '6months' }).then(callback).catch(console.error);
       }
     );
   },

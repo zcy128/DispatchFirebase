@@ -578,7 +578,10 @@ func (h *DispatchHandler) ListChangeLogs(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	logs, err := h.repo.ListChangeLogs(r.Context(), date)
+	routeNo := r.URL.Query().Get("routeNo")
+	employee := r.URL.Query().Get("employee")
+	scope := r.URL.Query().Get("scope")
+	logs, err := h.repo.ListChangeLogsFiltered(r.Context(), date, routeNo, employee, scope)
 	if err != nil {
 		http.Error(w, `{"error":"failed to fetch change logs: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -1518,8 +1521,23 @@ func (h *DispatchHandler) ListDefectReports(w http.ResponseWriter, r *http.Reque
 	vehicleUnit := r.URL.Query().Get("vehicleUnit")
 	status := r.URL.Query().Get("status")
 	driverID := r.URL.Query().Get("driverId")
+	timeRange := r.URL.Query().Get("timeRange")
+	startDate := r.URL.Query().Get("startDate")
+	endDate := r.URL.Query().Get("endDate")
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		query = r.URL.Query().Get("search")
+	}
 
-	records, err := h.repo.ListDefectReports(r.Context(), vehicleUnit, status, driverID)
+	records, err := h.repo.ListDefectReportsFiltered(r.Context(), repository.DefectFilter{
+		VehicleUnit: vehicleUnit,
+		Status:      status,
+		DriverID:    driverID,
+		Query:       query,
+		TimeRange:   timeRange,
+		StartDate:   startDate,
+		EndDate:     endDate,
+	})
 	if err != nil {
 		http.Error(w, `{"error":"failed to list defect reports: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -1644,8 +1662,29 @@ func (h *DispatchHandler) ListStudentIncidents(w http.ResponseWriter, r *http.Re
 	driverID := r.URL.Query().Get("driverId")
 	status := r.URL.Query().Get("status")
 	needsFollowUp := r.URL.Query().Get("needsFollowUp") == "true"
+	timeRange := r.URL.Query().Get("timeRange")
+	startDate := r.URL.Query().Get("startDate")
+	endDate := r.URL.Query().Get("endDate")
+	studentNo := r.URL.Query().Get("studentNo")
+	studentName := r.URL.Query().Get("studentName")
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		query = r.URL.Query().Get("search")
+	}
 
-	records, err := h.repo.ListStudentIncidents(r.Context(), studentID, routeNo, driverID, status, needsFollowUp)
+	records, err := h.repo.ListStudentIncidentsFiltered(r.Context(), repository.StudentIncidentFilter{
+		StudentID:     studentID,
+		StudentNo:     studentNo,
+		StudentName:   studentName,
+		RouteNo:       routeNo,
+		DriverID:      driverID,
+		Status:        status,
+		NeedsFollowUp: needsFollowUp,
+		Query:         query,
+		TimeRange:     timeRange,
+		StartDate:     startDate,
+		EndDate:       endDate,
+	})
 	if err != nil {
 		http.Error(w, `{"error":"failed to list student incidents: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -1770,14 +1809,30 @@ func (h *DispatchHandler) GetExpenseClaim(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(record)
 }
 
-// ListExpenseClaims lists expense claims with optional employeeId and status filters.
+// ListExpenseClaims lists expense claims with optional employeeId, status, routeNo, query, and timeRange filters.
 func (h *DispatchHandler) ListExpenseClaims(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	employeeID := r.URL.Query().Get("employeeId")
 	status := r.URL.Query().Get("status")
+	routeNo := r.URL.Query().Get("routeNo")
+	timeRange := r.URL.Query().Get("timeRange")
+	startDate := r.URL.Query().Get("startDate")
+	endDate := r.URL.Query().Get("endDate")
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		query = r.URL.Query().Get("search")
+	}
 
-	records, err := h.repo.ListExpenseClaims(r.Context(), employeeID, status)
+	records, err := h.repo.ListExpenseClaimsFiltered(r.Context(), repository.ExpenseClaimFilter{
+		EmployeeID: employeeID,
+		Status:     status,
+		RouteNo:    routeNo,
+		Query:      query,
+		TimeRange:  timeRange,
+		StartDate:  startDate,
+		EndDate:    endDate,
+	})
 	if err != nil {
 		http.Error(w, `{"error":"failed to list expense claims: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -1892,6 +1947,15 @@ func (h *DispatchHandler) ListHazardReports(w http.ResponseWriter, r *http.Reque
 	employeeID := r.URL.Query().Get("employeeId")
 	statusStr := r.URL.Query().Get("status")
 	officeHazardType := r.URL.Query().Get("officeHazardType")
+	unitNumber := r.URL.Query().Get("unitNumber")
+	routeID := r.URL.Query().Get("routeId")
+	timeRange := r.URL.Query().Get("timeRange")
+	startDate := r.URL.Query().Get("startDate")
+	endDate := r.URL.Query().Get("endDate")
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		query = r.URL.Query().Get("search")
+	}
 
 	var statusInt *int
 	if statusStr != "" && statusStr != "all" && statusStr != "All" {
@@ -1912,7 +1976,17 @@ func (h *DispatchHandler) ListHazardReports(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	records, err := h.repo.ListHazardReports(r.Context(), employeeID, statusInt, officeHazardType)
+	records, err := h.repo.ListHazardReportsFiltered(r.Context(), repository.HazardReportFilter{
+		ReportedByEmployeeID: employeeID,
+		UnitNumber:           unitNumber,
+		RouteID:              routeID,
+		StatusInt:            statusInt,
+		OfficeHazardType:     officeHazardType,
+		Query:                query,
+		TimeRange:            timeRange,
+		StartDate:            startDate,
+		EndDate:              endDate,
+	})
 	if err != nil {
 		http.Error(w, `{"error":"failed to list hazard reports: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -2001,6 +2075,13 @@ func (h *DispatchHandler) ListRouteAssessments(w http.ResponseWriter, r *http.Re
 	employeeID := r.URL.Query().Get("employeeId")
 	statusStr := r.URL.Query().Get("status")
 	assessmentType := r.URL.Query().Get("assessmentType")
+	timeRange := r.URL.Query().Get("timeRange")
+	startDate := r.URL.Query().Get("startDate")
+	endDate := r.URL.Query().Get("endDate")
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		query = r.URL.Query().Get("search")
+	}
 
 	var statusInt *int
 	if statusStr != "" && statusStr != "all" && statusStr != "All" {
@@ -2021,7 +2102,16 @@ func (h *DispatchHandler) ListRouteAssessments(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	records, err := h.repo.ListRouteAssessments(r.Context(), routeID, employeeID, statusInt, assessmentType)
+	records, err := h.repo.ListRouteAssessmentsFiltered(r.Context(), repository.RouteAssessmentFilter{
+		RouteID:               routeID,
+		ConductedByEmployeeID: employeeID,
+		StatusInt:             statusInt,
+		AssessmentType:        assessmentType,
+		Query:                 query,
+		TimeRange:             timeRange,
+		StartDate:             startDate,
+		EndDate:               endDate,
+	})
 	if err != nil {
 		http.Error(w, `{"error":"failed to list route assessments: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -2190,6 +2280,11 @@ func (h *DispatchHandler) ListVehicleSignouts(w http.ResponseWriter, r *http.Req
 	isSignInStr := r.URL.Query().Get("isSignIn")
 	startDate := r.URL.Query().Get("startDate")
 	endDate := r.URL.Query().Get("endDate")
+	timeRange := r.URL.Query().Get("timeRange")
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		query = r.URL.Query().Get("search")
+	}
 
 	var isSignIn *bool
 	if isSignInStr != "" && isSignInStr != "all" {
@@ -2198,7 +2293,15 @@ func (h *DispatchHandler) ListVehicleSignouts(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	records, err := h.repo.ListVehicleSignouts(r.Context(), unitNumber, employeeID, isSignIn, startDate, endDate)
+	records, err := h.repo.ListVehicleSignoutsFiltered(r.Context(), repository.VehicleSignoutFilter{
+		UnitNumber: unitNumber,
+		EmployeeID: employeeID,
+		IsSignIn:   isSignIn,
+		Query:      query,
+		TimeRange:  timeRange,
+		StartDate:  startDate,
+		EndDate:    endDate,
+	})
 	if err != nil {
 		http.Error(w, `{"error":"failed to list vehicle signouts: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return

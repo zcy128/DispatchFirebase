@@ -104,6 +104,10 @@ export const RouteAssessmentService = {
     employeeId?: string;
     status?: string | number;
     assessmentType?: string;
+    query?: string;
+    timeRange?: '1year' | 'all';
+    startDate?: string;
+    endDate?: string;
   }): Promise<RouteAssessment[]> => {
     try {
       const params = new URLSearchParams();
@@ -111,6 +115,10 @@ export const RouteAssessmentService = {
       if (filters?.employeeId) params.append('employeeId', filters.employeeId);
       if (filters?.status !== undefined) params.append('status', String(filters.status));
       if (filters?.assessmentType) params.append('assessmentType', filters.assessmentType);
+      if (filters?.query) params.append('query', filters.query);
+      if (filters?.timeRange) params.append('timeRange', filters.timeRange);
+      if (filters?.startDate) params.append('startDate', filters.startDate);
+      if (filters?.endDate) params.append('endDate', filters.endDate);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
       const res = await apiRequest<RouteAssessment[]>(`/api/public/dispatch/route-assessments${qs}`);
@@ -122,8 +130,18 @@ export const RouteAssessmentService = {
       if (db) {
         try {
           const snapshot = await getDocs(collection(db, 'route_assessments'));
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - 365);
+          const cutoffStr = cutoffDate.toISOString().slice(0, 10);
           const items: RouteAssessment[] = [];
-          snapshot.forEach((d) => items.push(normalizeAssessmentRecord(d.data(), d.id)));
+          snapshot.forEach((d) => {
+            const rec = normalizeAssessmentRecord(d.data(), d.id);
+            if (!filters?.timeRange || filters.timeRange === '1year') {
+              const rDate = rec.assessmentDate?.slice(0, 10) || rec.createdAt.slice(0, 10);
+              if (rDate && rDate < cutoffStr) return;
+            }
+            items.push(rec);
+          });
           items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           return items;
         } catch (e) {
@@ -311,10 +329,14 @@ export const RouteAssessmentService = {
       callback(merged);
     };
 
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 365);
+    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+
     const fetchLatestRest = async () => {
       if (!isSubscribed) return;
       try {
-        const data = await RouteAssessmentService.listAssessments();
+        const data = await RouteAssessmentService.listAssessments({ timeRange: '1year' });
         if (isSubscribed) {
           restItems = data;
           emitMerged();
@@ -330,7 +352,7 @@ export const RouteAssessmentService = {
     // 2. Poll every 5s for background sync
     pollTimer = setInterval(fetchLatestRest, pollingIntervalMs);
 
-    // 3. Real-time Firestore onSnapshot
+    // 3. Real-time Firestore onSnapshot (live data <= 1 year)
     if (db) {
       try {
         const collRef = collection(db, 'route_assessments');
@@ -340,7 +362,11 @@ export const RouteAssessmentService = {
             if (!isSubscribed) return;
             const items: RouteAssessment[] = [];
             snapshot.forEach((d) => {
-              items.push(normalizeAssessmentRecord(d.data(), d.id));
+              const rec = normalizeAssessmentRecord(d.data(), d.id);
+              const rDate = rec.assessmentDate?.slice(0, 10) || rec.createdAt.slice(0, 10);
+              if (!rDate || rDate >= cutoffStr) {
+                items.push(rec);
+              }
             });
             firestoreItems = items;
             emitMerged();

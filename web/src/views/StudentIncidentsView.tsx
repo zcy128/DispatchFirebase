@@ -15,6 +15,7 @@ import {
   UserX,
   Printer,
   FileSpreadsheet,
+  Info,
 } from 'lucide-react';
 import {
   StudentIncident,
@@ -53,25 +54,67 @@ export const StudentIncidentsView: React.FC = () => {
   const [officeNotes, setOfficeNotes] = useState<string>('');
   const [isOfficeLocked, setIsOfficeLocked] = useState<boolean>(false);
 
-  useEffect(() => {
-    setLoading(true);
-    const unsubscribe = StudentIncidentService.subscribeToIncidents((data) => {
-      setIncidents(data);
+  const [timeRange, setTimeRange] = useState<'6months' | '1year' | 'all'>('6months');
+
+  const isArchivedDate = (d?: string) => {
+    if (!d) return false;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 180);
+    return d < cutoff.toISOString().slice(0, 10);
+  };
+
+  const loadIncidents = async (targetQuery?: string) => {
+    const q = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
+    if (timeRange === 'all' && !q) {
+      setIncidents([]);
       setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  const refreshData = async () => {
+      return;
+    }
     setLoading(true);
     try {
-      const data = await StudentIncidentService.listIncidents();
+      const params: Record<string, string> = { timeRange };
+      if (q) {
+        params.query = q;
+      }
+      const data = await StudentIncidentService.listIncidents(params);
       setIncidents(data);
     } catch (err) {
-      console.error('Failed to refresh student incidents:', err);
+      console.error('Failed to load student incidents:', err);
+      setIncidents([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (timeRange === '6months') {
+      setLoading(true);
+      const unsubscribe = StudentIncidentService.subscribeToIncidents((data) => {
+        setIncidents(data);
+        setLoading(false);
+      });
+      return () => unsubscribe();
+    } else if (timeRange === '1year') {
+      loadIncidents();
+    } else {
+      if (searchQuery.trim()) {
+        loadIncidents(searchQuery.trim());
+      } else {
+        setIncidents([]);
+        setLoading(false);
+      }
+    }
+  }, [timeRange]);
+
+  const refreshData = async () => {
+    if (timeRange === 'all') {
+      if (searchQuery.trim()) {
+        loadIncidents(searchQuery.trim());
+      } else {
+        setIncidents([]);
+      }
+    } else {
+      loadIncidents();
     }
   };
 
@@ -367,18 +410,66 @@ export const StudentIncidentsView: React.FC = () => {
 
       {/* ─── Search & Filters Bar ────────────────────────────────────────────── */}
       <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search by student name, #, school, route, driver, or notes..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
-          />
+        <div className="flex items-center gap-2 flex-1">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder={
+                timeRange === 'all'
+                  ? 'Student name, #, or route #...'
+                  : 'Search by student name, #, school, route, driver, or notes...'
+              }
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && timeRange === 'all') {
+                  loadIncidents(searchQuery.trim());
+                }
+              }}
+              className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+            />
+          </div>
+          {timeRange === 'all' && (
+            <button
+              type="button"
+              onClick={() => loadIncidents(searchQuery.trim())}
+              disabled={loading || !searchQuery.trim()}
+              className="px-3.5 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-900 rounded-lg transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5"
+            >
+              <Search className="w-3.5 h-3.5" />
+              Search Archive
+            </button>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Time Range Selector */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-900/80 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 px-2 flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-blue-500" />
+              Range:
+            </span>
+            {[
+              { id: '6months', label: '6 Months (Hot)' },
+              { id: '1year', label: '1 Year (Hybrid)' },
+              { id: 'all', label: 'All History' },
+            ].map((rng) => (
+              <button
+                key={rng.id}
+                type="button"
+                onClick={() => setTimeRange(rng.id as any)}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
+                  timeRange === rng.id
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                {rng.label}
+              </button>
+            ))}
+          </div>
+
           {/* Needs Office Follow-up Toggle */}
           <button
             type="button"
@@ -410,6 +501,22 @@ export const StudentIncidentsView: React.FC = () => {
         </div>
       </div>
 
+      {/* 10-Year Safe Scan Notice Banner */}
+      {timeRange === 'all' && (
+        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl flex items-start gap-3 text-xs text-amber-800 dark:text-amber-200">
+          <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
+              <span>All History Mode (BigQuery Cold Archive)</span>
+              <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">10-Year Safe Scan</span>
+            </div>
+            <p className="text-amber-700 dark:text-amber-300">
+              To protect database performance and avoid full-table scans across 10+ years of school incidents, full browsing is restricted. Please enter a <strong>Student Name</strong>, <strong>Student #</strong>, or <strong>Route #</strong> to query historical archive records.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ─── Incident Reports Table ──────────────────────────────────────────── */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
@@ -437,8 +544,25 @@ export const StudentIncidentsView: React.FC = () => {
               ) : filteredIncidents.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-400">
-                    <ShieldAlert className="h-8 w-8 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
-                    No student incidents match your current filter.
+                    {timeRange === 'all' && !searchQuery.trim() ? (
+                      <div className="flex flex-col items-center">
+                        <Search className="h-10 w-10 text-amber-500/60 mb-2" />
+                        <h4 className="text-base font-semibold text-slate-700 dark:text-slate-300">Search Student Incident History</h4>
+                        <p className="text-xs text-slate-500 mt-1 max-w-md">
+                          Search across 10 years of BigQuery incident archives by entering a student name, student #, or route # above and clicking Search Archive.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center">
+                        <ShieldAlert className="h-8 w-8 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+                        <h4 className="text-base font-semibold text-slate-700 dark:text-slate-300">No incident reports found</h4>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {timeRange === 'all'
+                            ? `No student incidents found for "${searchQuery}" in the historical archive.`
+                            : 'No student incidents match your current filter.'}
+                        </p>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -459,6 +583,14 @@ export const StudentIncidentsView: React.FC = () => {
                         <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                           <Calendar className="h-3.5 w-3.5 text-slate-400" />
                           {r.incidentDate}
+                          {isArchivedDate(r.incidentDate) && (
+                            <span
+                              title="Record is older than 6 months and retrieved from BigQuery cold archive"
+                              className="ml-1 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800"
+                            >
+                              BigQuery
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                           <Clock className="h-3 w-3" />

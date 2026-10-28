@@ -129,6 +129,8 @@ html.light ::-webkit-scrollbar-thumb:hover {
   body:has(#defect-summary-print-portal) #root,
   body:has(#student-incident-print-portal) #root,
   body:has(#hazard-report-print-portal) #root,
+  body:has(#pretrip-report-print-portal) #root,
+  body:has(#pretrip-roster-print-portal) #root,
   body:has(#route-assessment-print-portal) #root {
     display: none !important;
   }
@@ -140,6 +142,8 @@ html.light ::-webkit-scrollbar-thumb:hover {
   body:has(#defect-summary-print-portal),
   body:has(#student-incident-print-portal),
   body:has(#hazard-report-print-portal),
+  body:has(#pretrip-report-print-portal),
+  body:has(#pretrip-roster-print-portal),
   body:has(#route-assessment-print-portal) {
     overflow: visible !important;
     height: auto !important;
@@ -153,6 +157,8 @@ html.light ::-webkit-scrollbar-thumb:hover {
   #defect-summary-print-portal,
   #student-incident-print-portal,
   #hazard-report-print-portal,
+  #pretrip-report-print-portal,
+  #pretrip-roster-print-portal,
   #route-assessment-print-portal {
     display: block !important;
     position: static !important;
@@ -178,12 +184,12 @@ html.light ::-webkit-scrollbar-thumb:hover {
   }
 
   /* When printing directly inside #root without a portal */
-  body:not(:has(#calendar-print-portal)):not(:has(#timeoff-print-portal)):not(:has(#timeoff-monthly-report-portal)):not(:has(#defect-print-portal)):not(:has(#defect-summary-print-portal)):not(:has(#student-incident-print-portal)):not(:has(#hazard-report-print-portal)):not(:has(#route-assessment-print-portal)) {
+  body:not(:has(#calendar-print-portal)):not(:has(#timeoff-print-portal)):not(:has(#timeoff-monthly-report-portal)):not(:has(#defect-print-portal)):not(:has(#defect-summary-print-portal)):not(:has(#student-incident-print-portal)):not(:has(#hazard-report-print-portal)):not(:has(#pretrip-report-print-portal)):not(:has(#pretrip-roster-print-portal)):not(:has(#route-assessment-print-portal)) {
     overflow: visible !important;
     height: auto !important;
   }
 
-  body:not(:has(#calendar-print-portal)):not(:has(#timeoff-print-portal)):not(:has(#timeoff-monthly-report-portal)):not(:has(#defect-print-portal)):not(:has(#defect-summary-print-portal)):not(:has(#student-incident-print-portal)):not(:has(#hazard-report-print-portal)):not(:has(#route-assessment-print-portal)) #root {
+  body:not(:has(#calendar-print-portal)):not(:has(#timeoff-print-portal)):not(:has(#timeoff-monthly-report-portal)):not(:has(#defect-print-portal)):not(:has(#defect-summary-print-portal)):not(:has(#student-incident-print-portal)):not(:has(#hazard-report-print-portal)):not(:has(#pretrip-report-print-portal)):not(:has(#pretrip-roster-print-portal)):not(:has(#route-assessment-print-portal)) #root {
     display: block !important;
     width: 100% !important;
     height: auto !important;

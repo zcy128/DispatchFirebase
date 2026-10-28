@@ -5,6 +5,8 @@ import {
   getDocs,
   setDoc,
   onSnapshot,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { apiRequest } from './api';
@@ -198,17 +200,31 @@ export const DefectService = {
     }
   },
 
+  listVehicleDefectsForYear: async (vehicleUnit: string): Promise<VehicleDefectReport[]> => {
+    return DefectService.listDefects({ vehicleUnit, timeRange: '1year' });
+  },
+
+  listVehicleDefects: async (vehicleUnit: string, timeRange: string = '6months'): Promise<VehicleDefectReport[]> => {
+    return DefectService.listDefects({ vehicleUnit, timeRange });
+  },
+
   subscribeToDefects: (
     callback: (defects: VehicleDefectReport[]) => void
   ): (() => void) => {
     if (!db) {
-      DefectService.listDefects().then(callback).catch(() => callback([]));
+      DefectService.listDefects({ timeRange: '6months' }).then(callback).catch(() => callback([]));
       return () => {};
     }
 
+    // Default hot subscription: last 6 months (180 days)
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 180);
+    const cutoffDateStr = cutoffDate.toISOString().slice(0, 10);
+
     const colRef = collection(db, 'vehicle_defects');
+    const q = query(colRef, where('reportDate', '>=', cutoffDateStr));
     const unsubscribe = onSnapshot(
-      colRef,
+      q,
       (snapshot) => {
         const list: VehicleDefectReport[] = [];
         snapshot.forEach((d) => {
@@ -219,7 +235,7 @@ export const DefectService = {
       },
       (err) => {
         console.warn('[DefectService] Firestore onSnapshot error, falling back to REST:', err);
-        DefectService.listDefects().then(callback).catch(() => callback([]));
+        DefectService.listDefects({ timeRange: '6months' }).then(callback).catch(() => callback([]));
       }
     );
 

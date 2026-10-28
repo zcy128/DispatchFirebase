@@ -26,7 +26,9 @@ import {
   ShieldAlert,
   ArrowRightLeft,
   X,
-  Upload
+  Upload,
+  Clock,
+  Info
 } from 'lucide-react';
 
 export const VehicleSignoutView: React.FC = () => {
@@ -47,6 +49,14 @@ export const VehicleSignoutView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'sign_out' | 'sign_in'>('all');
   const [dateFilter, setDateFilter] = useState<string>('');
+  const [timeRange, setTimeRange] = useState<'1year' | 'all'>('1year');
+
+  const isArchivedDate = (d?: string) => {
+    if (!d) return false;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 365);
+    return d.slice(0, 10) < cutoff.toISOString().slice(0, 10);
+  };
 
   // Modals
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
@@ -112,7 +122,7 @@ export const VehicleSignoutView: React.FC = () => {
     setLoading(true);
     try {
       const [signouts, vList, eList] = await Promise.all([
-        VehicleSignoutService.list({ role: 'fleet' }),
+        VehicleSignoutService.list({ role: 'fleet', timeRange: '1year' }),
         VehicleService.list().catch(() => []),
         EmployeeService.list().catch(() => [])
       ]);
@@ -126,15 +136,50 @@ export const VehicleSignoutView: React.FC = () => {
     }
   };
 
+  const loadRecords = async (targetQuery?: string) => {
+    if (!isFleetRole) return;
+    const q = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
+    if (timeRange === 'all' && !q && !dateFilter) {
+      setRecords([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const params: Record<string, string> = { role: 'fleet', timeRange };
+      if (q) params.query = q;
+      if (dateFilter) {
+        params.startDate = dateFilter;
+        params.endDate = dateFilter;
+      }
+      const signouts = await VehicleSignoutService.list(params);
+      setRecords(signouts);
+    } catch (err) {
+      console.error('Error fetching handover data:', err);
+      setRecords([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    if (isFleetRole) {
+    if (!isFleetRole) return;
+    if (timeRange === '1year') {
       fetchData();
       const unsub = VehicleSignoutService.subscribeToLive((live) => {
         setRecords(live);
+        setLoading(false);
       });
       return () => unsub();
+    } else {
+      if (searchQuery.trim() || dateFilter) {
+        loadRecords(searchQuery.trim());
+      } else {
+        setRecords([]);
+        setLoading(false);
+      }
     }
-  }, [isFleetRole]);
+  }, [isFleetRole, timeRange]);
 
   // Vehicle selection auto-fill
   const handleSelectVehicle = (unitNum: string) => {
@@ -321,7 +366,17 @@ export const VehicleSignoutView: React.FC = () => {
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
-            onClick={fetchData}
+            onClick={() => {
+              if (timeRange === 'all') {
+                if (searchQuery.trim() || dateFilter) {
+                  loadRecords(searchQuery.trim());
+                } else {
+                  setRecords([]);
+                }
+              } else {
+                fetchData();
+              }
+            }}
             className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors border border-slate-700"
             title="Refresh List"
           >
@@ -429,15 +484,71 @@ export const VehicleSignoutView: React.FC = () => {
 
       {/* Filter & Search Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-3">
-        <div className="flex-1 relative">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search by Bus #, Driver name, or Route..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50"
-          />
+        <div className="flex items-center gap-2 flex-1">
+          <div className="flex-1 relative">
+            <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder={
+                timeRange === 'all'
+                  ? 'Bus #, driver, route, or keyword to search archive...'
+                  : 'Search by Bus #, Driver name, or Route...'
+              }
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && timeRange === 'all') {
+                  loadRecords(searchQuery.trim());
+                }
+              }}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {timeRange === 'all' && (
+            <button
+              type="button"
+              onClick={() => loadRecords(searchQuery.trim())}
+              disabled={loading || (!searchQuery.trim() && !dateFilter)}
+              className="px-3.5 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 rounded-xl transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5"
+            >
+              <Search className="w-3.5 h-3.5" />
+              Search Archive
+            </button>
+          )}
+        </div>
+
+        {/* Time Range Selector */}
+        <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <span className="text-[11px] font-semibold text-slate-400 px-2 flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-blue-400" />
+            Range:
+          </span>
+          {[
+            { id: '1year', label: '1 Year (Live)' },
+            { id: 'all', label: 'All History' },
+          ].map((rng) => (
+            <button
+              key={rng.id}
+              type="button"
+              onClick={() => setTimeRange(rng.id as any)}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
+                timeRange === rng.id
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {rng.label}
+            </button>
+          ))}
         </div>
 
         <div className="flex items-center gap-2">
@@ -487,6 +598,22 @@ export const VehicleSignoutView: React.FC = () => {
         </div>
       </div>
 
+      {/* 10-Year Safe Scan Notice Banner */}
+      {timeRange === 'all' && (
+        <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-3 text-xs text-amber-300">
+          <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-semibold text-amber-200 flex items-center gap-1.5">
+              <span>All History Mode (BigQuery Cold Archive)</span>
+              <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">10-Year Safe Scan</span>
+            </div>
+            <p className="text-amber-400/80">
+              Live vehicle handover records cover the most recent 1 year. Older data is stored in BigQuery cold archives. To avoid massive 10-year database scans, please enter a <strong>Bus Unit #</strong>, <strong>Driver Name</strong>, <strong>Employee ID</strong>, or <strong>Route #</strong> to query historical archive records.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Record Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
@@ -516,7 +643,18 @@ export const VehicleSignoutView: React.FC = () => {
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-500">
                     <FileSignature className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                    No vehicle handover records match your filters.
+                    {timeRange === 'all' && !searchQuery.trim() && !dateFilter ? (
+                      <div className="space-y-1">
+                        <div className="text-sm font-semibold text-slate-300">
+                          Enter Bus #, Driver Name, Route, or Date to Search 10-Year Archive
+                        </div>
+                        <div className="text-xs text-slate-500 max-w-md mx-auto">
+                          Live vehicle handover records cover the most recent 1 year. Type a query above and click &quot;Search Archive&quot; to inspect historical records.
+                        </div>
+                      </div>
+                    ) : (
+                      <>No vehicle handover records match your filters.</>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -539,7 +677,17 @@ export const VehicleSignoutView: React.FC = () => {
 
                     {/* Date */}
                     <td className="py-3.5 px-4 text-slate-200 font-medium">
-                      {r.signDate || (r.createdAt ? r.createdAt.split('T')[0] : '—')}
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <span>{r.signDate || (r.createdAt ? r.createdAt.split('T')[0] : '—')}</span>
+                        {isArchivedDate(r.signDate || r.createdAt) && (
+                          <span
+                            title="Record is older than 1 year and retrieved from BigQuery cold archive"
+                            className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-sky-950/80 text-sky-300 border border-sky-800"
+                          >
+                            BigQuery
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Vehicle */}
