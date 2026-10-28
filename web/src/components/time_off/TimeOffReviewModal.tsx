@@ -5,7 +5,6 @@ import { Employee } from '../../types/employee';
 import { TimeOffService } from '../../services/timeOffService';
 import { useAuth } from '../../contexts/AuthContext';
 import { safeFormatDate } from '../../utils/dateUtils';
-import { logDispatchAction } from '../../utils/dispatchLogger';
 import { OperationalSafetyLogService } from '../../services/operationalSafetyLogService';
 
 interface TimeOffReviewModalProps {
@@ -89,15 +88,6 @@ export const TimeOffReviewModal: React.FC<TimeOffReviewModalProps> = ({
       } else {
         await TimeOffService.rejectTimeOffRequest(request.id, payload);
       }
-
-      await logDispatchAction({
-        date: request.startDate,
-        type: 'Time Off Review',
-        detail: `${decision === 'approve' ? 'Approved' : 'Rejected'} leave request for ${request.employeeName} (${request.startDate} to ${request.endDate})${
-          notifiedChannels.length > 0 ? ` [Notified via ${notifiedChannels.join('/')}]` : ''
-        }`,
-        user: actorName,
-      });
 
       await OperationalSafetyLogService.logOperation({
         module: 'time_off',

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   History,
   Calendar as CalendarIcon,
@@ -8,7 +9,11 @@ import {
   FileSpreadsheet,
   User,
   Radio,
-  AlertCircle
+  AlertCircle,
+  Database,
+  Globe,
+  RotateCcw,
+  Layers
 } from 'lucide-react';
 import { DispatchChangeLog } from '../types/dispatch';
 import { DispatchService } from '../services/dispatchService';
@@ -28,44 +33,54 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters
+  // Targeted database query state (Tiered logging)
+  const [targetRoute, setTargetRoute] = useState<string>('');
+  const [targetEmployee, setTargetEmployee] = useState<string>('');
+  const [activeFilter, setActiveFilter] = useState<{ routeNo?: string; employee?: string; scope?: string } | null>(null);
+
+  // In-memory filters (applied on top of currently fetched logs)
   const [globalSearch, setGlobalSearch] = useState<string>('');
   const [routeFilter, setRouteFilter] = useState<string>('');
   const [shiftFilter, setShiftFilter] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<string>('');
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const pageSize = 50;
+  // Check if selected date is older than 7 days (Cold Data archived to BigQuery)
+  const isColdDate = useMemo(() => {
+    if (!selectedDate) return false;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    return selectedDate < cutoff.toISOString().slice(0, 10);
+  }, [selectedDate]);
 
-  // Load / Subscribe to change logs for selectedDate
+  // Load / Subscribe to change logs for selectedDate & activeFilter
   useEffect(() => {
     setLoading(true);
     setError(null);
-    setCurrentPage(1);
 
     const unsubscribe = DispatchService.subscribeToChangeLogs(
       selectedDate,
       (updatedLogs) => {
         setLogs(updatedLogs);
+        setError(null);
         setLoading(false);
       },
       (err) => {
         console.error('Failed to subscribe to change logs:', err);
         setError('Failed to load dispatch change logs');
         setLoading(false);
-      }
+      },
+      activeFilter || undefined
     );
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [selectedDate]);
+  }, [selectedDate, activeFilter]);
 
   const handleManualRefresh = async () => {
     setLoading(true);
     try {
-      const data = await DispatchService.listChangeLogs(selectedDate);
+      const data = await DispatchService.listChangeLogs(selectedDate, activeFilter || undefined);
       setLogs(data);
       setError(null);
     } catch (err: any) {
@@ -75,11 +90,36 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
     }
   };
 
+  const handleSearchTargeted = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const r = targetRoute.trim();
+    const emp = targetEmployee.trim();
+    if (!r && !emp) {
+      // If both blank, revert to default macro mode
+      setActiveFilter(null);
+      return;
+    }
+    setActiveFilter({
+      routeNo: r || undefined,
+      employee: emp || undefined,
+    });
+  };
+
+  const handleResetToGlobal = () => {
+    setTargetRoute('');
+    setTargetEmployee('');
+    setActiveFilter(null);
+  };
+
+  const handleLoadAllLogs = () => {
+    setActiveFilter({ scope: 'all' });
+  };
+
   // Distinct types for column filter dropdown
   const availableTypes = useMemo(() => {
     const set = new Set<string>();
     logs.forEach((log) => {
-      if (log.type) set.add(log.type);
+      if (log.type && log.type !== 'Time Off Review') set.add(log.type);
     });
     return Array.from(set).sort();
   }, [logs]);
@@ -96,6 +136,11 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
   // Filtered logs
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
+      // Exclude HR/leave requests from dispatch change logs
+      if (log.type === 'Time Off Review') {
+        return false;
+      }
+
       // Global search
       if (globalSearch.trim()) {
         const query = globalSearch.toLowerCase().trim();
@@ -135,13 +180,21 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
     });
   }, [logs, globalSearch, routeFilter, shiftFilter, typeFilter]);
 
-  // Paginated items
-  const paginatedLogs = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredLogs.slice(start, start + pageSize);
-  }, [filteredLogs, currentPage, pageSize]);
+  // Virtual scrolling container for 1,000+ dispatch change logs
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
-  const totalPages = Math.ceil(filteredLogs.length / pageSize) || 1;
+  const rowVirtualizer = useVirtualizer({
+    count: filteredLogs.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 52,
+    overscan: 10,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start || 0 : 0;
+  const paddingBottom = virtualRows.length > 0
+    ? rowVirtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1]?.end || 0)
+    : 0;
 
   // Export to Excel / CSV with UTF-8 BOM
   const handleExportExcel = () => {
@@ -238,6 +291,14 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
                 onChange={(e) => setSelectedDate(e.target.value)}
                 className="bg-transparent text-sm font-medium text-slate-800 dark:text-slate-200 focus:outline-hidden py-1 pr-2"
               />
+              {isColdDate && (
+                <span
+                  title="Records older than 7 days are archived in Google BigQuery cold storage"
+                  className="px-1.5 py-0.5 mr-1.5 rounded text-[10px] font-semibold bg-sky-100 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800 whitespace-nowrap"
+                >
+                  BigQuery Cold
+                </span>
+              )}
               <button
                 type="button"
                 onClick={handleManualRefresh}
@@ -259,37 +320,150 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
               <FileSpreadsheet className="w-4 h-4" />
               <span>Export to Excel</span>
             </button>
-
-            {/* Global Search */}
-            <div className="relative min-w-[200px]">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={globalSearch}
-                onChange={(e) => setGlobalSearch(e.target.value)}
-                placeholder="Search..."
-                className="w-full pl-9 pr-3 py-1.5 text-xs sm:text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-              />
-            </div>
           </div>
         </div>
 
+        {/* Database Search & Logging Tier Bar */}
+        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-800/40 p-3 rounded-xl border">
+          <form
+            onSubmit={handleSearchTargeted}
+            className="flex flex-wrap items-center gap-2.5 flex-1"
+          >
+            <div className="flex items-center text-xs font-semibold text-slate-700 dark:text-slate-300 mr-1">
+              <Database className="w-4 h-4 mr-1.5 text-blue-600 dark:text-blue-400" />
+              <span>Query DB:</span>
+            </div>
+
+            {/* Target Route Input */}
+            <div className="flex items-center bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1.5 shadow-2xs focus-within:ring-2 focus-within:ring-blue-500">
+              <span className="text-xs text-slate-400 mr-1.5">Route:</span>
+              <input
+                type="text"
+                value={targetRoute}
+                onChange={(e) => setTargetRoute(e.target.value)}
+                placeholder="e.g. 101"
+                className="bg-transparent text-xs text-slate-800 dark:text-slate-200 focus:outline-hidden w-20"
+              />
+            </div>
+
+            {/* Target Employee Input */}
+            <div className="flex items-center bg-white dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1.5 shadow-2xs focus-within:ring-2 focus-within:ring-blue-500">
+              <span className="text-xs text-slate-400 mr-1.5">Employee:</span>
+              <input
+                type="text"
+                value={targetEmployee}
+                onChange={(e) => setTargetEmployee(e.target.value)}
+                placeholder="Name or ID"
+                className="bg-transparent text-xs text-slate-800 dark:text-slate-200 focus:outline-hidden w-28"
+              />
+            </div>
+
+            {/* Search DB Button */}
+            <button
+              type="submit"
+              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span>Search DB</span>
+            </button>
+
+            {/* Reset to Global Operations */}
+            {activeFilter && (
+              <button
+                type="button"
+                onClick={handleResetToGlobal}
+                className="inline-flex items-center space-x-1 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium rounded-lg transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset to Global</span>
+              </button>
+            )}
+
+            {/* Load All Button */}
+            {(!activeFilter || activeFilter.scope !== 'all') && (
+              <button
+                type="button"
+                onClick={handleLoadAllLogs}
+                title="Load all logs for this date including all shifts (heavy)"
+                className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 rounded-lg transition-colors ml-auto"
+              >
+                <Layers className="w-3.5 h-3.5 text-amber-500" />
+                <span>Load All Shift Logs</span>
+              </button>
+            )}
+          </form>
+        </div>
+
+        {/* Tier State Notice / Banner */}
+        <div className="mt-2.5 px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2 border">
+          {!activeFilter ? (
+            <div className="flex items-center space-x-2 text-slate-600 dark:text-slate-400">
+              <Globe className="w-4 h-4 text-blue-500 shrink-0" />
+              <span>
+                <strong className="text-slate-800 dark:text-slate-200">Global Operations Mode (Default):</strong> Showing high-level system logs (e.g. Day Sheet Generated/Deleted, locks, batch assignments). Enter a <strong>Route</strong> or <strong>Employee</strong> above to read specific shift logs from database.
+                {isColdDate && (
+                  <span className="ml-2 text-sky-600 dark:text-sky-400 font-medium">
+                    (Historical data sourced from BigQuery cold storage)
+                  </span>
+                )}
+              </span>
+            </div>
+          ) : activeFilter.scope === 'all' ? (
+            <div className="flex items-center justify-between w-full text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 -m-3 p-3 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  <strong>All Logs View:</strong> Displaying all shift, stop, check-in, and student logs for {selectedDate}.
+                  {isColdDate && ' (Sourced from BigQuery historical dataset)'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetToGlobal}
+                className="font-medium underline hover:no-underline text-xs shrink-0"
+              >
+                Back to Global Ops
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between w-full text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/30 -m-3 p-3 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <Database className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>
+                  <strong>Targeted DB Query:</strong> Showing logs for{' '}
+                  {activeFilter.routeNo && <span className="font-semibold mr-2">Route #{activeFilter.routeNo}</span>}
+                  {activeFilter.employee && <span className="font-semibold">Employee: {activeFilter.employee}</span>}
+                  {' '}({logs.length} found)
+                  {isColdDate && <span className="ml-2 text-sky-600 dark:text-sky-400">(via BigQuery)</span>}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetToGlobal}
+                className="font-medium underline hover:no-underline text-xs shrink-0"
+              >
+                Back to Global Ops
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Column-level Sub-header Filter Inputs */}
-        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center gap-3">
+        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center gap-3">
           <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 font-medium mr-1">
             <Filter className="w-3.5 h-3.5 mr-1" />
-            Filters:
+            Quick In-memory Filters:
           </div>
 
-          {/* Route Filter */}
+          {/* Quick Route Filter */}
           <div className="flex items-center bg-slate-50 dark:bg-slate-800/50 rounded-md border border-slate-200 dark:border-slate-700 px-2 py-1">
             <span className="text-xs text-slate-500 dark:text-slate-400 mr-1.5">Route:</span>
             <input
               type="text"
               value={routeFilter}
               onChange={(e) => setRouteFilter(e.target.value)}
-              placeholder="All routes"
-              className="bg-transparent text-xs text-slate-800 dark:text-slate-200 focus:outline-hidden w-24"
+              placeholder="Filter..."
+              className="bg-transparent text-xs text-slate-800 dark:text-slate-200 focus:outline-hidden w-20"
             />
           </div>
 
@@ -327,6 +501,18 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
             </select>
           </div>
 
+          {/* Global Search */}
+          <div className="relative min-w-[160px]">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              placeholder="Search loaded logs..."
+              className="w-full pl-8 pr-2.5 py-1 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+            />
+          </div>
+
           {/* Clear Filters */}
           {(routeFilter || shiftFilter || typeFilter || globalSearch) && (
             <button
@@ -360,16 +546,24 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
       {/* Main Table Container */}
       <div className="flex-1 overflow-auto p-4 sm:p-6">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden flex flex-col h-full">
-          <div className="flex-1 overflow-auto">
-            <table className="w-full text-left border-collapse text-xs sm:text-sm">
-              <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700 z-10 select-none">
+          <div ref={tableContainerRef} className="flex-1 overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+            <table className="w-full text-left border-collapse text-xs sm:text-sm table-fixed min-w-[1100px]">
+              <colgroup>
+                <col style={{ width: '100px' }} />
+                <col style={{ width: '100px' }} />
+                <col style={{ width: '180px' }} />
+                <col style={{ minWidth: '320px' }} />
+                <col style={{ width: '220px' }} />
+                <col style={{ width: '160px' }} />
+              </colgroup>
+              <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700 z-10 select-none shadow-2xs">
                 <tr>
-                  <th className="py-3 px-4 font-semibold w-[100px]">Route</th>
-                  <th className="py-3 px-4 font-semibold w-[100px]">Shift</th>
-                  <th className="py-3 px-4 font-semibold w-[180px]">Type</th>
-                  <th className="py-3 px-4 font-semibold min-w-[320px]">Detail</th>
-                  <th className="py-3 px-4 font-semibold w-[220px]">Time</th>
-                  <th className="py-3 px-4 font-semibold w-[160px]">User</th>
+                  <th className="py-3 px-4 font-semibold">Route</th>
+                  <th className="py-3 px-4 font-semibold">Shift</th>
+                  <th className="py-3 px-4 font-semibold">Type</th>
+                  <th className="py-3 px-4 font-semibold">Detail</th>
+                  <th className="py-3 px-4 font-semibold">Time</th>
+                  <th className="py-3 px-4 font-semibold">User</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -388,103 +582,106 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
                       <div className="flex flex-col items-center justify-center space-y-2">
                         <History className="w-8 h-8 text-slate-300 dark:text-slate-600" />
                         <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
-                          No change logs found for this date.
+                          {activeFilter
+                            ? 'No change logs matched the specified Route / Employee query.'
+                            : 'No global dispatch operations found for this date.'}
                         </span>
                         <span className="text-xs text-slate-400">
-                          Operations performed on this day will be automatically recorded here.
+                          {activeFilter ? (
+                            <button
+                              type="button"
+                              onClick={handleResetToGlobal}
+                              className="text-blue-500 hover:underline"
+                            >
+                              Return to global dispatch operations
+                            </button>
+                          ) : (
+                            'High-volume shift logs are hidden by default. Query a specific Route or Employee above to inspect shift activity.'
+                          )}
                         </span>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  paginatedLogs.map((log) => (
-                    <tr
-                      key={log.id}
-                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
-                    >
-                      {/* Route */}
-                      <td className="py-3 px-4 font-semibold text-slate-800 dark:text-slate-100">
-                        {log.routeNo || '-'}
-                      </td>
-
-                      {/* Shift */}
-                      <td className="py-3 px-4">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                          {log.shiftType || '-'}
-                        </span>
-                      </td>
-
-                      {/* Type */}
-                      <td className="py-3 px-4">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${getTypeBadgeClass(
-                            log.type
-                          )}`}
+                  <>
+                    {paddingTop > 0 && (
+                      <tr>
+                        <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={6} />
+                      </tr>
+                    )}
+                    {virtualRows.map((virtualRow) => {
+                      const log = filteredLogs[virtualRow.index];
+                      if (!log) return null;
+                      return (
+                        <tr
+                          key={log.id}
+                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
                         >
-                          {log.type}
-                        </span>
-                      </td>
+                          {/* Route */}
+                          <td className="py-3 px-4 font-semibold text-slate-800 dark:text-slate-100 truncate" title={log.routeNo || '-'}>
+                            {log.routeNo || '-'}
+                          </td>
 
-                      {/* Detail */}
-                      <td className="py-3 px-4 text-slate-700 dark:text-slate-300 leading-relaxed break-words whitespace-pre-wrap">
-                        {log.detail}
-                      </td>
+                          {/* Shift */}
+                          <td className="py-3 px-4">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                              {log.shiftType || '-'}
+                            </span>
+                          </td>
 
-                      {/* Time */}
-                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap text-xs font-mono">
-                        {log.time}
-                      </td>
+                          {/* Type */}
+                          <td className="py-3 px-4">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${getTypeBadgeClass(
+                                log.type
+                              )}`}
+                            >
+                              {log.type}
+                            </span>
+                          </td>
 
-                      {/* User */}
-                      <td className="py-3 px-4 text-slate-800 dark:text-slate-200">
-                        <div className="flex items-center space-x-1.5">
-                          <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="truncate max-w-[130px] font-medium" title={log.user}>
-                            {log.user}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                          {/* Detail */}
+                          <td className="py-3 px-4 text-slate-700 dark:text-slate-300 leading-relaxed break-words whitespace-pre-wrap">
+                            {log.detail}
+                          </td>
+
+                          {/* Time */}
+                          <td className="py-3 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap text-xs font-mono">
+                            {log.time}
+                          </td>
+
+                          {/* User */}
+                          <td className="py-3 px-4 text-slate-800 dark:text-slate-200">
+                            <div className="flex items-center space-x-1.5">
+                              <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-[130px] font-medium" title={log.user}>
+                                {log.user}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {paddingBottom > 0 && (
+                      <tr>
+                        <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={6} />
+                      </tr>
+                    )}
+                  </>
                 )}
               </tbody>
             </table>
           </div>
 
-          {/* Table Footer Pagination */}
+          {/* Table Footer */}
           <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
             <div>
-              Showing{' '}
-              <span className="font-semibold text-slate-700 dark:text-slate-200">
-                {filteredLogs.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}
-              </span>{' '}
-              to{' '}
-              <span className="font-semibold text-slate-700 dark:text-slate-200">
-                {Math.min(currentPage * pageSize, filteredLogs.length)}
-              </span>{' '}
-              of <span className="font-semibold text-slate-700 dark:text-slate-200">{filteredLogs.length}</span> entries
+              Showing <span className="font-semibold text-slate-700 dark:text-slate-200">{filteredLogs.length}</span>{' '}
+              {filteredLogs.length === 1 ? 'entry' : 'entries'}
+              {logs.length !== filteredLogs.length && ` (filtered from ${logs.length})`}
             </div>
-
-            <div className="flex items-center space-x-2">
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                disabled={currentPage === 1}
-                className="px-2.5 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
-              >
-                Previous
-              </button>
-              <span className="px-2 font-medium text-slate-700 dark:text-slate-300">
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                disabled={currentPage >= totalPages}
-                className="px-2.5 py-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700"
-              >
-                Next
-              </button>
+            <div className="text-slate-400 dark:text-slate-500 text-[11px] font-medium">
+              Virtual Scrolling Enabled
             </div>
           </div>
         </div>

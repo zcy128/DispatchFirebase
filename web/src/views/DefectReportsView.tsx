@@ -14,7 +14,9 @@ import {
   FileText,
   Hammer,
   Printer,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Clock,
+  Info
 } from 'lucide-react';
 import {
   VehicleDefectReport,
@@ -63,26 +65,62 @@ export const DefectReportsView: React.FC = () => {
   const [mechanicNotes, setMechanicNotes] = useState<string>('');
   const [resolvedBy, setResolvedBy] = useState<string>('');
 
-  useEffect(() => {
-    setLoading(true);
-    const unsubscribe = DefectService.subscribeToDefects((data) => {
-      setReports(data);
+  const [timeRange, setTimeRange] = useState<'6months' | '1year' | 'all'>('6months');
+
+  const isArchivedDate = (d?: string) => {
+    if (!d) return false;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 180);
+    return d < cutoff.toISOString().slice(0, 10);
+  };
+
+  const loadDefects = async (overrideQuery?: string) => {
+    const q = (overrideQuery !== undefined ? overrideQuery : searchQuery).trim();
+    if (timeRange === 'all' && !q) {
+      setReports([]);
       setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  const refreshData = async () => {
+      return;
+    }
     setLoading(true);
     try {
-      const data = await DefectService.listDefects();
+      const params: Record<string, string> = { timeRange };
+      if (q) {
+        params.vehicleUnit = q;
+        params.query = q;
+      }
+      const data = await DefectService.listDefects(params);
       setReports(data);
     } catch (err) {
-      console.error('Failed to refresh defect reports:', err);
+      console.error('Failed to load defect reports:', err);
+      setReports([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (timeRange === '6months') {
+      setLoading(true);
+      const unsubscribe = DefectService.subscribeToDefects((data) => {
+        setReports(data);
+        setLoading(false);
+      });
+      return () => unsubscribe();
+    } else if (timeRange === '1year') {
+      loadDefects();
+    } else {
+      // 'all' history mode requires a targeted query
+      if (searchQuery.trim()) {
+        loadDefects(searchQuery.trim());
+      } else {
+        setReports([]);
+        setLoading(false);
+      }
+    }
+  }, [timeRange]);
+
+  const refreshData = async () => {
+    loadDefects();
   };
 
   // KPIs
@@ -473,41 +511,106 @@ export const DefectReportsView: React.FC = () => {
 
       {/* Filter and Search Bar */}
       <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-        {/* Status Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
-          {[
-            { id: 'all', label: 'All' },
-            { id: 'submitted', label: 'Submitted' },
-            { id: 'under_assessment', label: 'Under Assessment' },
-            { id: 'under_repair', label: 'Under Repair' },
-            { id: 'resolved', label: 'Resolved' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition ${
-                statusFilter === tab.id
-                  ? 'bg-amber-500 text-slate-900 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* Status Tabs & Time Range Tabs */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'submitted', label: 'Submitted' },
+              { id: 'under_assessment', label: 'Under Assessment' },
+              { id: 'under_repair', label: 'Under Repair' },
+              { id: 'resolved', label: 'Resolved' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition cursor-pointer ${
+                  statusFilter === tab.id
+                    ? 'bg-amber-500 text-slate-900 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Time Range Selector */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-900/80 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 px-2 flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-blue-500" />
+              Range:
+            </span>
+            {[
+              { id: '6months', label: '6 Months (Hot)' },
+              { id: '1year', label: '1 Year (Hybrid)' },
+              { id: 'all', label: 'All History' },
+            ].map((r) => (
+              <button
+                key={r.id}
+                onClick={() => setTimeRange(r.id as any)}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
+                  timeRange === r.id
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Search Input */}
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search unit, driver, notes..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-          />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="relative w-full sm:w-72">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder={
+                timeRange === 'all'
+                  ? 'Vehicle Unit # (e.g. 1016)...'
+                  : 'Search unit, driver, notes...'
+              }
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && timeRange === 'all') {
+                  loadDefects(searchQuery.trim());
+                }
+              }}
+              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+            />
+          </div>
+          {timeRange === 'all' && (
+            <button
+              type="button"
+              onClick={() => loadDefects(searchQuery.trim())}
+              disabled={loading || !searchQuery.trim()}
+              className="px-3 py-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-900 rounded-lg transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5"
+            >
+              <Search className="w-3.5 h-3.5" />
+              Search Archive
+            </button>
+          )}
         </div>
       </div>
+
+      {/* 10-Year Safe Scan Notice Banner */}
+      {timeRange === 'all' && (
+        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl flex items-start gap-3 text-xs text-amber-800 dark:text-amber-200">
+          <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
+              <span>All History Mode (BigQuery Cold Archive)</span>
+              <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">10-Year Safe Scan</span>
+            </div>
+            <p className="text-amber-700 dark:text-amber-300">
+              To protect system performance and avoid full-table scans across 10+ years of fleet data, full browsing is restricted. Please enter a <strong>Vehicle Unit #</strong> (e.g. <code>1016</code>) to query historical defects and maintenance records for that vehicle.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Reports Table */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
@@ -518,9 +621,25 @@ export const DefectReportsView: React.FC = () => {
           </div>
         ) : filteredReports.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-12 text-slate-400">
-            <CheckCircle2 className="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3" />
-            <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300">No defect reports found</h3>
-            <p className="text-xs text-slate-500 mt-1">No reports match the selected filters.</p>
+            {timeRange === 'all' && !searchQuery.trim() ? (
+              <>
+                <Search className="w-12 h-12 text-amber-500/60 mb-3" />
+                <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300">Enter a Vehicle Unit # to Search All History</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-md text-center">
+                  Search across 10 years of BigQuery archives for a specific vehicle by entering its unit number above (e.g. 1016) and clicking Search Archive.
+                </p>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3" />
+                <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300">No defect reports found</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  {timeRange === 'all'
+                    ? `No defect records found for vehicle "${searchQuery}" in the historical archive.`
+                    : 'No reports match the selected filters.'}
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -568,6 +687,14 @@ export const DefectReportsView: React.FC = () => {
                           <span className="text-slate-400 text-[11px] flex items-center gap-1 mt-0.5">
                             <Calendar className="w-3 h-3" />
                             {report.reportDate} {report.reportTime}
+                            {isArchivedDate(report.reportDate) && (
+                              <span
+                                title="Record is older than 6 months and retrieved from BigQuery cold archive"
+                                className="ml-1 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800"
+                              >
+                                BigQuery
+                              </span>
+                            )}
                           </span>
                         </div>
                       </td>

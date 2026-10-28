@@ -117,6 +117,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
       title: t.nav.fleetGroup || (isFrench ? 'Flotte et dépôt' : 'Fleet & Depot'),
       items: [
         { id: 'vehicles' as NavTab, label: t.nav.vehicles, icon: Truck, badge: null },
+        { id: 'pretrip_checks' as NavTab, label: isFrench ? 'Contrôles avant départ (Pre-Trip)' : 'Pre-Trip Inspections', icon: ClipboardCheck, badge: null },
         { id: 'vehicle_inspections' as NavTab, label: isFrench ? 'Inspections mécaniques' : 'Mechanical Inspections', icon: ShieldCheck, badge: null },
         { id: 'defects' as NavTab, label: isFrench ? 'Défectuosités véhicules' : 'Vehicle Defects', icon: Wrench },
         { id: 'vehicle_signouts' as NavTab, label: isFrench ? 'Remise des véhicules' : 'Vehicle Handover', icon: FileSignature },

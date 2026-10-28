@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAuth } from '../contexts/AuthContext';
 import { LoginLogService } from '../services/loginLogService';
 import { LoginLogEntry, LoginStatus } from '../types/loginLog';
@@ -14,8 +15,31 @@ import {
   RefreshCw,
   ShieldAlert,
   Download,
-  Clock
+  Clock,
+  ChevronLeft,
+  ChevronRight,
+  Zap,
+  Sparkles
 } from 'lucide-react';
+
+/**
+ * Calendar helpers to avoid UTC timezone offsets
+ */
+const getTodayStr = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const changeDateByDays = (dateStr: string, days: number): string => {
+  try {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
+    d.setDate(d.getDate() + days);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  } catch {
+    return dateStr;
+  }
+};
 
 export const LoginLogsView: React.FC = () => {
   const { currentUser } = useAuth();
@@ -23,8 +47,11 @@ export const LoginLogsView: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
+  // Date Selection: default to today (按日期查看，单日约1000条记录)
+  const todayStr = useMemo(() => getTodayStr(), []);
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+
   // Filters
-  const [selectedDate, setSelectedDate] = useState<string>(''); // YYYY-MM-DD or empty for all
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [usernameFilter, setUsernameFilter] = useState<string>('');
   const [employeeNameFilter, setEmployeeNameFilter] = useState<string>('');
@@ -35,12 +62,13 @@ export const LoginLogsView: React.FC = () => {
   // Strict Admin Access Check
   const isAdmin = currentUser?.role?.toLowerCase() === 'admin';
 
-  // Load and listen to logs
+  // Load and listen to logs for the selected date
   useEffect(() => {
     if (!isAdmin) return;
 
     setLoading(true);
     const unsubscribe = LoginLogService.subscribeToLogs(
+      selectedDate,
       (updatedLogs) => {
         setLogs(updatedLogs);
         setLoading(false);
@@ -53,14 +81,30 @@ export const LoginLogsView: React.FC = () => {
     );
 
     return () => unsubscribe();
-  }, [isAdmin]);
+  }, [isAdmin, selectedDate]);
 
   const handleManualRefresh = async () => {
     setRefreshing(true);
-    const fetched = await LoginLogService.getLogs();
+    const fetched = await LoginLogService.getLogs(selectedDate);
     setLogs(fetched);
     setRefreshing(false);
   };
+
+  const handleRegenerateSeed = () => {
+    setRefreshing(true);
+    const generated = LoginLogService.regenerateMockLogs(selectedDate, 1000);
+    setLogs(generated);
+    setRefreshing(false);
+  };
+
+  // Recent 7 days for quick day tabs
+  const recentDays = useMemo(() => {
+    const list: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      list.push(changeDateByDays(todayStr, -i));
+    }
+    return list;
+  }, [todayStr]);
 
   // Distinct app options for dropdown
   const availableApps = useMemo(() => {
@@ -71,20 +115,11 @@ export const LoginLogsView: React.FC = () => {
     return Array.from(set);
   }, [logs]);
 
-  // Distinct available dates for quick day tabs
-  const availableDates = useMemo(() => {
-    const set = new Set<string>();
-    logs.forEach((log) => {
-      if (log.date) set.add(log.date);
-    });
-    return Array.from(set).sort().reverse();
-  }, [logs]);
-
   // Filtered logs
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
-      // Date filter
-      if (selectedDate && log.date !== selectedDate) {
+      // Date filter (safety check)
+      if (selectedDate && log.date && log.date !== selectedDate) {
         return false;
       }
 
@@ -149,7 +184,7 @@ export const LoginLogsView: React.FC = () => {
     searchQuery
   ]);
 
-  // Aggregate statistics
+  // Aggregate statistics for the selected date
   const stats = useMemo(() => {
     const total = filteredLogs.length;
     const successes = filteredLogs.filter((l) => l.status === 'success').length;
@@ -158,9 +193,24 @@ export const LoginLogsView: React.FC = () => {
     return { total, successes, failures, successRate };
   }, [filteredLogs]);
 
+  // 虚拟滚动 (Virtual Scrolling for ~1000 daily login logs)
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filteredLogs.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 54, // Approximate row height in px
+    overscan: 12,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start || 0 : 0;
+  const paddingBottom = virtualRows.length > 0
+    ? rowVirtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1]?.end || 0)
+    : 0;
+
   const handleExportCSV = () => {
     if (filteredLogs.length === 0) return;
-    const headers = ['Timestamp', 'Date', 'Status', 'Username', 'Employee Name', 'Role', 'App', 'Version', 'Failure Reason', 'Device Info'];
+    const headers = ['Timestamp', 'Date', 'Status', 'Username', 'Employee Name', 'Role', 'App', 'Version', 'Failure Reason', 'Device Info', 'IP Address'];
     const rows = filteredLogs.map((l) => [
       `"${l.timestamp}"`,
       `"${l.date}"`,
@@ -171,21 +221,21 @@ export const LoginLogsView: React.FC = () => {
       `"${l.app}"`,
       `"${l.appVersion}"`,
       `"${l.failureReason || ''}"`,
-      `"${l.deviceInfo || ''}"`
+      `"${l.deviceInfo || ''}"`,
+      `"${l.ipAddress || ''}"`
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `login_logs_${selectedDate || 'all'}.csv`);
+    link.setAttribute('download', `login_logs_${selectedDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const handleClearFilters = () => {
-    setSelectedDate('');
     setSearchQuery('');
     setUsernameFilter('');
     setEmployeeNameFilter('');
@@ -209,6 +259,8 @@ export const LoginLogsView: React.FC = () => {
     );
   }
 
+  const isToday = selectedDate === todayStr;
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
       {/* Header Banner */}
@@ -224,9 +276,13 @@ export const LoginLogsView: React.FC = () => {
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   Admin Exclusive
                 </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center gap-1">
+                  <Zap className="w-3 h-3" />
+                  Virtual Scrolling
+                </span>
               </h1>
               <p className="text-xs text-slate-400 mt-0.5">
-                Audit trail tracking all user authentication attempts across Web Hub and Driver App
+                按日期审计各端（Web Hub / Driver App）登录流水，单日承载约 1,000 条记录并支持毫秒级平滑滚动
               </p>
             </div>
           </div>
@@ -237,9 +293,19 @@ export const LoginLogsView: React.FC = () => {
             onClick={handleManualRefresh}
             disabled={refreshing}
             className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
+            title="Refresh current day logs"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
+          </button>
+
+          <button
+            onClick={handleRegenerateSeed}
+            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 text-xs font-medium transition"
+            title="一键生成/模拟当日 1,000 条高保真测试数据"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>模拟1000条</span>
           </button>
 
           <button
@@ -253,16 +319,101 @@ export const LoginLogsView: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* Date Navigation & Selector (按日期显示) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-lg">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Quick Date Stepper & Picker */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedDate(changeDateByDays(selectedDate, -1))}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+              title="前一天"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <div className="relative flex items-center">
+              <Calendar className="w-4 h-4 text-amber-400 absolute left-3 pointer-events-none" />
+              <input
+                type="date"
+                value={selectedDate}
+                max={todayStr}
+                onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+                className="bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500 font-mono"
+              />
+            </div>
+
+            <button
+              onClick={() => setSelectedDate(changeDateByDays(selectedDate, 1))}
+              disabled={isToday}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition disabled:opacity-30 disabled:cursor-not-allowed"
+              title="后一天"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => setSelectedDate(todayStr)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
+                isToday
+                  ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-md shadow-amber-500/20'
+                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+              }`}
+            >
+              今天 (Today)
+            </button>
+          </div>
+
+          {/* Current Date Status Badge */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-400">当前审计日期:</span>
+            <span className="font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg">
+              {selectedDate}
+            </span>
+            <span className="text-slate-400 text-[11px]">
+              (共 <b className="text-white">{logs.length}</b> 条日记录)
+            </span>
+          </div>
+        </div>
+
+        {/* Quick Date Chips (Past 7 Days) */}
+        <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
+            快速跳转:
+          </span>
+          {recentDays.map((d, index) => {
+            const isSelected = selectedDate === d;
+            let label = d.slice(5); // MM-DD
+            if (index === 0) label = `今天 (${d.slice(5)})`;
+            else if (index === 1) label = `昨天 (${d.slice(5)})`;
+
+            return (
+              <button
+                key={d}
+                onClick={() => setSelectedDate(d)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition flex items-center space-x-1.5 ${
+                  isSelected
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 border border-slate-800'
+                }`}
+              >
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* KPI Cards for the Selected Day */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">Total Attempts</span>
+          <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">当日总尝试次数</span>
           <div className="text-2xl font-black text-white mt-1">{stats.total}</div>
-          <span className="text-[11px] text-slate-400">Captured in current view</span>
+          <span className="text-[11px] text-slate-400">Captured on {selectedDate}</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[11px] font-bold uppercase text-emerald-400 block tracking-wider">Successful Logins</span>
+          <span className="text-[11px] font-bold uppercase text-emerald-400 block tracking-wider">成功登录</span>
           <div className="text-2xl font-black text-emerald-400 mt-1 flex items-center space-x-1.5">
             <CheckCircle2 className="w-5 h-5" />
             <span>{stats.successes}</span>
@@ -271,69 +422,18 @@ export const LoginLogsView: React.FC = () => {
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[11px] font-bold uppercase text-rose-400 block tracking-wider">Failed Attempts</span>
+          <span className="text-[11px] font-bold uppercase text-rose-400 block tracking-wider">失败/拦截尝试</span>
           <div className="text-2xl font-black text-rose-400 mt-1 flex items-center space-x-1.5">
             <XCircle className="w-5 h-5" />
             <span>{stats.failures}</span>
           </div>
-          <span className="text-[11px] text-slate-400">Rejected or bad credentials</span>
+          <span className="text-[11px] text-slate-400">Rejected or invalid attempts</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[11px] font-bold uppercase text-amber-400 block tracking-wider">Success Rate</span>
+          <span className="text-[11px] font-bold uppercase text-amber-400 block tracking-wider">登录成功率</span>
           <div className="text-2xl font-black text-amber-400 mt-1">{stats.successRate}%</div>
-          <span className="text-[11px] text-slate-400">Overall ratio in selection</span>
-        </div>
-      </div>
-
-      {/* Day Selector Pills */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2 text-xs font-bold text-slate-300">
-            <Calendar className="w-4 h-4 text-amber-400" />
-            <span>Filter by Day:</span>
-          </div>
-          {selectedDate && (
-            <button
-              onClick={() => setSelectedDate('')}
-              className="text-[11px] font-semibold text-amber-400 hover:text-amber-300"
-            >
-              Show All Days
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-          <button
-            onClick={() => setSelectedDate('')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
-              selectedDate === ''
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            All Dates ({logs.length})
-          </button>
-          {availableDates.map((d) => {
-            const count = logs.filter((l) => l.date === d).length;
-            const isSelected = selectedDate === d;
-            return (
-              <button
-                key={d}
-                onClick={() => setSelectedDate(d)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition flex items-center space-x-1.5 ${
-                  isSelected
-                    ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                <span>{d}</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${isSelected ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-700 text-slate-400'}`}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+          <span className="text-[11px] text-slate-400">Overall ratio for this date</span>
         </div>
       </div>
 
@@ -344,12 +444,12 @@ export const LoginLogsView: React.FC = () => {
             <Filter className="w-4 h-4 text-amber-400" />
             <span>Search & Targeted Filters</span>
           </div>
-          {(selectedDate || searchQuery || usernameFilter || employeeNameFilter || appFilter !== 'all' || versionFilter || statusFilter !== 'all') && (
+          {(searchQuery || usernameFilter || employeeNameFilter || appFilter !== 'all' || versionFilter || statusFilter !== 'all') && (
             <button
               onClick={handleClearFilters}
               className="text-[11px] font-semibold text-rose-400 hover:text-rose-300"
             >
-              Reset All Filters
+              Reset Filters
             </button>
           )}
         </div>
@@ -418,7 +518,7 @@ export const LoginLogsView: React.FC = () => {
               type="text"
               value={versionFilter}
               onChange={(e) => setVersionFilter(e.target.value)}
-              placeholder="e.g. v1.0.0"
+              placeholder="e.g. v1.2.4"
               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
             />
           </div>
@@ -439,51 +539,70 @@ export const LoginLogsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Logs Table */}
+      {/* Main Logs Table with Virtual Scrolling */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center space-x-2">
             <span className="text-xs font-bold text-white uppercase tracking-wider">
-              Audit Trail Records
+              Audit Trail Records ({selectedDate})
             </span>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
               {filteredLogs.length} matching
             </span>
           </div>
-          <span className="text-[11px] text-slate-400">
-            Real-time synchronization active
-          </span>
+          <div className="flex items-center space-x-3 text-[11px] text-slate-400">
+            <span className="flex items-center gap-1.5 text-sky-400 font-medium">
+              <Zap className="w-3.5 h-3.5" />
+              Virtual Scroll: {virtualRows.length > 0 ? `${virtualRows[0].index + 1} - ${virtualRows[virtualRows.length - 1].index + 1}` : 0} of {filteredLogs.length}
+            </span>
+            <span className="hidden sm:inline text-slate-500">|</span>
+            <span className="hidden sm:inline">Real-time sync active</span>
+          </div>
         </div>
 
         {loading ? (
-          <div className="p-12 text-center text-slate-400 text-xs">
+          <div className="p-16 text-center text-slate-400 text-xs">
             <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-amber-500" />
-            Loading authentication logs...
+            Loading authentication logs for {selectedDate}...
           </div>
         ) : filteredLogs.length === 0 ? (
-          <div className="p-12 text-center space-y-2">
+          <div className="p-16 text-center space-y-2">
             <History className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-slate-300">No login records found</p>
+            <p className="text-sm font-semibold text-slate-300">No login records found for {selectedDate}</p>
             <p className="text-xs text-slate-500">
-              Try adjusting your date range, username search, or app filters above.
+              Try adjusting your date or keyword filters above, or click "模拟1000条" to seed test logs.
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div
+            ref={tableContainerRef}
+            className="overflow-x-auto overflow-y-auto max-h-[640px] scrollbar-thin"
+          >
             <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-950/50 border-b border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  <th className="py-3 px-4">Timestamp & Day</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Username / Identity</th>
-                  <th className="py-3 px-4">Employee Full Name</th>
-                  <th className="py-3 px-4">App & Version</th>
-                  <th className="py-3 px-4">Role</th>
-                  <th className="py-3 px-4">Details / Failure Note</th>
+              <thead className="sticky top-0 z-10 bg-slate-950 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800 shadow-md">
+                <tr>
+                  <th className="py-3 px-4 whitespace-nowrap">Time</th>
+                  <th className="py-3 px-4 whitespace-nowrap">Status</th>
+                  <th className="py-3 px-4 whitespace-nowrap">Username / Identity</th>
+                  <th className="py-3 px-4 whitespace-nowrap">Employee Full Name</th>
+                  <th className="py-3 px-4 whitespace-nowrap">App & Version</th>
+                  <th className="py-3 px-4 whitespace-nowrap">Role</th>
+                  <th className="py-3 px-4">Details / Failure Note / Device</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-xs text-slate-300">
-                {filteredLogs.map((log) => {
+                {/* Top spacer for virtual scrolling */}
+                {paddingTop > 0 && (
+                  <tr>
+                    <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={7} />
+                  </tr>
+                )}
+
+                {/* Rendered virtual items */}
+                {virtualRows.map((virtualRow) => {
+                  const log = filteredLogs[virtualRow.index];
+                  if (!log) return null;
+
                   const isSuccess = log.status === 'success';
                   const isDriverApp = log.app.toLowerCase().includes('driver');
                   const timeStr = log.timestamp.includes('T')
@@ -493,19 +612,19 @@ export const LoginLogsView: React.FC = () => {
                   return (
                     <tr
                       key={log.id}
-                      className="hover:bg-slate-800/40 transition-colors"
+                      className="hover:bg-slate-800/40 transition-colors h-[54px]"
                     >
                       {/* Timestamp */}
-                      <td className="py-3.5 px-4 font-mono text-slate-400 whitespace-nowrap">
-                        <div className="text-white font-medium">{log.date}</div>
-                        <div className="text-[10px] text-slate-500 flex items-center space-x-1 mt-0.5">
-                          <Clock className="w-3 h-3 text-slate-500" />
+                      <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">
+                        <div className="text-[10px] text-slate-500">{log.date}</div>
+                        <div className="text-white font-medium flex items-center space-x-1 mt-0.5">
+                          <Clock className="w-3 h-3 text-amber-500/70" />
                           <span>{timeStr}</span>
                         </div>
                       </td>
 
                       {/* Status */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td className="py-3 px-4 whitespace-nowrap">
                         {isSuccess ? (
                           <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                             <CheckCircle2 className="w-3.5 h-3.5" />
@@ -520,7 +639,7 @@ export const LoginLogsView: React.FC = () => {
                       </td>
 
                       {/* Username */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-4">
                         <span className="font-mono text-amber-300 font-semibold text-xs">
                           {log.username}
                         </span>
@@ -532,7 +651,7 @@ export const LoginLogsView: React.FC = () => {
                       </td>
 
                       {/* Employee Name */}
-                      <td className="py-3.5 px-4 font-medium text-white">
+                      <td className="py-3 px-4 font-medium text-white">
                         {isSuccess && log.employeeName ? (
                           <div className="flex items-center space-x-2">
                             <div className="w-6 h-6 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-amber-400 font-bold">
@@ -548,7 +667,7 @@ export const LoginLogsView: React.FC = () => {
                       </td>
 
                       {/* App & Version */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-4">
                         <div className="flex items-center space-x-1.5 font-medium text-white">
                           {isDriverApp ? (
                             <Smartphone className="w-3.5 h-3.5 text-sky-400" />
@@ -563,7 +682,7 @@ export const LoginLogsView: React.FC = () => {
                       </td>
 
                       {/* Role */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td className="py-3 px-4 whitespace-nowrap">
                         {log.role ? (
                           <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-slate-800 border border-slate-700 text-slate-300">
                             {log.role}
@@ -574,7 +693,7 @@ export const LoginLogsView: React.FC = () => {
                       </td>
 
                       {/* Details / Failure Reason */}
-                      <td className="py-3.5 px-4 text-[11px]">
+                      <td className="py-3 px-4 text-[11px]">
                         {!isSuccess && log.failureReason ? (
                           <span className="text-rose-400 font-medium">
                             {log.failureReason}
@@ -590,6 +709,13 @@ export const LoginLogsView: React.FC = () => {
                     </tr>
                   );
                 })}
+
+                {/* Bottom spacer for virtual scrolling */}
+                {paddingBottom > 0 && (
+                  <tr>
+                    <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={7} />
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

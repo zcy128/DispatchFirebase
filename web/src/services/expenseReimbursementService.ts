@@ -103,33 +103,72 @@ export const ExpenseReimbursementService = {
     }));
   },
 
+  isColdClaim: (claimDate?: string): boolean => {
+    if (!claimDate) return false;
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 6);
+    return claimDate.slice(0, 10) < cutoff.toISOString().slice(0, 10);
+  },
+
   listClaims: async (params?: Record<string, string>): Promise<ExpenseReimbursement[]> => {
     const qStr = new URLSearchParams(params || {}).toString();
     try {
       const res = await apiRequest<ExpenseReimbursement[]>(
         `/api/dispatch/expense-reimbursements?${qStr}`
       );
-      return Array.isArray(res) ? res.map((r) => normalizeExpenseRecord(r, r.id)) : [];
+      if (Array.isArray(res)) {
+        return res
+          .map((r) => normalizeExpenseRecord(r, r.id))
+          .sort((a, b) => {
+            const dateA = a.claimDate || a.createdAt || '';
+            const dateB = b.claimDate || b.createdAt || '';
+            if (dateA !== dateB) return dateB.localeCompare(dateA);
+            return (b.createdAt || '').localeCompare(a.createdAt || '');
+          });
+      }
     } catch {
       try {
         const res = await apiRequest<ExpenseReimbursement[]>(
           `/api/public/dispatch/expense-reimbursements?${qStr}`
         );
-        return Array.isArray(res) ? res.map((r) => normalizeExpenseRecord(r, r.id)) : [];
+        if (Array.isArray(res)) {
+          return res
+            .map((r) => normalizeExpenseRecord(r, r.id))
+            .sort((a, b) => {
+              const dateA = a.claimDate || a.createdAt || '';
+              const dateB = b.claimDate || b.createdAt || '';
+              if (dateA !== dateB) return dateB.localeCompare(dateA);
+              return (b.createdAt || '').localeCompare(a.createdAt || '');
+            });
+        }
       } catch (err) {
         if (db) {
           const qRef = collection(db, 'expense_reimbursements');
           const snap = await getDocs(qRef);
+          const cutoff = new Date();
+          cutoff.setMonth(cutoff.getMonth() - 6);
+          const cutoffStr = cutoff.toISOString().slice(0, 10);
           const list: ExpenseReimbursement[] = [];
           snap.forEach((d) => {
-            list.push(normalizeExpenseRecord(d.data(), d.id));
+            const rec = normalizeExpenseRecord(d.data(), d.id);
+            if (!params?.timeRange || params.timeRange === '6months') {
+              const cDate = rec.claimDate || rec.createdAt.slice(0, 10);
+              if (cDate < cutoffStr) return;
+            }
+            list.push(rec);
           });
-          list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          list.sort((a, b) => {
+            const dateA = a.claimDate || a.createdAt || '';
+            const dateB = b.claimDate || b.createdAt || '';
+            if (dateA !== dateB) return dateB.localeCompare(dateA);
+            return (b.createdAt || '').localeCompare(a.createdAt || '');
+          });
           return list;
         }
         return [];
       }
     }
+    return [];
   },
 
   getClaim: async (id: string): Promise<ExpenseReimbursement | null> => {
@@ -230,13 +269,50 @@ export const ExpenseReimbursementService = {
     let isSubscribed = true;
     let pollTimer: any = null;
     let unsubscribeSnapshot: (() => void) | null = null;
+    let restClaims: ExpenseReimbursement[] = [];
+    let firestoreClaims: ExpenseReimbursement[] = [];
+
+    const emitMerged = () => {
+      if (!isSubscribed) return;
+      const map = new Map<string, ExpenseReimbursement>();
+      for (const r of restClaims) {
+        map.set(r.id, r);
+      }
+      for (const r of firestoreClaims) {
+        const existing = map.get(r.id);
+        if (
+          !existing ||
+          new Date(r.updatedAt || r.createdAt).getTime() >=
+            new Date(existing.updatedAt || existing.createdAt).getTime()
+        ) {
+          map.set(r.id, r);
+        }
+      }
+      const cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - 6);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+      const merged = Array.from(map.values())
+        .filter((r) => {
+          const cDate = r.claimDate || (r.createdAt ? r.createdAt.slice(0, 10) : '');
+          return cDate >= cutoffStr;
+        })
+        .sort((a, b) => {
+          const dateA = a.claimDate || a.createdAt || '';
+          const dateB = b.claimDate || b.createdAt || '';
+          if (dateA !== dateB) return dateB.localeCompare(dateA);
+          return (b.createdAt || '').localeCompare(a.createdAt || '');
+        });
+      callback(merged);
+    };
 
     const fetchLatestRest = async () => {
       if (!isSubscribed) return;
       try {
         const claims = await ExpenseReimbursementService.listClaims();
         if (isSubscribed) {
-          callback(claims);
+          restClaims = claims;
+          emitMerged();
         }
       } catch (err) {
         console.warn('[ExpenseReimbursementService] Polling fetch error:', err);
@@ -264,8 +340,8 @@ export const ExpenseReimbursementService = {
             snapshot.forEach((d) => {
               list.push(normalizeExpenseRecord(d.data(), d.id));
             });
-            list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            callback(list);
+            firestoreClaims = list;
+            emitMerged();
           },
           (error) => {
             console.warn(

@@ -91,6 +91,8 @@ export const VehicleSignoutService = {
     unitNumber?: string;
     employeeId?: string;
     isSignIn?: boolean;
+    query?: string;
+    timeRange?: '1year' | 'all';
     startDate?: string;
     endDate?: string;
     role?: string;
@@ -101,6 +103,8 @@ export const VehicleSignoutService = {
       if (filters?.unitNumber) params.append('unitNumber', filters.unitNumber);
       if (filters?.employeeId) params.append('employeeId', filters.employeeId);
       if (filters?.isSignIn !== undefined) params.append('isSignIn', String(filters.isSignIn));
+      if (filters?.query) params.append('query', filters.query);
+      if (filters?.timeRange) params.append('timeRange', filters.timeRange);
       if (filters?.startDate) params.append('startDate', filters.startDate);
       if (filters?.endDate) params.append('endDate', filters.endDate);
 
@@ -114,8 +118,18 @@ export const VehicleSignoutService = {
       if (db) {
         try {
           const snapshot = await getDocs(collection(db, 'vehicle_signouts'));
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - 365);
+          const cutoffStr = cutoffDate.toISOString().slice(0, 10);
           const items: VehicleSignout[] = [];
-          snapshot.forEach((d) => items.push(normalizeRecord(d.data(), d.id)));
+          snapshot.forEach((d) => {
+            const rec = normalizeRecord(d.data(), d.id);
+            if (!filters?.timeRange || filters.timeRange === '1year') {
+              const rDate = rec.signDate?.slice(0, 10) || rec.createdAt.slice(0, 10);
+              if (rDate && rDate < cutoffStr) return;
+            }
+            items.push(rec);
+          });
           items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           return items;
         } catch (e) {
@@ -223,12 +237,20 @@ export const VehicleSignoutService = {
     onError?: (error: Error) => void
   ) => {
     if (!db) return () => {};
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 365);
+    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+
     return onSnapshot(
       collection(db, 'vehicle_signouts'),
       (snapshot) => {
         const records: VehicleSignout[] = [];
         snapshot.forEach((d) => {
-          records.push(normalizeRecord(d.data(), d.id));
+          const rec = normalizeRecord(d.data(), d.id);
+          const rDate = rec.signDate?.slice(0, 10) || rec.createdAt.slice(0, 10);
+          if (!rDate || rDate >= cutoffStr) {
+            records.push(rec);
+          }
         });
         records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         callback(records);

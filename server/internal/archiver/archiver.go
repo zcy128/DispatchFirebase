@@ -83,8 +83,16 @@ func (a *Archiver) EnsureTables(ctx context.Context) error {
 		{Name: "updated_at", Type: bigquery.TimestampFieldType, Required: true},
 	}
 
-	// 1. Business tables (dispatch_shifts, dispatch_payrolls, payroll_logs, time_off_requests)
-	bizTables := []string{"dispatch_shifts", "dispatch_payrolls", "payroll_logs", "time_off_requests"}
+	// 1. Business tables (dispatch_shifts, dispatch_payrolls, payroll_logs, time_off_requests, route_assessments, vehicle_signouts, expense_reimbursements)
+	bizTables := []string{
+		"dispatch_shifts",
+		"dispatch_payrolls",
+		"payroll_logs",
+		"time_off_requests",
+		"route_assessments",
+		"vehicle_signouts",
+		"expense_reimbursements",
+	}
 	for _, tblName := range bizTables {
 		tbl := ds.Table(tblName)
 		if _, err := tbl.Metadata(ctx); err != nil {
@@ -214,6 +222,486 @@ func (a *Archiver) SyncAnnualIncidents(ctx context.Context, startDate, endDate s
 		}
 	}
 	return nil
+}
+
+// SyncIncidentsOlderThan copies vehicle defects and student incidents older than olderThanDays (default 180) to BigQuery
+// ArchiveIncidentsOlderThan syncs vehicle defects and student incidents older than olderThanDays (default 180) to BigQuery,
+// and upon successful persistence, safely cleans them up from Firestore.
+func (a *Archiver) ArchiveIncidentsOlderThan(ctx context.Context, olderThanDays int) (int, int, error) {
+	if olderThanDays <= 0 {
+		olderThanDays = 180
+	}
+	cutoff := time.Now().AddDate(0, 0, -olderThanDays).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Archiving (sync then cleanup) vehicle defects and student incidents older than %s (%d days)...", cutoff, olderThanDays)
+
+	totalSynced := 0
+	totalCleaned := 0
+
+	// 1. Vehicle Defects
+	defectsSynced, defectsCleaned, err := a.syncAndCleanupCollectionOlderThanDate(ctx, "vehicle_defects", []string{"reportDate", "defectDate"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: archiving vehicle_defects older than %s failed: %v", cutoff, err)
+	} else {
+		totalSynced += defectsSynced
+		totalCleaned += defectsCleaned
+	}
+
+	// 2. Student Incidents
+	incidentsSynced, incidentsCleaned, err := a.syncAndCleanupCollectionOlderThanDate(ctx, "student_incidents", []string{"incidentDate"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: archiving student_incidents older than %s failed: %v", cutoff, err)
+	} else {
+		totalSynced += incidentsSynced
+		totalCleaned += incidentsCleaned
+	}
+
+	log.Printf("[ARCHIVER] Completed incident archive for records older than %d days: %d synced to BigQuery, %d cleaned up from Firestore.", olderThanDays, totalSynced, totalCleaned)
+	return totalSynced, totalCleaned, nil
+}
+
+// SyncIncidentsOlderThan copies vehicle defects and student incidents older than olderThanDays (default 180) to BigQuery (read-only from Firestore).
+func (a *Archiver) SyncIncidentsOlderThan(ctx context.Context, olderThanDays int) (int, error) {
+	if olderThanDays <= 0 {
+		olderThanDays = 180
+	}
+	cutoff := time.Now().AddDate(0, 0, -olderThanDays).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Copying vehicle defects and student incidents older than %s (%d days) to BigQuery...", cutoff, olderThanDays)
+
+	totalSynced := 0
+
+	// 1. Vehicle Defects
+	defectCount, err := a.syncCollectionOlderThanDate(ctx, "vehicle_defects", []string{"reportDate", "defectDate"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: syncing vehicle_defects older than %s failed: %v", cutoff, err)
+	} else {
+		totalSynced += defectCount
+	}
+
+	// 2. Student Incidents
+	incidentCount, err := a.syncCollectionOlderThanDate(ctx, "student_incidents", []string{"incidentDate"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: syncing student_incidents older than %s failed: %v", cutoff, err)
+	} else {
+		totalSynced += incidentCount
+	}
+
+	log.Printf("[ARCHIVER] Completed copying incidents older than %d days to BigQuery: %d records copied.", olderThanDays, totalSynced)
+	return totalSynced, nil
+}
+
+// ArchiveHazardsOlderThan syncs hazard reports older than olderThanMonths (default 12) to BigQuery,
+// and upon confirmed persistence, safely cleans them up from Firestore.
+func (a *Archiver) ArchiveHazardsOlderThan(ctx context.Context, olderThanMonths int) (int, int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 12
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Archiving (sync then cleanup) hazard reports older than %s (%d months)...", cutoff, olderThanMonths)
+
+	synced, cleaned, err := a.syncAndCleanupCollectionOlderThanDate(ctx, "hazard_reports", []string{"eventTime", "hazardDate", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: archiving hazard_reports older than %s failed: %v", cutoff, err)
+		return 0, 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed hazard reports archive for records older than %d months: %d synced to BigQuery, %d cleaned up from Firestore.", olderThanMonths, synced, cleaned)
+	return synced, cleaned, nil
+}
+
+// SyncHazardsOlderThan copies hazard reports older than olderThanMonths (default 12) to BigQuery (read-only from Firestore).
+func (a *Archiver) SyncHazardsOlderThan(ctx context.Context, olderThanMonths int) (int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 12
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Copying hazard reports older than %s (%d months) to BigQuery...", cutoff, olderThanMonths)
+
+	count, err := a.syncCollectionOlderThanDate(ctx, "hazard_reports", []string{"eventTime", "hazardDate", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: syncing hazard_reports older than %s failed: %v", cutoff, err)
+		return 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed copying hazard reports older than %d months to BigQuery: %d records copied.", olderThanMonths, count)
+	return count, nil
+}
+
+// ArchiveRouteAssessmentsOlderThan syncs route assessments older than olderThanMonths (default 12) to BigQuery,
+// and upon confirmed persistence, safely cleans them up from Firestore.
+func (a *Archiver) ArchiveRouteAssessmentsOlderThan(ctx context.Context, olderThanMonths int) (int, int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 12
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Archiving (sync then cleanup) route assessments older than %s (%d months)...", cutoff, olderThanMonths)
+
+	synced, cleaned, err := a.syncAndCleanupCollectionOlderThanDate(ctx, "route_assessments", []string{"assessmentDate", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: archiving route_assessments older than %s failed: %v", cutoff, err)
+		return 0, 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed route assessments archive for records older than %d months: %d synced to BigQuery, %d cleaned up from Firestore.", olderThanMonths, synced, cleaned)
+	return synced, cleaned, nil
+}
+
+// SyncRouteAssessmentsOlderThan copies route assessments older than olderThanMonths (default 12) to BigQuery (read-only from Firestore).
+func (a *Archiver) SyncRouteAssessmentsOlderThan(ctx context.Context, olderThanMonths int) (int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 12
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Copying route assessments older than %s (%d months) to BigQuery...", cutoff, olderThanMonths)
+
+	count, err := a.syncCollectionOlderThanDate(ctx, "route_assessments", []string{"assessmentDate", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: syncing route_assessments older than %s failed: %v", cutoff, err)
+		return 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed copying route assessments older than %d months to BigQuery: %d records copied.", olderThanMonths, count)
+	return count, nil
+}
+
+// ArchiveVehicleSignoutsOlderThan syncs vehicle handovers / signouts older than olderThanMonths (default 12) to BigQuery,
+// and upon confirmed persistence, safely cleans them up from Firestore.
+func (a *Archiver) ArchiveVehicleSignoutsOlderThan(ctx context.Context, olderThanMonths int) (int, int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 12
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Archiving (sync then cleanup) vehicle handovers older than %s (%d months)...", cutoff, olderThanMonths)
+
+	synced, cleaned, err := a.syncAndCleanupCollectionOlderThanDate(ctx, "vehicle_signouts", []string{"signDate", "driverSignDate", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: archiving vehicle_signouts older than %s failed: %v", cutoff, err)
+		return 0, 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed vehicle handovers archive for records older than %d months: %d synced to BigQuery, %d cleaned up from Firestore.", olderThanMonths, synced, cleaned)
+	return synced, cleaned, nil
+}
+
+// SyncVehicleSignoutsOlderThan copies vehicle handovers older than olderThanMonths (default 12) to BigQuery (read-only from Firestore).
+func (a *Archiver) SyncVehicleSignoutsOlderThan(ctx context.Context, olderThanMonths int) (int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 12
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Copying vehicle handovers older than %s (%d months) to BigQuery...", cutoff, olderThanMonths)
+
+	count, err := a.syncCollectionOlderThanDate(ctx, "vehicle_signouts", []string{"signDate", "driverSignDate", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: syncing vehicle_signouts older than %s failed: %v", cutoff, err)
+		return 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed copying vehicle handovers older than %d months to BigQuery: %d records copied.", olderThanMonths, count)
+	return count, nil
+}
+
+// ArchivePretripsOlderThan syncs pretrip inspections older than olderThanDays (default 14) to BigQuery,
+// and upon verified persistence, safely cleans them up from Firestore.
+func (a *Archiver) ArchivePretripsOlderThan(ctx context.Context, olderThanDays int) (int, int, error) {
+	if olderThanDays <= 0 {
+		olderThanDays = 14
+	}
+	cutoff := time.Now().AddDate(0, 0, -olderThanDays).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Archiving (sync then cleanup) pretrip inspections older than %s (%d days)...", cutoff, olderThanDays)
+
+	synced, cleaned, err := a.syncAndCleanupCollectionOlderThanDate(ctx, "pretrip_inspections", []string{"inspectionDate", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: archiving pretrip_inspections older than %s failed: %v", cutoff, err)
+		return 0, 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed pretrip inspections archive for records older than %d days: %d synced to BigQuery, %d cleaned up from Firestore.", olderThanDays, synced, cleaned)
+	return synced, cleaned, nil
+}
+
+// SyncPretripsOlderThan copies pretrip inspections older than olderThanDays (default 14) to BigQuery (read-only from Firestore).
+func (a *Archiver) SyncPretripsOlderThan(ctx context.Context, olderThanDays int) (int, error) {
+	if olderThanDays <= 0 {
+		olderThanDays = 14
+	}
+	cutoff := time.Now().AddDate(0, 0, -olderThanDays).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Copying pretrip inspections older than %s (%d days) to BigQuery...", cutoff, olderThanDays)
+
+	count, err := a.syncCollectionOlderThanDate(ctx, "pretrip_inspections", []string{"inspectionDate", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: syncing pretrip_inspections older than %s failed: %v", cutoff, err)
+		return 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed copying pretrip inspections older than %d days to BigQuery: %d records copied.", olderThanDays, count)
+	return count, nil
+}
+
+// ArchiveExpensesOlderThan syncs expense reimbursement claims older than olderThanMonths (default 6 months) to BigQuery,
+// and upon verified persistence, safely cleans them up from Firestore.
+func (a *Archiver) ArchiveExpensesOlderThan(ctx context.Context, olderThanMonths int) (int, int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 6
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Archiving (sync then cleanup) expense claims older than %s (%d months)...", cutoff, olderThanMonths)
+
+	synced, cleaned, err := a.syncAndCleanupCollectionOlderThanDate(ctx, "expense_reimbursements", []string{"claimDate", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: archiving expense_reimbursements older than %s failed: %v", cutoff, err)
+		return 0, 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed expense claims archive for records older than %d months: %d synced to BigQuery, %d cleaned up from Firestore.", olderThanMonths, synced, cleaned)
+	return synced, cleaned, nil
+}
+
+// SyncExpensesOlderThan copies expense reimbursement claims older than olderThanMonths (default 6 months) to BigQuery (read-only from Firestore).
+func (a *Archiver) SyncExpensesOlderThan(ctx context.Context, olderThanMonths int) (int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 6
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Copying expense claims older than %s (%d months) to BigQuery...", cutoff, olderThanMonths)
+
+	count, err := a.syncCollectionOlderThanDate(ctx, "expense_reimbursements", []string{"claimDate", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: syncing expense_reimbursements older than %s failed: %v", cutoff, err)
+		return 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed copying expense claims older than %d months to BigQuery: %d records copied.", olderThanMonths, count)
+	return count, nil
+}
+
+// syncAndCleanupCollectionOlderThanDate queries Firestore, persists to BigQuery, and ONLY on 100% success removes the documents from Firestore.
+func (a *Archiver) syncAndCleanupCollectionOlderThanDate(ctx context.Context, collName string, dateFields []string, cutoff string) (int, int, error) {
+	var rows []*ArchiveRow
+	var ids []string
+	now := time.Now()
+	seen := make(map[string]bool)
+	cutoffTime, errTime := time.Parse("2006-01-02", cutoff)
+
+	for _, df := range dateFields {
+		var iter *firestore.DocumentIterator
+		if (df == "createdAt" || df == "timestamp" || df == "assessmentDate") && errTime == nil {
+			iter = a.fsClient.Collection(collName).Where(df, "<", cutoffTime).Documents(ctx)
+		} else {
+			iter = a.fsClient.Collection(collName).Where(df, "<", cutoff).Documents(ctx)
+		}
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				iter.Stop()
+				return 0, 0, err
+			}
+
+			if seen[doc.Ref.ID] {
+				continue
+			}
+			seen[doc.Ref.ID] = true
+
+			data := doc.Data()
+			dataBytes, err := json.Marshal(data)
+			if err != nil {
+				continue
+			}
+
+			dateVal := ""
+			for _, f := range dateFields {
+				if d, ok := data[f].(string); ok && d != "" {
+					if len(d) >= 10 {
+						dateVal = d[:10]
+					} else {
+						dateVal = d
+					}
+					break
+				} else if t, ok := data[f].(time.Time); ok && !t.IsZero() {
+					dateVal = t.Format("2006-01-02")
+					break
+				}
+			}
+			if dateVal == "" {
+				dateVal = cutoff
+			}
+
+			rows = append(rows, &ArchiveRow{
+				ID:           doc.Ref.ID,
+				DispatchDate: dateVal,
+				Data:         string(dataBytes),
+				UpdatedAt:    now,
+			})
+			ids = append(ids, doc.Ref.ID)
+		}
+		iter.Stop()
+	}
+
+	if len(rows) == 0 {
+		return 0, 0, nil
+	}
+
+	// 1. Delete existing records in BigQuery for idempotency
+	delChunkSize := 400
+	for i := 0; i < len(ids); i += delChunkSize {
+		end := i + delChunkSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunkIDs := ids[i:end]
+		delSQL := fmt.Sprintf("DELETE FROM `%s.%s.%s` WHERE id IN UNNEST(@ids)", a.projectID, a.datasetID, collName)
+		q := a.bqClient.Query(delSQL)
+		q.Parameters = []bigquery.QueryParameter{
+			{Name: "ids", Value: chunkIDs},
+		}
+		job, err := q.Run(ctx)
+		if err == nil {
+			_, _ = job.Wait(ctx)
+		}
+	}
+
+	// 2. Batch insert into BigQuery (chunks of 500)
+	inserter := a.bqClient.Dataset(a.datasetID).Table(collName).Inserter()
+	chunkSize := 500
+	for i := 0; i < len(rows); i += chunkSize {
+		end := i + chunkSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := inserter.Put(ctx, rows[i:end]); err != nil {
+			return 0, 0, fmt.Errorf("failed to insert rows into BigQuery %s: %w", collName, err)
+		}
+	}
+
+	log.Printf("[ARCHIVER] BigQuery insertion confirmed: %d records in table %s. Proceeding to cleanup from Firestore...", len(rows), collName)
+
+	// 3. Safe Cleanup from Firestore: only delete IDs that successfully made it into BigQuery
+	deletedCount := 0
+	delBatchSize := 400
+	for i := 0; i < len(ids); i += delBatchSize {
+		end := i + delBatchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batch := a.fsClient.Batch()
+		for _, id := range ids[i:end] {
+			batch.Delete(a.fsClient.Collection(collName).Doc(id))
+		}
+		if _, err := batch.Commit(ctx); err == nil {
+			deletedCount += (end - i)
+		} else {
+			log.Printf("[ARCHIVER] Warning: batch delete from Firestore %s failed: %v", collName, err)
+		}
+	}
+
+	log.Printf("[ARCHIVER] Successfully archived %d and cleaned up %d records from Firestore %s (older than %s)", len(rows), deletedCount, collName, cutoff)
+	return len(rows), deletedCount, nil
+}
+
+func (a *Archiver) syncCollectionOlderThanDate(ctx context.Context, collName string, dateFields []string, cutoff string) (int, error) {
+	var rows []*ArchiveRow
+	var ids []string
+	now := time.Now()
+	seen := make(map[string]bool)
+	cutoffTime, errTime := time.Parse("2006-01-02", cutoff)
+
+	for _, df := range dateFields {
+		var iter *firestore.DocumentIterator
+		if (df == "createdAt" || df == "timestamp" || df == "assessmentDate") && errTime == nil {
+			iter = a.fsClient.Collection(collName).Where(df, "<", cutoffTime).Documents(ctx)
+		} else {
+			iter = a.fsClient.Collection(collName).Where(df, "<", cutoff).Documents(ctx)
+		}
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				iter.Stop()
+				return 0, err
+			}
+
+			if seen[doc.Ref.ID] {
+				continue
+			}
+			seen[doc.Ref.ID] = true
+
+			data := doc.Data()
+			dataBytes, err := json.Marshal(data)
+			if err != nil {
+				continue
+			}
+
+			dateVal := ""
+			for _, f := range dateFields {
+				if d, ok := data[f].(string); ok && d != "" {
+					if len(d) >= 10 {
+						dateVal = d[:10]
+					} else {
+						dateVal = d
+					}
+					break
+				} else if t, ok := data[f].(time.Time); ok && !t.IsZero() {
+					dateVal = t.Format("2006-01-02")
+					break
+				}
+			}
+			if dateVal == "" {
+				dateVal = cutoff
+			}
+
+			rows = append(rows, &ArchiveRow{
+				ID:           doc.Ref.ID,
+				DispatchDate: dateVal,
+				Data:         string(dataBytes),
+				UpdatedAt:    now,
+			})
+			ids = append(ids, doc.Ref.ID)
+		}
+		iter.Stop()
+	}
+
+	if len(rows) == 0 {
+		return 0, nil
+	}
+
+	// Delete existing records in BigQuery for idempotency
+	delChunkSize := 400
+	for i := 0; i < len(ids); i += delChunkSize {
+		end := i + delChunkSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunkIDs := ids[i:end]
+		delSQL := fmt.Sprintf("DELETE FROM `%s.%s.%s` WHERE id IN UNNEST(@ids)", a.projectID, a.datasetID, collName)
+		q := a.bqClient.Query(delSQL)
+		q.Parameters = []bigquery.QueryParameter{
+			{Name: "ids", Value: chunkIDs},
+		}
+		job, err := q.Run(ctx)
+		if err == nil {
+			_, _ = job.Wait(ctx)
+		}
+	}
+
+	// Batch insert into BigQuery (chunks of 500)
+	inserter := a.bqClient.Dataset(a.datasetID).Table(collName).Inserter()
+	chunkSize := 500
+	for i := 0; i < len(rows); i += chunkSize {
+		end := i + chunkSize
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if err := inserter.Put(ctx, rows[i:end]); err != nil {
+			return 0, fmt.Errorf("failed to insert rows into BigQuery %s: %w", collName, err)
+		}
+	}
+
+	log.Printf("[ARCHIVER] Successfully copied %d records from Firestore %s to BigQuery (older than %s)", len(rows), collName, cutoff)
+	return len(rows), nil
 }
 
 // SyncTimeOff syncs time-off requests older than olderThanDays (default 30) past endDate to BigQuery table time_off_requests

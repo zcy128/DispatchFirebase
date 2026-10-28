@@ -47,6 +47,79 @@ type TimeOffFilter struct {
 	FullArchive    bool
 }
 
+// DefectFilter contains criteria for querying vehicle defect reports with dual-engine hybrid routing
+type DefectFilter struct {
+	VehicleUnit string `json:"vehicleUnit"`
+	Status      string `json:"status"`
+	DriverID    string `json:"driverId"`
+	Query       string `json:"query"`     // Free-text search target (e.g. vehicle unit, driver, notes)
+	TimeRange   string `json:"timeRange"` // "6months" (default hot), "1year", "all"
+	StartDate   string `json:"startDate"` // YYYY-MM-DD
+	EndDate     string `json:"endDate"`   // YYYY-MM-DD
+}
+
+// StudentIncidentFilter contains criteria for querying student incidents with dual-engine hybrid routing
+type StudentIncidentFilter struct {
+	StudentID     int    `json:"studentId"`
+	StudentNo     string `json:"studentNo"`
+	StudentName   string `json:"studentName"`
+	RouteNo       string `json:"routeNo"`
+	DriverID      string `json:"driverId"`
+	Status        string `json:"status"`
+	NeedsFollowUp bool   `json:"needsFollowUp"`
+	Query         string `json:"query"`     // Free-text search target (e.g. student name, #, route #, driver, school)
+	TimeRange     string `json:"timeRange"` // "6months" (default hot), "1year", "all"
+	StartDate     string `json:"startDate"` // YYYY-MM-DD
+	EndDate       string `json:"endDate"`   // YYYY-MM-DD
+}
+
+// HazardReportFilter contains criteria for querying hazard reports with 1-year live hot data and BigQuery cold storage
+type HazardReportFilter struct {
+	ReportedByEmployeeID string `json:"reportedByEmployeeId"`
+	UnitNumber           string `json:"unitNumber"`
+	RouteID              string `json:"routeId"`
+	StatusInt            *int   `json:"statusInt"`
+	OfficeHazardType     string `json:"officeHazardType"`
+	Query                string `json:"query"`     // Free-text search target (location, description, reportedBy, unitNumber, routeId)
+	TimeRange            string `json:"timeRange"` // "1year" (default live data <= 1 year), "all" (archive)
+	StartDate            string `json:"startDate"` // YYYY-MM-DD
+	EndDate              string `json:"endDate"`   // YYYY-MM-DD
+}
+
+// RouteAssessmentFilter contains criteria for querying route assessments with 1-year live data and BigQuery cold storage
+type RouteAssessmentFilter struct {
+	RouteID               string `json:"routeId"`
+	ConductedByEmployeeID string `json:"conductedByEmployeeId"`
+	StatusInt             *int   `json:"statusInt"`
+	AssessmentType        string `json:"assessmentType"`
+	Query                 string `json:"query"`     // Free-text search target (routeId, school, conductedByDriver, summary)
+	TimeRange             string `json:"timeRange"` // "1year" (default live data <= 1 year), "all" (archive)
+	StartDate             string `json:"startDate"` // YYYY-MM-DD
+	EndDate               string `json:"endDate"`   // YYYY-MM-DD
+}
+
+// VehicleSignoutFilter contains criteria for querying vehicle handover/signouts with 1-year live data and BigQuery cold storage
+type VehicleSignoutFilter struct {
+	UnitNumber string `json:"unitNumber"`
+	EmployeeID string `json:"employeeId"`
+	IsSignIn   *bool  `json:"isSignIn"`
+	Query      string `json:"query"`     // Free-text search target (unitNumber, employeeName, routeId, licensePlate)
+	TimeRange  string `json:"timeRange"` // "1year" (default live data <= 1 year), "all" (archive)
+	StartDate  string `json:"startDate"` // YYYY-MM-DD
+	EndDate    string `json:"endDate"`   // YYYY-MM-DD
+}
+
+// ExpenseClaimFilter contains criteria for querying expense reimbursement claims with 6-month live data and BigQuery cold storage
+type ExpenseClaimFilter struct {
+	EmployeeID string `json:"employeeId"`
+	Status     string `json:"status"`
+	RouteNo    string `json:"routeNo"`
+	Query      string `json:"query"`     // Driver name, employee ID, route, notes, claim ID
+	TimeRange  string `json:"timeRange"` // "6months" (default live data <= 6 months), "all" (archive)
+	StartDate  string `json:"startDate"` // YYYY-MM-DD
+	EndDate    string `json:"endDate"`   // YYYY-MM-DD
+}
+
 type DispatchRepository interface {
 	CreateDay(ctx context.Context, date string, routeNoFilter []string) (*models.CreateDispatchDayResult, error)
 	DeleteDay(ctx context.Context, date string) error
@@ -72,6 +145,7 @@ type DispatchRepository interface {
 	RunSimulationForDate(ctx context.Context, date string, forceOverwrite bool) (*models.SimulationRunResult, error)
 	AddChangeLog(ctx context.Context, log *models.DispatchChangeLog) (*models.DispatchChangeLog, error)
 	ListChangeLogs(ctx context.Context, date string) ([]*models.DispatchChangeLog, error)
+	ListChangeLogsFiltered(ctx context.Context, date string, routeNo string, employee string, scope string) ([]*models.DispatchChangeLog, error)
 	ListSystemAuditLogs(ctx context.Context, collectionName string, startDate, endDate string) ([]map[string]interface{}, error)
 	GenerateDispatchPayroll(ctx context.Context, shiftID string, role string, checkInTime string) (*models.DispatchPayrollRecord, error)
 	DeleteDispatchPayroll(ctx context.Context, shiftID string, role string) error
@@ -126,6 +200,7 @@ type DispatchRepository interface {
 	CreateDefectReport(ctx context.Context, req *models.CreateDefectReportPayload) (*models.VehicleDefectReport, error)
 	GetDefectReportByID(ctx context.Context, id string) (*models.VehicleDefectReport, error)
 	ListDefectReports(ctx context.Context, vehicleUnit string, status string, driverID string) ([]*models.VehicleDefectReport, error)
+	ListDefectReportsFiltered(ctx context.Context, filter DefectFilter) ([]*models.VehicleDefectReport, error)
 	UpdateDefectAssessment(ctx context.Context, id string, req *models.UpdateDefectAssessmentPayload) (*models.VehicleDefectReport, error)
 	UpdateDefectStatus(ctx context.Context, id string, status string) (*models.VehicleDefectReport, error)
 
@@ -133,6 +208,7 @@ type DispatchRepository interface {
 	CreateStudentIncident(ctx context.Context, req *models.CreateStudentIncidentPayload) (*models.StudentIncident, error)
 	GetStudentIncidentByID(ctx context.Context, id string) (*models.StudentIncident, error)
 	ListStudentIncidents(ctx context.Context, studentID int, routeNo string, driverID string, status string, needsFollowUp bool) ([]*models.StudentIncident, error)
+	ListStudentIncidentsFiltered(ctx context.Context, filter StudentIncidentFilter) ([]*models.StudentIncident, error)
 	UpdateStudentIncidentOfficeFollowUp(ctx context.Context, id string, req *models.UpdateIncidentOfficeFollowUpPayload) (*models.StudentIncident, error)
 	UpdateStudentIncidentStatus(ctx context.Context, id string, status string) (*models.StudentIncident, error)
 
@@ -141,6 +217,7 @@ type DispatchRepository interface {
 	CreateExpenseClaim(ctx context.Context, req *models.CreateExpenseClaimPayload) (*models.ExpenseReimbursement, error)
 	GetExpenseClaimByID(ctx context.Context, id string) (*models.ExpenseReimbursement, error)
 	ListExpenseClaims(ctx context.Context, employeeID string, status string) ([]*models.ExpenseReimbursement, error)
+	ListExpenseClaimsFiltered(ctx context.Context, filter ExpenseClaimFilter) ([]*models.ExpenseReimbursement, error)
 	ReviewExpenseClaim(ctx context.Context, id string, req *models.ReviewExpenseClaimPayload) (*models.ExpenseReimbursement, error)
 	CancelExpenseClaim(ctx context.Context, id string, employeeID string) (*models.ExpenseReimbursement, error)
 
@@ -148,12 +225,14 @@ type DispatchRepository interface {
 	CreateHazardReport(ctx context.Context, req *models.CreateHazardReportPayload) (*models.HazardReport, error)
 	GetHazardReportByID(ctx context.Context, id string) (*models.HazardReport, error)
 	ListHazardReports(ctx context.Context, reportedByEmployeeID string, statusInt *int, officeHazardType string) ([]*models.HazardReport, error)
+	ListHazardReportsFiltered(ctx context.Context, filter HazardReportFilter) ([]*models.HazardReport, error)
 	UpdateHazardReportOffice(ctx context.Context, id string, req *models.UpdateHazardReportOfficePayload) (*models.HazardReport, error)
 
 	// Route Assessments
 	CreateRouteAssessment(ctx context.Context, req *models.CreateRouteAssessmentPayload) (*models.RouteAssessment, error)
 	GetRouteAssessmentByID(ctx context.Context, id string) (*models.RouteAssessment, error)
 	ListRouteAssessments(ctx context.Context, routeID string, employeeID string, statusInt *int, assessmentType string) ([]*models.RouteAssessment, error)
+	ListRouteAssessmentsFiltered(ctx context.Context, filter RouteAssessmentFilter) ([]*models.RouteAssessment, error)
 	UpdateRouteAssessmentOffice(ctx context.Context, id string, req *models.UpdateRouteAssessmentOfficePayload) (*models.RouteAssessment, error)
 	UpdateRouteAssessment(ctx context.Context, id string, req *models.UpdateRouteAssessmentPayload) (*models.RouteAssessment, error)
 	DeleteRouteAssessment(ctx context.Context, id string) error
@@ -162,6 +241,7 @@ type DispatchRepository interface {
 	CreateVehicleSignout(ctx context.Context, req *models.CreateVehicleSignoutPayload) (*models.VehicleSignout, error)
 	GetVehicleSignoutByID(ctx context.Context, id string) (*models.VehicleSignout, error)
 	ListVehicleSignouts(ctx context.Context, unitNumber, employeeID string, isSignIn *bool, startDate, endDate string) ([]*models.VehicleSignout, error)
+	ListVehicleSignoutsFiltered(ctx context.Context, filter VehicleSignoutFilter) ([]*models.VehicleSignout, error)
 	UpdateVehicleSignout(ctx context.Context, id string, req *models.UpdateVehicleSignoutPayload) (*models.VehicleSignout, error)
 	DeleteVehicleSignout(ctx context.Context, id string) error
 }
@@ -1036,6 +1116,19 @@ func (r *FirestoreDispatchRepository) CreateDay(ctx context.Context, date string
 	msg := fmt.Sprintf("Created %d dispatch shifts for %s (%d skipped existing).", createdCount, date, skippedExisting)
 	if createdCount == 0 && skippedExisting == 0 {
 		msg = fmt.Sprintf("No active route shifts were eligible for dispatch on %s.", date)
+	}
+
+	if createdCount > 0 || skippedExisting > 0 {
+		nowTime := time.Now()
+		nowStr := nowTime.Format("2006-01-02 03:04:05 pm")
+		_, _ = r.AddChangeLog(ctx, &models.DispatchChangeLog{
+			DispatchDate: date,
+			Type:         "Day Generated",
+			Detail:       fmt.Sprintf("Generated dispatch day with %d shifts (%d skipped existing).", createdCount, skippedExisting),
+			Time:         nowStr,
+			Timestamp:    nowTime.UnixMilli(),
+			User:         "Dispatcher",
+		})
 	}
 
 	return &models.CreateDispatchDayResult{
@@ -2947,14 +3040,40 @@ func (r *FirestoreDispatchRepository) listChangeLogsFromFirestore(ctx context.Co
 }
 
 func (r *FirestoreDispatchRepository) listChangeLogsFromBigQuery(ctx context.Context, date string) ([]*models.DispatchChangeLog, error) {
+	return r.listChangeLogsFromBigQueryFiltered(ctx, date, "", "", "all")
+}
+
+func (r *FirestoreDispatchRepository) listChangeLogsFromBigQueryFiltered(ctx context.Context, date, routeNo, employee, scope string) ([]*models.DispatchChangeLog, error) {
 	if r.bqClient == nil {
 		return nil, errors.New("bigquery client not initialized")
 	}
 
 	querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE dispatch_date = @date",
 		r.projectID, r.bqDataset, r.logColl)
+	var params []bigquery.QueryParameter
+	params = append(params, bigquery.QueryParameter{Name: "date", Value: date})
+
+	routeNo = strings.TrimSpace(routeNo)
+	employee = strings.TrimSpace(employee)
+
+	if routeNo != "" {
+		querySQL += " AND (JSON_VALUE(data, '$.routeNo') = @routeNo OR LOWER(JSON_VALUE(data, '$.detail')) LIKE @routeLike)"
+		params = append(params, bigquery.QueryParameter{Name: "routeNo", Value: routeNo})
+		params = append(params, bigquery.QueryParameter{Name: "routeLike", Value: "%" + strings.ToLower(routeNo) + "%"})
+	}
+
+	if employee != "" {
+		querySQL += " AND (LOWER(JSON_VALUE(data, '$.detail')) LIKE @empLike OR LOWER(JSON_VALUE(data, '$.user')) LIKE @empLike)"
+		params = append(params, bigquery.QueryParameter{Name: "empLike", Value: "%" + strings.ToLower(employee) + "%"})
+	}
+
+	// Default Mode in BigQuery: push down macro filter so we don't load 20,000 records from cold storage
+	if scope != "all" && routeNo == "" && employee == "" {
+		querySQL += " AND (JSON_VALUE(data, '$.shiftId') IS NULL OR JSON_VALUE(data, '$.shiftId') = '' OR JSON_VALUE(data, '$.routeNo') IS NULL OR JSON_VALUE(data, '$.routeNo') = '' OR JSON_VALUE(data, '$.type') IN ('Day Generated', 'Day Deleted', 'Schedule Locked', 'Schedule Unlocked', 'Batch Assignment', 'Day Sheet Created', 'Day Sheet Deleted'))"
+	}
+
 	q := r.bqClient.Query(querySQL)
-	q.Parameters = []bigquery.QueryParameter{{Name: "date", Value: date}}
+	q.Parameters = params
 
 	it, err := q.Read(ctx)
 	if err != nil {
@@ -3010,10 +3129,106 @@ func (r *FirestoreDispatchRepository) ListChangeLogs(ctx context.Context, date s
 		}
 	}
 
+	// If no change logs recorded for active date but shifts already exist, ensure an initial "Day Generated" record
+	if len(logs) == 0 && date != "" && !r.isLogColdDate(date) {
+		shifts, sErr := r.ListShifts(ctx, date, DispatchFilter{})
+		if sErr == nil && len(shifts) > 0 {
+			nowTime := time.Now()
+			nowStr := nowTime.Format("2006-01-02 03:04:05 pm")
+			dayLog := &models.DispatchChangeLog{
+				DispatchDate: date,
+				Type:         "Day Generated",
+				Detail:       fmt.Sprintf("Generated dispatch day with %d operational shifts", len(shifts)),
+				Time:         nowStr,
+				Timestamp:    nowTime.UnixMilli(),
+				User:         "Dispatcher",
+			}
+			savedLog, aErr := r.AddChangeLog(ctx, dayLog)
+			if aErr == nil && savedLog != nil {
+				logs = append(logs, savedLog)
+			}
+		}
+	}
+
 	sort.Slice(logs, func(i, j int) bool {
 		return logs[i].Timestamp > logs[j].Timestamp
 	})
 	return logs, nil
+}
+
+func (r *FirestoreDispatchRepository) ListChangeLogsFiltered(ctx context.Context, date string, routeNo string, employee string, scope string) ([]*models.DispatchChangeLog, error) {
+	routeNo = strings.TrimSpace(routeNo)
+	employee = strings.TrimSpace(employee)
+
+	// If cold date (> 7 days), query BigQuery with pushdown filters directly
+	if r.isLogColdDate(date) {
+		bqLogs, err := r.listChangeLogsFromBigQueryFiltered(ctx, date, routeNo, employee, scope)
+		if err == nil && len(bqLogs) > 0 {
+			sort.Slice(bqLogs, func(i, j int) bool {
+				return bqLogs[i].Timestamp > bqLogs[j].Timestamp
+			})
+			return bqLogs, nil
+		}
+	}
+
+	allLogs, err := r.ListChangeLogs(ctx, date)
+	if err != nil {
+		return nil, err
+	}
+
+	// If Firestore had 0 logs and BigQuery is configured, query BigQuery with filters
+	if len(allLogs) == 0 && r.bqClient != nil {
+		bqLogs, bqErr := r.listChangeLogsFromBigQueryFiltered(ctx, date, routeNo, employee, scope)
+		if bqErr == nil && len(bqLogs) > 0 {
+			sort.Slice(bqLogs, func(i, j int) bool {
+				return bqLogs[i].Timestamp > bqLogs[j].Timestamp
+			})
+			return bqLogs, nil
+		}
+	}
+
+	// Explicit full day view
+	if scope == "all" && routeNo == "" && employee == "" {
+		return allLogs, nil
+	}
+
+	// Targeted query by Route or Employee
+	if routeNo != "" || employee != "" {
+		filtered := make([]*models.DispatchChangeLog, 0)
+		for _, l := range allLogs {
+			if l == nil {
+				continue
+			}
+			matchRoute := true
+			if routeNo != "" {
+				matchRoute = strings.EqualFold(l.RouteNo, routeNo) || strings.Contains(strings.ToLower(l.Detail), strings.ToLower(routeNo))
+			}
+			matchEmp := true
+			if employee != "" {
+				empLower := strings.ToLower(employee)
+				matchEmp = strings.Contains(strings.ToLower(l.Detail), empLower) || strings.Contains(strings.ToLower(l.User), empLower)
+			}
+			if matchRoute && matchEmp {
+				filtered = append(filtered, l)
+			}
+		}
+		return filtered, nil
+	}
+
+	// Default Mode: "global" / macro-level operations (create/delete day sheet, system schedule actions)
+	macroLogs := make([]*models.DispatchChangeLog, 0)
+	for _, l := range allLogs {
+		if l == nil {
+			continue
+		}
+		isMacroType := l.Type == "Day Generated" || l.Type == "Day Deleted" ||
+			l.Type == "Schedule Locked" || l.Type == "Schedule Unlocked" ||
+			l.Type == "Batch Assignment" || l.Type == "Day Sheet Created" || l.Type == "Day Sheet Deleted"
+		if l.ShiftID == "" || l.RouteNo == "" || isMacroType {
+			macroLogs = append(macroLogs, l)
+		}
+	}
+	return macroLogs, nil
 }
 
 func (r *FirestoreDispatchRepository) ListSystemAuditLogs(ctx context.Context, collectionName string, startDate, endDate string) ([]map[string]interface{}, error) {
@@ -3829,29 +4044,159 @@ func (r *FirestoreDispatchRepository) SyncCleanPayrollsForDate(ctx context.Conte
 		return 0, nil
 	}
 
+	// 1. Fetch current day's dispatch payrolls
 	payrolls, err := r.ListDispatchPayrolls(ctx, date)
 	if err != nil {
 		return 0, err
 	}
+	if len(payrolls) == 0 {
+		return 0, nil
+	}
 
+	// 2. Fetch existing payroll logs for this date (single query)
+	existingList, err := r.listPayrollDepartmentLogsFromFirestore(ctx, date, "", "")
+	if err != nil {
+		return 0, err
+	}
+	existingMap := make(map[string]*models.PayrollDepartmentLogRecord, len(existingList))
+	for _, l := range existingList {
+		if l != nil && l.ID != "" {
+			existingMap[l.ID] = l
+		}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	batch := r.client.Batch()
+	opsCount := 0
 	syncedCount := 0
+
 	for _, p := range payrolls {
 		if p == nil {
 			continue
 		}
+		logID := fmt.Sprintf("PL-%s-%s", p.ShiftID, p.Role)
+		existingLog, exists := existingMap[logID]
 		needsApproval := p.Status == "pending_approval" || p.HasComments || (strings.TrimSpace(p.PayrollComments) != "")
-		if !needsApproval && p.PayRate > 0 {
-			_, syncErr := r.SyncToPayrollLog(ctx, p)
-			if syncErr == nil {
-				syncedCount++
-				if !p.SyncedToFinance {
-					p.SyncedToFinance = true
-					p.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-					_, _ = r.client.Collection(r.dispatchPayrollColl).Doc(p.ID).Set(ctx, p)
-				}
+
+		if p.PayRate <= 0 || needsApproval {
+			// If it shouldn't be in finance logs but exists, remove it
+			if exists {
+				batch.Delete(r.client.Collection(r.payrollLogColl).Doc(logID))
+				opsCount++
+			}
+			if p.SyncedToFinance {
+				p.SyncedToFinance = false
+				p.UpdatedAt = now
+				batch.Set(r.client.Collection(r.dispatchPayrollColl).Doc(p.ID), p)
+				opsCount++
+			}
+			continue
+		}
+
+		// It IS a clean payroll record and should be in payroll_logs
+		syncedCount++
+
+		// Check if log already exists and is completely up to date
+		if exists &&
+			existingLog.PayAmount == p.PayRate &&
+			existingLog.EiHours == p.EiHours &&
+			existingLog.DispatcherComments == p.PayrollComments &&
+			existingLog.CheckInTime == p.CheckInTime &&
+			existingLog.CheckOutTime == p.CheckOutTime &&
+			existingLog.UnitNumber == p.UnitNumber &&
+			existingLog.EmployeeID == p.EmployeeID &&
+			p.SyncedToFinance {
+			// Identical! No write needed, do not touch Firestore!
+			continue
+		}
+
+		// Prepare updated / new record
+		var logRec models.PayrollDepartmentLogRecord
+		if exists {
+			logRec = *existingLog
+			logRec.OriginalPayRate = p.PayRate
+			logRec.PayAmount = p.PayRate
+			logRec.OriginalEiHours = p.EiHours
+			logRec.EiHours = p.EiHours
+			logRec.CheckInTime = p.CheckInTime
+			logRec.CheckOutTime = p.CheckOutTime
+			logRec.UnitNumber = p.UnitNumber
+			logRec.DispatcherComments = p.PayrollComments
+			logRec.UpdatedAt = now
+			if p.ApprovedBy != nil {
+				logRec.ApprovedBy = *p.ApprovedBy
+				logRec.UpdatedBy = *p.ApprovedBy
+			}
+			if p.ApprovedAt != nil {
+				logRec.ApprovedAt = *p.ApprovedAt
+			}
+		} else {
+			logRec = models.PayrollDepartmentLogRecord{
+				ID:                  logID,
+				DispatchPayrollID:   p.ID,
+				DispatchDate:        p.DispatchDate,
+				ShiftID:             p.ShiftID,
+				RouteNo:             p.RouteNo,
+				RouteName:           p.RouteName,
+				ShiftType:           p.ShiftType,
+				SchoolBoardCode:     p.SchoolBoardCode,
+				EmployeeID:          p.EmployeeID,
+				EmployeeName:        p.EmployeeName,
+				Role:                p.Role,
+				UnitNumber:          p.UnitNumber,
+				CheckInTime:         p.CheckInTime,
+				CheckOutTime:        p.CheckOutTime,
+				PayOption:           p.PayOption,
+				OriginalPayRate:     p.PayRate,
+				PayAmount:           p.PayRate,
+				OriginalEiHours:     p.EiHours,
+				EiHours:             p.EiHours,
+				RateSource:          p.RateSource,
+				RateDescription:     p.RateDescription,
+				DispatcherComments:  p.PayrollComments,
+				IsCharter:           p.IsCharter,
+				CharterTripID:       p.CharterTripID,
+				CharterAssignmentID: p.CharterAssignmentID,
+				ClientName:          p.ClientName,
+				Status:              "approved",
+				SyncedAt:            now,
+				UpdatedAt:           now,
+			}
+			if p.ApprovedBy != nil {
+				logRec.ApprovedBy = *p.ApprovedBy
+				logRec.UpdatedBy = *p.ApprovedBy
+			}
+			if p.ApprovedAt != nil {
+				logRec.ApprovedAt = *p.ApprovedAt
 			}
 		}
+
+		batch.Set(r.client.Collection(r.payrollLogColl).Doc(logID), logRec)
+		opsCount++
+
+		if !p.SyncedToFinance {
+			p.SyncedToFinance = true
+			p.UpdatedAt = now
+			batch.Set(r.client.Collection(r.dispatchPayrollColl).Doc(p.ID), p)
+			opsCount++
+		}
+
+		// Firestore batch limit is 500 operations
+		if opsCount >= 450 {
+			if _, bErr := batch.Commit(ctx); bErr != nil {
+				return syncedCount, bErr
+			}
+			batch = r.client.Batch()
+			opsCount = 0
+		}
 	}
+
+	if opsCount > 0 {
+		if _, bErr := batch.Commit(ctx); bErr != nil {
+			return syncedCount, bErr
+		}
+	}
+
 	return syncedCount, nil
 }
 
@@ -3983,11 +4328,6 @@ func (r *FirestoreDispatchRepository) ListPayrollDepartmentLogs(ctx context.Cont
 			r.sortPayrollDepartmentLogs(list)
 			return list, nil
 		}
-	}
-
-	// Auto-sync clean dispatch payrolls if it's hot active data
-	if date != "" && !r.isColdDate(date) {
-		_, _ = r.SyncCleanPayrollsForDate(ctx, date)
 	}
 
 	// Query Firestore
@@ -6152,6 +6492,52 @@ func (m *MemoryDispatchRepository) ListChangeLogs(ctx context.Context, date stri
 	return res, nil
 }
 
+func (m *MemoryDispatchRepository) ListChangeLogsFiltered(ctx context.Context, date string, routeNo string, employee string, scope string) ([]*models.DispatchChangeLog, error) {
+	allLogs, err := m.ListChangeLogs(ctx, date)
+	if err != nil {
+		return nil, err
+	}
+	routeNo = strings.TrimSpace(routeNo)
+	employee = strings.TrimSpace(employee)
+	if scope == "all" && routeNo == "" && employee == "" {
+		return allLogs, nil
+	}
+	if routeNo != "" || employee != "" {
+		filtered := make([]*models.DispatchChangeLog, 0)
+		for _, l := range allLogs {
+			if l == nil {
+				continue
+			}
+			matchRoute := true
+			if routeNo != "" {
+				matchRoute = strings.EqualFold(l.RouteNo, routeNo) || strings.Contains(strings.ToLower(l.Detail), strings.ToLower(routeNo))
+			}
+			matchEmp := true
+			if employee != "" {
+				empLower := strings.ToLower(employee)
+				matchEmp = strings.Contains(strings.ToLower(l.Detail), empLower) || strings.Contains(strings.ToLower(l.User), empLower)
+			}
+			if matchRoute && matchEmp {
+				filtered = append(filtered, l)
+			}
+		}
+		return filtered, nil
+	}
+	macroLogs := make([]*models.DispatchChangeLog, 0)
+	for _, l := range allLogs {
+		if l == nil {
+			continue
+		}
+		isMacroType := l.Type == "Day Generated" || l.Type == "Day Deleted" ||
+			l.Type == "Schedule Locked" || l.Type == "Schedule Unlocked" ||
+			l.Type == "Batch Assignment" || l.Type == "Day Sheet Created" || l.Type == "Day Sheet Deleted"
+		if l.ShiftID == "" || l.RouteNo == "" || isMacroType {
+			macroLogs = append(macroLogs, l)
+		}
+	}
+	return macroLogs, nil
+}
+
 func (m *MemoryDispatchRepository) ListSystemAuditLogs(ctx context.Context, collectionName string, startDate, endDate string) ([]map[string]interface{}, error) {
 	return []map[string]interface{}{}, nil
 }
@@ -7521,12 +7907,12 @@ func (r *FirestoreDispatchRepository) listPreTripInspectionsFromBigQuery(ctx con
 	var params []bigquery.QueryParameter
 
 	if date != "" {
-		querySQL += " AND dispatch_date = @date"
+		querySQL += " AND (COALESCE(SAFE_CAST(dispatch_date AS STRING), SUBSTR(JSON_VALUE(data, '$.inspectionDate'), 1, 10)) = @date)"
 		params = append(params, bigquery.QueryParameter{Name: "date", Value: date})
 	}
 	if vehicleUnit != "" {
-		querySQL += " AND JSON_VALUE(data, '$.vehicleUnit') = @vehicleUnit"
-		params = append(params, bigquery.QueryParameter{Name: "vehicleUnit", Value: vehicleUnit})
+		querySQL += " AND LOWER(JSON_VALUE(data, '$.vehicleUnit')) = @vehicleUnit"
+		params = append(params, bigquery.QueryParameter{Name: "vehicleUnit", Value: strings.ToLower(vehicleUnit)})
 	}
 
 	q := r.bqClient.Query(querySQL)
@@ -7562,26 +7948,43 @@ func (r *FirestoreDispatchRepository) listPreTripInspectionsFromBigQuery(ctx con
 }
 
 func (r *FirestoreDispatchRepository) ListPreTripInspections(ctx context.Context, date string, vehicleUnit string) ([]*models.PreTripInspection, error) {
-	var results []*models.PreTripInspection
-	var err error
-
+	// If date is provided and cold (> 7-14 days), query BigQuery directly
 	if date != "" && r.isLogColdDate(date) {
-		results, err = r.listPreTripInspectionsFromBigQuery(ctx, date, vehicleUnit)
-		if err == nil && len(results) > 0 {
-			return results, nil
+		bqResults, bqErr := r.listPreTripInspectionsFromBigQuery(ctx, date, vehicleUnit)
+		if bqErr == nil && len(bqResults) > 0 {
+			return bqResults, nil
 		}
 	}
 
-	results, err = r.listPreTripInspectionsFromFirestore(ctx, date, vehicleUnit)
+	results, err := r.listPreTripInspectionsFromFirestore(ctx, date, vehicleUnit)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(results) == 0 && r.bqClient != nil {
+	seenIDs := make(map[string]bool)
+	for _, rec := range results {
+		seenIDs[rec.ID] = true
+	}
+
+	// Transparently merge cold archived pretrip inspections from BigQuery
+	if r.bqClient != nil {
 		if bqRes, bqErr := r.listPreTripInspectionsFromBigQuery(ctx, date, vehicleUnit); bqErr == nil && len(bqRes) > 0 {
-			results = bqRes
+			for _, bqRec := range bqRes {
+				if !seenIDs[bqRec.ID] {
+					seenIDs[bqRec.ID] = true
+					results = append(results, bqRec)
+				}
+			}
 		}
 	}
+
+	// Sort by InspectionDate descending, then CreatedAt descending
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].InspectionDate != results[j].InspectionDate {
+			return results[i].InspectionDate > results[j].InspectionDate
+		}
+		return results[i].CreatedAt.After(results[j].CreatedAt)
+	})
 
 	return results, nil
 }
@@ -7747,27 +8150,62 @@ func (r *FirestoreDispatchRepository) CreateDefectReport(ctx context.Context, re
 
 func (r *FirestoreDispatchRepository) GetDefectReportByID(ctx context.Context, id string) (*models.VehicleDefectReport, error) {
 	doc, err := r.client.Collection(r.defectColl).Doc(id).Get(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get defect report %s: %w", id, err)
+	if err == nil {
+		var rec models.VehicleDefectReport
+		if err := doc.DataTo(&rec); err != nil {
+			return nil, err
+		}
+		rec.ID = doc.Ref.ID
+		return &rec, nil
 	}
-	var rec models.VehicleDefectReport
-	if err := doc.DataTo(&rec); err != nil {
-		return nil, err
+
+	// Fallback to BigQuery cold archive if cleaned up from Firestore
+	if r.bqClient != nil {
+		querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE id = @id LIMIT 1", r.projectID, r.bqDataset, r.defectColl)
+		q := r.bqClient.Query(querySQL)
+		q.Parameters = []bigquery.QueryParameter{{Name: "id", Value: id}}
+		it, bqErr := q.Read(ctx)
+		if bqErr == nil {
+			var row struct {
+				ID   string `bigquery:"id"`
+				Data string `bigquery:"data"`
+			}
+			if err := it.Next(&row); err == nil {
+				var rec models.VehicleDefectReport
+				if json.Unmarshal([]byte(row.Data), &rec) == nil {
+					if rec.ID == "" {
+						rec.ID = row.ID
+					}
+					return &rec, nil
+				}
+			}
+		}
 	}
-	rec.ID = doc.Ref.ID
-	return &rec, nil
+
+	return nil, fmt.Errorf("get defect report %s: %w", id, err)
 }
 
-func (r *FirestoreDispatchRepository) listDefectReportsFromFirestore(ctx context.Context, vehicleUnit string, status string, driverID string) ([]*models.VehicleDefectReport, error) {
+func (r *FirestoreDispatchRepository) listDefectReportsFromFirestore(ctx context.Context, filter DefectFilter, startDate, endDate string) ([]*models.VehicleDefectReport, error) {
 	q := r.client.Collection(r.defectColl).Query
-	if vehicleUnit != "" {
-		q = q.Where("vehicleUnitNumber", "==", vehicleUnit)
+	if filter.VehicleUnit != "" {
+		q = q.Where("vehicleUnitNumber", "==", filter.VehicleUnit)
 	}
-	if status != "" {
-		q = q.Where("status", "==", status)
+	if filter.Status != "" {
+		q = q.Where("status", "==", filter.Status)
 	}
-	if driverID != "" {
-		q = q.Where("reportedByUserId", "==", driverID)
+	if filter.DriverID != "" {
+		q = q.Where("reportedByUserId", "==", filter.DriverID)
+	}
+
+	// Only apply date range at Firestore query level if no equality filters to avoid requiring composite indexes
+	hasEquality := filter.VehicleUnit != "" || filter.Status != "" || filter.DriverID != ""
+	if !hasEquality {
+		if startDate != "" {
+			q = q.Where("reportDate", ">=", startDate)
+		}
+		if endDate != "" {
+			q = q.Where("reportDate", "<=", endDate)
+		}
 	}
 
 	iter := q.Documents(ctx)
@@ -7787,12 +8225,31 @@ func (r *FirestoreDispatchRepository) listDefectReportsFromFirestore(ctx context
 			continue
 		}
 		rec.ID = doc.Ref.ID
+
+		// In-memory date boundary filter (safe for both indexed and composite-free queries)
+		if startDate != "" && rec.ReportDate != "" && rec.ReportDate < startDate {
+			continue
+		}
+		if endDate != "" && rec.ReportDate != "" && rec.ReportDate > endDate {
+			continue
+		}
+
+		if filter.Query != "" {
+			qLower := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.VehicleUnitNumber), qLower) ||
+				strings.Contains(strings.ToLower(rec.ReportedByName), qLower) ||
+				strings.Contains(strings.ToLower(rec.DefectNotes), qLower)
+			if !matches {
+				continue
+			}
+		}
+
 		results = append(results, &rec)
 	}
 	return results, nil
 }
 
-func (r *FirestoreDispatchRepository) listDefectReportsFromBigQuery(ctx context.Context, vehicleUnit string, status string, driverID string) ([]*models.VehicleDefectReport, error) {
+func (r *FirestoreDispatchRepository) listDefectReportsFromBigQuery(ctx context.Context, filter DefectFilter, startDate, endDate string) ([]*models.VehicleDefectReport, error) {
 	if r.bqClient == nil {
 		return nil, errors.New("bigquery client not initialized")
 	}
@@ -7801,17 +8258,29 @@ func (r *FirestoreDispatchRepository) listDefectReportsFromBigQuery(ctx context.
 		r.projectID, r.bqDataset, r.defectColl)
 	var params []bigquery.QueryParameter
 
-	if vehicleUnit != "" {
+	if filter.VehicleUnit != "" {
 		querySQL += " AND JSON_VALUE(data, '$.vehicleUnitNumber') = @vehicleUnit"
-		params = append(params, bigquery.QueryParameter{Name: "vehicleUnit", Value: vehicleUnit})
+		params = append(params, bigquery.QueryParameter{Name: "vehicleUnit", Value: filter.VehicleUnit})
 	}
-	if status != "" {
+	if filter.Query != "" {
+		querySQL += " AND (JSON_VALUE(data, '$.vehicleUnitNumber') LIKE @query OR LOWER(JSON_VALUE(data, '$.reportedByName')) LIKE @query OR LOWER(JSON_VALUE(data, '$.defectNotes')) LIKE @query)"
+		params = append(params, bigquery.QueryParameter{Name: "query", Value: "%" + strings.ToLower(filter.Query) + "%"})
+	}
+	if filter.Status != "" {
 		querySQL += " AND JSON_VALUE(data, '$.status') = @status"
-		params = append(params, bigquery.QueryParameter{Name: "status", Value: status})
+		params = append(params, bigquery.QueryParameter{Name: "status", Value: filter.Status})
 	}
-	if driverID != "" {
+	if filter.DriverID != "" {
 		querySQL += " AND JSON_VALUE(data, '$.reportedByUserId') = @driverId"
-		params = append(params, bigquery.QueryParameter{Name: "driverId", Value: driverID})
+		params = append(params, bigquery.QueryParameter{Name: "driverId", Value: filter.DriverID})
+	}
+	if startDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(JSON_VALUE(data, '$.reportDate') AS DATE)) >= @startDate"
+		params = append(params, bigquery.QueryParameter{Name: "startDate", Value: startDate})
+	}
+	if endDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(JSON_VALUE(data, '$.reportDate') AS DATE)) <= @endDate"
+		params = append(params, bigquery.QueryParameter{Name: "endDate", Value: endDate})
 	}
 
 	q := r.bqClient.Query(querySQL)
@@ -7847,16 +8316,124 @@ func (r *FirestoreDispatchRepository) listDefectReportsFromBigQuery(ctx context.
 }
 
 func (r *FirestoreDispatchRepository) ListDefectReports(ctx context.Context, vehicleUnit string, status string, driverID string) ([]*models.VehicleDefectReport, error) {
-	results, err := r.listDefectReportsFromFirestore(ctx, vehicleUnit, status, driverID)
-	if err != nil {
-		return nil, err
+	return r.ListDefectReportsFiltered(ctx, DefectFilter{
+		VehicleUnit: vehicleUnit,
+		Status:      status,
+		DriverID:    driverID,
+		TimeRange:   "6months",
+	})
+}
+
+// ListDefectReportsFiltered performs time-sliced hybrid dual-engine queries across Firestore (hot <= 6 months)
+// and BigQuery (cold > 6 months), seamlessly deduplicating and merging records for annual or custom inspections.
+func (r *FirestoreDispatchRepository) ListDefectReportsFiltered(ctx context.Context, filter DefectFilter) ([]*models.VehicleDefectReport, error) {
+	now := time.Now()
+	todayStr := now.Format("2006-01-02")
+	// Cutoff for hot data: 180 days (6 months)
+	cutoffDate := now.AddDate(0, 0, -180).Format("2006-01-02")
+
+	startDate := strings.TrimSpace(filter.StartDate)
+	endDate := strings.TrimSpace(filter.EndDate)
+	if endDate == "" {
+		endDate = todayStr
 	}
 
-	if len(results) == 0 && r.bqClient != nil {
-		if bqRes, bqErr := r.listDefectReportsFromBigQuery(ctx, vehicleUnit, status, driverID); bqErr == nil && len(bqRes) > 0 {
-			results = bqRes
+	switch filter.TimeRange {
+	case "1year":
+		if startDate == "" {
+			startDate = now.AddDate(-1, 0, 0).Format("2006-01-02")
+		}
+	case "all":
+		// For "all" history, prevent scanning all vehicles across 10 years.
+		// Targeted criteria (VehicleUnit, DriverID, Query, or explicit StartDate) is strictly required.
+		hasTarget := strings.TrimSpace(filter.VehicleUnit) != "" || strings.TrimSpace(filter.DriverID) != "" || strings.TrimSpace(filter.Query) != "" || startDate != ""
+		if !hasTarget {
+			// Require search target to query all history
+			return []*models.VehicleDefectReport{}, nil
+		}
+		if startDate == "" {
+			// For targeted vehicle/driver search, support querying up to 10 years of cold archives
+			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+		}
+	default:
+		// Default: last 6 months (hot storage)
+		if startDate == "" {
+			startDate = cutoffDate
 		}
 	}
+
+	var results []*models.VehicleDefectReport
+
+	// Case 1: Entire range is within last 6 months (Hot Only -> Firestore)
+	if startDate >= cutoffDate {
+		var err error
+		results, err = r.listDefectReportsFromFirestore(ctx, filter, startDate, endDate)
+		if err != nil {
+			return nil, err
+		}
+	} else if endDate < cutoffDate {
+		// Case 2: Entire range is older than 6 months (Cold Only -> BigQuery)
+		if r.bqClient != nil {
+			var err error
+			results, err = r.listDefectReportsFromBigQuery(ctx, filter, startDate, endDate)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		// Case 3: Range spans the 6-month boundary (e.g. 1 Year Query) -> Time-Sliced Hybrid Query!
+		var wg sync.WaitGroup
+		var hotRes, coldRes []*models.VehicleDefectReport
+		var hotErr, coldErr error
+
+		// Goroutine 1: Hot range [cutoffDate, endDate] from Firestore
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hotRes, hotErr = r.listDefectReportsFromFirestore(ctx, filter, cutoffDate, endDate)
+		}()
+
+		// Goroutine 2: Cold range [startDate, cutoffDate) from BigQuery
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if r.bqClient != nil {
+				coldRes, coldErr = r.listDefectReportsFromBigQuery(ctx, filter, startDate, cutoffDate)
+			}
+		}()
+
+		wg.Wait()
+
+		if hotErr != nil && len(hotRes) == 0 {
+			log.Printf("[DEFECTS] Warning: hot query error: %v", hotErr)
+		}
+		if coldErr != nil {
+			log.Printf("[DEFECTS] Warning: cold BigQuery query error: %v", coldErr)
+		}
+
+		// Merge and deduplicate by ID
+		seenIDs := make(map[string]bool)
+		for _, rec := range hotRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+		for _, rec := range coldRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+	}
+
+	// Sort by ReportDate descending, then CreatedAt descending
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].ReportDate != results[j].ReportDate {
+			return results[i].ReportDate > results[j].ReportDate
+		}
+		return results[i].CreatedAt.After(results[j].CreatedAt)
+	})
 
 	return results, nil
 }
@@ -7978,22 +8555,68 @@ func (m *MemoryDispatchRepository) GetDefectReportByID(ctx context.Context, id s
 }
 
 func (m *MemoryDispatchRepository) ListDefectReports(ctx context.Context, vehicleUnit string, status string, driverID string) ([]*models.VehicleDefectReport, error) {
+	return m.ListDefectReportsFiltered(ctx, DefectFilter{
+		VehicleUnit: vehicleUnit,
+		Status:      status,
+		DriverID:    driverID,
+		TimeRange:   "6months",
+	})
+}
+
+func (m *MemoryDispatchRepository) ListDefectReportsFiltered(ctx context.Context, filter DefectFilter) ([]*models.VehicleDefectReport, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	now := time.Now()
+	cutoffDate := now.AddDate(0, 0, -180).Format("2006-01-02")
+	startDate := filter.StartDate
+	endDate := filter.EndDate
+	if endDate == "" {
+		endDate = now.Format("2006-01-02")
+	}
+	if filter.TimeRange == "1year" {
+		if startDate == "" {
+			startDate = now.AddDate(-1, 0, 0).Format("2006-01-02")
+		}
+	} else if filter.TimeRange == "all" {
+		hasTarget := strings.TrimSpace(filter.VehicleUnit) != "" || strings.TrimSpace(filter.DriverID) != "" || startDate != ""
+		if !hasTarget {
+			return []*models.VehicleDefectReport{}, nil
+		}
+		if startDate == "" {
+			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+		}
+	} else {
+		if startDate == "" {
+			startDate = cutoffDate
+		}
+	}
+
 	var results []*models.VehicleDefectReport
 	for _, rec := range m.defectReports {
-		if vehicleUnit != "" && rec.VehicleUnitNumber != vehicleUnit {
+		if filter.VehicleUnit != "" && rec.VehicleUnitNumber != filter.VehicleUnit {
 			continue
 		}
-		if status != "" && rec.Status != status {
+		if filter.Status != "" && rec.Status != filter.Status {
 			continue
 		}
-		if driverID != "" && rec.ReportedByUserID != driverID {
+		if filter.DriverID != "" && rec.ReportedByUserID != filter.DriverID {
+			continue
+		}
+		if startDate != "" && rec.ReportDate < startDate {
+			continue
+		}
+		if endDate != "" && rec.ReportDate > endDate {
 			continue
 		}
 		results = append(results, rec)
 	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].ReportDate != results[j].ReportDate {
+			return results[i].ReportDate > results[j].ReportDate
+		}
+		return results[i].CreatedAt.After(results[j].CreatedAt)
+	})
 	return results, nil
 }
 
@@ -8096,30 +8719,65 @@ func (r *FirestoreDispatchRepository) CreateStudentIncident(ctx context.Context,
 
 func (r *FirestoreDispatchRepository) GetStudentIncidentByID(ctx context.Context, id string) (*models.StudentIncident, error) {
 	doc, err := r.client.Collection(r.studentIncidentColl).Doc(id).Get(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get student incident %s: %w", id, err)
+	if err == nil {
+		var rec models.StudentIncident
+		if err := doc.DataTo(&rec); err != nil {
+			return nil, err
+		}
+		rec.ID = doc.Ref.ID
+		return &rec, nil
 	}
-	var rec models.StudentIncident
-	if err := doc.DataTo(&rec); err != nil {
-		return nil, err
+
+	// Fallback to BigQuery cold archive if cleaned up from Firestore
+	if r.bqClient != nil {
+		querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE id = @id LIMIT 1", r.projectID, r.bqDataset, r.studentIncidentColl)
+		q := r.bqClient.Query(querySQL)
+		q.Parameters = []bigquery.QueryParameter{{Name: "id", Value: id}}
+		it, bqErr := q.Read(ctx)
+		if bqErr == nil {
+			var row struct {
+				ID   string `bigquery:"id"`
+				Data string `bigquery:"data"`
+			}
+			if err := it.Next(&row); err == nil {
+				var rec models.StudentIncident
+				if json.Unmarshal([]byte(row.Data), &rec) == nil {
+					if rec.ID == "" {
+						rec.ID = row.ID
+					}
+					return &rec, nil
+				}
+			}
+		}
 	}
-	rec.ID = doc.Ref.ID
-	return &rec, nil
+
+	return nil, fmt.Errorf("get student incident %s: %w", id, err)
 }
 
-func (r *FirestoreDispatchRepository) listStudentIncidentsFromFirestore(ctx context.Context, studentID int, routeNo string, driverID string, status string, needsFollowUp bool) ([]*models.StudentIncident, error) {
+func (r *FirestoreDispatchRepository) listStudentIncidentsFromFirestore(ctx context.Context, filter StudentIncidentFilter, startDate, endDate string) ([]*models.StudentIncident, error) {
 	q := r.client.Collection(r.studentIncidentColl).Query
-	if studentID > 0 {
-		q = q.Where("studentId", "==", studentID)
+	if filter.StudentID > 0 {
+		q = q.Where("studentId", "==", filter.StudentID)
 	}
-	if routeNo != "" {
-		q = q.Where("routeNo", "==", routeNo)
+	if filter.RouteNo != "" {
+		q = q.Where("routeNo", "==", filter.RouteNo)
 	}
-	if driverID != "" {
-		q = q.Where("driverId", "==", driverID)
+	if filter.DriverID != "" {
+		q = q.Where("driverId", "==", filter.DriverID)
 	}
-	if status != "" {
-		q = q.Where("status", "==", status)
+	if filter.Status != "" {
+		q = q.Where("status", "==", filter.Status)
+	}
+
+	// Only apply date range at Firestore query level if no equality filters to avoid requiring composite indexes
+	hasEquality := filter.StudentID > 0 || filter.RouteNo != "" || filter.DriverID != "" || filter.Status != ""
+	if !hasEquality {
+		if startDate != "" {
+			q = q.Where("incidentDate", ">=", startDate)
+		}
+		if endDate != "" {
+			q = q.Where("incidentDate", "<=", endDate)
+		}
 	}
 
 	iter := q.Documents(ctx)
@@ -8139,7 +8797,34 @@ func (r *FirestoreDispatchRepository) listStudentIncidentsFromFirestore(ctx cont
 			continue
 		}
 		rec.ID = doc.Ref.ID
-		if needsFollowUp {
+
+		// In-memory date boundary filter (safe for both indexed and composite-free queries)
+		if startDate != "" && rec.IncidentDate != "" && rec.IncidentDate < startDate {
+			continue
+		}
+		if endDate != "" && rec.IncidentDate != "" && rec.IncidentDate > endDate {
+			continue
+		}
+
+		if filter.StudentNo != "" && rec.StudentNo != filter.StudentNo {
+			continue
+		}
+		if filter.StudentName != "" && !strings.Contains(strings.ToLower(rec.StudentName), strings.ToLower(filter.StudentName)) {
+			continue
+		}
+		if filter.Query != "" {
+			qLower := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.StudentName), qLower) ||
+				strings.Contains(strings.ToLower(rec.StudentNo), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteNo), qLower) ||
+				strings.Contains(strings.ToLower(rec.DriverName), qLower) ||
+				strings.Contains(strings.ToLower(rec.SchoolName), qLower)
+			if !matches {
+				continue
+			}
+		}
+
+		if filter.NeedsFollowUp {
 			if rec.OfficeFollowUp != nil && rec.OfficeFollowUp.IsOfficeLocked {
 				continue
 			}
@@ -8152,7 +8837,7 @@ func (r *FirestoreDispatchRepository) listStudentIncidentsFromFirestore(ctx cont
 	return results, nil
 }
 
-func (r *FirestoreDispatchRepository) listStudentIncidentsFromBigQuery(ctx context.Context, studentID int, routeNo string, driverID string, status string, needsFollowUp bool) ([]*models.StudentIncident, error) {
+func (r *FirestoreDispatchRepository) listStudentIncidentsFromBigQuery(ctx context.Context, filter StudentIncidentFilter, startDate, endDate string) ([]*models.StudentIncident, error) {
 	if r.bqClient == nil {
 		return nil, errors.New("bigquery client not initialized")
 	}
@@ -8161,21 +8846,41 @@ func (r *FirestoreDispatchRepository) listStudentIncidentsFromBigQuery(ctx conte
 		r.projectID, r.bqDataset, r.studentIncidentColl)
 	var params []bigquery.QueryParameter
 
-	if studentID > 0 {
+	if filter.StudentID > 0 {
 		querySQL += " AND CAST(JSON_VALUE(data, '$.studentId') AS INT64) = @studentId"
-		params = append(params, bigquery.QueryParameter{Name: "studentId", Value: studentID})
+		params = append(params, bigquery.QueryParameter{Name: "studentId", Value: filter.StudentID})
 	}
-	if routeNo != "" {
+	if filter.StudentNo != "" {
+		querySQL += " AND JSON_VALUE(data, '$.studentNo') = @studentNo"
+		params = append(params, bigquery.QueryParameter{Name: "studentNo", Value: filter.StudentNo})
+	}
+	if filter.StudentName != "" {
+		querySQL += " AND LOWER(JSON_VALUE(data, '$.studentName')) LIKE @studentName"
+		params = append(params, bigquery.QueryParameter{Name: "studentName", Value: "%" + strings.ToLower(filter.StudentName) + "%"})
+	}
+	if filter.RouteNo != "" {
 		querySQL += " AND JSON_VALUE(data, '$.routeNo') = @routeNo"
-		params = append(params, bigquery.QueryParameter{Name: "routeNo", Value: routeNo})
+		params = append(params, bigquery.QueryParameter{Name: "routeNo", Value: filter.RouteNo})
 	}
-	if driverID != "" {
+	if filter.DriverID != "" {
 		querySQL += " AND JSON_VALUE(data, '$.driverId') = @driverId"
-		params = append(params, bigquery.QueryParameter{Name: "driverId", Value: driverID})
+		params = append(params, bigquery.QueryParameter{Name: "driverId", Value: filter.DriverID})
 	}
-	if status != "" {
+	if filter.Query != "" {
+		querySQL += " AND (LOWER(JSON_VALUE(data, '$.studentName')) LIKE @query OR JSON_VALUE(data, '$.studentNo') LIKE @query OR LOWER(JSON_VALUE(data, '$.routeNo')) LIKE @query OR LOWER(JSON_VALUE(data, '$.driverName')) LIKE @query OR LOWER(JSON_VALUE(data, '$.schoolName')) LIKE @query)"
+		params = append(params, bigquery.QueryParameter{Name: "query", Value: "%" + strings.ToLower(filter.Query) + "%"})
+	}
+	if filter.Status != "" {
 		querySQL += " AND JSON_VALUE(data, '$.status') = @status"
-		params = append(params, bigquery.QueryParameter{Name: "status", Value: status})
+		params = append(params, bigquery.QueryParameter{Name: "status", Value: filter.Status})
+	}
+	if startDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(JSON_VALUE(data, '$.incidentDate') AS DATE)) >= @startDate"
+		params = append(params, bigquery.QueryParameter{Name: "startDate", Value: startDate})
+	}
+	if endDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(JSON_VALUE(data, '$.incidentDate') AS DATE)) <= @endDate"
+		params = append(params, bigquery.QueryParameter{Name: "endDate", Value: endDate})
 	}
 
 	q := r.bqClient.Query(querySQL)
@@ -8204,7 +8909,7 @@ func (r *FirestoreDispatchRepository) listStudentIncidentsFromBigQuery(ctx conte
 			if rec.ID == "" {
 				rec.ID = row.ID
 			}
-			if needsFollowUp {
+			if filter.NeedsFollowUp {
 				if rec.OfficeFollowUp != nil && rec.OfficeFollowUp.IsOfficeLocked {
 					continue
 				}
@@ -8219,16 +8924,126 @@ func (r *FirestoreDispatchRepository) listStudentIncidentsFromBigQuery(ctx conte
 }
 
 func (r *FirestoreDispatchRepository) ListStudentIncidents(ctx context.Context, studentID int, routeNo string, driverID string, status string, needsFollowUp bool) ([]*models.StudentIncident, error) {
-	results, err := r.listStudentIncidentsFromFirestore(ctx, studentID, routeNo, driverID, status, needsFollowUp)
-	if err != nil {
-		return nil, err
+	return r.ListStudentIncidentsFiltered(ctx, StudentIncidentFilter{
+		StudentID:     studentID,
+		RouteNo:       routeNo,
+		DriverID:      driverID,
+		Status:        status,
+		NeedsFollowUp: needsFollowUp,
+		TimeRange:     "6months",
+	})
+}
+
+// ListStudentIncidentsFiltered performs time-sliced hybrid dual-engine queries across Firestore (hot <= 6 months)
+// and BigQuery (cold > 6 months), seamlessly merging and deduplicating school year incident history.
+func (r *FirestoreDispatchRepository) ListStudentIncidentsFiltered(ctx context.Context, filter StudentIncidentFilter) ([]*models.StudentIncident, error) {
+	now := time.Now()
+	todayStr := now.Format("2006-01-02")
+	// Cutoff for hot data: 180 days (6 months)
+	cutoffDate := now.AddDate(0, 0, -180).Format("2006-01-02")
+
+	startDate := strings.TrimSpace(filter.StartDate)
+	endDate := strings.TrimSpace(filter.EndDate)
+	if endDate == "" {
+		endDate = todayStr
 	}
 
-	if len(results) == 0 && r.bqClient != nil {
-		if bqRes, bqErr := r.listStudentIncidentsFromBigQuery(ctx, studentID, routeNo, driverID, status, needsFollowUp); bqErr == nil && len(bqRes) > 0 {
-			results = bqRes
+	switch filter.TimeRange {
+	case "1year":
+		if startDate == "" {
+			startDate = now.AddDate(-1, 0, 0).Format("2006-01-02")
+		}
+	case "all":
+		// For "all" history, prevent scanning all students across 10 years.
+		// Targeted criteria (StudentID, StudentNo, StudentName, RouteNo, DriverID, Query, or explicit StartDate) is strictly required.
+		hasTarget := filter.StudentID > 0 || strings.TrimSpace(filter.StudentNo) != "" || strings.TrimSpace(filter.StudentName) != "" || strings.TrimSpace(filter.RouteNo) != "" || strings.TrimSpace(filter.DriverID) != "" || strings.TrimSpace(filter.Query) != "" || startDate != ""
+		if !hasTarget {
+			// Require search target to query all history
+			return []*models.StudentIncident{}, nil
+		}
+		if startDate == "" {
+			// For targeted student/route/driver search, support querying up to 10 years of cold archives
+			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+		}
+	default:
+		// Default: last 6 months (hot storage)
+		if startDate == "" {
+			startDate = cutoffDate
 		}
 	}
+
+	var results []*models.StudentIncident
+
+	// Case 1: Entire range is within last 6 months (Hot Only -> Firestore)
+	if startDate >= cutoffDate {
+		var err error
+		results, err = r.listStudentIncidentsFromFirestore(ctx, filter, startDate, endDate)
+		if err != nil {
+			return nil, err
+		}
+	} else if endDate < cutoffDate {
+		// Case 2: Entire range is older than 6 months (Cold Only -> BigQuery)
+		if r.bqClient != nil {
+			var err error
+			results, err = r.listStudentIncidentsFromBigQuery(ctx, filter, startDate, endDate)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		// Case 3: Range spans the 6-month boundary (e.g. 1 School Year Query) -> Time-Sliced Hybrid Query!
+		var wg sync.WaitGroup
+		var hotRes, coldRes []*models.StudentIncident
+		var hotErr, coldErr error
+
+		// Goroutine 1: Hot range [cutoffDate, endDate] from Firestore
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hotRes, hotErr = r.listStudentIncidentsFromFirestore(ctx, filter, cutoffDate, endDate)
+		}()
+
+		// Goroutine 2: Cold range [startDate, cutoffDate) from BigQuery
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if r.bqClient != nil {
+				coldRes, coldErr = r.listStudentIncidentsFromBigQuery(ctx, filter, startDate, cutoffDate)
+			}
+		}()
+
+		wg.Wait()
+
+		if hotErr != nil && len(hotRes) == 0 {
+			log.Printf("[STUDENT_INCIDENTS] Warning: hot query error: %v", hotErr)
+		}
+		if coldErr != nil {
+			log.Printf("[STUDENT_INCIDENTS] Warning: cold BigQuery query error: %v", coldErr)
+		}
+
+		// Merge and deduplicate by ID
+		seenIDs := make(map[string]bool)
+		for _, rec := range hotRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+		for _, rec := range coldRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+	}
+
+	// Sort by IncidentDate descending, then CreatedAt descending
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].IncidentDate != results[j].IncidentDate {
+			return results[i].IncidentDate > results[j].IncidentDate
+		}
+		return results[i].CreatedAt.After(results[j].CreatedAt)
+	})
 
 	return results, nil
 }
@@ -8360,24 +9175,51 @@ func (r *FirestoreDispatchRepository) CreateExpenseClaim(ctx context.Context, re
 func (r *FirestoreDispatchRepository) GetExpenseClaimByID(ctx context.Context, id string) (*models.ExpenseReimbursement, error) {
 	docRef := r.client.Collection(r.expenseReimbursementColl).Doc(id)
 	doc, err := docRef.Get(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get expense claim %s: %w", id, err)
+	if err == nil {
+		var rec models.ExpenseReimbursement
+		if err := doc.DataTo(&rec); err != nil {
+			return nil, err
+		}
+		rec.ID = doc.Ref.ID
+		return &rec, nil
 	}
-	var rec models.ExpenseReimbursement
-	if err := doc.DataTo(&rec); err != nil {
-		return nil, err
+
+	// Fallback to BigQuery cold archive if cleaned up from Firestore
+	if r.bqClient != nil {
+		querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE id = @id LIMIT 1", r.projectID, r.bqDataset, r.expenseReimbursementColl)
+		q := r.bqClient.Query(querySQL)
+		q.Parameters = []bigquery.QueryParameter{{Name: "id", Value: id}}
+		it, bqErr := q.Read(ctx)
+		if bqErr == nil {
+			var row struct {
+				ID   string `bigquery:"id"`
+				Data string `bigquery:"data"`
+			}
+			if err := it.Next(&row); err == nil {
+				var rec models.ExpenseReimbursement
+				if json.Unmarshal([]byte(row.Data), &rec) == nil {
+					if rec.ID == "" {
+						rec.ID = row.ID
+					}
+					return &rec, nil
+				}
+			}
+		}
 	}
-	rec.ID = doc.Ref.ID
-	return &rec, nil
+
+	return nil, fmt.Errorf("get expense claim %s: %w", id, err)
 }
 
-func (r *FirestoreDispatchRepository) ListExpenseClaims(ctx context.Context, employeeID string, status string) ([]*models.ExpenseReimbursement, error) {
+func (r *FirestoreDispatchRepository) listExpenseClaimsFromFirestore(ctx context.Context, filter ExpenseClaimFilter, startDate, endDate string) ([]*models.ExpenseReimbursement, error) {
 	q := r.client.Collection(r.expenseReimbursementColl).Query
-	if employeeID != "" {
-		q = q.Where("employeeId", "==", employeeID)
+	if filter.EmployeeID != "" {
+		q = q.Where("employeeId", "==", filter.EmployeeID)
 	}
-	if status != "" {
-		q = q.Where("status", "==", status)
+	if filter.Status != "" && filter.Status != "all" && filter.Status != "All" {
+		q = q.Where("status", "==", filter.Status)
+	}
+	if filter.RouteNo != "" {
+		q = q.Where("routeNo", "==", filter.RouteNo)
 	}
 
 	iter := q.Documents(ctx)
@@ -8390,21 +9232,242 @@ func (r *FirestoreDispatchRepository) ListExpenseClaims(ctx context.Context, emp
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("list expense claims: %w", err)
+			return nil, fmt.Errorf("list expense claims from firestore: %w", err)
 		}
 		var rec models.ExpenseReimbursement
 		if err := doc.DataTo(&rec); err != nil {
 			continue
 		}
 		rec.ID = doc.Ref.ID
+
+		claimDate := rec.ClaimDate
+		if claimDate == "" && !rec.CreatedAt.IsZero() {
+			claimDate = rec.CreatedAt.Format("2006-01-02")
+		}
+		if startDate != "" && claimDate != "" && claimDate < startDate {
+			continue
+		}
+		if endDate != "" && claimDate != "" && claimDate > endDate {
+			continue
+		}
+
+		if filter.Query != "" {
+			qLower := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.EmployeeName), qLower) ||
+				strings.Contains(strings.ToLower(rec.EmployeeID), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteNo), qLower) ||
+				strings.Contains(strings.ToLower(rec.ID), qLower) ||
+				strings.Contains(strings.ToLower(rec.ApprovalNotes), qLower) ||
+				strings.Contains(strings.ToLower(rec.ApprovedByName), qLower)
+			if !matches {
+				lineMatch := false
+				for _, line := range rec.Lines {
+					if strings.Contains(strings.ToLower(line.Note), qLower) ||
+						strings.Contains(strings.ToLower(line.CategoryDisplayName), qLower) ||
+						strings.Contains(strings.ToLower(line.CategoryCode), qLower) {
+						lineMatch = true
+						break
+					}
+				}
+				if !lineMatch {
+					continue
+				}
+			}
+		}
+
 		results = append(results, &rec)
 	}
+	return results, nil
+}
 
+func (r *FirestoreDispatchRepository) listExpenseClaimsFromBigQuery(ctx context.Context, filter ExpenseClaimFilter, startDate, endDate string) ([]*models.ExpenseReimbursement, error) {
+	if r.bqClient == nil {
+		return nil, errors.New("bigquery client not initialized")
+	}
+
+	querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE 1=1",
+		r.projectID, r.bqDataset, r.expenseReimbursementColl)
+	var params []bigquery.QueryParameter
+
+	if filter.EmployeeID != "" {
+		querySQL += " AND JSON_VALUE(data, '$.employeeId') = @empId"
+		params = append(params, bigquery.QueryParameter{Name: "empId", Value: filter.EmployeeID})
+	}
+	if filter.Status != "" && filter.Status != "all" && filter.Status != "All" {
+		querySQL += " AND JSON_VALUE(data, '$.status') = @status"
+		params = append(params, bigquery.QueryParameter{Name: "status", Value: filter.Status})
+	}
+	if filter.RouteNo != "" {
+		querySQL += " AND JSON_VALUE(data, '$.routeNo') = @routeNo"
+		params = append(params, bigquery.QueryParameter{Name: "routeNo", Value: filter.RouteNo})
+	}
+	if filter.Query != "" {
+		querySQL += " AND (LOWER(JSON_VALUE(data, '$.employeeName')) LIKE @query OR LOWER(JSON_VALUE(data, '$.employeeId')) LIKE @query OR LOWER(JSON_VALUE(data, '$.routeNo')) LIKE @query OR LOWER(JSON_VALUE(data, '$.notes')) LIKE @query OR LOWER(data) LIKE @query)"
+		params = append(params, bigquery.QueryParameter{Name: "query", Value: "%" + strings.ToLower(filter.Query) + "%"})
+	}
+	if startDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.claimDate'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) >= @startDate"
+		params = append(params, bigquery.QueryParameter{Name: "startDate", Value: startDate})
+	}
+	if endDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.claimDate'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) <= @endDate"
+		params = append(params, bigquery.QueryParameter{Name: "endDate", Value: endDate})
+	}
+
+	q := r.bqClient.Query(querySQL)
+	q.Parameters = params
+
+	it, err := q.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []*models.ExpenseReimbursement
+	for {
+		var row struct {
+			ID   string `bigquery:"id"`
+			Data string `bigquery:"data"`
+		}
+		err := it.Next(&row)
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		var rec models.ExpenseReimbursement
+		if err := json.Unmarshal([]byte(row.Data), &rec); err == nil {
+			if rec.ID == "" {
+				rec.ID = row.ID
+			}
+			results = append(results, &rec)
+		}
+	}
+	return results, nil
+}
+
+func (r *FirestoreDispatchRepository) ListExpenseClaimsFiltered(ctx context.Context, filter ExpenseClaimFilter) ([]*models.ExpenseReimbursement, error) {
+	now := time.Now()
+	todayStr := now.Format("2006-01-02")
+	// Cutoff for live data: 6 months (approx 180 days)
+	cutoffDate := now.AddDate(0, -6, 0).Format("2006-01-02")
+
+	startDate := strings.TrimSpace(filter.StartDate)
+	endDate := strings.TrimSpace(filter.EndDate)
+	if endDate == "" {
+		endDate = todayStr
+	}
+
+	switch filter.TimeRange {
+	case "all":
+		hasTarget := strings.TrimSpace(filter.EmployeeID) != "" ||
+			strings.TrimSpace(filter.RouteNo) != "" ||
+			strings.TrimSpace(filter.Query) != "" ||
+			startDate != ""
+		if !hasTarget {
+			// Require search target to query archive
+			return []*models.ExpenseReimbursement{}, nil
+		}
+		if startDate == "" {
+			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+		}
+	default:
+		// Default live data: last 6 months
+		if startDate == "" {
+			startDate = cutoffDate
+		}
+	}
+
+	var results []*models.ExpenseReimbursement
+
+	// Case 1: Entire range is within last 6 months (Live Data Only -> Firestore)
+	if startDate >= cutoffDate {
+		var err error
+		results, err = r.listExpenseClaimsFromFirestore(ctx, filter, startDate, endDate)
+		if err != nil {
+			return nil, err
+		}
+	} else if endDate < cutoffDate {
+		// Case 2: Entire range is older than 6 months (Old Data Only -> BigQuery)
+		if r.bqClient != nil {
+			var err error
+			results, err = r.listExpenseClaimsFromBigQuery(ctx, filter, startDate, endDate)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		// Case 3: Range spans the 6-month boundary -> Concurrent Hybrid Dual-Engine
+		var wg sync.WaitGroup
+		var hotRes, coldRes []*models.ExpenseReimbursement
+		var hotErr, coldErr error
+
+		// Goroutine 1: Live range [cutoffDate, endDate] from Firestore
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hotRes, hotErr = r.listExpenseClaimsFromFirestore(ctx, filter, cutoffDate, endDate)
+		}()
+
+		// Goroutine 2: Old range [startDate, cutoffDate) from BigQuery
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if r.bqClient != nil {
+				coldRes, coldErr = r.listExpenseClaimsFromBigQuery(ctx, filter, startDate, cutoffDate)
+			}
+		}()
+
+		wg.Wait()
+
+		if hotErr != nil && len(hotRes) == 0 {
+			log.Printf("[EXPENSES] Warning: live query error: %v", hotErr)
+		}
+		if coldErr != nil {
+			log.Printf("[EXPENSES] Warning: old BigQuery query error: %v", coldErr)
+		}
+
+		// Merge and deduplicate by ID
+		seenIDs := make(map[string]bool)
+		for _, rec := range hotRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+		for _, rec := range coldRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+	}
+
+	// Sort by ClaimDate descending, then CreatedAt descending
 	sort.Slice(results, func(i, j int) bool {
+		dateI := results[i].ClaimDate
+		if dateI == "" {
+			dateI = results[i].CreatedAt.Format("2006-01-02")
+		}
+		dateJ := results[j].ClaimDate
+		if dateJ == "" {
+			dateJ = results[j].CreatedAt.Format("2006-01-02")
+		}
+		if dateI != dateJ {
+			return dateI > dateJ // Descending by date (newest first)
+		}
 		return results[i].CreatedAt.After(results[j].CreatedAt)
 	})
 
 	return results, nil
+}
+
+func (r *FirestoreDispatchRepository) ListExpenseClaims(ctx context.Context, employeeID string, status string) ([]*models.ExpenseReimbursement, error) {
+	return r.ListExpenseClaimsFiltered(ctx, ExpenseClaimFilter{
+		EmployeeID: employeeID,
+		Status:     status,
+		TimeRange:  "6months",
+	})
 }
 
 func (r *FirestoreDispatchRepository) ReviewExpenseClaim(ctx context.Context, id string, req *models.ReviewExpenseClaimPayload) (*models.ExpenseReimbursement, error) {
@@ -8518,27 +9581,57 @@ func (r *FirestoreDispatchRepository) CreateHazardReport(ctx context.Context, re
 func (r *FirestoreDispatchRepository) GetHazardReportByID(ctx context.Context, id string) (*models.HazardReport, error) {
 	docRef := r.client.Collection(r.hazardReportColl).Doc(id)
 	doc, err := docRef.Get(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get hazard report %s: %w", id, err)
+	if err == nil {
+		var rec models.HazardReport
+		if err := doc.DataTo(&rec); err != nil {
+			return nil, err
+		}
+		rec.ID = doc.Ref.ID
+		return &rec, nil
 	}
-	var rec models.HazardReport
-	if err := doc.DataTo(&rec); err != nil {
-		return nil, err
+
+	// Fallback to BigQuery cold archive if cleaned up from Firestore
+	if r.bqClient != nil {
+		querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE id = @id LIMIT 1", r.projectID, r.bqDataset, r.hazardReportColl)
+		q := r.bqClient.Query(querySQL)
+		q.Parameters = []bigquery.QueryParameter{{Name: "id", Value: id}}
+		it, bqErr := q.Read(ctx)
+		if bqErr == nil {
+			var row struct {
+				ID   string `bigquery:"id"`
+				Data string `bigquery:"data"`
+			}
+			if err := it.Next(&row); err == nil {
+				var rec models.HazardReport
+				if json.Unmarshal([]byte(row.Data), &rec) == nil {
+					if rec.ID == "" {
+						rec.ID = row.ID
+					}
+					return &rec, nil
+				}
+			}
+		}
 	}
-	rec.ID = doc.Ref.ID
-	return &rec, nil
+
+	return nil, fmt.Errorf("get hazard report %s: %w", id, err)
 }
 
-func (r *FirestoreDispatchRepository) listHazardReportsFromFirestore(ctx context.Context, reportedByEmployeeID string, statusInt *int, officeHazardType string) ([]*models.HazardReport, error) {
+func (r *FirestoreDispatchRepository) listHazardReportsFromFirestore(ctx context.Context, filter HazardReportFilter, startDate, endDate string) ([]*models.HazardReport, error) {
 	q := r.client.Collection(r.hazardReportColl).Query
-	if reportedByEmployeeID != "" {
-		q = q.Where("reportedByEmployeeId", "==", reportedByEmployeeID)
+	if filter.ReportedByEmployeeID != "" {
+		q = q.Where("reportedByEmployeeId", "==", filter.ReportedByEmployeeID)
 	}
-	if statusInt != nil {
-		q = q.Where("statusInt", "==", *statusInt)
+	if filter.StatusInt != nil {
+		q = q.Where("statusInt", "==", *filter.StatusInt)
 	}
-	if officeHazardType != "" && officeHazardType != "all" && officeHazardType != "All" {
-		q = q.Where("officeHazardType", "==", officeHazardType)
+	if filter.OfficeHazardType != "" && filter.OfficeHazardType != "all" && filter.OfficeHazardType != "All" {
+		q = q.Where("officeHazardType", "==", filter.OfficeHazardType)
+	}
+	if filter.UnitNumber != "" {
+		q = q.Where("unitNumber", "==", filter.UnitNumber)
+	}
+	if filter.RouteID != "" {
+		q = q.Where("routeId", "==", filter.RouteID)
 	}
 
 	iter := q.Documents(ctx)
@@ -8558,12 +9651,40 @@ func (r *FirestoreDispatchRepository) listHazardReportsFromFirestore(ctx context
 			continue
 		}
 		rec.ID = doc.Ref.ID
+
+		// In-memory date boundary filter (safe for composite index avoidance)
+		reportDate := ""
+		if len(rec.EventTime) >= 10 {
+			reportDate = rec.EventTime[:10]
+		} else if !rec.CreatedAt.IsZero() {
+			reportDate = rec.CreatedAt.Format("2006-01-02")
+		}
+		if startDate != "" && reportDate != "" && reportDate < startDate {
+			continue
+		}
+		if endDate != "" && reportDate != "" && reportDate > endDate {
+			continue
+		}
+
+		if filter.Query != "" {
+			qLower := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.EventLocation), qLower) ||
+				strings.Contains(strings.ToLower(rec.EventDescription), qLower) ||
+				strings.Contains(strings.ToLower(rec.ReportedBy), qLower) ||
+				strings.Contains(strings.ToLower(rec.UnitNumber), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteID), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteName), qLower)
+			if !matches {
+				continue
+			}
+		}
+
 		results = append(results, &rec)
 	}
 	return results, nil
 }
 
-func (r *FirestoreDispatchRepository) listHazardReportsFromBigQuery(ctx context.Context, reportedByEmployeeID string, statusInt *int, officeHazardType string) ([]*models.HazardReport, error) {
+func (r *FirestoreDispatchRepository) listHazardReportsFromBigQuery(ctx context.Context, filter HazardReportFilter, startDate, endDate string) ([]*models.HazardReport, error) {
 	if r.bqClient == nil {
 		return nil, errors.New("bigquery client not initialized")
 	}
@@ -8572,17 +9693,37 @@ func (r *FirestoreDispatchRepository) listHazardReportsFromBigQuery(ctx context.
 		r.projectID, r.bqDataset, r.hazardReportColl)
 	var params []bigquery.QueryParameter
 
-	if reportedByEmployeeID != "" {
+	if filter.ReportedByEmployeeID != "" {
 		querySQL += " AND JSON_VALUE(data, '$.reportedByEmployeeId') = @repEmpId"
-		params = append(params, bigquery.QueryParameter{Name: "repEmpId", Value: reportedByEmployeeID})
+		params = append(params, bigquery.QueryParameter{Name: "repEmpId", Value: filter.ReportedByEmployeeID})
 	}
-	if statusInt != nil {
+	if filter.UnitNumber != "" {
+		querySQL += " AND JSON_VALUE(data, '$.unitNumber') = @unitNumber"
+		params = append(params, bigquery.QueryParameter{Name: "unitNumber", Value: filter.UnitNumber})
+	}
+	if filter.RouteID != "" {
+		querySQL += " AND JSON_VALUE(data, '$.routeId') = @routeId"
+		params = append(params, bigquery.QueryParameter{Name: "routeId", Value: filter.RouteID})
+	}
+	if filter.StatusInt != nil {
 		querySQL += " AND CAST(JSON_VALUE(data, '$.statusInt') AS INT64) = @statusInt"
-		params = append(params, bigquery.QueryParameter{Name: "statusInt", Value: *statusInt})
+		params = append(params, bigquery.QueryParameter{Name: "statusInt", Value: *filter.StatusInt})
 	}
-	if officeHazardType != "" && officeHazardType != "all" && officeHazardType != "All" {
+	if filter.OfficeHazardType != "" && filter.OfficeHazardType != "all" && filter.OfficeHazardType != "All" {
 		querySQL += " AND JSON_VALUE(data, '$.officeHazardType') = @hazardType"
-		params = append(params, bigquery.QueryParameter{Name: "hazardType", Value: officeHazardType})
+		params = append(params, bigquery.QueryParameter{Name: "hazardType", Value: filter.OfficeHazardType})
+	}
+	if filter.Query != "" {
+		querySQL += " AND (LOWER(JSON_VALUE(data, '$.eventLocation')) LIKE @query OR LOWER(JSON_VALUE(data, '$.eventDescription')) LIKE @query OR LOWER(JSON_VALUE(data, '$.reportedBy')) LIKE @query OR LOWER(JSON_VALUE(data, '$.unitNumber')) LIKE @query OR LOWER(JSON_VALUE(data, '$.routeId')) LIKE @query OR LOWER(JSON_VALUE(data, '$.routeName')) LIKE @query)"
+		params = append(params, bigquery.QueryParameter{Name: "query", Value: "%" + strings.ToLower(filter.Query) + "%"})
+	}
+	if startDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.eventTime'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) >= @startDate"
+		params = append(params, bigquery.QueryParameter{Name: "startDate", Value: startDate})
+	}
+	if endDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.eventTime'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) <= @endDate"
+		params = append(params, bigquery.QueryParameter{Name: "endDate", Value: endDate})
 	}
 
 	q := r.bqClient.Query(querySQL)
@@ -8618,20 +9759,123 @@ func (r *FirestoreDispatchRepository) listHazardReportsFromBigQuery(ctx context.
 }
 
 func (r *FirestoreDispatchRepository) ListHazardReports(ctx context.Context, reportedByEmployeeID string, statusInt *int, officeHazardType string) ([]*models.HazardReport, error) {
-	results, err := r.listHazardReportsFromFirestore(ctx, reportedByEmployeeID, statusInt, officeHazardType)
-	if err != nil {
-		return nil, err
+	return r.ListHazardReportsFiltered(ctx, HazardReportFilter{
+		ReportedByEmployeeID: reportedByEmployeeID,
+		StatusInt:            statusInt,
+		OfficeHazardType:     officeHazardType,
+		TimeRange:            "1year",
+	})
+}
+
+// ListHazardReportsFiltered performs time-sliced hybrid dual-engine queries across Firestore (live data <= 1 year)
+// and BigQuery (cold archive > 1 year), merging and deduplicating safety and hazard reporting history.
+func (r *FirestoreDispatchRepository) ListHazardReportsFiltered(ctx context.Context, filter HazardReportFilter) ([]*models.HazardReport, error) {
+	now := time.Now()
+	todayStr := now.Format("2006-01-02")
+	// Cutoff for live data: 1 year (365 days)
+	cutoffDate := now.AddDate(-1, 0, 0).Format("2006-01-02")
+
+	startDate := strings.TrimSpace(filter.StartDate)
+	endDate := strings.TrimSpace(filter.EndDate)
+	if endDate == "" {
+		endDate = todayStr
 	}
 
-	if len(results) == 0 && r.bqClient != nil {
-		if bqRes, bqErr := r.listHazardReportsFromBigQuery(ctx, reportedByEmployeeID, statusInt, officeHazardType); bqErr == nil && len(bqRes) > 0 {
-			results = bqRes
+	switch filter.TimeRange {
+	case "all":
+		// For "all" history, prevent scanning all hazards across 10 years without criteria.
+		hasTarget := strings.TrimSpace(filter.UnitNumber) != "" ||
+			strings.TrimSpace(filter.RouteID) != "" ||
+			strings.TrimSpace(filter.ReportedByEmployeeID) != "" ||
+			strings.TrimSpace(filter.Query) != "" ||
+			startDate != ""
+		if !hasTarget {
+			// Require search target to query archive
+			return []*models.HazardReport{}, nil
+		}
+		if startDate == "" {
+			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+		}
+	default:
+		// Default live data: last 1 year
+		if startDate == "" {
+			startDate = cutoffDate
 		}
 	}
 
+	var results []*models.HazardReport
+
+	// Case 1: Entire range is within last 1 year (Live Data Only -> Firestore)
+	if startDate >= cutoffDate {
+		var err error
+		results, err = r.listHazardReportsFromFirestore(ctx, filter, startDate, endDate)
+		if err != nil {
+			return nil, err
+		}
+	} else if endDate < cutoffDate {
+		// Case 2: Entire range is older than 1 year (Old Data Only -> BigQuery)
+		if r.bqClient != nil {
+			var err error
+			results, err = r.listHazardReportsFromBigQuery(ctx, filter, startDate, endDate)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		// Case 3: Range spans the 1-year boundary -> Concurrent Hybrid Dual-Engine
+		var wg sync.WaitGroup
+		var hotRes, coldRes []*models.HazardReport
+		var hotErr, coldErr error
+
+		// Goroutine 1: Live range [cutoffDate, endDate] from Firestore
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hotRes, hotErr = r.listHazardReportsFromFirestore(ctx, filter, cutoffDate, endDate)
+		}()
+
+		// Goroutine 2: Old range [startDate, cutoffDate) from BigQuery
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if r.bqClient != nil {
+				coldRes, coldErr = r.listHazardReportsFromBigQuery(ctx, filter, startDate, cutoffDate)
+			}
+		}()
+
+		wg.Wait()
+
+		if hotErr != nil && len(hotRes) == 0 {
+			log.Printf("[HAZARDS] Warning: live query error: %v", hotErr)
+		}
+		if coldErr != nil {
+			log.Printf("[HAZARDS] Warning: old BigQuery query error: %v", coldErr)
+		}
+
+		// Merge and deduplicate by ID
+		seenIDs := make(map[string]bool)
+		for _, rec := range hotRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+		for _, rec := range coldRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+	}
+
+	// Sort by EventTime descending, then CreatedAt descending
 	sort.Slice(results, func(i, j int) bool {
+		if results[i].EventTime != results[j].EventTime {
+			return results[i].EventTime > results[j].EventTime
+		}
 		return results[i].CreatedAt.After(results[j].CreatedAt)
 	})
+
 	return results, nil
 }
 
@@ -8754,19 +9998,59 @@ func (r *FirestoreDispatchRepository) CreateRouteAssessment(ctx context.Context,
 
 func (r *FirestoreDispatchRepository) GetRouteAssessmentByID(ctx context.Context, id string) (*models.RouteAssessment, error) {
 	docSnap, err := r.client.Collection(r.routeAssessmentColl).Doc(id).Get(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get route assessment %s: %w", id, err)
+	if err == nil {
+		var rec models.RouteAssessment
+		if err := docSnap.DataTo(&rec); err != nil {
+			return nil, fmt.Errorf("unmarshal route assessment %s: %w", id, err)
+		}
+		rec.ID = docSnap.Ref.ID
+		return &rec, nil
 	}
-	var rec models.RouteAssessment
-	if err := docSnap.DataTo(&rec); err != nil {
-		return nil, fmt.Errorf("unmarshal route assessment %s: %w", id, err)
+
+	// Fallback to BigQuery cold archive if cleaned up from Firestore
+	if r.bqClient != nil {
+		querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE id = @id LIMIT 1", r.projectID, r.bqDataset, r.routeAssessmentColl)
+		q := r.bqClient.Query(querySQL)
+		q.Parameters = []bigquery.QueryParameter{{Name: "id", Value: id}}
+		it, bqErr := q.Read(ctx)
+		if bqErr == nil {
+			var row struct {
+				ID   string `bigquery:"id"`
+				Data string `bigquery:"data"`
+			}
+			if err := it.Next(&row); err == nil {
+				var rec models.RouteAssessment
+				if json.Unmarshal([]byte(row.Data), &rec) == nil {
+					if rec.ID == "" {
+						rec.ID = row.ID
+					}
+					return &rec, nil
+				}
+			}
+		}
 	}
-	rec.ID = docSnap.Ref.ID
-	return &rec, nil
+
+	return nil, fmt.Errorf("get route assessment %s: %w", id, err)
 }
 
-func (r *FirestoreDispatchRepository) ListRouteAssessments(ctx context.Context, routeID string, employeeID string, statusInt *int, assessmentType string) ([]*models.RouteAssessment, error) {
-	iter := r.client.Collection(r.routeAssessmentColl).Documents(ctx)
+func (r *FirestoreDispatchRepository) listRouteAssessmentsFromFirestore(ctx context.Context, filter RouteAssessmentFilter, startDate, endDate string) ([]*models.RouteAssessment, error) {
+	q := r.client.Collection(r.routeAssessmentColl).Query
+	if filter.RouteID != "" {
+		q = q.Where("routeId", "==", filter.RouteID)
+	}
+	if filter.ConductedByEmployeeID != "" {
+		q = q.Where("conductedByEmployeeId", "==", filter.ConductedByEmployeeID)
+	}
+	if filter.StatusInt != nil {
+		q = q.Where("statusInt", "==", *filter.StatusInt)
+	}
+	if filter.AssessmentType != "" && filter.AssessmentType != "all" {
+		q = q.Where("assessmentType", "==", filter.AssessmentType)
+	}
+
+	iter := q.Documents(ctx)
+	defer iter.Stop()
+
 	var results []*models.RouteAssessment
 	for {
 		doc, err := iter.Next()
@@ -8774,7 +10058,7 @@ func (r *FirestoreDispatchRepository) ListRouteAssessments(ctx context.Context, 
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("iterate route assessments: %w", err)
+			return nil, fmt.Errorf("list route assessments: %w", err)
 		}
 		var rec models.RouteAssessment
 		if err := doc.DataTo(&rec); err != nil {
@@ -8782,24 +10066,229 @@ func (r *FirestoreDispatchRepository) ListRouteAssessments(ctx context.Context, 
 		}
 		rec.ID = doc.Ref.ID
 
-		if routeID != "" && rec.RouteID != routeID {
+		// Date boundary
+		reportDate := ""
+		if rec.AssessmentDate != nil {
+			reportDate = rec.AssessmentDate.Format("2006-01-02")
+		} else if !rec.CreatedAt.IsZero() {
+			reportDate = rec.CreatedAt.Format("2006-01-02")
+		}
+		if startDate != "" && reportDate != "" && reportDate < startDate {
 			continue
 		}
-		if employeeID != "" && rec.ConductedByEmployeeID != employeeID {
+		if endDate != "" && reportDate != "" && reportDate > endDate {
 			continue
 		}
-		if statusInt != nil && rec.StatusInt != *statusInt {
-			continue
+
+		if filter.Query != "" {
+			qLower := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.RouteID), qLower) ||
+				strings.Contains(strings.ToLower(rec.School), qLower) ||
+				strings.Contains(strings.ToLower(rec.SchoolBoard), qLower) ||
+				strings.Contains(strings.ToLower(rec.ConductedByDriver), qLower) ||
+				strings.Contains(strings.ToLower(rec.Summary), qLower)
+			if !matches {
+				continue
+			}
 		}
-		if assessmentType != "" && assessmentType != "all" && rec.AssessmentType != assessmentType {
-			continue
-		}
+
 		results = append(results, &rec)
 	}
+	return results, nil
+}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].CreatedAt.After(results[j].CreatedAt)
+func (r *FirestoreDispatchRepository) listRouteAssessmentsFromBigQuery(ctx context.Context, filter RouteAssessmentFilter, startDate, endDate string) ([]*models.RouteAssessment, error) {
+	if r.bqClient == nil {
+		return nil, errors.New("bigquery client not initialized")
+	}
+
+	querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE 1=1",
+		r.projectID, r.bqDataset, r.routeAssessmentColl)
+	var params []bigquery.QueryParameter
+
+	if filter.RouteID != "" {
+		querySQL += " AND JSON_VALUE(data, '$.routeId') = @routeId"
+		params = append(params, bigquery.QueryParameter{Name: "routeId", Value: filter.RouteID})
+	}
+	if filter.ConductedByEmployeeID != "" {
+		querySQL += " AND JSON_VALUE(data, '$.conductedByEmployeeId') = @empId"
+		params = append(params, bigquery.QueryParameter{Name: "empId", Value: filter.ConductedByEmployeeID})
+	}
+	if filter.StatusInt != nil {
+		querySQL += " AND CAST(JSON_VALUE(data, '$.statusInt') AS INT64) = @statusInt"
+		params = append(params, bigquery.QueryParameter{Name: "statusInt", Value: *filter.StatusInt})
+	}
+	if filter.AssessmentType != "" && filter.AssessmentType != "all" {
+		querySQL += " AND JSON_VALUE(data, '$.assessmentType') = @assType"
+		params = append(params, bigquery.QueryParameter{Name: "assType", Value: filter.AssessmentType})
+	}
+	if filter.Query != "" {
+		querySQL += " AND (LOWER(JSON_VALUE(data, '$.routeId')) LIKE @query OR LOWER(JSON_VALUE(data, '$.school')) LIKE @query OR LOWER(JSON_VALUE(data, '$.schoolBoard')) LIKE @query OR LOWER(JSON_VALUE(data, '$.conductedByDriver')) LIKE @query OR LOWER(JSON_VALUE(data, '$.summary')) LIKE @query)"
+		params = append(params, bigquery.QueryParameter{Name: "query", Value: "%" + strings.ToLower(filter.Query) + "%"})
+	}
+	if startDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.assessmentDate'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) >= @startDate"
+		params = append(params, bigquery.QueryParameter{Name: "startDate", Value: startDate})
+	}
+	if endDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.assessmentDate'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) <= @endDate"
+		params = append(params, bigquery.QueryParameter{Name: "endDate", Value: endDate})
+	}
+
+	q := r.bqClient.Query(querySQL)
+	q.Parameters = params
+
+	it, err := q.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []*models.RouteAssessment
+	for {
+		var row struct {
+			ID   string `bigquery:"id"`
+			Data string `bigquery:"data"`
+		}
+		err := it.Next(&row)
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		var rec models.RouteAssessment
+		if err := json.Unmarshal([]byte(row.Data), &rec); err == nil {
+			if rec.ID == "" {
+				rec.ID = row.ID
+			}
+			results = append(results, &rec)
+		}
+	}
+	return results, nil
+}
+
+func (r *FirestoreDispatchRepository) ListRouteAssessments(ctx context.Context, routeID string, employeeID string, statusInt *int, assessmentType string) ([]*models.RouteAssessment, error) {
+	return r.ListRouteAssessmentsFiltered(ctx, RouteAssessmentFilter{
+		RouteID:               routeID,
+		ConductedByEmployeeID: employeeID,
+		StatusInt:             statusInt,
+		AssessmentType:        assessmentType,
+		TimeRange:             "1year",
 	})
+}
+
+// ListRouteAssessmentsFiltered performs time-sliced hybrid dual-engine queries across Firestore (live data <= 1 year)
+// and BigQuery (cold archive > 1 year), merging and deduplicating route safety evaluation records.
+func (r *FirestoreDispatchRepository) ListRouteAssessmentsFiltered(ctx context.Context, filter RouteAssessmentFilter) ([]*models.RouteAssessment, error) {
+	now := time.Now()
+	todayStr := now.Format("2006-01-02")
+	// Cutoff for live data: 1 year (365 days)
+	cutoffDate := now.AddDate(-1, 0, 0).Format("2006-01-02")
+
+	startDate := strings.TrimSpace(filter.StartDate)
+	endDate := strings.TrimSpace(filter.EndDate)
+	if endDate == "" {
+		endDate = todayStr
+	}
+
+	switch filter.TimeRange {
+	case "all":
+		// For "all" history, prevent scanning all assessments across 10 years without criteria.
+		hasTarget := strings.TrimSpace(filter.RouteID) != "" ||
+			strings.TrimSpace(filter.ConductedByEmployeeID) != "" ||
+			strings.TrimSpace(filter.Query) != "" ||
+			startDate != ""
+		if !hasTarget {
+			return []*models.RouteAssessment{}, nil
+		}
+		if startDate == "" {
+			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+		}
+	default:
+		// Default live data: last 1 year
+		if startDate == "" {
+			startDate = cutoffDate
+		}
+	}
+
+	var results []*models.RouteAssessment
+
+	// Case 1: Entire range is within last 1 year (Live Data Only -> Firestore)
+	if startDate >= cutoffDate {
+		var err error
+		results, err = r.listRouteAssessmentsFromFirestore(ctx, filter, startDate, endDate)
+		if err != nil {
+			return nil, err
+		}
+	} else if endDate < cutoffDate {
+		// Case 2: Entire range is older than 1 year (Old Data Only -> BigQuery)
+		if r.bqClient != nil {
+			var err error
+			results, err = r.listRouteAssessmentsFromBigQuery(ctx, filter, startDate, endDate)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		// Case 3: Range spans the 1-year boundary -> Concurrent Hybrid Dual-Engine
+		var wg sync.WaitGroup
+		var hotRes, coldRes []*models.RouteAssessment
+		var hotErr, coldErr error
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hotRes, hotErr = r.listRouteAssessmentsFromFirestore(ctx, filter, cutoffDate, endDate)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if r.bqClient != nil {
+				coldRes, coldErr = r.listRouteAssessmentsFromBigQuery(ctx, filter, startDate, cutoffDate)
+			}
+		}()
+
+		wg.Wait()
+
+		if hotErr != nil && len(hotRes) == 0 {
+			log.Printf("[ROUTE_ASSESSMENTS] Warning: live query error: %v", hotErr)
+		}
+		if coldErr != nil {
+			log.Printf("[ROUTE_ASSESSMENTS] Warning: old BigQuery query error: %v", coldErr)
+		}
+
+		seenIDs := make(map[string]bool)
+		for _, rec := range hotRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+		for _, rec := range coldRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+	}
+
+	// Sort by AssessmentDate descending, then CreatedAt descending
+	sort.Slice(results, func(i, j int) bool {
+		var tI, tJ time.Time
+		if results[i].AssessmentDate != nil {
+			tI = *results[i].AssessmentDate
+		} else {
+			tI = results[i].CreatedAt
+		}
+		if results[j].AssessmentDate != nil {
+			tJ = *results[j].AssessmentDate
+		} else {
+			tJ = results[j].CreatedAt
+		}
+		return tI.After(tJ)
+	})
+
 	return results, nil
 }
 
@@ -9053,19 +10542,45 @@ func (r *FirestoreDispatchRepository) CreateVehicleSignout(ctx context.Context, 
 
 func (r *FirestoreDispatchRepository) GetVehicleSignoutByID(ctx context.Context, id string) (*models.VehicleSignout, error) {
 	docSnap, err := r.client.Collection(r.vehicleSignoutColl).Doc(id).Get(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get vehicle signout %s: %w", id, err)
+	if err == nil {
+		var rec models.VehicleSignout
+		if err := docSnap.DataTo(&rec); err != nil {
+			return nil, fmt.Errorf("deserialize vehicle signout: %w", err)
+		}
+		rec.ID = docSnap.Ref.ID
+		return &rec, nil
 	}
-	var rec models.VehicleSignout
-	if err := docSnap.DataTo(&rec); err != nil {
-		return nil, fmt.Errorf("deserialize vehicle signout: %w", err)
+
+	// Fallback to BigQuery cold archive if cleaned up from Firestore
+	if r.bqClient != nil {
+		querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE id = @id LIMIT 1", r.projectID, r.bqDataset, r.vehicleSignoutColl)
+		q := r.bqClient.Query(querySQL)
+		q.Parameters = []bigquery.QueryParameter{{Name: "id", Value: id}}
+		it, bqErr := q.Read(ctx)
+		if bqErr == nil {
+			var row struct {
+				ID   string `bigquery:"id"`
+				Data string `bigquery:"data"`
+			}
+			if err := it.Next(&row); err == nil {
+				var rec models.VehicleSignout
+				if json.Unmarshal([]byte(row.Data), &rec) == nil {
+					if rec.ID == "" {
+						rec.ID = row.ID
+					}
+					return &rec, nil
+				}
+			}
+		}
 	}
-	rec.ID = docSnap.Ref.ID
-	return &rec, nil
+
+	return nil, fmt.Errorf("get vehicle signout %s: %w", id, err)
 }
 
-func (r *FirestoreDispatchRepository) ListVehicleSignouts(ctx context.Context, unitNumber, employeeID string, isSignIn *bool, startDate, endDate string) ([]*models.VehicleSignout, error) {
+func (r *FirestoreDispatchRepository) listVehicleSignoutsFromFirestore(ctx context.Context, filter VehicleSignoutFilter, startDate, endDate string) ([]*models.VehicleSignout, error) {
 	iter := r.client.Collection(r.vehicleSignoutColl).Documents(ctx)
+	defer iter.Stop()
+
 	var results []*models.VehicleSignout
 	for {
 		doc, err := iter.Next()
@@ -9081,25 +10596,227 @@ func (r *FirestoreDispatchRepository) ListVehicleSignouts(ctx context.Context, u
 		}
 		rec.ID = doc.Ref.ID
 
-		if unitNumber != "" && !strings.EqualFold(rec.UnitNumber, unitNumber) {
+		if filter.UnitNumber != "" && !strings.EqualFold(rec.UnitNumber, filter.UnitNumber) {
 			continue
 		}
-		if employeeID != "" && rec.EmployeeID != employeeID {
+		if filter.EmployeeID != "" && rec.EmployeeID != filter.EmployeeID {
 			continue
 		}
-		if isSignIn != nil && rec.IsSignIn != *isSignIn {
+		if filter.IsSignIn != nil && rec.IsSignIn != *filter.IsSignIn {
 			continue
 		}
-		if startDate != "" && rec.SignDate < startDate {
+
+		signDate := rec.SignDate
+		if signDate == "" && !rec.CreatedAt.IsZero() {
+			signDate = rec.CreatedAt.Format("2006-01-02")
+		} else if len(signDate) > 10 {
+			signDate = signDate[:10]
+		}
+
+		if startDate != "" && signDate != "" && signDate < startDate {
 			continue
 		}
-		if endDate != "" && rec.SignDate > endDate {
+		if endDate != "" && signDate != "" && signDate > endDate {
 			continue
 		}
+
+		if filter.Query != "" {
+			qLower := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.UnitNumber), qLower) ||
+				strings.Contains(strings.ToLower(rec.EmployeeName), qLower) ||
+				strings.Contains(strings.ToLower(rec.EmployeeID), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteID), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteName), qLower) ||
+				strings.Contains(strings.ToLower(rec.LicensePlate), qLower)
+			if !matches {
+				continue
+			}
+		}
+
 		results = append(results, &rec)
+	}
+	return results, nil
+}
+
+func (r *FirestoreDispatchRepository) listVehicleSignoutsFromBigQuery(ctx context.Context, filter VehicleSignoutFilter, startDate, endDate string) ([]*models.VehicleSignout, error) {
+	if r.bqClient == nil {
+		return nil, errors.New("bigquery client not initialized")
+	}
+
+	querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE 1=1",
+		r.projectID, r.bqDataset, r.vehicleSignoutColl)
+	var params []bigquery.QueryParameter
+
+	if filter.UnitNumber != "" {
+		querySQL += " AND LOWER(JSON_VALUE(data, '$.unitNumber')) = @unitNum"
+		params = append(params, bigquery.QueryParameter{Name: "unitNum", Value: strings.ToLower(filter.UnitNumber)})
+	}
+	if filter.EmployeeID != "" {
+		querySQL += " AND JSON_VALUE(data, '$.employeeId') = @empId"
+		params = append(params, bigquery.QueryParameter{Name: "empId", Value: filter.EmployeeID})
+	}
+	if filter.IsSignIn != nil {
+		querySQL += " AND CAST(JSON_VALUE(data, '$.isSignIn') AS BOOL) = @isSignIn"
+		params = append(params, bigquery.QueryParameter{Name: "isSignIn", Value: *filter.IsSignIn})
+	}
+	if filter.Query != "" {
+		querySQL += " AND (LOWER(JSON_VALUE(data, '$.unitNumber')) LIKE @query OR LOWER(JSON_VALUE(data, '$.employeeName')) LIKE @query OR LOWER(JSON_VALUE(data, '$.employeeId')) LIKE @query OR LOWER(JSON_VALUE(data, '$.routeName')) LIKE @query OR LOWER(JSON_VALUE(data, '$.routeId')) LIKE @query OR LOWER(JSON_VALUE(data, '$.licensePlate')) LIKE @query)"
+		params = append(params, bigquery.QueryParameter{Name: "query", Value: "%" + strings.ToLower(filter.Query) + "%"})
+	}
+	if startDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.signDate'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) >= @startDate"
+		params = append(params, bigquery.QueryParameter{Name: "startDate", Value: startDate})
+	}
+	if endDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.signDate'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) <= @endDate"
+		params = append(params, bigquery.QueryParameter{Name: "endDate", Value: endDate})
+	}
+
+	q := r.bqClient.Query(querySQL)
+	q.Parameters = params
+
+	it, err := q.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []*models.VehicleSignout
+	for {
+		var row struct {
+			ID   string `bigquery:"id"`
+			Data string `bigquery:"data"`
+		}
+		err := it.Next(&row)
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		var rec models.VehicleSignout
+		if err := json.Unmarshal([]byte(row.Data), &rec); err == nil {
+			if rec.ID == "" {
+				rec.ID = row.ID
+			}
+			results = append(results, &rec)
+		}
+	}
+	return results, nil
+}
+
+func (r *FirestoreDispatchRepository) ListVehicleSignouts(ctx context.Context, unitNumber, employeeID string, isSignIn *bool, startDate, endDate string) ([]*models.VehicleSignout, error) {
+	return r.ListVehicleSignoutsFiltered(ctx, VehicleSignoutFilter{
+		UnitNumber: unitNumber,
+		EmployeeID: employeeID,
+		IsSignIn:   isSignIn,
+		StartDate:  startDate,
+		EndDate:    endDate,
+		TimeRange:  "1year",
+	})
+}
+
+// ListVehicleSignoutsFiltered performs time-sliced hybrid dual-engine queries across Firestore (live data <= 1 year)
+// and BigQuery (cold archive > 1 year), merging and deduplicating vehicle signout/handover records.
+func (r *FirestoreDispatchRepository) ListVehicleSignoutsFiltered(ctx context.Context, filter VehicleSignoutFilter) ([]*models.VehicleSignout, error) {
+	now := time.Now()
+	todayStr := now.Format("2006-01-02")
+	// Cutoff for live data: 1 year (365 days)
+	cutoffDate := now.AddDate(-1, 0, 0).Format("2006-01-02")
+
+	startDate := strings.TrimSpace(filter.StartDate)
+	endDate := strings.TrimSpace(filter.EndDate)
+	if endDate == "" {
+		endDate = todayStr
+	}
+
+	switch filter.TimeRange {
+	case "all":
+		// For "all" history, prevent scanning all vehicle signouts across 10 years without criteria.
+		hasTarget := strings.TrimSpace(filter.UnitNumber) != "" ||
+			strings.TrimSpace(filter.EmployeeID) != "" ||
+			strings.TrimSpace(filter.Query) != "" ||
+			startDate != ""
+		if !hasTarget {
+			return []*models.VehicleSignout{}, nil
+		}
+		if startDate == "" {
+			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+		}
+	default:
+		// Default live data: last 1 year
+		if startDate == "" {
+			startDate = cutoffDate
+		}
+	}
+
+	var results []*models.VehicleSignout
+
+	// Case 1: Entire range is within last 1 year (Live Data Only -> Firestore)
+	if startDate >= cutoffDate {
+		var err error
+		results, err = r.listVehicleSignoutsFromFirestore(ctx, filter, startDate, endDate)
+		if err != nil {
+			return nil, err
+		}
+	} else if endDate < cutoffDate {
+		// Case 2: Entire range is older than 1 year (Old Data Only -> BigQuery)
+		if r.bqClient != nil {
+			var err error
+			results, err = r.listVehicleSignoutsFromBigQuery(ctx, filter, startDate, endDate)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		// Case 3: Range spans the 1-year boundary -> Concurrent Hybrid Dual-Engine
+		var wg sync.WaitGroup
+		var hotRes, coldRes []*models.VehicleSignout
+		var hotErr, coldErr error
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hotRes, hotErr = r.listVehicleSignoutsFromFirestore(ctx, filter, cutoffDate, endDate)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if r.bqClient != nil {
+				coldRes, coldErr = r.listVehicleSignoutsFromBigQuery(ctx, filter, startDate, cutoffDate)
+			}
+		}()
+
+		wg.Wait()
+
+		if hotErr != nil && len(hotRes) == 0 {
+			log.Printf("[VEHICLE_SIGNOUTS] Warning: live query error: %v", hotErr)
+		}
+		if coldErr != nil {
+			log.Printf("[VEHICLE_SIGNOUTS] Warning: old BigQuery query error: %v", coldErr)
+		}
+
+		seenIDs := make(map[string]bool)
+		for _, rec := range hotRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+		for _, rec := range coldRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
 	}
 
 	sort.Slice(results, func(i, j int) bool {
+		dI := results[i].SignDate
+		dJ := results[j].SignDate
+		if dI != dJ {
+			return dI > dJ
+		}
 		return results[i].CreatedAt.After(results[j].CreatedAt)
 	})
 	return results, nil
@@ -9326,24 +11043,83 @@ func (m *MemoryDispatchRepository) GetStudentIncidentByID(ctx context.Context, i
 }
 
 func (m *MemoryDispatchRepository) ListStudentIncidents(ctx context.Context, studentID int, routeNo string, driverID string, status string, needsFollowUp bool) ([]*models.StudentIncident, error) {
+	return m.ListStudentIncidentsFiltered(ctx, StudentIncidentFilter{
+		StudentID:     studentID,
+		RouteNo:       routeNo,
+		DriverID:      driverID,
+		Status:        status,
+		NeedsFollowUp: needsFollowUp,
+		TimeRange:     "6months",
+	})
+}
+
+func (m *MemoryDispatchRepository) ListStudentIncidentsFiltered(ctx context.Context, filter StudentIncidentFilter) ([]*models.StudentIncident, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	now := time.Now()
+	cutoffDate := now.AddDate(0, 0, -180).Format("2006-01-02")
+	startDate := filter.StartDate
+	endDate := filter.EndDate
+	if endDate == "" {
+		endDate = now.Format("2006-01-02")
+	}
+	if filter.TimeRange == "1year" {
+		if startDate == "" {
+			startDate = now.AddDate(-1, 0, 0).Format("2006-01-02")
+		}
+	} else if filter.TimeRange == "all" {
+		hasTarget := filter.StudentID > 0 || strings.TrimSpace(filter.StudentNo) != "" || strings.TrimSpace(filter.StudentName) != "" || strings.TrimSpace(filter.RouteNo) != "" || strings.TrimSpace(filter.DriverID) != "" || strings.TrimSpace(filter.Query) != "" || startDate != ""
+		if !hasTarget {
+			return []*models.StudentIncident{}, nil
+		}
+		if startDate == "" {
+			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+		}
+	} else {
+		if startDate == "" {
+			startDate = cutoffDate
+		}
+	}
+
 	var results []*models.StudentIncident
 	for _, rec := range m.studentIncidents {
-		if studentID > 0 && rec.StudentID != studentID {
+		if filter.StudentID > 0 && rec.StudentID != filter.StudentID {
 			continue
 		}
-		if routeNo != "" && rec.RouteNo != routeNo {
+		if filter.StudentNo != "" && rec.StudentNo != filter.StudentNo {
 			continue
 		}
-		if driverID != "" && rec.DriverID != driverID {
+		if filter.StudentName != "" && !strings.Contains(strings.ToLower(rec.StudentName), strings.ToLower(filter.StudentName)) {
 			continue
 		}
-		if status != "" && rec.Status != status {
+		if filter.Query != "" {
+			qLower := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.StudentName), qLower) ||
+				strings.Contains(strings.ToLower(rec.StudentNo), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteNo), qLower) ||
+				strings.Contains(strings.ToLower(rec.DriverName), qLower) ||
+				strings.Contains(strings.ToLower(rec.SchoolName), qLower)
+			if !matches {
+				continue
+			}
+		}
+		if filter.RouteNo != "" && rec.RouteNo != filter.RouteNo {
 			continue
 		}
-		if needsFollowUp {
+		if filter.DriverID != "" && rec.DriverID != filter.DriverID {
+			continue
+		}
+		if filter.Status != "" && rec.Status != filter.Status {
+			continue
+		}
+		if startDate != "" && rec.IncidentDate < startDate {
+			continue
+		}
+		if endDate != "" && rec.IncidentDate > endDate {
+			continue
+		}
+		if filter.NeedsFollowUp {
 			if rec.OfficeFollowUp != nil && rec.OfficeFollowUp.IsOfficeLocked {
 				continue
 			}
@@ -9353,6 +11129,12 @@ func (m *MemoryDispatchRepository) ListStudentIncidents(ctx context.Context, stu
 		}
 		results = append(results, rec)
 	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].IncidentDate != results[j].IncidentDate {
+			return results[i].IncidentDate > results[j].IncidentDate
+		}
+		return results[i].CreatedAt.After(results[j].CreatedAt)
+	})
 	return results, nil
 }
 
@@ -9472,26 +11254,94 @@ func (m *MemoryDispatchRepository) GetExpenseClaimByID(ctx context.Context, id s
 	return rec, nil
 }
 
-func (m *MemoryDispatchRepository) ListExpenseClaims(ctx context.Context, employeeID string, status string) ([]*models.ExpenseReimbursement, error) {
+func (m *MemoryDispatchRepository) ListExpenseClaimsFiltered(ctx context.Context, filter ExpenseClaimFilter) ([]*models.ExpenseReimbursement, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	now := time.Now()
+	cutoffDate := now.AddDate(0, -6, 0).Format("2006-01-02")
+	startDate := filter.StartDate
+	endDate := filter.EndDate
+	if endDate == "" {
+		endDate = now.Format("2006-01-02")
+	}
+
+	if filter.TimeRange == "all" {
+		hasTarget := strings.TrimSpace(filter.EmployeeID) != "" ||
+			strings.TrimSpace(filter.RouteNo) != "" ||
+			strings.TrimSpace(filter.Query) != "" ||
+			startDate != ""
+		if !hasTarget {
+			return []*models.ExpenseReimbursement{}, nil
+		}
+		if startDate == "" {
+			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+		}
+	} else {
+		if startDate == "" {
+			startDate = cutoffDate
+		}
+	}
+
 	var results []*models.ExpenseReimbursement
 	for _, rec := range m.expenseClaims {
-		if employeeID != "" && rec.EmployeeID != employeeID {
+		if filter.EmployeeID != "" && rec.EmployeeID != filter.EmployeeID {
 			continue
 		}
-		if status != "" && rec.Status != status {
+		if filter.Status != "" && filter.Status != "all" && filter.Status != "All" && rec.Status != filter.Status {
 			continue
+		}
+		if filter.RouteNo != "" && rec.RouteNo != filter.RouteNo {
+			continue
+		}
+		cDate := rec.ClaimDate
+		if cDate == "" && !rec.CreatedAt.IsZero() {
+			cDate = rec.CreatedAt.Format("2006-01-02")
+		}
+		if startDate != "" && cDate != "" && cDate < startDate {
+			continue
+		}
+		if endDate != "" && cDate != "" && cDate > endDate {
+			continue
+		}
+		if filter.Query != "" {
+			qLower := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.EmployeeName), qLower) ||
+				strings.Contains(strings.ToLower(rec.EmployeeID), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteNo), qLower) ||
+				strings.Contains(strings.ToLower(rec.ID), qLower) ||
+				strings.Contains(strings.ToLower(rec.ApprovalNotes), qLower)
+			if !matches {
+				continue
+			}
 		}
 		results = append(results, rec)
 	}
 
 	sort.Slice(results, func(i, j int) bool {
+		dateI := results[i].ClaimDate
+		if dateI == "" {
+			dateI = results[i].CreatedAt.Format("2006-01-02")
+		}
+		dateJ := results[j].ClaimDate
+		if dateJ == "" {
+			dateJ = results[j].CreatedAt.Format("2006-01-02")
+		}
+		if dateI != dateJ {
+			return dateI > dateJ // Descending by date
+		}
 		return results[i].CreatedAt.After(results[j].CreatedAt)
 	})
 
 	return results, nil
+}
+
+func (m *MemoryDispatchRepository) ListExpenseClaims(ctx context.Context, employeeID string, status string) ([]*models.ExpenseReimbursement, error) {
+	return m.ListExpenseClaimsFiltered(ctx, ExpenseClaimFilter{
+		EmployeeID: employeeID,
+		Status:     status,
+		TimeRange:  "6months",
+	})
 }
 
 func (m *MemoryDispatchRepository) ReviewExpenseClaim(ctx context.Context, id string, req *models.ReviewExpenseClaimPayload) (*models.ExpenseReimbursement, error) {
@@ -9600,24 +11450,94 @@ func (m *MemoryDispatchRepository) GetHazardReportByID(ctx context.Context, id s
 }
 
 func (m *MemoryDispatchRepository) ListHazardReports(ctx context.Context, reportedByEmployeeID string, statusInt *int, officeHazardType string) ([]*models.HazardReport, error) {
+	return m.ListHazardReportsFiltered(ctx, HazardReportFilter{
+		ReportedByEmployeeID: reportedByEmployeeID,
+		StatusInt:            statusInt,
+		OfficeHazardType:     officeHazardType,
+		TimeRange:            "1year",
+	})
+}
+
+func (m *MemoryDispatchRepository) ListHazardReportsFiltered(ctx context.Context, filter HazardReportFilter) ([]*models.HazardReport, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	now := time.Now()
+	cutoffDate := now.AddDate(-1, 0, 0).Format("2006-01-02")
+	startDate := filter.StartDate
+	endDate := filter.EndDate
+	if endDate == "" {
+		endDate = now.Format("2006-01-02")
+	}
+	if filter.TimeRange == "all" {
+		hasTarget := strings.TrimSpace(filter.UnitNumber) != "" ||
+			strings.TrimSpace(filter.RouteID) != "" ||
+			strings.TrimSpace(filter.ReportedByEmployeeID) != "" ||
+			strings.TrimSpace(filter.Query) != "" ||
+			startDate != ""
+		if !hasTarget {
+			return []*models.HazardReport{}, nil
+		}
+		if startDate == "" {
+			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+		}
+	} else {
+		if startDate == "" {
+			startDate = cutoffDate
+		}
+	}
+
 	var results []*models.HazardReport
 	for _, rec := range m.hazardReports {
-		if reportedByEmployeeID != "" && rec.ReportedByEmployeeID != reportedByEmployeeID {
+		if filter.ReportedByEmployeeID != "" && rec.ReportedByEmployeeID != filter.ReportedByEmployeeID {
 			continue
 		}
-		if statusInt != nil && rec.StatusInt != *statusInt {
+		if filter.UnitNumber != "" && rec.UnitNumber != filter.UnitNumber {
 			continue
 		}
-		if officeHazardType != "" && officeHazardType != "all" && officeHazardType != "All" && rec.OfficeHazardType != officeHazardType {
+		if filter.RouteID != "" && rec.RouteID != filter.RouteID {
 			continue
 		}
+		if filter.StatusInt != nil && rec.StatusInt != *filter.StatusInt {
+			continue
+		}
+		if filter.OfficeHazardType != "" && filter.OfficeHazardType != "all" && filter.OfficeHazardType != "All" && rec.OfficeHazardType != filter.OfficeHazardType {
+			continue
+		}
+
+		reportDate := ""
+		if len(rec.EventTime) >= 10 {
+			reportDate = rec.EventTime[:10]
+		} else if !rec.CreatedAt.IsZero() {
+			reportDate = rec.CreatedAt.Format("2006-01-02")
+		}
+		if startDate != "" && reportDate != "" && reportDate < startDate {
+			continue
+		}
+		if endDate != "" && reportDate != "" && reportDate > endDate {
+			continue
+		}
+
+		if filter.Query != "" {
+			qLower := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.EventLocation), qLower) ||
+				strings.Contains(strings.ToLower(rec.EventDescription), qLower) ||
+				strings.Contains(strings.ToLower(rec.ReportedBy), qLower) ||
+				strings.Contains(strings.ToLower(rec.UnitNumber), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteID), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteName), qLower)
+			if !matches {
+				continue
+			}
+		}
+
 		results = append(results, rec)
 	}
 
 	sort.Slice(results, func(i, j int) bool {
+		if results[i].EventTime != results[j].EventTime {
+			return results[i].EventTime > results[j].EventTime
+		}
 		return results[i].CreatedAt.After(results[j].CreatedAt)
 	})
 	return results, nil
@@ -9743,22 +11663,55 @@ func (m *MemoryDispatchRepository) GetRouteAssessmentByID(ctx context.Context, i
 }
 
 func (m *MemoryDispatchRepository) ListRouteAssessments(ctx context.Context, routeID string, employeeID string, statusInt *int, assessmentType string) ([]*models.RouteAssessment, error) {
+	return m.ListRouteAssessmentsFiltered(ctx, RouteAssessmentFilter{
+		RouteID:               routeID,
+		ConductedByEmployeeID: employeeID,
+		StatusInt:             statusInt,
+		AssessmentType:        assessmentType,
+		TimeRange:             "1year",
+	})
+}
+
+func (m *MemoryDispatchRepository) ListRouteAssessmentsFiltered(ctx context.Context, filter RouteAssessmentFilter) ([]*models.RouteAssessment, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	var results []*models.RouteAssessment
 	for _, rec := range m.routeAssessments {
-		if routeID != "" && rec.RouteID != routeID {
+		if filter.RouteID != "" && rec.RouteID != filter.RouteID {
 			continue
 		}
-		if employeeID != "" && rec.ConductedByEmployeeID != employeeID {
+		if filter.ConductedByEmployeeID != "" && rec.ConductedByEmployeeID != filter.ConductedByEmployeeID {
 			continue
 		}
-		if statusInt != nil && rec.StatusInt != *statusInt {
+		if filter.StatusInt != nil && rec.StatusInt != *filter.StatusInt {
 			continue
 		}
-		if assessmentType != "" && assessmentType != "all" && rec.AssessmentType != assessmentType {
+		if filter.AssessmentType != "" && filter.AssessmentType != "all" && rec.AssessmentType != filter.AssessmentType {
 			continue
+		}
+		reportDate := ""
+		if rec.AssessmentDate != nil {
+			reportDate = rec.AssessmentDate.Format("2006-01-02")
+		} else if !rec.CreatedAt.IsZero() {
+			reportDate = rec.CreatedAt.Format("2006-01-02")
+		}
+		if filter.StartDate != "" && reportDate != "" && reportDate < filter.StartDate {
+			continue
+		}
+		if filter.EndDate != "" && reportDate != "" && reportDate > filter.EndDate {
+			continue
+		}
+		if filter.Query != "" {
+			qLower := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.RouteID), qLower) ||
+				strings.Contains(strings.ToLower(rec.School), qLower) ||
+				strings.Contains(strings.ToLower(rec.SchoolBoard), qLower) ||
+				strings.Contains(strings.ToLower(rec.ConductedByDriver), qLower) ||
+				strings.Contains(strings.ToLower(rec.Summary), qLower)
+			if !matches {
+				continue
+			}
 		}
 		results = append(results, rec)
 	}
@@ -10131,25 +12084,54 @@ func (m *MemoryDispatchRepository) GetVehicleSignoutByID(ctx context.Context, id
 }
 
 func (m *MemoryDispatchRepository) ListVehicleSignouts(ctx context.Context, unitNumber, employeeID string, isSignIn *bool, startDate, endDate string) ([]*models.VehicleSignout, error) {
+	return m.ListVehicleSignoutsFiltered(ctx, VehicleSignoutFilter{
+		UnitNumber: unitNumber,
+		EmployeeID: employeeID,
+		IsSignIn:   isSignIn,
+		StartDate:  startDate,
+		EndDate:    endDate,
+		TimeRange:  "1year",
+	})
+}
+
+func (m *MemoryDispatchRepository) ListVehicleSignoutsFiltered(ctx context.Context, filter VehicleSignoutFilter) ([]*models.VehicleSignout, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	var list []*models.VehicleSignout
 	for _, rec := range m.vehicleSignouts {
-		if unitNumber != "" && !strings.EqualFold(rec.UnitNumber, unitNumber) {
+		if filter.UnitNumber != "" && !strings.EqualFold(rec.UnitNumber, filter.UnitNumber) {
 			continue
 		}
-		if employeeID != "" && rec.EmployeeID != employeeID {
+		if filter.EmployeeID != "" && rec.EmployeeID != filter.EmployeeID {
 			continue
 		}
-		if isSignIn != nil && rec.IsSignIn != *isSignIn {
+		if filter.IsSignIn != nil && rec.IsSignIn != *filter.IsSignIn {
 			continue
 		}
-		if startDate != "" && rec.SignDate < startDate {
+		signDate := rec.SignDate
+		if signDate == "" && !rec.CreatedAt.IsZero() {
+			signDate = rec.CreatedAt.Format("2006-01-02")
+		} else if len(signDate) > 10 {
+			signDate = signDate[:10]
+		}
+		if filter.StartDate != "" && signDate != "" && signDate < filter.StartDate {
 			continue
 		}
-		if endDate != "" && rec.SignDate > endDate {
+		if filter.EndDate != "" && signDate != "" && signDate > filter.EndDate {
 			continue
+		}
+		if filter.Query != "" {
+			qLower := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.UnitNumber), qLower) ||
+				strings.Contains(strings.ToLower(rec.EmployeeName), qLower) ||
+				strings.Contains(strings.ToLower(rec.EmployeeID), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteID), qLower) ||
+				strings.Contains(strings.ToLower(rec.RouteName), qLower) ||
+				strings.Contains(strings.ToLower(rec.LicensePlate), qLower)
+			if !matches {
+				continue
+			}
 		}
 		list = append(list, rec)
 	}

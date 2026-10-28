@@ -53,6 +53,7 @@ export type NavTab =
   | 'dispatch_log'
   | 'assignment_history'
   | 'vehicles'
+  | 'pretrip_checks'
   | 'vehicle_inspections'
   | 'defects'
   | 'vehicle_signouts'
@@ -222,6 +223,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'vehicles',
           label: t.nav.vehicles,
           icon: Truck,
+          badge: null
+        },
+        {
+          id: 'pretrip_checks',
+          label: isFrench ? 'Contrôles avant départ (Pre-Trip)' : 'Pre-Trip Inspections',
+          icon: ClipboardCheck,
           badge: null
         },
         {
