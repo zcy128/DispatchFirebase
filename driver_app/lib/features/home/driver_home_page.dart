@@ -42,6 +42,7 @@ import '../charter/models/charter_model.dart';
 import '../charter/repository/charter_repository.dart';
 import '../charter/presentation/charter_trip_card.dart';
 import '../charter/presentation/available_charters_sheet.dart';
+import '../timesheet/presentation/timesheet_page.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../core/services/device_token_service.dart';
 
@@ -95,7 +96,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
     setState(() {
       _currentIndex = index;
     });
-    if (index == 4) {
+    if (index == 5) {
       ChatNotificationService().clearAllUnread();
     }
   }
@@ -182,14 +183,15 @@ class _DriverHomePageBody extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      // When on Dispatch tab (index 1) or Chat tab (index 4), page has its own specialized AppBar
-      appBar: (currentIndex == 1 || currentIndex == 4) ? null : _buildAppBar(context, isDark),
+      // When on Dispatch tab (index 1) or Chat tab (index 5), page has its own specialized AppBar
+      appBar: (currentIndex == 1 || currentIndex == 5) ? null : _buildAppBar(context, isDark),
       body: IndexedStack(
         index: currentIndex,
         children: [
           _buildDashboardTab(context, isDark),
           DispatchPage(driverId: driverId),
           RouteTab(driverId: driverId),
+          TimesheetPage(driverId: driverId, driverName: username, role: role),
           FormsTab(driverId: driverId, driverName: username, role: role),
           ChatChannelsPage(
             driverId: driverId,
@@ -231,6 +233,11 @@ class _DriverHomePageBody extends StatelessWidget {
               icon: Icon(Icons.alt_route_outlined),
               activeIcon: Icon(Icons.alt_route_rounded),
               label: 'My Route',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.receipt_long_outlined),
+              activeIcon: Icon(Icons.receipt_long_rounded),
+              label: 'Timesheet',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.assignment_outlined),
@@ -305,6 +312,36 @@ class _DriverHomePageBody extends StatelessWidget {
     }
 
     if (currentIndex == 3) {
+      return AppBar(
+        elevation: 0,
+        backgroundColor: isDark ? AppColors.darkCard : Colors.white,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Bi-Weekly Timesheet',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              'Synchronized Payroll Wages, Hours & Daily Shifts',
+              style: TextStyle(
+                fontSize: 11,
+                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Sign Out',
+            icon: const Icon(Icons.logout_rounded, color: AppColors.error),
+            onPressed: () => _signOut(context),
+          ),
+        ],
+      );
+    }
+
+    if (currentIndex == 4) {
       return AppBar(
         elevation: 0,
         backgroundColor: isDark ? AppColors.darkCard : Colors.white,
@@ -538,6 +575,16 @@ class _DriverHomePageBody extends StatelessWidget {
           _buildShortcutTile(
             context: context,
             isDark: isDark,
+            icon: Icons.receipt_long_rounded,
+            iconColor: AppColors.primary,
+            title: 'Bi-Weekly Timesheet & Payroll',
+            subtitle: 'View 2-week wages, EI hours & daily dispatch shift breakdown',
+            onTap: () => onTabSelected(3),
+          ),
+          const SizedBox(height: 12),
+          _buildShortcutTile(
+            context: context,
+            isDark: isDark,
             icon: Icons.alt_route_rounded,
             iconColor: AppColors.primary,
             title: 'Assigned Route & Stops',
@@ -562,7 +609,7 @@ class _DriverHomePageBody extends StatelessWidget {
             iconColor: Colors.amber,
             title: 'Fleet & Dispatch Chat',
             subtitle: 'Real-time communication with Dispatch, Payroll & Yard Crew',
-            onTap: () => onTabSelected(4),
+            onTap: () => onTabSelected(5),
           ),
           const SizedBox(height: 12),
           _buildShortcutTile(
@@ -777,7 +824,7 @@ class _DriverHomePageBody extends StatelessWidget {
                 );
               } else {
                 return InkWell(
-                  onTap: () => onTabSelected(3),
+                  onTap: () => onTabSelected(4),
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
                     padding: const EdgeInsets.all(12),
