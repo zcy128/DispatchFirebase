@@ -19,6 +19,8 @@ import {
   Coffee,
   Package,
   Download,
+  FileText,
+  Clock,
 } from 'lucide-react';
 import { DispatchService } from '../services/dispatchService';
 import { SchoolService } from '../services/schoolService';
@@ -32,6 +34,11 @@ import { BusRoute } from '../types/route';
 import { ExpenseReimbursement } from '../types/expenseReimbursement';
 import { addDaysToDateString } from '../utils/dateUtils';
 import { exportBiweeklyPayrollToExcel } from '../utils/payrollExcelExporter';
+import { exportDriverTimesheetToPDF } from '../utils/timesheetPdfExporter';
+import {
+  exportPayrollForQuickBooks,
+  QuickBooksExportFormat,
+} from '../utils/quickbooksPayrollExporter';
 
 // Represents one grouped route & rate line for an employee
 export interface BiweeklyRouteRateRow {
@@ -94,6 +101,9 @@ export interface BiweeklyEmployeeGroup {
   // Approved Expenses
   expenses: EmployeeExpenseSummary;
   totalPayout: number; // grandTotalPay + expenses.totalAmount
+
+  // Individual daily shift records for the 2-week period
+  dailyRecords: PayrollDepartmentLogRecord[];
 }
 
 // Statutory Holiday Definition for Ontario/Canada
@@ -643,6 +653,14 @@ export const BiweeklyPayrollView: React.FC = () => {
   const [isHolidayModalOpen, setIsHolidayModalOpen] = useState<boolean>(false);
   const [holidaysInPeriod, setHolidaysInPeriod] = useState<StatHolidayInfo[]>([]);
 
+  // Driver Timesheet Details modal state
+  const [detailEmployeeId, setDetailEmployeeId] = useState<string | null>(null);
+  const [detailWeekFilter, setDetailWeekFilter] = useState<'all' | 'week1' | 'week2'>('all');
+
+  // QuickBooks & Canadian Payroll Export modal state ('all' = all filtered employees, or single BiweeklyEmployeeGroup)
+  const [qbExportTarget, setQbExportTarget] = useState<BiweeklyEmployeeGroup[] | null>(null);
+  const [qbExportSingleSuffix, setQbExportSingleSuffix] = useState<string>('');
+
   // 1. Load initial lookups (School Boards, Employees, Routes)
   useEffect(() => {
     SchoolService.listBoards()
@@ -1153,6 +1171,23 @@ export const BiweeklyPayrollView: React.FC = () => {
       const grandPay = Number((totalW1Pay + totalW2Pay).toFixed(2));
       const totalPayout = Number((grandPay + expenses.totalAmount).toFixed(2));
 
+      const shiftOrder: Record<string, number> = {
+        AM: 1,
+        MIDDAY: 2,
+        PM: 3,
+        EXTRA: 4,
+        CHARTER: 5,
+      };
+      const sortedDailyRecords = [...empObj.records].sort((a, b) => {
+        if (a.dispatchDate !== b.dispatchDate) {
+          return (a.dispatchDate || '').localeCompare(b.dispatchDate || '');
+        }
+        const orderA = shiftOrder[(a.shiftType || '').toUpperCase()] || 99;
+        const orderB = shiftOrder[(b.shiftType || '').toUpperCase()] || 99;
+        if (orderA !== orderB) return orderA - orderB;
+        return (a.routeNo || '').localeCompare(b.routeNo || '');
+      });
+
       result.push({
         employeeId: empObj.employeeId,
         employeeName: empObj.employeeName,
@@ -1171,6 +1206,7 @@ export const BiweeklyPayrollView: React.FC = () => {
         totalHolidayPay: Number(totalHolPay.toFixed(2)),
         expenses,
         totalPayout,
+        dailyRecords: sortedDailyRecords,
       });
     });
 
@@ -1485,6 +1521,167 @@ export const BiweeklyPayrollView: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  // Selected employee group for the Driver Timesheet Details modal
+  const selectedDetailGroup = useMemo(() => {
+    if (!detailEmployeeId) return null;
+    return groupedData.find((g) => g.employeeId === detailEmployeeId) || null;
+  }, [groupedData, detailEmployeeId]);
+
+  const formatWeekdayShort = (dateStr: string): string => {
+    try {
+      const d = new Date(`${dateStr}T00:00:00`);
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const handleExportDriverTimesheetCSV = (empGroup: BiweeklyEmployeeGroup) => {
+    const csvRows: string[] = [];
+    csvRows.push(`"Driver Bi-Weekly Timesheet: ${empGroup.employeeName} (${empGroup.employeeId})"`);
+    csvRows.push(`"Pay Period: ${startDate} to ${endDate}"`);
+    csvRows.push(
+      [
+        '"Date"',
+        '"Day"',
+        '"Week"',
+        '"Route"',
+        '"Shift Type"',
+        '"Check-In"',
+        '"Check-Out"',
+        '"Pay Option"',
+        '"Rate Source"',
+        '"Hours (EI)"',
+        '"Payroll Amount"',
+        '"Status"',
+      ].join(',')
+    );
+
+    empGroup.dailyRecords.forEach((rec) => {
+      const d = rec.dispatchDate || '';
+      const isWeek1 = d >= startDate && d <= week1EndDate;
+      const payAmt = Number(rec.payAmount || rec.originalPayRate || 0);
+      const hrs = Number(rec.eiHours || rec.originalEiHours || 0);
+      const isHol = rec.rateSource === 'holiday_route_assignment' || rec.id.startsWith('HOLIDAY-');
+
+      csvRows.push(
+        [
+          `"${d}"`,
+          `"${formatWeekdayShort(d)}"`,
+          `"${isWeek1 ? 'Week 1' : 'Week 2'}"`,
+          `"${rec.routeNo || ''}"`,
+          `"${rec.shiftType || ''}"`,
+          `"${rec.checkInTime || '-'}"`,
+          `"${rec.checkOutTime || '-'}"`,
+          `"${rec.payOption || 'STANDARD'}"`,
+          `"${isHol ? rec.rateDescription || 'Holiday Entitlement' : rec.rateSource || 'board_base_rate'}"`,
+          hrs.toFixed(2),
+          `"$${payAmt.toFixed(2)}"`,
+          `"${isHol ? 'Holiday Credit' : rec.status || 'approved'}"`,
+        ].join(',')
+      );
+    });
+
+    csvRows.push(
+      [
+        '"WEEK 1 SUBTOTAL"',
+        `"$${empGroup.totalWeek1Pay.toFixed(2)}"`,
+        '"Week 1"',
+        `"$${empGroup.totalWeek1Runs} Shifts"`,
+        '""',
+        '""',
+        '""',
+        '""',
+        '""',
+        empGroup.totalWeek1Hours.toFixed(2),
+        `"$${empGroup.totalWeek1Pay.toFixed(2)}"`,
+        '""',
+      ].join(',')
+    );
+
+    csvRows.push(
+      [
+        '"WEEK 2 SUBTOTAL"',
+        `"$${empGroup.totalWeek2Pay.toFixed(2)}"`,
+        '"Week 2"',
+        `"$${empGroup.totalWeek2Runs} Shifts"`,
+        '""',
+        '""',
+        '""',
+        '""',
+        '""',
+        empGroup.totalWeek2Hours.toFixed(2),
+        `"$${empGroup.totalWeek2Pay.toFixed(2)}"`,
+        '""',
+      ].join(',')
+    );
+
+    csvRows.push(
+      [
+        '"2-WEEK TOTAL WAGES"',
+        '""',
+        '""',
+        `"${empGroup.grandTotalRuns} Shifts"`,
+        '""',
+        '""',
+        '""',
+        '""',
+        '""',
+        empGroup.grandTotalHours.toFixed(2),
+        `"$${empGroup.grandTotalPay.toFixed(2)}"`,
+        '""',
+      ].join(',')
+    );
+
+    if (empGroup.expenses.totalAmount > 0) {
+      csvRows.push(
+        [
+          '"APPROVED EXPENSES"',
+          '""',
+          '""',
+          `"${empGroup.expenses.claimsCount} Claims"`,
+          '""',
+          '""',
+          '""',
+          '""',
+          '""',
+          '""',
+          `"$${empGroup.expenses.totalAmount.toFixed(2)}"`,
+          '""',
+        ].join(',')
+      );
+    }
+
+    csvRows.push(
+      [
+        '"NET TOTAL PAYOUT"',
+        '""',
+        '""',
+        '""',
+        '""',
+        '""',
+        '""',
+        '""',
+        '""',
+        empGroup.grandTotalHours.toFixed(2),
+        `"$${empGroup.totalPayout.toFixed(2)}"`,
+        '""',
+      ].join(',')
+    );
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute(
+      'download',
+      `Timesheet_${empGroup.employeeId}_${startDate}_to_${endDate}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-4 max-w-[1920px] mx-auto p-2 sm:p-4 text-slate-800 dark:text-slate-100 font-sans">
       {/* Top Filter & Action Bar */}
@@ -1595,6 +1792,21 @@ export const BiweeklyPayrollView: React.FC = () => {
             >
               <Download className="w-3.5 h-3.5 text-slate-500" />
               <span>CSV</span>
+            </button>
+
+            {/* QuickBooks & Canadian Payroll Export Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setQbExportSingleSuffix('');
+                setQbExportTarget(groupedData);
+              }}
+              disabled={groupedData.length === 0}
+              className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+              title="Export payroll for QuickBooks Online, QuickBooks Desktop (.IIF), Wagepoint, ADP, or Ceridian"
+            >
+              <Download className="w-4 h-4" />
+              <span>QuickBooks Export</span>
             </button>
 
             {/* Holidays Button */}
@@ -1812,6 +2024,20 @@ export const BiweeklyPayrollView: React.FC = () => {
                             <span className="font-mono font-bold text-slate-900 dark:text-white px-2 py-0.5 rounded bg-slate-200/60 dark:bg-slate-700/60">
                               Payout: ${empGroup.totalPayout.toFixed(2)}
                             </span>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDetailWeekFilter('all');
+                                setDetailEmployeeId(empGroup.employeeId);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
+                              title={`View bi-weekly timesheet & daily shift details for ${empGroup.employeeName}`}
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Details</span>
+                            </button>
                           </div>
                         </div>
                       </td>
@@ -1942,8 +2168,19 @@ export const BiweeklyPayrollView: React.FC = () => {
                     {/* Employee Subtotal / Footer Row */}
                     {isExpanded && (
                       <tr className="bg-slate-50/50 dark:bg-slate-800/30 font-semibold text-slate-800 dark:text-slate-200 border-b border-slate-200/80 dark:border-slate-800">
-                        <td className="py-2.5 px-4"></td>
-                        <td className="py-2.5 px-3"></td>
+                        <td className="py-2.5 px-4 pl-8" colSpan={2}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDetailWeekFilter('all');
+                              setDetailEmployeeId(empGroup.employeeId);
+                            }}
+                            className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>View Daily Timesheet ({empGroup.dailyRecords.length} shifts)</span>
+                          </button>
+                        </td>
                         <td className="py-2.5 px-3 text-center"></td>
                         {/* Week 1 Pay Subtotal */}
                         <td className="py-2.5 px-3 text-right font-mono text-xs">
@@ -2179,6 +2416,527 @@ export const BiweeklyPayrollView: React.FC = () => {
                 className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-sm transition-colors"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Driver Bi-Weekly Timesheet Details Modal */}
+      {selectedDetailGroup && (() => {
+        const w1Records = selectedDetailGroup.dailyRecords.filter(
+          (r) => r.dispatchDate >= startDate && r.dispatchDate <= week1EndDate
+        );
+        const w2Records = selectedDetailGroup.dailyRecords.filter(
+          (r) => !(r.dispatchDate >= startDate && r.dispatchDate <= week1EndDate)
+        );
+        const displayedRecords =
+          detailWeekFilter === 'week1'
+            ? w1Records
+            : detailWeekFilter === 'week2'
+            ? w2Records
+            : selectedDetailGroup.dailyRecords;
+
+        const displayedPay = displayedRecords.reduce(
+          (sum, r) => sum + Number(r.payAmount || r.originalPayRate || 0),
+          0
+        );
+        const displayedHours = displayedRecords.reduce(
+          (sum, r) => sum + Number(r.eiHours || r.originalEiHours || 0),
+          0
+        );
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/60 backdrop-blur-xs">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+              {/* Modal Header */}
+              <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 font-bold text-base">
+                    {selectedDetailGroup.employeeName.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                        {selectedDetailGroup.employeeName}
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                        ID: {selectedDetailGroup.employeeId}
+                      </span>
+                      {selectedDetailGroup.schoolBoardCode && (
+                        <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 uppercase">
+                          {selectedDetailGroup.schoolBoardCode}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-amber-500" />
+                      <span>
+                        Bi-Weekly Timesheet & Payroll Breakdown: <b>{startDate}</b> to <b>{endDate}</b>
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      exportDriverTimesheetToPDF({
+                        empGroup: selectedDetailGroup,
+                        startDate,
+                        endDate,
+                        week1EndDate,
+                        week2StartDate,
+                      })
+                    }
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Export PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQbExportSingleSuffix(selectedDetailGroup.employeeId);
+                      setQbExportTarget([selectedDetailGroup]);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
+                    title="Export this driver's payroll to QuickBooks / Wagepoint / ADP"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>QuickBooks</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportDriverTimesheetCSV(selectedDetailGroup)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export CSV</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailEmployeeId(null)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Body (Scrollable) */}
+              <div className="p-6 overflow-y-auto space-y-5 flex-1">
+                {/* 2-Week Summary KPI Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      2-Week Route Wages
+                    </div>
+                    <div className="text-xl font-extrabold font-mono text-slate-900 dark:text-white mt-1">
+                      ${selectedDetailGroup.grandTotalPay.toFixed(2)}
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {selectedDetailGroup.grandTotalRuns} total shifts
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      2-Week Total Hours
+                    </div>
+                    <div className="text-xl font-extrabold font-mono text-blue-600 dark:text-blue-400 mt-1">
+                      {selectedDetailGroup.grandTotalHours.toFixed(2)} hrs
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Insurable EI hours
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Week 1 ({startDate.slice(5)}–{week1EndDate.slice(5)})
+                    </div>
+                    <div className="text-base font-bold font-mono text-slate-900 dark:text-white mt-1">
+                      ${selectedDetailGroup.totalWeek1Pay.toFixed(2)}
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
+                      {selectedDetailGroup.totalWeek1Runs} shifts · {selectedDetailGroup.totalWeek1Hours.toFixed(2)} hrs
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Week 2 ({week2StartDate.slice(5)}–{endDate.slice(5)})
+                    </div>
+                    <div className="text-base font-bold font-mono text-slate-900 dark:text-white mt-1">
+                      ${selectedDetailGroup.totalWeek2Pay.toFixed(2)}
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
+                      {selectedDetailGroup.totalWeek2Runs} shifts · {selectedDetailGroup.totalWeek2Hours.toFixed(2)} hrs
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                      Net Total Payout
+                    </div>
+                    <div className="text-xl font-extrabold font-mono text-amber-700 dark:text-amber-300 mt-1">
+                      ${selectedDetailGroup.totalPayout.toFixed(2)}
+                    </div>
+                    <div className="text-[11px] text-amber-700/80 dark:text-amber-300/80 mt-0.5">
+                      {selectedDetailGroup.expenses.totalAmount > 0
+                        ? `Incl. +$${selectedDetailGroup.expenses.totalAmount.toFixed(2)} expenses`
+                        : 'Wages + Reimbursements'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Week Filter Tabs */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => setDetailWeekFilter('all')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                        detailWeekFilter === 'all'
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      All 2 Weeks ({selectedDetailGroup.dailyRecords.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDetailWeekFilter('week1')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                        detailWeekFilter === 'week1'
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Week 1 ({w1Records.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDetailWeekFilter('week2')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                        detailWeekFilter === 'week2'
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Week 2 ({w2Records.length})
+                    </button>
+                  </div>
+
+                  <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Showing <b>{displayedRecords.length}</b> dispatch shifts · Subtotal:{' '}
+                    <b className="font-mono text-slate-900 dark:text-white">${displayedPay.toFixed(2)}</b> (
+                    <b className="font-mono text-blue-600 dark:text-blue-400">{displayedHours.toFixed(2)} hrs</b>)
+                  </div>
+                </div>
+
+                {/* Daily Dispatch Shifts Table */}
+                <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                          <th className="py-2.5 px-3">Date / Day</th>
+                          <th className="py-2.5 px-3">Week</th>
+                          <th className="py-2.5 px-3">Route</th>
+                          <th className="py-2.5 px-3 text-center">Shift</th>
+                          <th className="py-2.5 px-3">Check-In / Out</th>
+                          <th className="py-2.5 px-3">Pay Option / Source</th>
+                          <th className="py-2.5 px-3 text-right">Hours</th>
+                          <th className="py-2.5 px-3 text-right">Payroll Amount</th>
+                          <th className="py-2.5 px-3 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800 text-xs">
+                        {displayedRecords.length > 0 ? (
+                          displayedRecords.map((rec, idx) => {
+                            const d = rec.dispatchDate || '';
+                            const isWeek1 = d >= startDate && d <= week1EndDate;
+                            const payAmt = Number(rec.payAmount || rec.originalPayRate || 0);
+                            const hrs = Number(rec.eiHours || rec.originalEiHours || 0);
+                            const isHol =
+                              rec.rateSource === 'holiday_route_assignment' ||
+                              rec.id.startsWith('HOLIDAY-');
+                            const shiftUpper = (rec.shiftType || 'AM').toUpperCase();
+
+                            let shiftBadgeClass =
+                              'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30';
+                            if (shiftUpper === 'PM') {
+                              shiftBadgeClass =
+                                'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30';
+                            } else if (shiftUpper === 'MIDDAY' || shiftUpper === 'EXTRA') {
+                              shiftBadgeClass =
+                                'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30';
+                            } else if (shiftUpper === 'CHARTER' || rec.isCharter) {
+                              shiftBadgeClass =
+                                'bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/30';
+                            }
+
+                            return (
+                              <tr
+                                key={`${rec.id}-${idx}`}
+                                className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                              >
+                                <td className="py-2.5 px-3 whitespace-nowrap">
+                                  <div className="font-mono font-semibold text-slate-900 dark:text-white">
+                                    {d}
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    {formatWeekdayShort(d)}
+                                  </div>
+                                </td>
+                                <td className="py-2.5 px-3 whitespace-nowrap">
+                                  <span
+                                    className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                      isWeek1
+                                        ? 'bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                        : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                                    }`}
+                                  >
+                                    {isWeek1 ? 'Week 1' : 'Week 2'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <div className="font-mono font-bold text-slate-900 dark:text-white">
+                                    {rec.routeNo}
+                                  </div>
+                                  {rec.routeName && (
+                                    <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[200px]">
+                                      {rec.routeName}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-bold ${shiftBadgeClass}`}
+                                  >
+                                    {shiftUpper}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                  {isHol ? (
+                                    <span className="text-amber-600 dark:text-amber-400 font-sans">
+                                      🏖️ Statutory Holiday
+                                    </span>
+                                  ) : rec.checkInTime || rec.checkOutTime ? (
+                                    `${rec.checkInTime || '--'} → ${rec.checkOutTime || '--'}`
+                                  ) : (
+                                    <span className="text-slate-400">Standard Shift</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3 text-[11px] text-slate-600 dark:text-slate-400">
+                                  <div className="font-semibold text-slate-700 dark:text-slate-300">
+                                    {rec.payOption || 'STANDARD'}
+                                  </div>
+                                  {rec.rateDescription && (
+                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[180px]">
+                                      {rec.rateDescription}
+                                    </div>
+                                  )}
+                                </td>
+                                <td
+                                  className="py-2.5 px-3 text-right font-mono font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap"
+                                  title={`${hrs.toFixed(5)} EI hrs`}
+                                >
+                                  {hrs.toFixed(2)} hrs
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                                  ${payAmt.toFixed(2)}
+                                </td>
+                                <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                  {isHol ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                      Holiday Credit
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                      {rec.status === 'pending_approval' ? 'Pending' : 'Approved'}
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={9} className="py-8 text-center text-slate-500 dark:text-slate-400">
+                              No dispatch shifts recorded for this filter.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                      {displayedRecords.length > 0 && (
+                        <tfoot>
+                          <tr className="bg-slate-100/90 dark:bg-slate-800/90 font-bold text-xs text-slate-900 dark:text-white border-t border-slate-200 dark:border-slate-700">
+                            <td colSpan={6} className="py-2.5 px-3 text-right">
+                              Subtotal ({displayedRecords.length} shifts):
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono text-blue-600 dark:text-blue-400">
+                              {displayedHours.toFixed(2)} hrs
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono">
+                              ${displayedPay.toFixed(2)}
+                            </td>
+                            <td className="py-2.5 px-3"></td>
+                          </tr>
+                        </tfoot>
+                      )}
+                    </table>
+                  </div>
+                </div>
+
+                {/* Approved Expense Reimbursements in Modal (if any) */}
+                {selectedDetailGroup.expenses.totalAmount > 0 && (
+                  <div className="p-4 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                        <Receipt className="w-4 h-4 text-emerald-600" />
+                        <span>Approved Expense Reimbursements ({selectedDetailGroup.expenses.claimsCount})</span>
+                      </div>
+                      <span className="font-mono font-bold text-sm text-emerald-700 dark:text-emerald-300">
+                        +${selectedDetailGroup.expenses.totalAmount.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.values(selectedDetailGroup.expenses.byCategory).map((cat) => {
+                        const badge = getExpenseCategoryBadge(cat.code);
+                        const IconComponent = badge.icon;
+                        return (
+                          <div
+                            key={cat.code}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium ${badge.color}`}
+                          >
+                            <IconComponent className="w-3.5 h-3.5" />
+                            <span>{cat.label}:</span>
+                            <b className="font-mono">${cat.amount.toFixed(2)}</b>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  Synchronized with Driver App Timesheet & Bi-Weekly Payroll Log
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDetailEmployeeId(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold text-xs transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* QuickBooks & Canadian Payroll Export Modal */}
+      {qbExportTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-w-xl w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Download className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  <span>Export for QuickBooks & Canadian Payroll</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Period: <b>{startDate}</b> to <b>{endDate}</b> ·{' '}
+                  <b>
+                    {qbExportTarget.length === 1
+                      ? `${qbExportTarget[0].employeeName} (${qbExportTarget[0].employeeId})`
+                      : `${qbExportTarget.length} Employees`}
+                  </b>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQbExportTarget(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              {(
+                [
+                  {
+                    format: 'qbo_time_activity_csv' as QuickBooksExportFormat,
+                    title: '1. QuickBooks Online (QBO) — TimeActivity CSV',
+                    badge: '.CSV (Daily Shifts)',
+                    desc: 'Exports daily dispatch shifts (TxnDate, Employee, Customer, ServiceItem, PayrollItem, EI Hours, Effective Hourly Rate & Amount) for QBO TimeActivity importers (SaasAnt, Transaction Pro, QuickBooks Time).',
+                  },
+                  {
+                    format: 'qbo_summary_csv' as QuickBooksExportFormat,
+                    title: '2. QuickBooks Online (QBO) — Bi-Weekly Payroll Summary CSV',
+                    badge: '.CSV (2-Week Summary)',
+                    desc: 'One consolidated row per employee with Regular Shifts/Hours/Wages, Stat Holiday Hours/Pay, Total EI Insurable Hours, Categorized Approved Expenses & Net Payout.',
+                  },
+                  {
+                    format: 'qbd_iif' as QuickBooksExportFormat,
+                    title: '3. QuickBooks Desktop Canada — Native .IIF Timesheet',
+                    badge: '.IIF (TIMEACT)',
+                    desc: 'Tab-delimited Intuit Interchange Format (TIMEACT) for direct import into QuickBooks Desktop Canada via File > Utilities > Import > IIF Files.',
+                  },
+                  {
+                    format: 'canadian_payroll_csv' as QuickBooksExportFormat,
+                    title: '4. Wagepoint / ADP / Ceridian Powerpay (Canada) — Batch CSV',
+                    badge: '.CSV (CRA / ROE Ready)',
+                    desc: 'Formatted for Canadian payroll platforms connected to QuickBooks, including CRA/ROE Insurable EI Hours, Flat Dollar Route Earnings, Stat Holiday Pay & Non-Taxable Reimbursements.',
+                  },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.format}
+                  type="button"
+                  onClick={() => {
+                    exportPayrollForQuickBooks({
+                      format: opt.format,
+                      startDate,
+                      endDate,
+                      groupedData: qbExportTarget,
+                      includeExpenses,
+                      singleEmployeeSuffix: qbExportSingleSuffix,
+                    });
+                    setQbExportTarget(null);
+                  }}
+                  className="w-full text-left p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50/40 dark:hover:bg-blue-950/20 transition-all group cursor-pointer"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                      {opt.title}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30 whitespace-nowrap">
+                      {opt.badge}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                    {opt.desc}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setQbExportTarget(null)}
+                className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs transition-colors cursor-pointer"
+              >
+                Cancel
               </button>
             </div>
           </div>

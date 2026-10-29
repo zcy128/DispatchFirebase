@@ -292,14 +292,17 @@ service cloud.firestore {
     }
 
     match /dispatch_payrolls/{id} {
-      // 调度员使用的日常审批页面；财务专员(payroll)可以查看；管理人员亦可查看
-      allow read: if canRead('dispatch_payroll', ['dispatcher', 'payroll', 'manager', 'supervisor']);
+      // 调度员使用的日常审批页面；财务专员(payroll)可以查看；管理人员亦可查看；员工本人可查看自己的班次薪资明细
+      allow read: if canRead('dispatch_payroll', ['dispatcher', 'payroll', 'manager', 'supervisor']) ||
+                     (isAuthenticated() && isMyRecord(resource.data.employeeId));
       // 审批修改仅限调度员（及系统管理员）
       allow write: if canWrite('dispatch_payroll', ['dispatcher']);
     }
 
     match /payroll_logs/{id} {
-      allow read, write: if canRead('payroll', ['payroll']);
+      allow read: if canRead('payroll', ['payroll', 'dispatcher', 'manager', 'supervisor']) ||
+                     (isAuthenticated() && isMyRecord(resource.data.employeeId));
+      allow write: if canWrite('payroll', ['payroll']);
     }
 
     match /payroll_operation_logs/{id} {
