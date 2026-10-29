@@ -614,17 +614,17 @@ export const VehicleSignoutView: React.FC = () => {
         </div>
       </div>
 
-      {/* 10-Year Safe Scan Notice Banner */}
+      {/* 5-Year Safe Scan Notice Banner */}
       {timeRange === 'all' && (
         <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-3 text-xs text-amber-300">
           <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <div className="font-semibold text-amber-200 flex items-center gap-1.5">
               <span>All History Mode (BigQuery Cold Archive)</span>
-              <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">10-Year Safe Scan</span>
+              <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium">5-Year Safe Scan</span>
             </div>
             <p className="text-amber-400/80">
-              Live vehicle handover records cover the most recent 1 year. Older data is stored in BigQuery cold archives. To avoid massive 10-year database scans, please enter a <strong>Bus Unit #</strong>, <strong>Driver Name</strong>, <strong>Employee ID</strong>, or <strong>Route #</strong> to query historical archive records.
+              Live vehicle handover records cover the most recent 1 year. Older data is stored in BigQuery cold archives. To avoid massive database scans across 5 years, please enter a <strong>Bus Unit #</strong>, <strong>Driver Name</strong>, <strong>Employee ID</strong>, or <strong>Route #</strong> to query historical archive records.
             </p>
           </div>
         </div>
@@ -673,7 +673,7 @@ export const VehicleSignoutView: React.FC = () => {
                     {timeRange === 'all' && !searchQuery.trim() && !dateFilter ? (
                       <div className="space-y-1">
                         <div className="text-sm font-semibold text-slate-300">
-                          {isFrench ? 'Rechercher dans les archives de 10 ans' : 'Enter Bus #, Driver Name, Route, or Date to Search 10-Year Archive'}
+                          {isFrench ? 'Rechercher dans les archives de 5 ans' : 'Enter Bus #, Driver Name, Route, or Date to Search 5-Year Archive'}
                         </div>
                         <div className="text-xs text-slate-500 max-w-md mx-auto">
                           {isFrench

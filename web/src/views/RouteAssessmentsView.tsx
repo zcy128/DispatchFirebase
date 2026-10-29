@@ -618,17 +618,17 @@ export const RouteAssessmentsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 10-Year Safe Scan Notice Banner */}
+      {/* 5-Year Safe Scan Notice Banner */}
       {timeRange === 'all' && (
         <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-xl flex items-start gap-3 text-xs text-emerald-800 dark:text-emerald-200">
           <Info className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <div className="font-semibold text-emerald-900 dark:text-emerald-100 flex items-center gap-1.5">
               <span>All History Mode (BigQuery Cold Archive)</span>
-              <span className="text-[10px] bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 px-1.5 py-0.5 rounded font-medium">10-Year Safe Scan</span>
+              <span className="text-[10px] bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 px-1.5 py-0.5 rounded font-medium">5-Year Safe Scan</span>
             </div>
             <p className="text-emerald-700 dark:text-emerald-300">
-              Live route assessments cover the most recent 1 year. Older data is stored in BigQuery cold archives. To avoid massive 10-year database scans, please enter a <strong>Route #</strong>, <strong>Driver</strong>, <strong>Employee ID</strong>, or <strong>School</strong> to query historical archive records.
+              Live route assessments cover the most recent 1 year. Older data is stored in BigQuery cold archives. To avoid massive database scans across 5 years, please enter a <strong>Route #</strong>, <strong>Driver</strong>, <strong>Employee ID</strong>, or <strong>School</strong> to query historical archive records.
             </p>
           </div>
         </div>
@@ -678,7 +678,7 @@ export const RouteAssessmentsView: React.FC = () => {
                     {timeRange === 'all' && !searchQuery.trim() ? (
                       <div className="space-y-1">
                         <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          {isFrench ? 'Rechercher dans les archives de 10 ans' : 'Enter Route #, Driver, or Keyword to Search 10-Year Archive'}
+                          {isFrench ? 'Rechercher dans les archives de 5 ans' : 'Enter Route #, Driver, or Keyword to Search 5-Year Archive'}
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
                           {isFrench

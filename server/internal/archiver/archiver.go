@@ -31,7 +31,7 @@ type LogTableConfig struct {
 	DateField  string
 }
 
-// HighFrequencyLogConfigs represents operational and audit logs (7-day hot retention in Firestore, weekly sync to BigQuery, 2-year BQ TTL)
+// HighFrequencyLogConfigs represents operational and audit logs (7-day hot retention in Firestore, weekly sync to BigQuery, 5-year BQ TTL)
 var HighFrequencyLogConfigs = []LogTableConfig{
 	{Collection: "dispatch_change_logs", DateField: "dispatchDate"},
 	{Collection: "route_change_logs", DateField: "timestamp"},
@@ -41,7 +41,7 @@ var HighFrequencyLogConfigs = []LogTableConfig{
 	{Collection: "pretrip_inspections", DateField: "inspectionDate"},
 }
 
-// AnnualIncidentConfigs represents incident/safety records (~2000/year, retained per school year in Firestore)
+// AnnualIncidentConfigs represents incident/safety records (~2000/year, retained in Firestore, 5-year BQ TTL)
 var AnnualIncidentConfigs = []LogTableConfig{
 	{Collection: "vehicle_defects", DateField: "defectDate"},
 	{Collection: "student_incidents", DateField: "incidentDate"},
@@ -60,20 +60,29 @@ func NewArchiver(fsClient *firestore.Client, bqClient *bigquery.Client, projectI
 	}
 }
 
-// EnsureTables creates dataset and required tables if they don't exist
+// EnsureTables creates dataset and required tables if they don't exist, and configures 5-year partition expiration
 func (a *Archiver) EnsureTables(ctx context.Context) error {
 	if a.bqClient == nil {
 		return fmt.Errorf("bigquery client is nil")
 	}
 
+	fiveYears := 1825 * 24 * time.Hour // 5 years = 1825 days
+
 	ds := a.bqClient.Dataset(a.datasetID)
-	if _, err := ds.Metadata(ctx); err != nil {
+	dsMeta, err := ds.Metadata(ctx)
+	if err != nil {
 		log.Printf("[ARCHIVER] Creating BigQuery dataset: %s", a.datasetID)
 		if createErr := ds.Create(ctx, &bigquery.DatasetMetadata{
-			Location: "US",
+			Location:                   "US",
+			DefaultPartitionExpiration: fiveYears,
 		}); createErr != nil {
 			return fmt.Errorf("failed to create dataset %s: %w", a.datasetID, createErr)
 		}
+	} else if dsMeta.DefaultPartitionExpiration != fiveYears {
+		log.Printf("[ARCHIVER] Updating BigQuery dataset %s default partition expiration to 5 years", a.datasetID)
+		_, _ = ds.Update(ctx, bigquery.DatasetMetadataToUpdate{
+			DefaultPartitionExpiration: fiveYears,
+		}, dsMeta.ETag)
 	}
 
 	schema := bigquery.Schema{
@@ -95,36 +104,45 @@ func (a *Archiver) EnsureTables(ctx context.Context) error {
 		"assignment_history",
 		"student_absences",
 	}
-	for _, tblName := range bizTables {
-		tbl := ds.Table(tblName)
-		if _, err := tbl.Metadata(ctx); err != nil {
-			log.Printf("[ARCHIVER] Creating BigQuery business table: %s.%s", a.datasetID, tblName)
-			err := tbl.Create(ctx, &bigquery.TableMetadata{
-				Schema: schema,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to create table %s: %w", tblName, err)
-			}
-		}
+
+	// 2. High-Frequency Log tables and Annual Incident tables
+	allLogs := append(append([]LogTableConfig{}, HighFrequencyLogConfigs...), AnnualIncidentConfigs...)
+
+	// All tables are configured with 5-year DayPartitioning on updated_at
+	allTableNames := make([]string, 0, len(bizTables)+len(allLogs))
+	allTableNames = append(allTableNames, bizTables...)
+	for _, cfg := range allLogs {
+		allTableNames = append(allTableNames, cfg.Collection)
 	}
 
-	// 2. High-Frequency Log tables (2-year partition expiration) and Annual Incident tables
-	allLogs := append(append([]LogTableConfig{}, HighFrequencyLogConfigs...), AnnualIncidentConfigs...)
-	twoYears := 730 * 24 * time.Hour
-	for _, cfg := range allLogs {
-		tbl := ds.Table(cfg.Collection)
-		if _, err := tbl.Metadata(ctx); err != nil {
-			log.Printf("[ARCHIVER] Creating BigQuery log/incident table with 2-year TTL: %s.%s", a.datasetID, cfg.Collection)
+	for _, tblName := range allTableNames {
+		tbl := ds.Table(tblName)
+		meta, err := tbl.Metadata(ctx)
+		if err != nil {
+			log.Printf("[ARCHIVER] Creating BigQuery table with 5-year partition expiration: %s.%s", a.datasetID, tblName)
 			err := tbl.Create(ctx, &bigquery.TableMetadata{
 				Schema: schema,
 				TimePartitioning: &bigquery.TimePartitioning{
 					Type:       bigquery.DayPartitioningType,
 					Field:      "updated_at",
-					Expiration: twoYears, // Automatically expires partitions older than 2 years
+					Expiration: fiveYears, // Automatically expires partitions older than 5 years (1825 days)
 				},
 			})
 			if err != nil {
-				return fmt.Errorf("failed to create log/incident table %s: %w", cfg.Collection, err)
+				return fmt.Errorf("failed to create table %s: %w", tblName, err)
+			}
+		} else {
+			// If table exists and has partitioning, ensure its expiration is set to 5 years
+			if meta.TimePartitioning != nil && meta.TimePartitioning.Expiration != fiveYears {
+				log.Printf("[ARCHIVER] Updating BigQuery table %s partition expiration to 5 years (was %v)", tblName, meta.TimePartitioning.Expiration)
+				_, updateErr := tbl.Update(ctx, bigquery.TableMetadataToUpdate{
+					TimePartitioning: &bigquery.TimePartitioning{
+						Expiration: fiveYears,
+					},
+				}, meta.ETag)
+				if updateErr != nil {
+					log.Printf("[ARCHIVER] Notice: updating table %s partition expiration: %v", tblName, updateErr)
+				}
 			}
 		}
 	}

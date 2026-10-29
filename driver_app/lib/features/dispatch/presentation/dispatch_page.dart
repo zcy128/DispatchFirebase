@@ -10,13 +10,17 @@ import '../bloc/dispatch_event.dart';
 import '../bloc/dispatch_state.dart';
 import '../models/dispatch_model.dart';
 import '../repository/dispatch_repository.dart';
+import '../../chat/services/chat_notification_service.dart';
+import '../../company_contacts/presentation/company_contacts_page.dart';
 
 class DispatchPage extends StatelessWidget {
   final String driverId;
+  final VoidCallback? onOpenChat;
 
   const DispatchPage({
     super.key,
     this.driverId = 'driver1d',
+    this.onOpenChat,
   });
 
   @override
@@ -29,15 +33,16 @@ class DispatchPage extends StatelessWidget {
         bloc.startAutoSync(interval: const Duration(seconds: 4));
         return bloc;
       },
-      child: _DispatchPageView(driverId: driverId),
+      child: _DispatchPageView(driverId: driverId, onOpenChat: onOpenChat),
     );
   }
 }
 
 class _DispatchPageView extends StatelessWidget {
   final String driverId;
+  final VoidCallback? onOpenChat;
 
-  const _DispatchPageView({required this.driverId});
+  const _DispatchPageView({required this.driverId, this.onOpenChat});
 
   @override
   Widget build(BuildContext context) {
@@ -136,6 +141,35 @@ class _DispatchPageView extends StatelessWidget {
                   onPressed: () => _pickCalendarDate(context, state.selectedDate),
                 ),
               ],
+              IconButton(
+                tooltip: 'Company Contacts',
+                icon: const Icon(Icons.phone_in_talk_rounded, color: AppColors.primary),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const CompanyContactsPage(),
+                    ),
+                  );
+                },
+              ),
+              if (onOpenChat != null)
+                IconButton(
+                  tooltip: 'Operations Chat',
+                  onPressed: onOpenChat,
+                  icon: ValueListenableBuilder<int>(
+                    valueListenable: ChatNotificationService().unreadCountNotifier,
+                    builder: (context, unreadCount, child) {
+                      return Badge(
+                        isLabelVisible: unreadCount > 0,
+                        label: Text('$unreadCount'),
+                        child: const Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          color: AppColors.primary,
+                        ),
+                      );
+                    },
+                  ),
+                ),
             ],
           ),
           body: _buildBody(context, state, isDark),

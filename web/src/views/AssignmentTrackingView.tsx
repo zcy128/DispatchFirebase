@@ -517,7 +517,7 @@ export const AssignmentTrackingView: React.FC = () => {
           </div>
         </div>
 
-        {/* 10-Year Safe Scan Notice Banner */}
+        {/* 5-Year Safe Scan Notice Banner */}
         {timeRange === 'all' && (
           <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3 text-xs text-amber-300">
             <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
@@ -525,13 +525,13 @@ export const AssignmentTrackingView: React.FC = () => {
               <div className="font-semibold text-amber-200 flex items-center gap-1.5">
                 <span>{isFrench ? 'Mode Tout l\'historique (Archive froide BigQuery)' : 'All History Mode (BigQuery Cold Archive)'}</span>
                 <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium border border-amber-500/30">
-                  {isFrench ? 'Recherche sécurisée 10 ans' : '10-Year Safe Scan'}
+                  {isFrench ? 'Recherche sécurisée 5 ans' : '5-Year Safe Scan'}
                 </span>
               </div>
               <p className="text-slate-300">
                 {isFrench
-                  ? 'Les affectations en direct couvrent la dernière année. Les données plus anciennes sont archivées dans BigQuery. Pour éviter une analyse complète, veuillez saisir un nom de chauffeur, matricule, route, véhicule ou mot-clé.'
-                  : 'Live assignment lifecycle records cover the most recent 1 year. Older data is stored in BigQuery cold archives. To prevent unbounded full-table scans, please enter a driver name, employee ID, route #, vehicle unit #, or keyword.'}
+                  ? 'Les affectations en direct couvrent la dernière année. Les données plus anciennes sont archivées dans BigQuery (jusqu\'à 5 ans). Pour éviter une analyse complète, veuillez saisir un nom de chauffeur, matricule, route, véhicule ou mot-clé.'
+                  : 'Live assignment lifecycle records cover the most recent 1 year. Older data is stored in BigQuery cold archives (up to 5 years). To prevent unbounded full-table scans, please enter a driver name, employee ID, route #, vehicle unit #, or keyword.'}
               </p>
             </div>
           </div>
