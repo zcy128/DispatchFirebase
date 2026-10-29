@@ -22,18 +22,18 @@ To minimize cloud operational expenses while maintaining fast mobile and web res
 
 | Data Category | Target Collections / Tables | Hot Retention (Firestore) | Archive Frequency | Cold Retention (BigQuery) |
 | :--- | :--- | :--- | :--- | :--- |
-| **Operational & Shifts** | `dispatch_shifts`, `dispatch_payrolls`, `payroll_logs` | 60–90 days | Weekly rolling (35 days) | Permanent / Configurable |
-| **Audit & Stream Logs** | `dispatch_change_logs`, `route_change_logs`, `entity_operation_logs`, `payroll_operation_logs`, `operational_safety_logs` | 7–14 days | Weekly (every Saturday) | **2 Years** (730-day automatic partition expiration) |
-| **Pre-Trip Inspections** | `pretrip_inspections` | 14 days | Weekly archive via `sync-all` (14-day sync then cleanup) | **2 Years** (730-day automatic partition expiration) |
-| **Expense Claims & Receipts** | `expense_reimbursements` | 6 months (180 days) | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
-| **Student Absences & Leave Logs** | `student_absences` | 6 months (180 days) | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
-| **Assignment History Tracking** | `assignment_history` | 12 months (365 days) | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
-| **Employee Time-Off** | `time_off_requests` | 30 days past `endDate` | Weekly via unified sync | Permanent |
-| **Vehicle Defects & Incidents** | `vehicle_defects`, `student_incidents` | 180 days | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
-| **Hazard & Safety Concerns** | `hazard_reports` | 12 months (365 days) | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
-| **Route Safety Assessments** | `route_assessments` | 12 months (365 days) | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
-| **Vehicle Handovers / Sign-Outs** | `vehicle_signouts` | 12 months (365 days) | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
-| **Annual School-Year Review** | End-of-year audit & compliance check | Full School Year | End of school year (`sync-annual`) | Permanent |
+| **Operational & Shifts** | `dispatch_shifts`, `dispatch_payrolls`, `payroll_logs` | 60–90 days | Weekly rolling (35 days) | **5 Years** (1825-day automatic partition expiration) |
+| **Audit & Stream Logs** | `dispatch_change_logs`, `route_change_logs`, `entity_operation_logs`, `payroll_operation_logs`, `operational_safety_logs` | 7–14 days | Weekly (every Saturday) | **5 Years** (1825-day automatic partition expiration) |
+| **Pre-Trip Inspections** | `pretrip_inspections` | 14 days | Weekly archive via `sync-all` (14-day sync then cleanup) | **5 Years** (1825-day automatic partition expiration) |
+| **Expense Claims & Receipts** | `expense_reimbursements` | 6 months (180 days) | Weekly archive via `sync-all` (sync then cleanup) | **5 Years** (1825-day automatic partition expiration) |
+| **Student Absences & Leave Logs** | `student_absences` | 6 months (180 days) | Weekly archive via `sync-all` (sync then cleanup) | **5 Years** (1825-day automatic partition expiration) |
+| **Assignment History Tracking** | `assignment_history` | 12 months (365 days) | Weekly archive via `sync-all` (sync then cleanup) | **5 Years** (1825-day automatic partition expiration) |
+| **Employee Time-Off** | `time_off_requests` | 30 days past `endDate` | Weekly via unified sync | **5 Years** (1825-day automatic partition expiration) |
+| **Vehicle Defects & Incidents** | `vehicle_defects`, `student_incidents` | 180 days | Weekly archive via `sync-all` (sync then cleanup) | **5 Years** (1825-day automatic partition expiration) |
+| **Hazard & Safety Concerns** | `hazard_reports` | 12 months (365 days) | Weekly archive via `sync-all` (sync then cleanup) | **5 Years** (1825-day automatic partition expiration) |
+| **Route Safety Assessments** | `route_assessments` | 12 months (365 days) | Weekly archive via `sync-all` (sync then cleanup) | **5 Years** (1825-day automatic partition expiration) |
+| **Vehicle Handovers / Sign-Outs** | `vehicle_signouts` | 12 months (365 days) | Weekly archive via `sync-all` (sync then cleanup) | **5 Years** (1825-day automatic partition expiration) |
+| **Annual School-Year Review** | End-of-year audit & compliance check | Full School Year | End of school year (`sync-annual`) | **5 Years** (1825-day automatic partition expiration) |
 
 ---
 
@@ -70,12 +70,12 @@ To save recurring Cloud Scheduler invocation costs, all recurring archive operat
 
 In a single execution, `sync-all` runs:
 1. **Shifts & Payrolls**: 35-day rolling sync to BigQuery (`dispatch_shifts`, `dispatch_payrolls`, `payroll_logs`).
-2. **Weekly Audit Logs**: Syncs operational logs for the past 7 days to BigQuery with automatic 2-year table partition expiration.
+2. **Weekly Audit Logs**: Syncs operational logs for the past 7 days to BigQuery with automatic 5-year table partition expiration.
 3. **Time-Off Requests**: Automatically detects time-off requests where **`endDate` is older than 30 days**, syncs them to BigQuery table `time_off_requests`, and removes them from Firestore to keep the database lean.
 4. **Defects & Student Incidents (180+ Days Sync then Cleanup)**: Automatically scans `vehicle_defects` and `student_incidents` older than 180 days, syncs them to BigQuery tables, and **upon confirmed insertion safely cleans them up from Firestore** to optimize storage.
 5. **Hazard Reports (12-Month Sync then Cleanup)**: Automatically scans `hazard_reports` older than 12 months (evaluating `eventTime`, `hazardDate`, and `createdAt`), syncs them to BigQuery, and upon verified persistence safely cleans them up from Firestore.
 6. **Route Assessments & Vehicle Handovers (12-Month Sync then Cleanup)**: Automatically archives `route_assessments` and `vehicle_signouts` older than 12 months to BigQuery and safely purges them from Firestore upon successful write.
-7. **Pre-Trip Inspections (14-Day Sync then Cleanup)**: Automatically scans `pretrip_inspections` older than 14 days, syncs them to BigQuery table `pretrip_inspections` (with 2-year table partition expiration), and safely removes them from Firestore upon verified persistence.
+7. **Pre-Trip Inspections (14-Day Sync then Cleanup)**: Automatically scans `pretrip_inspections` older than 14 days, syncs them to BigQuery table `pretrip_inspections` (with 5-year table partition expiration), and safely removes them from Firestore upon verified persistence.
 8. **Expense Claims (6-Month Sync then Cleanup)**: Automatically scans `expense_reimbursements` older than 6 months (180 days based on `claimDate` and `createdAt`), syncs them to BigQuery table `expense_reimbursements`, and safely purges them from Firestore upon verified persistence.
 9. **Assignment History Tracking (1-Year Sync then Cleanup)**: Automatically archives driver-route and driver-vehicle assignment tracking records (`assignment_history`) older than 12 months (365 days based on `effectiveDate` and `timestamp`) to BigQuery, and safely cleans them up from Firestore upon verified persistence.
 10. **Student Absences & Leave Logs (6-Month Sync then Cleanup)**: Automatically archives student absence and leave records (`student_absences`) older than 6 months (180 days based on `date` and `createdAt`) to BigQuery, and safely cleans them up from Firestore upon verified persistence.
@@ -176,18 +176,18 @@ Pour minimiser les coûts d'infrastructure infonuagique tout en garantissant des
 
 | Catégorie de Données | Collections / Tables Cibles | Rétention Chaude (Firestore) | Fréquence d'Archivage | Rétention Froide (BigQuery) |
 | :--- | :--- | :--- | :--- | :--- |
-| **Services & Paie** | `dispatch_shifts`, `dispatch_payrolls`, `payroll_logs` | 60 à 90 jours | Glissement hebdomadaire (35 j) | Permanente / Configurable |
-| **Journaux d'Audit & Flux** | `dispatch_change_logs`, `route_change_logs`, `entity_operation_logs`, `payroll_operation_logs`, `operational_safety_logs` | 7 à 14 jours | Hebdomadaire (samedi) | **2 ans** (Expiration automatique par partitionnement sur 730 jours) |
-| **Inspections Pré-Départ** | `pretrip_inspections` | 14 jours | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 14j) | **2 ans** (Expiration 730 jours) |
-| **Notes de Frais & Dépenses** | `expense_reimbursements` | 6 mois (180 jours) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 6 mois) | Permanente |
-| **Absences des Élèves & Congés** | `student_absences` | 6 mois (180 jours) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 6 mois) | Permanente |
-| **Historique des Affectations** | `assignment_history` | 12 mois (365 jours) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 1 an) | Permanente |
-| **Demandes de Congé** | `time_off_requests` | 30 jours après `endDate` | Hebdomadaire via `sync-all` | Permanente |
-| **Vehicle Defects & Incidents** | `vehicle_defects`, `student_incidents` | 180 jours | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage) | Permanente |
-| **Signalements de Dangers** | `hazard_reports` | 12 mois (365 j) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage) | Permanente |
-| **Évaluations des Circuits** | `route_assessments` | 12 mois (365 j) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage) | Permanente |
-| **Remises de Véhicules** | `vehicle_signouts` | 12 mois (365 j) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage) | Permanente |
-| **Revue Annuelle Scolaire** | Audit et conformité fin d'année | Toute l'année scolaire | Fin de l'année scolaire (`sync-annual`) | Permanente |
+| **Services & Paie** | `dispatch_shifts`, `dispatch_payrolls`, `payroll_logs` | 60 à 90 jours | Glissement hebdomadaire (35 j) | **5 ans** (Expiration automatique par partitionnement sur 1825 jours) |
+| **Journaux d'Audit & Flux** | `dispatch_change_logs`, `route_change_logs`, `entity_operation_logs`, `payroll_operation_logs`, `operational_safety_logs` | 7 à 14 jours | Hebdomadaire (samedi) | **5 ans** (Expiration automatique par partitionnement sur 1825 jours) |
+| **Inspections Pré-Départ** | `pretrip_inspections` | 14 jours | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 14j) | **5 ans** (Expiration automatique sur 1825 jours) |
+| **Notes de Frais & Dépenses** | `expense_reimbursements` | 6 mois (180 jours) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 6 mois) | **5 ans** (Expiration automatique sur 1825 jours) |
+| **Absences des Élèves & Congés** | `student_absences` | 6 mois (180 jours) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 6 mois) | **5 ans** (Expiration automatique sur 1825 jours) |
+| **Historique des Affectations** | `assignment_history` | 12 mois (365 jours) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 1 an) | **5 ans** (Expiration automatique sur 1825 jours) |
+| **Demandes de Congé** | `time_off_requests` | 30 jours après `endDate` | Hebdomadaire via `sync-all` | **5 ans** (Expiration automatique sur 1825 jours) |
+| **Vehicle Defects & Incidents** | `vehicle_defects`, `student_incidents` | 180 jours | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage) | **5 ans** (Expiration automatique sur 1825 jours) |
+| **Signalements de Dangers** | `hazard_reports` | 12 mois (365 j) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage) | **5 ans** (Expiration automatique sur 1825 jours) |
+| **Évaluations des Circuits** | `route_assessments` | 12 mois (365 j) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage) | **5 ans** (Expiration automatique sur 1825 jours) |
+| **Remises de Véhicules** | `vehicle_signouts` | 12 mois (365 j) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage) | **5 ans** (Expiration automatique sur 1825 jours) |
+| **Revue Annuelle Scolaire** | Audit et conformité fin d'année | Toute l'année scolaire | Fin de l'année scolaire (`sync-annual`) | **5 ans** (Expiration automatique sur 1825 jours) |
 
 ---
 
@@ -224,12 +224,12 @@ Afin d'éviter de multiplier les tâches planifiées payantes, l'ensemble des t�
 
 En une seule exécution, `sync-all` prend en charge :
 1. **Services et Paie** : Synchronisation glissante des 35 derniers jours vers BigQuery.
-2. **Journaux d'Audit Hebdomadaires** : Transfert des 7 derniers jours vers BigQuery avec TTL automatique de 2 ans.
+2. **Journaux d'Audit Hebdomadaires** : Transfert des 7 derniers jours vers BigQuery avec TTL automatique de 5 ans.
 3. **Demandes de Congé (Time-Off)** : Détection automatique des congés dont la date de fin (**`endDate`**) est passée depuis plus de 30 jours, archivage dans la table BigQuery `time_off_requests` et suppression sécurisée dans Firestore.
 4. **Anomalies et Incidents Élèves (Archivage +180 jours)** : Détection automatique des anomalies et incidents scolaires datant de plus de 180 jours, synchronisation vers BigQuery et, **après confirmation du succès, nettoyage sécurisé dans Firestore** pour libérer de l'espace.
 5. **Signalements de Dangers / Risques (Archivage +12 mois)** : Détection automatique des rapports de danger datant de plus de 12 mois, synchronisation vers BigQuery et suppression sécurisée dans Firestore après validation de la persistance.
 6. **Évaluations d'itinéraires & Remises de véhicules (Archivage +12 mois)** : Détection et transfert des fiches `route_assessments` et `vehicle_signouts` de plus de 12 mois vers BigQuery avec purge sécurisée dans Firestore.
-7. **Inspections pré-départ (+14 jours)** : Synchronisation automatique des fiches d'inspection `pretrip_inspections` de plus de 14 jours vers BigQuery et suppression sécurisée dans Firestore.
+7. **Inspections pré-départ (+14 jours)** : Synchronisation automatique des fiches d'inspection `pretrip_inspections` de plus de 14 jours vers BigQuery (avec TTL automatique de 5 ans) et suppression sécurisée dans Firestore.
 8. **Remboursements de frais (+6 mois)** : Synchronisation automatique des fiches de frais `expense_reimbursements` datant de plus de 6 mois vers BigQuery et suppression sécurisée dans Firestore après validation de la persistance.
 9. **Historique des affectations (+12 mois)** : Synchronisation automatique des historiques d'affectation chauffeurs-circuits et chauffeurs-véhicules (`assignment_history`) de plus de 12 mois vers BigQuery et nettoyage sécurisé dans Firestore.
 10. **Absences des élèves (+6 mois)** : Synchronisation automatique des déclarations d'absence et congés des élèves (`student_absences`) de plus de 6 mois vers BigQuery et suppression sécurisée dans Firestore.
@@ -309,18 +309,18 @@ go run ./cmd/archive -archive-incidents -incidents-days=180
 
 | 数据类别 | 涉及集合 / 数据表 | Firestore 热保留期 | 归档周期 | BigQuery 冷存储保留期 |
 | :--- | :--- | :--- | :--- | :--- |
-| **日常调度与薪资** | `dispatch_shifts`, `dispatch_payrolls`, `payroll_logs` | 60～90 天 | 每周滚动覆盖 35 天 | 长期归档保留 |
-| **系统审计流水日志** | `dispatch_change_logs`, `route_change_logs`, `entity_operation_logs`, `payroll_operation_logs`, `operational_safety_logs` | 7～14 天 | 每周六执行 | **2 年**（730 天按分区时间自动过期销毁） |
-| **出车前检查** | `pretrip_inspections` | 14 天 | 每周随 `sync-all` 归档（超 14 天备份后清理） | **2 年**（730 天按分区时间自动过期销毁） |
-| **费用报销与支出凭证** | `expense_reimbursements` | 6 个月（180 天） | 每周随 `sync-all` 归档（超 6 个月备份后清理） | 长期归档保留 |
-| **学生缺勤与请假记录** | `student_absences` | 6 个月（180 天） | 每周随 `sync-all` 归档（超 6 个月备份后清理） | 长期归档保留 |
-| **司机与车辆排班分配追踪** | `assignment_history` | 12 个月（365 天） | 每周随 `sync-all` 归档（超 1 年备份后清理） | 长期归档保留 |
-| **员工请假申请** | `time_off_requests` | 超过 `endDate` 30 天 | 每周随 `sync-all` 执行 | 长期归档保留 |
-| **车辆缺陷与学生事故** | `vehicle_defects`, `student_incidents` | 180 天 | 每周随 `sync-all` 归档（备份后清理） | 长期归档保留 |
-| **道路与安全隐患报告** | `hazard_reports` | 12 个月（365 天） | 每周随 `sync-all` 归档（备份后清理） | 长期归档保留 |
-| **线路安全评估** | `route_assessments` | 12 个月（365 天） | 每周随 `sync-all` 归档（备份后清理） | 长期归档保留 |
-| **车辆交接与领还车单** | `vehicle_signouts` | 12 个月（365 天） | 每周随 `sync-all` 归档（备份后清理） | 长期归档保留 |
-| **学年末合规归档** | 全学年合规审计与清档 | 常驻整个学年 | 学年结束归档 (`sync-annual`) | 长期归档保留 |
+| **日常调度与薪资** | `dispatch_shifts`, `dispatch_payrolls`, `payroll_logs` | 60～90 天 | 每周滚动覆盖 35 天 | **5 年**（1825 天按分区时间自动过期销毁） |
+| **系统审计流水日志** | `dispatch_change_logs`, `route_change_logs`, `entity_operation_logs`, `payroll_operation_logs`, `operational_safety_logs` | 7～14 天 | 每周六执行 | **5 年**（1825 天按分区时间自动过期销毁） |
+| **出车前检查** | `pretrip_inspections` | 14 天 | 每周随 `sync-all` 归档（超 14 天备份后清理） | **5 年**（1825 天按分区时间自动过期销毁） |
+| **费用报销与支出凭证** | `expense_reimbursements` | 6 个月（180 天） | 每周随 `sync-all` 归档（超 6 个月备份后清理） | **5 年**（1825 天按分区时间自动过期销毁） |
+| **学生缺勤与请假记录** | `student_absences` | 6 个月（180 天） | 每周随 `sync-all` 归档（超 6 个月备份后清理） | **5 年**（1825 天按分区时间自动过期销毁） |
+| **司机与车辆排班分配追踪** | `assignment_history` | 12 个月（365 天） | 每周随 `sync-all` 归档（超 1 年备份后清理） | **5 年**（1825 天按分区时间自动过期销毁） |
+| **员工请假申请** | `time_off_requests` | 超过 `endDate` 30 天 | 每周随 `sync-all` 执行 | **5 年**（1825 天按分区时间自动过期销毁） |
+| **车辆缺陷与学生事故** | `vehicle_defects`, `student_incidents` | 180 天 | 每周随 `sync-all` 归档（备份后清理） | **5 年**（1825 天按分区时间自动过期销毁） |
+| **道路与安全隐患报告** | `hazard_reports` | 12 个月（365 天） | 每周随 `sync-all` 归档（备份后清理） | **5 年**（1825 天按分区时间自动过期销毁） |
+| **线路安全评估** | `route_assessments` | 12 个月（365 天） | 每周随 `sync-all` 归档（备份后清理） | **5 年**（1825 天按分区时间自动过期销毁） |
+| **车辆交接与领还车单** | `vehicle_signouts` | 12 个月（365 天） | 每周随 `sync-all` 归档（备份后清理） | **5 年**（1825 天按分区时间自动过期销毁） |
+| **学年末合规归档** | 全学年合规审计与清档 | 常驻整个学年 | 学年结束归档 (`sync-annual`) | **5 年**（1825 天按分区时间自动过期销毁） |
 
 ---
 
@@ -357,12 +357,12 @@ gcloud firestore fields ttls update expireAt \
 
 调用一次 `sync-all`，系统将在后台自动按序完成：
 1. **调度与薪资滚动同步**：滚动归档过去 35 天的 `dispatch_shifts`、`dispatch_payrolls` 和 `payroll_logs` 到 BigQuery。
-2. **高频流水日志周同步**：同步过去 7 天的 5 大系统审计日志到 BigQuery（自动开启 2 年分区 TTL）。
+2. **高频流水日志周同步**：同步过去 7 天的 5 大系统审计日志到 BigQuery（自动开启 5 年分区 TTL）。
 3. **请假记录归档与清理**：自动筛选结束日期（`endDate`）**超过 30 天**的请假单，同步到 BigQuery `time_off_requests` 表，并自动从 Firestore 中删除释放容量。
 4. **超 180 天单据归档与清理（车辆缺陷与学生事故）**：自动筛选报告时间/事故发生时间超过 180 天的 `vehicle_defects` 和 `student_incidents` 同步到 BigQuery，并在**确认入库成功后**安全从 Firestore 中批量清理释放容量（严格遵循先入库后清理原则，绝不丢失数据）。
 5. **超 12 个月安全隐患归档与清理（hazard_reports）**：自动筛选发生时间/报告时间超过 12 个月的道路隐患单（`hazard_reports`），同步到 BigQuery 数据表并在确认成功后从 Firestore 批量清除。
 6. **超 12 个月路线评估与车辆交接归档与清理（route_assessments / vehicle_signouts）**：自动筛选创建/发生时间超过 12 个月的路线评估单与车队领还车交接单，同步到 BigQuery 并在确认写入无误后安全从 Firestore 中批量清理，释放热库容量。
-7. **超 14 天出车前检查归档与清理（pretrip_inspections）**：自动筛选检查日期/创建时间超过 14 天的车辆出车检查记录，同步至 BigQuery 数据表（带 2 年分区 TTL），并在确认写入成功后安全从 Firestore 中批量清理释放空间。
+7. **超 14 天出车前检查归档与清理（pretrip_inspections）**：自动筛选检查日期/创建时间超过 14 天的车辆出车检查记录，同步至 BigQuery 数据表（带 5 年分区 TTL），并在确认写入成功后安全从 Firestore 中批量清理释放空间。
 8. **超 6 个月费用报销单归档与清理（expense_reimbursements）**：自动筛选发生日期/创建时间超过 6 个月（180 天）的司机报销申请与支出凭据，同步至 BigQuery 数据表，并在确认写入成功后安全从 Firestore 中批量清理释放空间。
 9. **超 1 年司机与车辆分配追踪归档与清理（assignment_history）**：自动筛选变更时间/生效时间（`timestamp` / `effectiveDate`）超过 1 年（12 个月）的司机-线路与司机-车辆分配记录，同步至 BigQuery 数据表，并在确认写入成功后安全从 Firestore 中批量清理释放热库空间。
 10. **超 6 个月学生缺勤与请假单归档与清理（student_absences）**：自动筛选请假/缺勤日期（`date` / `createdAt`）超过 6 个月（180 天）的学生缺勤及请假单，同步至 BigQuery 数据表，并在确认写入成功后安全从 Firestore 中批量清理释放空间。

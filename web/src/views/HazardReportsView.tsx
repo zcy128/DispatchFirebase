@@ -672,17 +672,17 @@ export const HazardReportsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 10-Year Safe Scan Notice Banner */}
+      {/* 5-Year Safe Scan Notice Banner */}
       {timeRange === 'all' && (
         <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl flex items-start gap-3 text-xs text-amber-800 dark:text-amber-200">
           <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <div className="font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
               <span>All History Mode (BigQuery Cold Archive)</span>
-              <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">10-Year Safe Scan</span>
+              <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">5-Year Safe Scan</span>
             </div>
             <p className="text-amber-700 dark:text-amber-300">
-              Live hazard reports cover the most recent 1 year. Older data is stored in BigQuery cold archives. To avoid massive 10-year database scans, please enter a <strong>Location</strong>, <strong>Description</strong>, <strong>Vehicle Unit #</strong>, or <strong>Route #</strong> to query historical archive records.
+              Live hazard reports cover the most recent 1 year. Older data is stored in BigQuery cold archives. To avoid massive database scans across 5 years, please enter a <strong>Location</strong>, <strong>Description</strong>, <strong>Vehicle Unit #</strong>, or <strong>Route #</strong> to query historical archive records.
             </p>
           </div>
         </div>

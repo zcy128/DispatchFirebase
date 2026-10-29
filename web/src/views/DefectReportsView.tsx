@@ -612,17 +612,17 @@ export const DefectReportsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 10-Year Safe Scan Notice Banner */}
+      {/* 5-Year Safe Scan Notice Banner */}
       {timeRange === 'all' && (
         <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl flex items-start gap-3 text-xs text-amber-800 dark:text-amber-200">
           <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <div className="font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
               <span>All History Mode (BigQuery Cold Archive)</span>
-              <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">10-Year Safe Scan</span>
+              <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">5-Year Safe Scan</span>
             </div>
             <p className="text-amber-700 dark:text-amber-300">
-              To protect system performance and avoid full-table scans across 10+ years of fleet data, full browsing is restricted. Please enter a <strong>Vehicle Unit #</strong> (e.g. <code>1016</code>) to query historical defects and maintenance records for that vehicle.
+              To protect system performance and avoid full-table scans across 5 years of fleet data, full browsing is restricted. Please enter a <strong>Vehicle Unit #</strong> (e.g. <code>1016</code>) to query historical defects and maintenance records for that vehicle.
             </p>
           </div>
         </div>

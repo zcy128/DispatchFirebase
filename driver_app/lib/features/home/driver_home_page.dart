@@ -42,7 +42,7 @@ import '../charter/models/charter_model.dart';
 import '../charter/repository/charter_repository.dart';
 import '../charter/presentation/charter_trip_card.dart';
 import '../charter/presentation/available_charters_sheet.dart';
-import '../timesheet/presentation/timesheet_page.dart';
+import '../company_contacts/presentation/company_contacts_page.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../core/services/device_token_service.dart';
 
@@ -64,11 +64,12 @@ class DriverHomePage extends StatefulWidget {
 
 class _DriverHomePageState extends State<DriverHomePage> {
   late int _currentIndex;
+  int _formsSectionIndex = 0; // 0 = Forms & Safety, 1 = Timesheet & Payroll
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialTab;
+    _currentIndex = widget.initialTab.clamp(0, 3);
     DeviceTokenService().initializeForEmployee(
       employeeId: _resolvedDriverId,
     );
@@ -96,9 +97,19 @@ class _DriverHomePageState extends State<DriverHomePage> {
     setState(() {
       _currentIndex = index;
     });
-    if (index == 5) {
-      ChatNotificationService().clearAllUnread();
-    }
+  }
+
+  void _openFormsSection(int sectionIndex) {
+    setState(() {
+      _currentIndex = 3;
+      _formsSectionIndex = sectionIndex;
+    });
+  }
+
+  void _onFormsSectionChanged(int sectionIndex) {
+    setState(() {
+      _formsSectionIndex = sectionIndex;
+    });
   }
 
   @override
@@ -156,7 +167,10 @@ class _DriverHomePageState extends State<DriverHomePage> {
         role: widget.role,
         driverId: _resolvedDriverId,
         currentIndex: _currentIndex,
+        formsSectionIndex: _formsSectionIndex,
         onTabSelected: _onTabSelected,
+        onOpenFormsSection: _openFormsSection,
+        onFormsSectionChanged: _onFormsSectionChanged,
       ),
     );
   }
@@ -168,35 +182,86 @@ class _DriverHomePageBody extends StatelessWidget {
   final String role;
   final String driverId;
   final int currentIndex;
+  final int formsSectionIndex;
   final ValueChanged<int> onTabSelected;
+  final ValueChanged<int> onOpenFormsSection;
+  final ValueChanged<int> onFormsSectionChanged;
 
   const _DriverHomePageBody({
     required this.username,
     required this.role,
     required this.driverId,
     required this.currentIndex,
+    required this.formsSectionIndex,
     required this.onTabSelected,
+    required this.onOpenFormsSection,
+    required this.onFormsSectionChanged,
   });
+
+  void _openChat(BuildContext context) {
+    ChatNotificationService().clearAllUnread();
+    final chatRepo = context.read<ChatRepository>();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatChannelsPage(
+          driverId: driverId,
+          driverName: username,
+          repository: chatRepo,
+        ),
+      ),
+    );
+  }
+
+  void _openCompanyContacts(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const CompanyContactsPage(),
+      ),
+    );
+  }
+
+  Widget _buildChatActionButton(BuildContext context) {
+    return IconButton(
+      tooltip: 'Operations Chat',
+      onPressed: () => _openChat(context),
+      icon: ValueListenableBuilder<int>(
+        valueListenable: ChatNotificationService().unreadCountNotifier,
+        builder: (context, unreadCount, child) {
+          return Badge(
+            isLabelVisible: unreadCount > 0,
+            label: Text('$unreadCount'),
+            child: const Icon(
+              Icons.chat_bubble_outline_rounded,
+              color: AppColors.primary,
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      // When on Dispatch tab (index 1) or Chat tab (index 5), page has its own specialized AppBar
-      appBar: (currentIndex == 1 || currentIndex == 5) ? null : _buildAppBar(context, isDark),
+      // When on Dispatch tab (index 1), page has its own specialized AppBar
+      appBar: currentIndex == 1 ? null : _buildAppBar(context, isDark),
       body: IndexedStack(
         index: currentIndex,
         children: [
           _buildDashboardTab(context, isDark),
-          DispatchPage(driverId: driverId),
+          DispatchPage(
+            driverId: driverId,
+            onOpenChat: () => _openChat(context),
+          ),
           RouteTab(driverId: driverId),
-          TimesheetPage(driverId: driverId, driverName: username, role: role),
-          FormsTab(driverId: driverId, driverName: username, role: role),
-          ChatChannelsPage(
+          FormsTab(
             driverId: driverId,
             driverName: username,
-            repository: context.read<ChatRepository>(),
+            role: role,
+            sectionIndex: formsSectionIndex,
+            onSectionChanged: onFormsSectionChanged,
           ),
         ],
       ),
@@ -218,7 +283,7 @@ class _DriverHomePageBody extends StatelessWidget {
           selectedFontSize: 11,
           unselectedFontSize: 11,
           type: BottomNavigationBarType.fixed,
-          items: [
+          items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.dashboard_outlined),
               activeIcon: Icon(Icons.dashboard_rounded),
@@ -235,37 +300,9 @@ class _DriverHomePageBody extends StatelessWidget {
               label: 'My Route',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.receipt_long_outlined),
-              activeIcon: Icon(Icons.receipt_long_rounded),
-              label: 'Timesheet',
-            ),
-            BottomNavigationBarItem(
               icon: Icon(Icons.assignment_outlined),
               activeIcon: Icon(Icons.assignment_rounded),
-              label: 'Forms',
-            ),
-            BottomNavigationBarItem(
-              icon: ValueListenableBuilder<int>(
-                valueListenable: ChatNotificationService().unreadCountNotifier,
-                builder: (context, unreadCount, child) {
-                  return Badge(
-                    isLabelVisible: unreadCount > 0,
-                    label: Text('$unreadCount'),
-                    child: const Icon(Icons.chat_bubble_outline_rounded),
-                  );
-                },
-              ),
-              activeIcon: ValueListenableBuilder<int>(
-                valueListenable: ChatNotificationService().unreadCountNotifier,
-                builder: (context, unreadCount, child) {
-                  return Badge(
-                    isLabelVisible: unreadCount > 0,
-                    label: Text('$unreadCount'),
-                    child: const Icon(Icons.chat_bubble_rounded),
-                  );
-                },
-              ),
-              label: 'Chat',
+              label: 'Forms / Work',
             ),
           ],
         ),
@@ -303,6 +340,12 @@ class _DriverHomePageBody extends StatelessWidget {
             },
           ),
           IconButton(
+            tooltip: 'Company Contacts',
+            icon: const Icon(Icons.phone_in_talk_rounded, color: AppColors.primary),
+            onPressed: () => _openCompanyContacts(context),
+          ),
+          _buildChatActionButton(context),
+          IconButton(
             tooltip: 'Sign Out',
             icon: const Icon(Icons.logout_rounded, color: AppColors.error),
             onPressed: () => _signOut(context),
@@ -318,12 +361,14 @@ class _DriverHomePageBody extends StatelessWidget {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Bi-Weekly Timesheet',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            Text(
+              formsSectionIndex == 1 ? 'Bi-Weekly Timesheet' : 'Forms & Work Hub',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
             ),
             Text(
-              'Synchronized Payroll Wages, Hours & Daily Shifts',
+              formsSectionIndex == 1
+                  ? 'Synchronized Payroll Wages, Hours & Daily Shifts'
+                  : 'Inspections, Incidents, Leave & Timesheet',
               style: TextStyle(
                 fontSize: 11,
                 color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
@@ -332,43 +377,20 @@ class _DriverHomePageBody extends StatelessWidget {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Sign Out',
-            icon: const Icon(Icons.logout_rounded, color: AppColors.error),
-            onPressed: () => _signOut(context),
-          ),
-        ],
-      );
-    }
-
-    if (currentIndex == 4) {
-      return AppBar(
-        elevation: 0,
-        backgroundColor: isDark ? AppColors.darkCard : Colors.white,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Forms & Requests',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          if (formsSectionIndex == 0)
+            IconButton(
+              tooltip: 'Refresh Requests',
+              icon: const Icon(Icons.sync_rounded, color: AppColors.primary),
+              onPressed: () {
+                context.read<TimeOffBloc>().add(LoadTimeOffRequestsEvent(driverId));
+              },
             ),
-            Text(
-              'Time-Off & Leave Applications',
-              style: TextStyle(
-                fontSize: 11,
-                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
-              ),
-            ),
-          ],
-        ),
-        actions: [
           IconButton(
-            tooltip: 'Refresh Requests',
-            icon: const Icon(Icons.sync_rounded, color: AppColors.primary),
-            onPressed: () {
-              context.read<TimeOffBloc>().add(LoadTimeOffRequestsEvent(driverId));
-            },
+            tooltip: 'Company Contacts',
+            icon: const Icon(Icons.phone_in_talk_rounded, color: AppColors.primary),
+            onPressed: () => _openCompanyContacts(context),
           ),
+          _buildChatActionButton(context),
           IconButton(
             tooltip: 'Sign Out',
             icon: const Icon(Icons.logout_rounded, color: AppColors.error),
@@ -414,6 +436,12 @@ class _DriverHomePageBody extends StatelessWidget {
         ],
       ),
       actions: [
+        IconButton(
+          tooltip: 'Company Contacts',
+          icon: const Icon(Icons.phone_in_talk_rounded, color: AppColors.primary),
+          onPressed: () => _openCompanyContacts(context),
+        ),
+        _buildChatActionButton(context),
         IconButton(
           tooltip: 'Notification Settings',
           icon: const Icon(Icons.notifications_active_outlined, color: AppColors.primary),
@@ -579,7 +607,7 @@ class _DriverHomePageBody extends StatelessWidget {
             iconColor: AppColors.primary,
             title: 'Bi-Weekly Timesheet & Payroll',
             subtitle: 'View 2-week wages, EI hours & daily dispatch shift breakdown',
-            onTap: () => onTabSelected(3),
+            onTap: () => onOpenFormsSection(1),
           ),
           const SizedBox(height: 12),
           _buildShortcutTile(
@@ -609,7 +637,17 @@ class _DriverHomePageBody extends StatelessWidget {
             iconColor: Colors.amber,
             title: 'Fleet & Dispatch Chat',
             subtitle: 'Real-time communication with Dispatch, Payroll & Yard Crew',
-            onTap: () => onTabSelected(5),
+            onTap: () => _openChat(context),
+          ),
+          const SizedBox(height: 12),
+          _buildShortcutTile(
+            context: context,
+            isDark: isDark,
+            icon: Icons.phone_in_talk_rounded,
+            iconColor: const Color(0xFFF59E0B),
+            title: 'Company Contacts',
+            subtitle: 'Dispatch 24/7 desk, safety emergency hotline, fleet mechanic & HR',
+            onTap: () => _openCompanyContacts(context),
           ),
           const SizedBox(height: 12),
           _buildShortcutTile(
@@ -824,7 +862,7 @@ class _DriverHomePageBody extends StatelessWidget {
                 );
               } else {
                 return InkWell(
-                  onTap: () => onTabSelected(4),
+                  onTap: () => onOpenFormsSection(0),
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
                     padding: const EdgeInsets.all(12),

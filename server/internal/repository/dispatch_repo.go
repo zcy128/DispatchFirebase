@@ -8574,7 +8574,7 @@ func (r *FirestoreDispatchRepository) ListDefectReportsFiltered(ctx context.Cont
 			startDate = now.AddDate(-1, 0, 0).Format("2006-01-02")
 		}
 	case "all":
-		// For "all" history, prevent scanning all vehicles across 10 years.
+		// For "all" history, prevent scanning all vehicles across 5 years.
 		// Targeted criteria (VehicleUnit, DriverID, Query, or explicit StartDate) is strictly required.
 		hasTarget := strings.TrimSpace(filter.VehicleUnit) != "" || strings.TrimSpace(filter.DriverID) != "" || strings.TrimSpace(filter.Query) != "" || startDate != ""
 		if !hasTarget {
@@ -8582,8 +8582,8 @@ func (r *FirestoreDispatchRepository) ListDefectReportsFiltered(ctx context.Cont
 			return []*models.VehicleDefectReport{}, nil
 		}
 		if startDate == "" {
-			// For targeted vehicle/driver search, support querying up to 10 years of cold archives
-			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+			// For targeted vehicle/driver search, support querying up to 5 years of cold archives
+			startDate = now.AddDate(-5, 0, 0).Format("2006-01-02")
 		}
 	default:
 		// Default: last 6 months (hot storage)
@@ -8814,7 +8814,7 @@ func (m *MemoryDispatchRepository) ListDefectReportsFiltered(ctx context.Context
 			return []*models.VehicleDefectReport{}, nil
 		}
 		if startDate == "" {
-			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+			startDate = now.AddDate(-5, 0, 0).Format("2006-01-02")
 		}
 	} else {
 		if startDate == "" {
@@ -9184,7 +9184,7 @@ func (r *FirestoreDispatchRepository) ListStudentIncidentsFiltered(ctx context.C
 			startDate = now.AddDate(-1, 0, 0).Format("2006-01-02")
 		}
 	case "all":
-		// For "all" history, prevent scanning all students across 10 years.
+		// For "all" history, prevent scanning all students across 5 years.
 		// Targeted criteria (StudentID, StudentNo, StudentName, RouteNo, DriverID, Query, or explicit StartDate) is strictly required.
 		hasTarget := filter.StudentID > 0 || strings.TrimSpace(filter.StudentNo) != "" || strings.TrimSpace(filter.StudentName) != "" || strings.TrimSpace(filter.RouteNo) != "" || strings.TrimSpace(filter.DriverID) != "" || strings.TrimSpace(filter.Query) != "" || startDate != ""
 		if !hasTarget {
@@ -9192,8 +9192,8 @@ func (r *FirestoreDispatchRepository) ListStudentIncidentsFiltered(ctx context.C
 			return []*models.StudentIncident{}, nil
 		}
 		if startDate == "" {
-			// For targeted student/route/driver search, support querying up to 10 years of cold archives
-			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+			// For targeted student/route/driver search, support querying up to 5 years of cold archives
+			startDate = now.AddDate(-5, 0, 0).Format("2006-01-02")
 		}
 	default:
 		// Default: last 6 months (hot storage)
@@ -9599,7 +9599,7 @@ func (r *FirestoreDispatchRepository) ListExpenseClaimsFiltered(ctx context.Cont
 			return []*models.ExpenseReimbursement{}, nil
 		}
 		if startDate == "" {
-			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+			startDate = now.AddDate(-5, 0, 0).Format("2006-01-02")
 		}
 	default:
 		// Default live data: last 6 months
@@ -10024,7 +10024,7 @@ func (r *FirestoreDispatchRepository) ListHazardReportsFiltered(ctx context.Cont
 			return []*models.HazardReport{}, nil
 		}
 		if startDate == "" {
-			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+			startDate = now.AddDate(-5, 0, 0).Format("2006-01-02")
 		}
 	default:
 		// Default live data: last 1 year
@@ -10423,7 +10423,7 @@ func (r *FirestoreDispatchRepository) ListRouteAssessmentsFiltered(ctx context.C
 
 	switch filter.TimeRange {
 	case "all":
-		// For "all" history, prevent scanning all assessments across 10 years without criteria.
+		// For "all" history, prevent scanning all assessments across 5 years without criteria.
 		hasTarget := strings.TrimSpace(filter.RouteID) != "" ||
 			strings.TrimSpace(filter.ConductedByEmployeeID) != "" ||
 			strings.TrimSpace(filter.Query) != "" ||
@@ -10432,7 +10432,7 @@ func (r *FirestoreDispatchRepository) ListRouteAssessmentsFiltered(ctx context.C
 			return []*models.RouteAssessment{}, nil
 		}
 		if startDate == "" {
-			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+			startDate = now.AddDate(-5, 0, 0).Format("2006-01-02")
 		}
 	default:
 		// Default live data: last 1 year
@@ -10961,7 +10961,7 @@ func (r *FirestoreDispatchRepository) ListVehicleSignoutsFiltered(ctx context.Co
 
 	switch filter.TimeRange {
 	case "all":
-		// For "all" history, prevent scanning all vehicle signouts across 10 years without criteria.
+		// For "all" history, prevent scanning all vehicle signouts across 5 years without criteria.
 		hasTarget := strings.TrimSpace(filter.UnitNumber) != "" ||
 			strings.TrimSpace(filter.EmployeeID) != "" ||
 			strings.TrimSpace(filter.Query) != "" ||
@@ -10970,7 +10970,7 @@ func (r *FirestoreDispatchRepository) ListVehicleSignoutsFiltered(ctx context.Co
 			return []*models.VehicleSignout{}, nil
 		}
 		if startDate == "" {
-			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+			startDate = now.AddDate(-5, 0, 0).Format("2006-01-02")
 		}
 	default:
 		// Default live data: last 1 year
@@ -11385,7 +11385,7 @@ func (r *FirestoreDispatchRepository) ListAssignmentHistoryFiltered(ctx context.
 
 	switch filter.TimeRange {
 	case "all":
-		// For "all" history, prevent scanning across 10 years without criteria.
+		// For "all" history, prevent scanning across 5 years without criteria.
 		hasTarget := strings.TrimSpace(filter.DriverID) != "" ||
 			strings.TrimSpace(filter.RouteNo) != "" ||
 			strings.TrimSpace(filter.UnitNumber) != "" ||
@@ -11395,7 +11395,7 @@ func (r *FirestoreDispatchRepository) ListAssignmentHistoryFiltered(ctx context.
 			return []*models.AssignmentHistoryRecord{}, nil
 		}
 		if startDate == "" {
-			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+			startDate = now.AddDate(-5, 0, 0).Format("2006-01-02")
 		}
 	default:
 		// Default live data: last 1 year
@@ -11568,7 +11568,7 @@ func (m *MemoryDispatchRepository) ListStudentIncidentsFiltered(ctx context.Cont
 			return []*models.StudentIncident{}, nil
 		}
 		if startDate == "" {
-			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+			startDate = now.AddDate(-5, 0, 0).Format("2006-01-02")
 		}
 	} else {
 		if startDate == "" {
@@ -11769,7 +11769,7 @@ func (m *MemoryDispatchRepository) ListExpenseClaimsFiltered(ctx context.Context
 			return []*models.ExpenseReimbursement{}, nil
 		}
 		if startDate == "" {
-			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+			startDate = now.AddDate(-5, 0, 0).Format("2006-01-02")
 		}
 	} else {
 		if startDate == "" {
@@ -11973,7 +11973,7 @@ func (m *MemoryDispatchRepository) ListHazardReportsFiltered(ctx context.Context
 			return []*models.HazardReport{}, nil
 		}
 		if startDate == "" {
-			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+			startDate = now.AddDate(-5, 0, 0).Format("2006-01-02")
 		}
 	} else {
 		if startDate == "" {

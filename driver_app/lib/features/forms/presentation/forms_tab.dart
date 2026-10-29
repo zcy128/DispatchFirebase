@@ -28,19 +28,57 @@ import '../../vehicle_signout/bloc/vehicle_signout_event.dart';
 import '../../vehicle_signout/presentation/vehicle_signout_summary_card.dart';
 import '../../route/bloc/route_bloc.dart';
 import '../../route/bloc/route_state.dart';
+import '../../timesheet/presentation/timesheet_page.dart';
+import '../../company_contacts/presentation/company_contacts_page.dart';
 
-/// Central Forms Hub providing vehicle inspection, defect reporting, student incidents, and time-off operations.
-class FormsTab extends StatelessWidget {
+/// Central Forms & Work Hub providing vehicle inspection, defect reporting, student incidents, time-off operations, and bi-weekly timesheet.
+class FormsTab extends StatefulWidget {
   final String driverId;
   final String driverName;
   final String role;
+  final int sectionIndex;
+  final ValueChanged<int>? onSectionChanged;
 
   const FormsTab({
     super.key,
     required this.driverId,
     this.driverName = 'Driver',
     this.role = 'Driver',
+    this.sectionIndex = 0,
+    this.onSectionChanged,
   });
+
+  @override
+  State<FormsTab> createState() => _FormsTabState();
+}
+
+class _FormsTabState extends State<FormsTab> {
+  late int _internalSectionIndex;
+
+  String get driverId => widget.driverId;
+  String get driverName => widget.driverName;
+  String get role => widget.role;
+
+  @override
+  void initState() {
+    super.initState();
+    _internalSectionIndex = widget.sectionIndex;
+  }
+
+  @override
+  void didUpdateWidget(covariant FormsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sectionIndex != widget.sectionIndex) {
+      _internalSectionIndex = widget.sectionIndex;
+    }
+  }
+
+  void _selectSection(int index) {
+    setState(() {
+      _internalSectionIndex = index;
+    });
+    widget.onSectionChanged?.call(index);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +87,111 @@ class FormsTab extends StatelessWidget {
     final isHelper = normalizedRole == 'helper' || normalizedRole == 'attendant' || normalizedRole == 'monitor';
     final isFleet = normalizedRole == 'fleet' || normalizedRole == 'admin';
 
+    return Column(
+      children: [
+        // Top Segmented Switcher: Forms & Safety vs Timesheet & Payroll
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkCard : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _buildSegmentButton(
+                  index: 0,
+                  icon: Icons.assignment_rounded,
+                  label: 'Forms & Safety',
+                  isDark: isDark,
+                ),
+              ),
+              Expanded(
+                child: _buildSegmentButton(
+                  index: 1,
+                  icon: Icons.receipt_long_rounded,
+                  label: 'Timesheet & Payroll',
+                  isDark: isDark,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: _internalSectionIndex,
+            children: [
+              _buildFormsScrollView(context, isDark, isHelper, isFleet),
+              TimesheetPage(
+                driverId: driverId,
+                driverName: driverName,
+                role: role,
+                showAppBar: false,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSegmentButton({
+    required int index,
+    required IconData icon,
+    required String label,
+    required bool isDark,
+  }) {
+    final isSelected = _internalSectionIndex == index;
+    return GestureDetector(
+      onTap: () => _selectSection(index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected
+                  ? const Color(0xFF0F172A)
+                  : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight),
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected
+                      ? const Color(0xFF0F172A)
+                      : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFormsScrollView(
+    BuildContext context,
+    bool isDark,
+    bool isHelper,
+    bool isFleet,
+  ) {
     return RefreshIndicator(
       color: AppColors.primary,
       onRefresh: () async {
@@ -427,7 +570,7 @@ class FormsTab extends StatelessWidget {
             ),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                 child: BlocBuilder<RouteBloc, RouteState>(
                   builder: (context, routeState) {
                     final vehicleUnit = routeState is RouteLoaded &&
@@ -446,6 +589,112 @@ class FormsTab extends StatelessWidget {
               ),
             ),
           ],
+
+          // ─── Section: Company Contacts & Emergency Hotlines ─────────────────────
+          const SliverToBoxAdapter(child: SizedBox(height: 12)),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Divider(
+                color: isDark
+                    ? AppColors.darkCardBorder
+                    : AppColors.lightCardBorder,
+              ),
+            ),
+          ),
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, 6, 16, 6),
+              child: Text(
+                'COMPANY & EMERGENCY DIRECTORY',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                  color: Colors.grey,
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+              child: _buildCompanyContactsCard(context, isDark),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompanyContactsCard(BuildContext context, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.phone_in_talk_rounded,
+              color: Color(0xFFF59E0B),
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Company Contacts',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '24/7 Operations Desk, Student Safety Line, Fleet Roadside & HR',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const CompanyContactsPage(),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF59E0B),
+              foregroundColor: const Color(0xFF0F172A),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Open', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );

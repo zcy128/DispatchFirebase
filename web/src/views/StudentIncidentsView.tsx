@@ -522,7 +522,7 @@ export const StudentIncidentsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 10-Year Safe Scan Notice Banner */}
+      {/* 5-Year Safe Scan Notice Banner */}
       {timeRange === 'all' && (
         <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl flex items-start gap-3 text-xs text-amber-800 dark:text-amber-200">
           <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -530,13 +530,13 @@ export const StudentIncidentsView: React.FC = () => {
             <div className="font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
               <span>{isFrench ? 'Mode Tout l\'historique (Archive froide BigQuery)' : 'All History Mode (BigQuery Cold Archive)'}</span>
               <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">
-                {isFrench ? 'Recherche sécurisée 10 ans' : '10-Year Safe Scan'}
+                {isFrench ? 'Recherche sécurisée 5 ans' : '5-Year Safe Scan'}
               </span>
             </div>
             <p className="text-amber-700 dark:text-amber-300">
               {isFrench
-                ? 'Pour protéger les performances de la base de données sur plus de 10 ans d\'archives d\'incidents, la navigation complète est restreinte. Veuillez saisir un nom d\'élève, un matricule ou un numéro de route pour interroger les archives.'
-                : 'To protect database performance and avoid full-table scans across 10+ years of school incidents, full browsing is restricted. Please enter a Student Name, Student #, or Route # to query historical archive records.'}
+                ? 'Pour protéger les performances de la base de données sur les 5 ans d\'archives d\'incidents, la navigation complète est restreinte. Veuillez saisir un nom d\'élève, un matricule ou un numéro de route pour interroger les archives.'
+                : 'To protect database performance and avoid full-table scans across 5 years of school incidents, full browsing is restricted. Please enter a Student Name, Student #, or Route # to query historical archive records.'}
             </p>
           </div>
         </div>
@@ -587,8 +587,8 @@ export const StudentIncidentsView: React.FC = () => {
                         </h4>
                         <p className="text-xs text-slate-500 mt-1 max-w-md">
                           {isFrench
-                            ? 'Recherchez parmi 10 ans d\'archives BigQuery en saisissant le nom d\'un élève, son matricule ou le numéro de route ci-dessus.'
-                            : 'Search across 10 years of BigQuery incident archives by entering a student name, student #, or route # above and clicking Search Archive.'}
+                            ? 'Recherchez parmi 5 ans d\'archives BigQuery en saisissant le nom d\'un élève, son matricule ou le numéro de route ci-dessus.'
+                            : 'Search across 5 years of BigQuery incident archives by entering a student name, student #, or route # above and clicking Search Archive.'}
                         </p>
                       </div>
                     ) : (
