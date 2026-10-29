@@ -532,6 +532,9 @@ func main() {
 		protected.Put("/api/dispatch/vehicle-signouts/{id}", dispatchHandler.UpdateVehicleSignout)
 		protected.Delete("/api/dispatch/vehicle-signouts/{id}", dispatchHandler.DeleteVehicleSignout)
 
+		// Assignment Lifecycle & History (1-year live + BigQuery archive)
+		protected.Get("/api/dispatch/assignment-history", dispatchHandler.ListAssignmentHistory)
+
 		// Chat & Messaging routes
 		protected.Get("/api/chat/channels", chatHandler.ListChannels)
 		protected.Get("/api/chat/channels/{id}", chatHandler.GetChannel)
@@ -715,6 +718,9 @@ func main() {
 		publicDev.Put("/api/public/dispatch/vehicle-signouts/{id}", dispatchHandler.UpdateVehicleSignout)
 		publicDev.Delete("/api/public/dispatch/vehicle-signouts/{id}", dispatchHandler.DeleteVehicleSignout)
 
+		// Assignment Lifecycle & History (Public dev preview)
+		publicDev.Get("/api/public/dispatch/assignment-history", dispatchHandler.ListAssignmentHistory)
+
 		// Public dev fallback for chat
 		publicDev.Get("/api/public/chat/channels", chatHandler.ListChannels)
 		publicDev.Get("/api/public/chat/channels/{id}", chatHandler.GetChannel)
@@ -849,9 +855,57 @@ func main() {
 					} else {
 						log.Printf("[ARCHIVER] ArchiveExpensesOlderThan in sync-all completed: %d expense claims synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
 					}
+					if synced, deleted, err := arc.ArchiveAssignmentHistoryOlderThan(ctx, 12); err != nil {
+						log.Printf("[ARCHIVER] ArchiveAssignmentHistoryOlderThan error in sync-all: %v", err)
+					} else {
+						log.Printf("[ARCHIVER] ArchiveAssignmentHistoryOlderThan in sync-all completed: %d assignment history records synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+					}
+					if synced, deleted, err := arc.ArchiveStudentAbsencesOlderThan(ctx, 6); err != nil {
+						log.Printf("[ARCHIVER] ArchiveStudentAbsencesOlderThan error in sync-all: %v", err)
+					} else {
+						log.Printf("[ARCHIVER] ArchiveStudentAbsencesOlderThan in sync-all completed: %d student absences synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+					}
 					log.Printf("[ARCHIVER] Unified BigQuery sync-all finished.")
 				}()
-				w.Write([]byte(fmt.Sprintf(`{"success":true,"message":"unified sync initiated for past %d days, operational logs, 14-day pre-trip inspections, 6-month expense claims, time-off archive, 180-day defects/incidents, and 12-month hazards/assessments/handovers (sync & cleanup)"}`, days)))
+				w.Write([]byte(fmt.Sprintf(`{"success":true,"message":"unified sync initiated for past %d days, operational logs, 14-day pre-trip inspections, 6-month expense claims, 6-month student absences, 1-year assignment history, time-off archive, 180-day defects/incidents, and 12-month hazards/assessments/handovers (sync & cleanup)"}`, days)))
+			})
+
+			adminRoute.Post("/api/admin/archive/assignment-history", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				monthsStr := r.URL.Query().Get("months")
+				months := 12
+				if monthsStr != "" {
+					if m, err := strconv.Atoi(monthsStr); err == nil && m > 0 {
+						months = m
+					}
+				}
+				go func() {
+					if synced, deleted, err := arc.ArchiveAssignmentHistoryOlderThan(context.Background(), months); err != nil {
+						log.Printf("[ARCHIVER] ArchiveAssignmentHistoryOlderThan background job error: %v", err)
+					} else {
+						log.Printf("[ARCHIVER] ArchiveAssignmentHistoryOlderThan background job completed: %d synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+					}
+				}()
+				w.Write([]byte(fmt.Sprintf(`{"success":true,"message":"assignment history archive initiated for records older than %d months (sync & cleanup)"}`, months)))
+			})
+
+			adminRoute.Post("/api/admin/archive/student-absences", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				monthsStr := r.URL.Query().Get("months")
+				months := 6
+				if monthsStr != "" {
+					if m, err := strconv.Atoi(monthsStr); err == nil && m > 0 {
+						months = m
+					}
+				}
+				go func() {
+					if synced, deleted, err := arc.ArchiveStudentAbsencesOlderThan(context.Background(), months); err != nil {
+						log.Printf("[ARCHIVER] ArchiveStudentAbsencesOlderThan background job error: %v", err)
+					} else {
+						log.Printf("[ARCHIVER] ArchiveStudentAbsencesOlderThan background job completed: %d synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+					}
+				}()
+				w.Write([]byte(fmt.Sprintf(`{"success":true,"message":"student absences archive initiated for records older than %d months (sync & cleanup)"}`, months)))
 			})
 
 			adminRoute.Post("/api/admin/archive/cleanup-logs", func(w http.ResponseWriter, r *http.Request) {

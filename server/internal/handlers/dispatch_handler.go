@@ -316,6 +316,7 @@ func (h *DispatchHandler) ListStudentAbsences(w http.ResponseWriter, r *http.Req
 	studentID, _ := strconv.Atoi(r.URL.Query().Get("studentId"))
 	routeNo := r.URL.Query().Get("routeNo")
 	shiftType := r.URL.Query().Get("shiftType")
+	query := r.URL.Query().Get("query")
 
 	filter := models.ListStudentAbsencesFilter{
 		StartDate: startDate,
@@ -323,6 +324,7 @@ func (h *DispatchHandler) ListStudentAbsences(w http.ResponseWriter, r *http.Req
 		StudentID: studentID,
 		RouteNo:   routeNo,
 		ShiftType: shiftType,
+		Query:     query,
 	}
 
 	res, err := h.repo.ListStudentAbsences(r.Context(), filter)
@@ -2308,6 +2310,46 @@ func (h *DispatchHandler) ListVehicleSignouts(w http.ResponseWriter, r *http.Req
 	}
 	if records == nil {
 		records = []*models.VehicleSignout{}
+	}
+	json.NewEncoder(w).Encode(records)
+}
+
+// ListAssignmentHistory lists assignment lifecycle history with 1-year live data and BigQuery archive.
+func (h *DispatchHandler) ListAssignmentHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	asgType := r.URL.Query().Get("type")
+	action := r.URL.Query().Get("action")
+	driverID := r.URL.Query().Get("driverId")
+	driverName := r.URL.Query().Get("driverName")
+	routeNo := r.URL.Query().Get("routeNo")
+	unitNumber := r.URL.Query().Get("unitNumber")
+	startDate := r.URL.Query().Get("startDate")
+	endDate := r.URL.Query().Get("endDate")
+	timeRange := r.URL.Query().Get("timeRange")
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		query = r.URL.Query().Get("search")
+	}
+
+	records, err := h.repo.ListAssignmentHistoryFiltered(r.Context(), repository.AssignmentHistoryFilter{
+		Type:       asgType,
+		Action:     action,
+		DriverID:   driverID,
+		DriverName: driverName,
+		RouteNo:    routeNo,
+		UnitNumber: unitNumber,
+		Query:      query,
+		TimeRange:  timeRange,
+		StartDate:  startDate,
+		EndDate:    endDate,
+	})
+	if err != nil {
+		http.Error(w, `{"error":"failed to list assignment history: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	if records == nil {
+		records = []*models.AssignmentHistoryRecord{}
 	}
 	json.NewEncoder(w).Encode(records)
 }

@@ -8,10 +8,22 @@ import {
   limit,
   onSnapshot
 } from 'firebase/firestore';
-import { AssignmentHistoryRecord } from '../types/assignmentHistory';
+import { AssignmentHistoryRecord, AssignmentHistoryFilter } from '../types/assignmentHistory';
+import { apiRequest } from './api';
 
 const LOCAL_STORAGE_KEY = 'dispatch_assignment_history_cache';
 const FIRESTORE_COLLECTION = 'assignment_history';
+
+/**
+ * Check if an assignment record is older than 1 year (365 days) -> BigQuery cold storage.
+ */
+export const isColdRecord = (effectiveDate?: string, timestamp?: string): boolean => {
+  const d = effectiveDate || (timestamp ? timestamp.slice(0, 10) : '');
+  if (!d) return false;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 365);
+  return d.slice(0, 10) < cutoff.toISOString().slice(0, 10);
+};
 
 /**
  * Realistic seed data illustrating:
@@ -249,13 +261,51 @@ export class AssignmentHistoryService {
   }
 
   /**
-   * Subscribe to real-time assignment history updates
+   * Query assignment history with dual-engine support:
+   * - timeRange: '1year' (default live data <= 1 year)
+   * - timeRange: 'all' (cold storage in BigQuery > 1 year)
+   */
+  public static async listHistory(filter?: AssignmentHistoryFilter): Promise<AssignmentHistoryRecord[]> {
+    try {
+      const params = new URLSearchParams();
+      if (filter?.type && filter.type !== 'all') params.append('type', filter.type);
+      if (filter?.action && filter.action !== 'all') params.append('action', filter.action);
+      if (filter?.driverId) params.append('driverId', filter.driverId);
+      if (filter?.driverName) params.append('driverName', filter.driverName);
+      if (filter?.routeNo) params.append('routeNo', filter.routeNo);
+      if (filter?.unitNumber) params.append('unitNumber', filter.unitNumber);
+      if (filter?.searchQuery) params.append('query', filter.searchQuery);
+      if (filter?.timeRange) params.append('timeRange', filter.timeRange);
+      if (filter?.dateFrom) params.append('startDate', filter.dateFrom);
+      if (filter?.dateTo) params.append('endDate', filter.dateTo);
+
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await apiRequest<AssignmentHistoryRecord[]>(`/api/public/dispatch/assignment-history${qs}`);
+      if (Array.isArray(res)) {
+        return res;
+      }
+    } catch (err) {
+      console.warn('AssignmentHistoryService: backend query failed, falling back to local/Firestore:', err);
+    }
+
+    return this.getHistory(filter?.timeRange || '1year');
+  }
+
+  /**
+   * Subscribe to real-time assignment history updates (live data <= 1 year)
    */
   public static subscribeToHistory(
     onUpdate: (records: AssignmentHistoryRecord[]) => void,
     onError?: (error: any) => void
   ): () => void {
-    const local = this.getLocalHistory();
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 365);
+    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+
+    const local = this.getLocalHistory().filter((r) => {
+      const rDate = r.effectiveDate || (r.timestamp ? r.timestamp.slice(0, 10) : '');
+      return !rDate || rDate >= cutoffStr;
+    });
     onUpdate(local);
 
     if (!db) return () => {};
@@ -271,14 +321,21 @@ export class AssignmentHistoryService {
         q,
         (snapshot) => {
           if (!snapshot.empty) {
-            const firestoreRecords: AssignmentHistoryRecord[] = snapshot.docs.map((doc) => {
+            const firestoreRecords: AssignmentHistoryRecord[] = [];
+            snapshot.docs.forEach((doc) => {
               const d = doc.data();
-              return {
+              const effDate = d.effectiveDate || (d.timestamp ? d.timestamp.slice(0, 10) : new Date().toISOString().slice(0, 10));
+              // Live subscription only accepts records within 1 year
+              if (effDate && effDate < cutoffStr) {
+                return;
+              }
+
+              firestoreRecords.push({
                 id: doc.id,
                 type: d.type || 'driver_route',
                 action: d.action || 'assign',
                 timestamp: d.timestamp || new Date().toISOString(),
-                effectiveDate: d.effectiveDate || (d.timestamp ? d.timestamp.slice(0, 10) : new Date().toISOString().slice(0, 10)),
+                effectiveDate: effDate,
                 endDate: d.endDate,
                 driverId: d.driverId || '',
                 driverName: d.driverName || 'Unknown Driver',
@@ -298,10 +355,13 @@ export class AssignmentHistoryService {
                 dispatcherEmail: d.dispatcherEmail,
                 notes: d.notes,
                 isCurrent: d.isCurrent !== undefined ? d.isCurrent : true,
-              };
+              });
             });
 
-            const currentLocal = this.getLocalHistory();
+            const currentLocal = this.getLocalHistory().filter((r) => {
+              const rDate = r.effectiveDate || (r.timestamp ? r.timestamp.slice(0, 10) : '');
+              return !rDate || rDate >= cutoffStr;
+            });
             const map = new Map<string, AssignmentHistoryRecord>();
             [...firestoreRecords, ...currentLocal].forEach((item) => {
               if (!map.has(item.id)) {
@@ -331,10 +391,22 @@ export class AssignmentHistoryService {
   }
 
   /**
-   * Fetch all records
+   * Fetch records with optional 1-year live filter
    */
-  public static async getHistory(): Promise<AssignmentHistoryRecord[]> {
-    const local = this.getLocalHistory();
+  public static async getHistory(timeRange: '1year' | 'all' = '1year'): Promise<AssignmentHistoryRecord[]> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 365);
+    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+
+    const filterLive = (list: AssignmentHistoryRecord[]) => {
+      if (timeRange === 'all') return list;
+      return list.filter((r) => {
+        const rDate = r.effectiveDate || (r.timestamp ? r.timestamp.slice(0, 10) : '');
+        return !rDate || rDate >= cutoffStr;
+      });
+    };
+
+    const local = filterLive(this.getLocalHistory());
     if (!db) return local;
 
     try {
@@ -345,7 +417,7 @@ export class AssignmentHistoryService {
       );
       const snapshot = await getDocs(q);
       if (!snapshot.empty) {
-        return snapshot.docs.map((doc) => {
+        const mapped = snapshot.docs.map((doc) => {
           const d = doc.data();
           return {
             id: doc.id,
@@ -372,8 +444,9 @@ export class AssignmentHistoryService {
             dispatcherEmail: d.dispatcherEmail,
             notes: d.notes,
             isCurrent: d.isCurrent !== undefined ? d.isCurrent : true,
-          };
+          } as AssignmentHistoryRecord;
         });
+        return filterLive(mapped);
       }
     } catch {
       // Local fallback

@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useI18n } from '../contexts/I18nContext';
 import {
   AlertTriangle,
   Search,
@@ -212,6 +214,20 @@ export const HazardReportsView: React.FC = () => {
       return true;
     });
   }, [reports, statusFilter, officeTypeFilter, hazardTypeFilter, searchQuery]);
+
+  const { isFrench } = useI18n();
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filteredReports.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 80,
+    overscan: 8,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalHeight = rowVirtualizer.getTotalSize();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start ?? 0 : 0;
+  const paddingBottom =
+    virtualRows.length > 0 ? totalHeight - (virtualRows[virtualRows.length - 1]?.end ?? 0) : 0;
 
   const openDetailModal = (report: HazardReport) => {
     setSelectedReport(report);
@@ -674,17 +690,26 @@ export const HazardReportsView: React.FC = () => {
 
       {/* ─── Main Reports Table ───────────────────────────────────────────── */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
+        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
           <table className="w-full text-left border-collapse text-sm">
-            <thead>
-              <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                <th className="px-4 py-3.5">Event Date / Time</th>
-                <th className="px-4 py-3.5">Hazard & Close Call Types</th>
-                <th className="px-4 py-3.5">Reported By / Unit / Route</th>
-                <th className="px-4 py-3.5">Location & Description</th>
-                <th className="px-4 py-3.5">Risk & Office Type</th>
-                <th className="px-4 py-3.5">Status</th>
-                <th className="px-4 py-3.5 text-right">Actions</th>
+            <colgroup>
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '16%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '8%' }} />
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              <tr>
+                <th className="px-4 py-3.5">{isFrench ? 'Date / Heure Événement' : 'Event Date / Time'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Types Danger & Quasi-accident' : 'Hazard & Close Call Types'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Signalé Par / Véhicule / Trajet' : 'Reported By / Unit / Route'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Lieu & Description' : 'Location & Description'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Risque & Type Bureau' : 'Risk & Office Type'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Statut' : 'Status'}</th>
+                <th className="px-4 py-3.5 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700/60">
@@ -701,216 +726,234 @@ export const HazardReportsView: React.FC = () => {
                       </div>
                       <div className="font-semibold text-slate-700 dark:text-slate-300">
                         {timeRange === 'all' && !searchQuery.trim()
-                          ? 'Search Hazard Report History'
-                          : 'No Hazard Reports Found'}
+                          ? (isFrench ? 'Rechercher dans l\'historique des dangers' : 'Search Hazard Report History')
+                          : (isFrench ? 'Aucun rapport de danger trouvé' : 'No Hazard Reports Found')}
                       </div>
                       <p className="text-xs text-slate-400">
                         {timeRange === 'all' && !searchQuery.trim()
-                          ? 'Enter a location, unit #, route #, or keyword above to query historical records from BigQuery archives.'
+                          ? (isFrench
+                              ? 'Entrez un lieu, un n° d\'unité, un n° de trajet ou un mot-clé pour interroger les archives BigQuery.'
+                              : 'Enter a location, unit #, route #, or keyword above to query historical records from BigQuery archives.')
                           : searchQuery || statusFilter !== 'all' || officeTypeFilter !== 'all'
-                          ? 'Try clearing active filters or search terms.'
-                          : 'Drivers & crew members can submit reports directly from the Driver App.'}
+                          ? (isFrench ? 'Essayez d\'effacer les filtres actifs ou les termes de recherche.' : 'Try clearing active filters or search terms.')
+                          : (isFrench ? 'Les chauffeurs et membres d\'équipe peuvent soumettre des rapports directement depuis l\'application.' : 'Drivers & crew members can submit reports directly from the Driver App.')}
                       </p>
                     </div>
                   </td>
                 </tr>
               ) : (
-                filteredReports.map((report) => {
-                  const statusConfig = HAZARD_STATUS_CONFIG[report.statusInt] || HAZARD_STATUS_CONFIG[0];
-                  const hazardTags = getHazardTags(report);
-                  const closeCallTags = getCloseCallTags(report);
+                <>
+                  {paddingTop > 0 && (
+                    <tr>
+                      <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={7} />
+                    </tr>
+                  )}
+                  {virtualRows.map((virtualRow) => {
+                    const report = filteredReports[virtualRow.index];
+                    if (!report) return null;
+                    const statusConfig = HAZARD_STATUS_CONFIG[report.statusInt] || HAZARD_STATUS_CONFIG[0];
+                    const hazardTags = getHazardTags(report);
+                    const closeCallTags = getCloseCallTags(report);
 
-                  return (
-                    <tr
-                      key={report.id}
-                      className="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors"
-                    >
-                      {/* Event Date / Time */}
-                      <td className="px-4 py-3.5 align-top">
-                        <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5 whitespace-nowrap">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                          {report.eventTime
-                            ? report.eventTime.replace('T', ' ').slice(0, 16)
-                            : report.createdAt.slice(0, 10)}
-                          {isArchivedDate(report.eventTime || report.createdAt) && (
-                            <span
-                              title="Record is older than 1 year and retrieved from BigQuery cold archive"
-                              className="ml-1 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800"
-                            >
-                              BigQuery
-                            </span>
+                    return (
+                      <tr
+                        key={report.id}
+                        className="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors"
+                      >
+                        {/* Event Date / Time */}
+                        <td className="px-4 py-3.5 align-top">
+                          <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5 whitespace-nowrap">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                            {report.eventTime
+                              ? report.eventTime.replace('T', ' ').slice(0, 16)
+                              : report.createdAt.slice(0, 10)}
+                            {isArchivedDate(report.eventTime || report.createdAt) && (
+                              <span
+                                title="Record is older than 1 year and retrieved from BigQuery cold archive"
+                                className="ml-1 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800"
+                              >
+                                BigQuery
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-400 font-mono mt-0.5 flex items-center gap-2">
+                            <span>#{report.id.slice(-6)}</span>
+                            {report.attachmentUrls && report.attachmentUrls.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setLightbox({
+                                    urls: report.attachmentUrls!,
+                                    currentIndex: 0,
+                                    title: `${report.reportedBy || 'Driver'} - Hazard #${report.id.slice(-6)}`,
+                                  });
+                                }}
+                                title={`View ${report.attachmentUrls.length} photo(s) in Lightbox`}
+                                className="group inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:ring-2 hover:ring-amber-400/30 transition-all cursor-pointer shadow-xs"
+                              >
+                                <Paperclip className="w-3 h-3" />
+                                <span>{report.attachmentUrls.length}</span>
+                                <Eye className="w-3 h-3 text-amber-500 opacity-60 group-hover:opacity-100" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Hazard & Close Call Tags */}
+                        <td className="px-4 py-3.5 align-top">
+                          <div className="flex flex-wrap gap-1 max-w-[240px]">
+                            {hazardTags.length === 0 && closeCallTags.length === 0 && (
+                              <span className="text-xs text-slate-400">{isFrench ? 'Danger général' : 'General Hazard'}</span>
+                            )}
+                            {hazardTags.map((tag, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                            {closeCallTags.map((tag, idx) => (
+                              <span
+                                key={`cc-${idx}`}
+                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+
+                        {/* Reported By / Unit / Route */}
+                        <td className="px-4 py-3.5 align-top">
+                          <div className="font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-400" />
+                            {report.reportedBy || (isFrench ? 'Personnel inconnu' : 'Unknown Staff')}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {report.unitNumber && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono">
+                                <Truck className="w-3 h-3" />
+                                {report.unitNumber}
+                              </span>
+                            )}
+                            {report.routeId && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50">
+                                <RouteIcon className="w-3 h-3" />
+                                {report.routeId}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Location & Description */}
+                        <td className="px-4 py-3.5 align-top max-w-[300px]">
+                          {report.eventLocation && (
+                            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1 mb-0.5">
+                              <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
+                              <span className="truncate">{report.eventLocation}</span>
+                            </div>
                           )}
-                        </div>
-                        <div className="text-xs text-slate-400 font-mono mt-0.5 flex items-center gap-2">
-                          <span>#{report.id.slice(-6)}</span>
-                          {report.attachmentUrls && report.attachmentUrls.length > 0 && (
+                          <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
+                            {report.eventDescription}
+                          </p>
+                          {report.witnesses && (
+                            <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
+                              <Users className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span>{isFrench ? 'Témoin:' : 'Witness:'} {report.witnesses}</span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Risk & Office Type */}
+                        <td className="px-4 py-3.5 align-top">
+                          <div className="space-y-1">
+                            {report.officeHazardType ? (
+                              <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200">
+                                {report.officeHazardType}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-400">{isFrench ? 'Non classé' : 'Unclassified'}</span>
+                            )}
+                            <div className="flex items-center gap-1 text-[11px]">
+                              {report.serious && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                                  {isFrench ? 'Grave' : 'Serious'}
+                                </span>
+                              )}
+                              {report.moderate && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                                  {isFrench ? 'Modéré' : 'Moderate'}
+                                </span>
+                              )}
+                              {report.minor && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                                  {isFrench ? 'Mineur' : 'Minor'}
+                                </span>
+                              )}
+                              {report.assignedTo && (
+                                <span className="text-slate-500 dark:text-slate-400 truncate max-w-[100px]">
+                                  → {report.assignedTo}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-4 py-3.5 align-top">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border}`}
+                          >
+                            {report.statusInt === 0 && <Clock className="w-3 h-3 text-amber-500" />}
+                            {report.statusInt === 1 && <Wrench className="w-3 h-3 text-blue-500" />}
+                            {report.statusInt === 2 && (
+                              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                            )}
+                            {statusConfig.label}
+                          </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-3.5 align-top text-right">
+                          <div className="flex items-center justify-end gap-1.5">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setLightbox({
-                                  urls: report.attachmentUrls!,
-                                  currentIndex: 0,
-                                  title: `${report.reportedBy || 'Driver'} - Hazard #${report.id.slice(-6)}`,
-                                });
+                                handleOpenPdf(report);
                               }}
-                              title={`View ${report.attachmentUrls.length} photo(s) in Lightbox`}
-                              className="group inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:ring-2 hover:ring-amber-400/30 transition-all cursor-pointer shadow-xs"
+                              className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition border border-slate-200 dark:border-slate-600 flex items-center gap-1 cursor-pointer"
+                              title={isFrench ? 'Imprimer rapport de danger / PDF' : 'Print Official Hazard Report / PDF'}
                             >
-                              <Paperclip className="w-3 h-3" />
-                              <span>{report.attachmentUrls.length}</span>
-                              <Eye className="w-3 h-3 text-amber-500 opacity-60 group-hover:opacity-100" />
+                              <Printer className="w-3.5 h-3.5 text-amber-500" />
+                              <span>{isFrench ? 'Imprimer / PDF' : 'Print / PDF'}</span>
                             </button>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Hazard & Close Call Tags */}
-                      <td className="px-4 py-3.5 align-top">
-                        <div className="flex flex-wrap gap-1 max-w-[240px]">
-                          {hazardTags.length === 0 && closeCallTags.length === 0 && (
-                            <span className="text-xs text-slate-400">General Hazard</span>
-                          )}
-                          {hazardTags.map((tag, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60"
+                            <button
+                              type="button"
+                              onClick={() => openDetailModal(report)}
+                              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shadow-xs cursor-pointer ${
+                                report.statusInt === 0
+                                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                                  : 'bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200'
+                              }`}
                             >
-                              {tag}
-                            </span>
-                          ))}
-                          {closeCallTags.map((tag, idx) => (
-                            <span
-                              key={`cc-${idx}`}
-                              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-
-                      {/* Reported By / Unit / Route */}
-                      <td className="px-4 py-3.5 align-top">
-                        <div className="font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <User className="w-3.5 h-3.5 text-slate-400" />
-                          {report.reportedBy || 'Unknown Staff'}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          {report.unitNumber && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono">
-                              <Truck className="w-3 h-3" />
-                              {report.unitNumber}
-                            </span>
-                          )}
-                          {report.routeId && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50">
-                              <RouteIcon className="w-3 h-3" />
-                              {report.routeId}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Location & Description */}
-                      <td className="px-4 py-3.5 align-top max-w-[300px]">
-                        {report.eventLocation && (
-                          <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1 mb-0.5">
-                            <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
-                            <span className="truncate">{report.eventLocation}</span>
+                              {report.statusInt === 0
+                                ? (isFrench ? 'Évaluer & Traiter' : 'Evaluate & Action')
+                                : (isFrench ? 'Voir Détails' : 'View Details')}
+                            </button>
                           </div>
-                        )}
-                        <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
-                          {report.eventDescription}
-                        </p>
-                        {report.witnesses && (
-                          <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
-                            <Users className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span>Witness: {report.witnesses}</span>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Risk & Office Type */}
-                      <td className="px-4 py-3.5 align-top">
-                        <div className="space-y-1">
-                          {report.officeHazardType ? (
-                            <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200">
-                              {report.officeHazardType}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-slate-400">Unclassified</span>
-                          )}
-                          <div className="flex items-center gap-1 text-[11px]">
-                            {report.serious && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
-                                Serious
-                              </span>
-                            )}
-                            {report.moderate && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                                Moderate
-                              </span>
-                            )}
-                            {report.minor && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                                Minor
-                              </span>
-                            )}
-                            {report.assignedTo && (
-                              <span className="text-slate-500 dark:text-slate-400 truncate max-w-[100px]">
-                                → {report.assignedTo}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-4 py-3.5 align-top">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border}`}
-                        >
-                          {report.statusInt === 0 && <Clock className="w-3 h-3 text-amber-500" />}
-                          {report.statusInt === 1 && <Wrench className="w-3 h-3 text-blue-500" />}
-                          {report.statusInt === 2 && (
-                            <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                          )}
-                          {statusConfig.label}
-                        </span>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-4 py-3.5 align-top text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenPdf(report);
-                            }}
-                            className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition border border-slate-200 dark:border-slate-600 flex items-center gap-1 cursor-pointer"
-                            title="Print Official Hazard Report / PDF"
-                          >
-                            <Printer className="w-3.5 h-3.5 text-amber-500" />
-                            <span>Print / PDF</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openDetailModal(report)}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors shadow-xs cursor-pointer ${
-                              report.statusInt === 0
-                                ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                                : 'bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200'
-                            }`}
-                          >
-                            {report.statusInt === 0 ? 'Evaluate & Action' : 'View Details'}
-                          </button>
-                        </div>
-                      </td>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {paddingBottom > 0 && (
+                    <tr>
+                      <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={7} />
                     </tr>
-                  );
-                })
+                  )}
+                </>
               )}
             </tbody>
           </table>

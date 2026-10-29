@@ -32,13 +32,15 @@ interface SchoolCalendarViewProps {
   boards: SchoolBoard[];
   selectedSchoolId?: number | null;
   onSelectSchool?: (school: School | null) => void;
+  cachedCalendars?: SchoolCalendar[];
 }
 
 export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
   schools,
   boards,
   selectedSchoolId,
-  onSelectSchool
+  onSelectSchool,
+  cachedCalendars
 }) => {
   const { t } = useI18n();
 
@@ -102,11 +104,47 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
   const [tableSearch, setTableSearch] = useState('');
   const [tableTypeFilter, setTableTypeFilter] = useState<string>('ALL');
 
+  // Resolve from cached calendars if available
+  const resolveFromCache = (cals: SchoolCalendar[]): boolean => {
+    if (!cals || cals.length === 0) return false;
+    const bCal = cals.find(
+      (c) =>
+        (c.id === `board_${selectedBoardId}_${schoolYear}` ||
+          (c.boardId === selectedBoardId && c.scope === 'board')) &&
+        (c.schoolYear === schoolYear || !c.schoolYear)
+    );
+    if (!bCal) return false;
+
+    setBoardCalendar(bCal);
+    if (selectedScope === 'school' && currentSchoolId) {
+      const sCal = cals.find(
+        (c) =>
+          (c.id === `school_${currentSchoolId}_${schoolYear}` ||
+            (c.schoolId === currentSchoolId && c.scope === 'school')) &&
+          (c.schoolYear === schoolYear || !c.schoolYear)
+      );
+      setCalendar(sCal || { ...bCal, isCustom: false });
+    } else {
+      setCalendar(bCal);
+    }
+    setLoading(false);
+    return true;
+  };
+
   // Load Calendar Data
   const loadCalendar = async (isManual = false) => {
     if (isManual) setRefreshing(true);
     else setLoading(true);
     setFeedback(null);
+
+    // Fast-path: check cache first if not a manual force-refresh
+    if (!isManual && cachedCalendars && cachedCalendars.length > 0) {
+      const resolved = resolveFromCache(cachedCalendars);
+      if (resolved) {
+        setLoading(false);
+        return;
+      }
+    }
 
     try {
       // 1. Always load board calendar for inheritance reference
@@ -142,8 +180,12 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
   };
 
   useEffect(() => {
+    if (cachedCalendars && cachedCalendars.length > 0) {
+      const resolved = resolveFromCache(cachedCalendars);
+      if (resolved) return;
+    }
     loadCalendar();
-  }, [selectedBoardId, selectedScope, currentSchoolId, schoolYear]);
+  }, [selectedBoardId, selectedScope, currentSchoolId, schoolYear, cachedCalendars]);
 
   // Handler: Create Custom School Calendar by copying board calendar events
   const handleCreateCustomSchoolCalendar = async () => {

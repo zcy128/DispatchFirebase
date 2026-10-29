@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useI18n } from '../contexts/I18nContext';
 import {
   ShieldAlert,
   Search,
@@ -32,6 +34,7 @@ import { StudentIncidentPdfModal } from '../components/incidents/StudentIncident
 
 export const StudentIncidentsView: React.FC = () => {
   const { currentUser } = useAuth();
+  const { isFrench } = useI18n();
   const [incidents, setIncidents] = useState<StudentIncident[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -174,6 +177,22 @@ export const StudentIncidentsView: React.FC = () => {
       return true;
     });
   }, [incidents, needsFollowUpOnly, statusFilter, searchQuery]);
+
+  // Virtual scrolling for 1,000+ student incident records
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: filteredIncidents.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 72,
+    overscan: 8,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start || 0 : 0;
+  const paddingBottom = virtualRows.length > 0
+    ? rowVirtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1]?.end || 0)
+    : 0;
 
   const handleOpenReview = (incident: StudentIncident) => {
     setSelectedIncident(incident);
@@ -330,10 +349,12 @@ export const StudentIncidentsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
             <ShieldAlert className="h-6 w-6 text-amber-500" />
-            Student Incident Management
+            {isFrench ? 'Gestion des incidents des élèves' : 'Student Incident Management'}
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Review driver behavior incident reports, conduct office disciplinary actions, and track resolutions.
+            {isFrench
+              ? 'Examinez les signalements d\'incidents comportementaux, traitez les mesures disciplinaires et suivez les résolutions.'
+              : 'Review driver behavior incident reports, conduct office disciplinary actions, and track resolutions.'}
           </p>
         </div>
 
@@ -343,10 +364,10 @@ export const StudentIncidentsView: React.FC = () => {
             onClick={handleExportCsv}
             disabled={filteredIncidents.length === 0}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer shadow-xs disabled:opacity-40"
-            title="Export incidents data to CSV Excel"
+            title={isFrench ? 'Exporter en CSV Excel' : 'Export incidents data to CSV Excel'}
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-500" />
-            <span>Export CSV</span>
+            <span>{isFrench ? 'Exporter CSV' : 'Export CSV'}</span>
           </button>
 
           <button
@@ -355,7 +376,7 @@ export const StudentIncidentsView: React.FC = () => {
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            <span>{isFrench ? 'Actualiser' : 'Refresh'}</span>
           </button>
         </div>
       </div>
@@ -364,7 +385,7 @@ export const StudentIncidentsView: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
           <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-            Total Incidents
+            {isFrench ? 'Incidents totaux' : 'Total Incidents'}
           </div>
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">
             {stats.total}
@@ -373,7 +394,7 @@ export const StudentIncidentsView: React.FC = () => {
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
           <div className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
-            Pending Office
+            {isFrench ? 'En attente bureau' : 'Pending Office'}
           </div>
           <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">
             {stats.pendingReview}
@@ -382,7 +403,7 @@ export const StudentIncidentsView: React.FC = () => {
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
           <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
-            Under Investigation
+            {isFrench ? 'Enquête en cours' : 'Under Investigation'}
           </div>
           <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
             {stats.underInvestigation}
@@ -391,7 +412,7 @@ export const StudentIncidentsView: React.FC = () => {
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
           <div className="text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
-            Parent / School Notified
+            {isFrench ? 'Parents/École notifiés' : 'Parent / School Notified'}
           </div>
           <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">
             {stats.parentContacted}
@@ -400,7 +421,7 @@ export const StudentIncidentsView: React.FC = () => {
 
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
           <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
-            Closed / Resolved
+            {isFrench ? 'Clos / Résolus' : 'Closed / Resolved'}
           </div>
           <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
             {stats.closed}
@@ -417,8 +438,8 @@ export const StudentIncidentsView: React.FC = () => {
               type="text"
               placeholder={
                 timeRange === 'all'
-                  ? 'Student name, #, or route #...'
-                  : 'Search by student name, #, school, route, driver, or notes...'
+                  ? (isFrench ? 'Nom de l\'élève, matricule ou n° de route...' : 'Student name, #, or route #...')
+                  : (isFrench ? 'Rechercher par élève, école, route, conducteur ou notes...' : 'Search by student name, #, school, route, driver, or notes...')
               }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -438,7 +459,7 @@ export const StudentIncidentsView: React.FC = () => {
               className="px-3.5 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-900 rounded-lg transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5"
             >
               <Search className="w-3.5 h-3.5" />
-              Search Archive
+              <span>{isFrench ? 'Rechercher dans l\'archive' : 'Search Archive'}</span>
             </button>
           )}
         </div>
@@ -448,12 +469,12 @@ export const StudentIncidentsView: React.FC = () => {
           <div className="flex items-center bg-slate-100 dark:bg-slate-900/80 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
             <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 px-2 flex items-center gap-1">
               <Clock className="w-3.5 h-3.5 text-blue-500" />
-              Range:
+              {isFrench ? 'Période :' : 'Range:'}
             </span>
             {[
-              { id: '6months', label: '6 Months (Hot)' },
-              { id: '1year', label: '1 Year (Hybrid)' },
-              { id: 'all', label: 'All History' },
+              { id: '6months', label: isFrench ? '6 mois (Direct)' : '6 Months (Hot)' },
+              { id: '1year', label: isFrench ? '1 an (Hybride)' : '1 Year (Hybrid)' },
+              { id: 'all', label: isFrench ? 'Tout l\'historique' : 'All History' },
             ].map((rng) => (
               <button
                 key={rng.id}
@@ -481,22 +502,22 @@ export const StudentIncidentsView: React.FC = () => {
             }`}
           >
             <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-            Needs Office Follow-up Only
+            {isFrench ? 'Suivi bureau requis seulement' : 'Needs Office Follow-up Only'}
           </button>
 
           {/* Status Select */}
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            aria-label="Filter by incident status"
+            aria-label={isFrench ? 'Filtrer par statut d\'incident' : 'Filter by incident status'}
             className="px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
           >
-            <option value="all">All Statuses</option>
-            <option value="submitted">Submitted</option>
-            <option value="under_investigation">Under Investigation</option>
-            <option value="parent_contacted">Parent Contacted</option>
-            <option value="school_notified">School Notified</option>
-            <option value="closed">Closed</option>
+            <option value="all">{isFrench ? 'Tous les statuts' : 'All Statuses'}</option>
+            <option value="submitted">{isFrench ? 'Soumis' : 'Submitted'}</option>
+            <option value="under_investigation">{isFrench ? 'Enquête en cours' : 'Under Investigation'}</option>
+            <option value="parent_contacted">{isFrench ? 'Parents notifiés' : 'Parent Contacted'}</option>
+            <option value="school_notified">{isFrench ? 'École notifiée' : 'School Notified'}</option>
+            <option value="closed">{isFrench ? 'Clos' : 'Closed'}</option>
           </select>
         </div>
       </div>
@@ -507,11 +528,15 @@ export const StudentIncidentsView: React.FC = () => {
           <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <div className="font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
-              <span>All History Mode (BigQuery Cold Archive)</span>
-              <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">10-Year Safe Scan</span>
+              <span>{isFrench ? 'Mode Tout l\'historique (Archive froide BigQuery)' : 'All History Mode (BigQuery Cold Archive)'}</span>
+              <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">
+                {isFrench ? 'Recherche sécurisée 10 ans' : '10-Year Safe Scan'}
+              </span>
             </div>
             <p className="text-amber-700 dark:text-amber-300">
-              To protect database performance and avoid full-table scans across 10+ years of school incidents, full browsing is restricted. Please enter a <strong>Student Name</strong>, <strong>Student #</strong>, or <strong>Route #</strong> to query historical archive records.
+              {isFrench
+                ? 'Pour protéger les performances de la base de données sur plus de 10 ans d\'archives d\'incidents, la navigation complète est restreinte. Veuillez saisir un nom d\'élève, un matricule ou un numéro de route pour interroger les archives.'
+                : 'To protect database performance and avoid full-table scans across 10+ years of school incidents, full browsing is restricted. Please enter a Student Name, Student #, or Route # to query historical archive records.'}
             </p>
           </div>
         </div>
@@ -519,18 +544,28 @@ export const StudentIncidentsView: React.FC = () => {
 
       {/* ─── Incident Reports Table ──────────────────────────────────────────── */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
-            <thead className="bg-slate-50 dark:bg-slate-900/60 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+          <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300 border-collapse table-fixed min-w-[980px]">
+            <colgroup>
+              <col style={{ width: '130px' }} />
+              <col style={{ width: '160px' }} />
+              <col style={{ width: '180px' }} />
+              <col style={{ minWidth: '180px' }} />
+              <col style={{ width: '150px' }} />
+              <col style={{ width: '160px' }} />
+              <col style={{ width: '150px' }} />
+              <col style={{ width: '220px' }} />
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900/95 backdrop-blur-xs text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 shadow-xs">
               <tr>
-                <th className="px-4 py-3">Date / Time</th>
-                <th className="px-4 py-3">Student</th>
-                <th className="px-4 py-3">School & Route</th>
-                <th className="px-4 py-3">Categories</th>
-                <th className="px-4 py-3">Reporting Driver</th>
-                <th className="px-4 py-3">Safety Alerts</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="px-4 py-3">{isFrench ? 'Date / Heure' : 'Date / Time'}</th>
+                <th className="px-4 py-3">{isFrench ? 'Élève' : 'Student'}</th>
+                <th className="px-4 py-3">{isFrench ? 'École & Circuit' : 'School & Route'}</th>
+                <th className="px-4 py-3">{isFrench ? 'Catégories' : 'Categories'}</th>
+                <th className="px-4 py-3">{isFrench ? 'Conducteur' : 'Reporting Driver'}</th>
+                <th className="px-4 py-3">{isFrench ? 'Alertes sécurité' : 'Safety Alerts'}</th>
+                <th className="px-4 py-3">{isFrench ? 'Statut' : 'Status'}</th>
+                <th className="px-4 py-3 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
@@ -538,7 +573,7 @@ export const StudentIncidentsView: React.FC = () => {
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-400">
                     <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-amber-500" />
-                    Loading student incident reports...
+                    {isFrench ? 'Chargement des rapports d\'incidents...' : 'Loading student incident reports...'}
                   </td>
                 </tr>
               ) : filteredIncidents.length === 0 ? (
@@ -547,166 +582,190 @@ export const StudentIncidentsView: React.FC = () => {
                     {timeRange === 'all' && !searchQuery.trim() ? (
                       <div className="flex flex-col items-center">
                         <Search className="h-10 w-10 text-amber-500/60 mb-2" />
-                        <h4 className="text-base font-semibold text-slate-700 dark:text-slate-300">Search Student Incident History</h4>
+                        <h4 className="text-base font-semibold text-slate-700 dark:text-slate-300">
+                          {isFrench ? 'Rechercher dans l\'historique des incidents' : 'Search Student Incident History'}
+                        </h4>
                         <p className="text-xs text-slate-500 mt-1 max-w-md">
-                          Search across 10 years of BigQuery incident archives by entering a student name, student #, or route # above and clicking Search Archive.
+                          {isFrench
+                            ? 'Recherchez parmi 10 ans d\'archives BigQuery en saisissant le nom d\'un élève, son matricule ou le numéro de route ci-dessus.'
+                            : 'Search across 10 years of BigQuery incident archives by entering a student name, student #, or route # above and clicking Search Archive.'}
                         </p>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center">
                         <ShieldAlert className="h-8 w-8 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
-                        <h4 className="text-base font-semibold text-slate-700 dark:text-slate-300">No incident reports found</h4>
+                        <h4 className="text-base font-semibold text-slate-700 dark:text-slate-300">
+                          {isFrench ? 'Aucun rapport d\'incident trouvé' : 'No incident reports found'}
+                        </h4>
                         <p className="text-xs text-slate-500 mt-1">
                           {timeRange === 'all'
-                            ? `No student incidents found for "${searchQuery}" in the historical archive.`
-                            : 'No student incidents match your current filter.'}
+                            ? (isFrench
+                                ? `Aucun incident d'élève trouvé pour « ${searchQuery} » dans l'archive historique.`
+                                : `No student incidents found for "${searchQuery}" in the historical archive.`)
+                            : (isFrench
+                                ? 'Aucun incident d\'élève ne correspond aux filtres actuels.'
+                                : 'No student incidents match your current filter.')}
                         </p>
                       </div>
                     )}
                   </td>
                 </tr>
               ) : (
-                filteredIncidents.map((r) => {
-                  const statusConfig =
-                    STUDENT_INCIDENT_STATUS_COLORS[r.status] ||
-                    STUDENT_INCIDENT_STATUS_COLORS.submitted;
-                  const statusLabel =
-                    STUDENT_INCIDENT_STATUS_LABELS[r.status] || r.status;
-
-                  return (
-                    <tr
-                      key={r.id}
-                      className="hover:bg-slate-50/80 dark:hover:bg-slate-750/50 transition cursor-pointer"
-                      onClick={() => handleOpenReview(r)}
-                    >
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                          <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                          {r.incidentDate}
-                          {isArchivedDate(r.incidentDate) && (
-                            <span
-                              title="Record is older than 6 months and retrieved from BigQuery cold archive"
-                              className="ml-1 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800"
-                            >
-                              BigQuery
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                          <Clock className="h-3 w-3" />
-                          {r.incidentTime}
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <div className="font-semibold text-slate-900 dark:text-slate-100">
-                          {r.studentName}
-                        </div>
-                        <div className="text-xs text-slate-400">
-                          {r.grade ? `Gr ${r.grade}` : 'Student'}{' '}
-                          {r.studentNo ? `· #${r.studentNo}` : ''}
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <div className="text-slate-900 dark:text-slate-200 flex items-center gap-1">
-                          <School className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                          <span className="truncate max-w-[180px]">
-                            {r.schoolName || 'Unassigned School'}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-400">
-                          Route {r.routeNo}{' '}
-                          {r.routeName ? `· ${r.routeName}` : ''}
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <div className="flex flex-wrap gap-1 max-w-[220px]">
-                          {r.incidentTypes.map((k) => (
-                            <span
-                              key={k}
-                              className="px-2 py-0.5 text-xs rounded-md bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600"
-                            >
-                              {STUDENT_INCIDENT_CATEGORY_LABELS[k] || k}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <div className="text-slate-900 dark:text-slate-200 font-medium">
-                          {r.driverName}
-                        </div>
-                        <div className="text-xs text-slate-400">ID: {r.driverId}</div>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <div className="flex flex-col gap-1 text-xs">
-                          {r.studentRemovedFromBus && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-rose-700 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-400 font-semibold w-fit">
-                              <UserX className="h-3 w-3" /> Removed from Bus
-                            </span>
-                          )}
-                          {r.firstAidRequired && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-red-700 bg-red-50 dark:bg-red-950/40 dark:text-red-400 font-semibold w-fit">
-                              <HeartPulse className="h-3 w-3" /> First Aid Given
-                            </span>
-                          )}
-                          {r.parentsNotified && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-blue-700 bg-blue-50 dark:bg-blue-950/40 dark:text-blue-400 w-fit">
-                              <PhoneCall className="h-3 w-3" /> Parents Notified
-                            </span>
-                          )}
-                          {!r.studentRemovedFromBus &&
-                            !r.firstAidRequired &&
-                            !r.parentsNotified && (
-                              <span className="text-slate-400">-</span>
-                            )}
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border}`}
-                        >
-                          {statusLabel}
-                        </span>
-                        {r.officeFollowUp?.isOfficeLocked && (
-                          <span className="ml-1 text-slate-400 inline-block align-middle" title="Office Record Locked">
-                            <Lock className="h-3 w-3" />
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenPdf(r);
-                            }}
-                            className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition border border-slate-200 dark:border-slate-600 flex items-center gap-1 cursor-pointer"
-                            title="Print Official Incident Form / PDF"
-                          >
-                            <Printer className="w-3.5 h-3.5 text-amber-500" />
-                            <span>Print / PDF</span>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenReview(r);
-                            }}
-                            className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition shadow-xs cursor-pointer"
-                          >
-                            Review & Action
-                          </button>
-                        </div>
-                      </td>
+                <>
+                  {paddingTop > 0 && (
+                    <tr>
+                      <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={8} />
                     </tr>
-                  );
-                })
+                  )}
+                  {virtualRows.map((virtualRow) => {
+                    const r = filteredIncidents[virtualRow.index];
+                    if (!r) return null;
+                    const statusConfig =
+                      STUDENT_INCIDENT_STATUS_COLORS[r.status] ||
+                      STUDENT_INCIDENT_STATUS_COLORS.submitted;
+                    const statusLabel =
+                      STUDENT_INCIDENT_STATUS_LABELS[r.status] || r.status;
+
+                    return (
+                      <tr
+                        key={r.id}
+                        className="hover:bg-slate-50/80 dark:hover:bg-slate-750/50 transition cursor-pointer"
+                        onClick={() => handleOpenReview(r)}
+                      >
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                            {r.incidentDate}
+                            {isArchivedDate(r.incidentDate) && (
+                              <span
+                                title={isFrench ? 'Dossier archivé dans BigQuery (>6 mois)' : 'Record is older than 6 months and retrieved from BigQuery cold archive'}
+                                className="ml-1 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800"
+                              >
+                                BigQuery
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                            <Clock className="h-3 w-3" />
+                            {r.incidentTime}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <div className="font-semibold text-slate-900 dark:text-slate-100">
+                            {r.studentName}
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            {r.grade ? `Gr ${r.grade}` : (isFrench ? 'Élève' : 'Student')}{' '}
+                            {r.studentNo ? `· #${r.studentNo}` : ''}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <div className="text-slate-900 dark:text-slate-200 flex items-center gap-1">
+                            <School className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate max-w-[180px]">
+                              {r.schoolName || (isFrench ? 'École non assignée' : 'Unassigned School')}
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            {isFrench ? 'Circuit' : 'Route'} {r.routeNo}{' '}
+                            {r.routeName ? `· ${r.routeName}` : ''}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <div className="flex flex-wrap gap-1 max-w-[220px]">
+                            {r.incidentTypes.map((k) => (
+                              <span
+                                key={k}
+                                className="px-2 py-0.5 text-xs rounded-md bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600"
+                              >
+                                {STUDENT_INCIDENT_CATEGORY_LABELS[k] || k}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <div className="text-slate-900 dark:text-slate-200 font-medium">
+                            {r.driverName}
+                          </div>
+                          <div className="text-xs text-slate-400">ID: {r.driverId}</div>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <div className="flex flex-col gap-1 text-xs">
+                            {r.studentRemovedFromBus && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-rose-700 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-400 font-semibold w-fit">
+                                <UserX className="h-3 w-3" /> {isFrench ? 'Débarqué de l\'autobus' : 'Removed from Bus'}
+                              </span>
+                            )}
+                            {r.firstAidRequired && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-red-700 bg-red-50 dark:bg-red-950/40 dark:text-red-400 font-semibold w-fit">
+                                <HeartPulse className="h-3 w-3" /> {isFrench ? 'Premiers soins' : 'First Aid Given'}
+                              </span>
+                            )}
+                            {r.parentsNotified && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-blue-700 bg-blue-50 dark:bg-blue-950/40 dark:text-blue-400 w-fit">
+                                <PhoneCall className="h-3 w-3" /> {isFrench ? 'Parents notifiés' : 'Parents Notified'}
+                              </span>
+                            )}
+                            {!r.studentRemovedFromBus &&
+                              !r.firstAidRequired &&
+                              !r.parentsNotified && (
+                                <span className="text-slate-400">-</span>
+                              )}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border}`}
+                          >
+                            {statusLabel}
+                          </span>
+                          {r.officeFollowUp?.isOfficeLocked && (
+                            <span className="ml-1 text-slate-400 inline-block align-middle" title={isFrench ? 'Dossier verrouillé' : 'Office Record Locked'}>
+                              <Lock className="h-3 w-3" />
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPdf(r);
+                              }}
+                              className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition border border-slate-200 dark:border-slate-600 flex items-center gap-1 cursor-pointer"
+                              title={isFrench ? 'Imprimer / Exporter PDF' : 'Print Official Incident Form / PDF'}
+                            >
+                              <Printer className="w-3.5 h-3.5 text-amber-500" />
+                              <span>{isFrench ? 'Imprimer / PDF' : 'Print / PDF'}</span>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenReview(r);
+                              }}
+                              className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition shadow-xs cursor-pointer"
+                            >
+                              {isFrench ? 'Examiner & Traiter' : 'Review & Action'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {paddingBottom > 0 && (
+                    <tr>
+                      <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={8} />
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>

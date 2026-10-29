@@ -37,7 +37,6 @@ import {
   buildCharterSimpleStops,
   formatCharterStopTime,
   addMinutesToCharterTime,
-  extractAssignedEmployeeIds,
 } from '../types/charter';
 import { RouteOpening, RouteOpeningRole } from '../types/routeOpening';
 import { RouteOpeningService } from '../services/routeOpeningService';
@@ -166,14 +165,16 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
 
   // Subscribe to trips, clients, and route_openings
   useEffect(() => {
-    CharterService.seedSampleDataIfEmpty();
+    let isMounted = true;
 
     const unsubTrips = CharterService.subscribeToTrips(
       (list) => {
+        if (!isMounted) return;
         setTrips(list);
         setLoading(false);
       },
       (err) => {
+        if (!isMounted) return;
         console.error('Trips subscription error:', err);
         setLoading(false);
       }
@@ -181,26 +182,33 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
 
     const unsubClients = CharterService.subscribeToClients(
       (list) => {
+        if (!isMounted) return;
         setClients(list);
       },
       (err) => {
+        if (!isMounted) return;
         console.error('Clients subscription error:', err);
       }
     );
 
     const unsubOpenings = RouteOpeningService.subscribeToOpenings(
       (list) => {
+        if (!isMounted) return;
         setRouteOpenings(list);
       },
       (err) => {
+        if (!isMounted) return;
         console.error('Charter openings subscription error:', err);
       }
     );
 
     return () => {
-      unsubTrips();
-      unsubClients();
-      unsubOpenings();
+      isMounted = false;
+      setTimeout(() => {
+        try { unsubTrips(); } catch (e) { console.warn('unsubTrips warning:', e); }
+        try { unsubClients(); } catch (e) { console.warn('unsubClients warning:', e); }
+        try { unsubOpenings(); } catch (e) { console.warn('unsubOpenings warning:', e); }
+      }, 150);
     };
   }, []);
 
@@ -334,17 +342,6 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
   const migratedIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     trips.forEach((tr) => {
-      // Auto-populate redundant assignedEmployeeIds for Firestore index-level driver queries
-      if (!migratedIdsRef.current.has(`empIds:${tr.id}`)) {
-        migratedIdsRef.current.add(`empIds:${tr.id}`);
-        const expectedIds = extractAssignedEmployeeIds(tr.assignments);
-        const currentIds = tr.assignedEmployeeIds || [];
-        const isMatch = currentIds.length === expectedIds.length && currentIds.every((id) => expectedIds.includes(id));
-        if (!isMatch) {
-          CharterService.updateTrip(tr.id, { assignedEmployeeIds: expectedIds }, actorName).catch(() => {});
-        }
-      }
-
       if (
         tr.roundTrip !== false &&
         tr.stops &&

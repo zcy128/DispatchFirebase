@@ -42,6 +42,12 @@ func main() {
 	syncExpenses := flag.Bool("sync-expenses", false, "Copy expense claims older than N months to BigQuery (read-only)")
 	archiveExpenses := flag.Bool("archive-expenses", false, "Both sync and cleanup expense claims older than N months (default 6)")
 	expenseMonths := flag.Int("expense-months", 6, "Months threshold for expense claims archive (default 6)")
+	syncAssignments := flag.Bool("sync-assignments", false, "Copy assignment history older than N months to BigQuery (read-only)")
+	archiveAssignments := flag.Bool("archive-assignments", false, "Both sync and cleanup assignment history older than N months (default 12)")
+	assignmentMonths := flag.Int("assignment-months", 12, "Months threshold for assignment history archive (default 12)")
+	syncAbsences := flag.Bool("sync-absences", false, "Copy student absences older than N months to BigQuery (read-only)")
+	archiveAbsences := flag.Bool("archive-absences", false, "Both sync and cleanup student absences older than N months (default 6)")
+	absenceMonths := flag.Int("absence-months", 6, "Months threshold for student absences archive (default 6)")
 	syncTimeOff := flag.Bool("sync-timeoff", false, "Sync time-off requests older than 30 days past endDate to BigQuery")
 	cleanupTimeOff := flag.Bool("cleanup-timeoff", false, "Delete Firestore time-off requests older than 30 days past endDate")
 	archiveTimeOff := flag.Bool("archive-timeoff", false, "Both sync and cleanup time-off requests older than 30 days past endDate")
@@ -179,6 +185,16 @@ func main() {
 			log.Printf("[ARCHIVE-CLI] ArchiveExpensesOlderThan error: %v", err)
 		} else {
 			log.Printf("[ARCHIVE-CLI] ArchiveExpensesOlderThan completed: %d expense claims synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+		}
+		if synced, deleted, err := arc.ArchiveAssignmentHistoryOlderThan(ctx, *assignmentMonths); err != nil {
+			log.Printf("[ARCHIVE-CLI] ArchiveAssignmentHistoryOlderThan error: %v", err)
+		} else {
+			log.Printf("[ARCHIVE-CLI] ArchiveAssignmentHistoryOlderThan completed: %d assignment history records synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+		}
+		if synced, deleted, err := arc.ArchiveStudentAbsencesOlderThan(ctx, *absenceMonths); err != nil {
+			log.Printf("[ARCHIVE-CLI] ArchiveStudentAbsencesOlderThan error: %v", err)
+		} else {
+			log.Printf("[ARCHIVE-CLI] ArchiveStudentAbsencesOlderThan completed: %d student absences synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
 		}
 		log.Println("[ARCHIVE-CLI] Unified sync-all finished.")
 	}
@@ -322,6 +338,42 @@ func main() {
 			log.Fatalf("[ARCHIVE-CLI] ArchiveTimeOff failed: %v", err)
 		} else {
 			log.Printf("[ARCHIVE-CLI] Time-off archive complete: %d synced to BigQuery, %d cleaned up from Firestore.", synced, deleted)
+		}
+	}
+
+	if *syncAssignments {
+		log.Printf("[ARCHIVE-CLI] Copying assignment history older than %d months to BigQuery...", *assignmentMonths)
+		if count, err := arc.SyncAssignmentHistoryOlderThan(ctx, *assignmentMonths); err != nil {
+			log.Fatalf("[ARCHIVE-CLI] SyncAssignmentHistoryOlderThan failed: %v", err)
+		} else {
+			log.Printf("[ARCHIVE-CLI] Successfully copied %d assignment history records to BigQuery.", count)
+		}
+	}
+
+	if *archiveAssignments {
+		log.Printf("[ARCHIVE-CLI] Archiving (sync then cleanup) assignment history older than %d months...", *assignmentMonths)
+		if synced, deleted, err := arc.ArchiveAssignmentHistoryOlderThan(ctx, *assignmentMonths); err != nil {
+			log.Fatalf("[ARCHIVE-CLI] ArchiveAssignmentHistoryOlderThan failed: %v", err)
+		} else {
+			log.Printf("[ARCHIVE-CLI] Successfully archived %d and cleaned up %d assignment history records from Firestore.", synced, deleted)
+		}
+	}
+
+	if *syncAbsences {
+		log.Printf("[ARCHIVE-CLI] Copying student absences older than %d months to BigQuery...", *absenceMonths)
+		if count, err := arc.SyncStudentAbsencesOlderThan(ctx, *absenceMonths); err != nil {
+			log.Fatalf("[ARCHIVE-CLI] SyncStudentAbsencesOlderThan failed: %v", err)
+		} else {
+			log.Printf("[ARCHIVE-CLI] Successfully copied %d student absence records to BigQuery.", count)
+		}
+	}
+
+	if *archiveAbsences {
+		log.Printf("[ARCHIVE-CLI] Archiving (sync then cleanup) student absences older than %d months...", *absenceMonths)
+		if synced, deleted, err := arc.ArchiveStudentAbsencesOlderThan(ctx, *absenceMonths); err != nil {
+			log.Fatalf("[ARCHIVE-CLI] ArchiveStudentAbsencesOlderThan failed: %v", err)
+		} else {
+			log.Printf("[ARCHIVE-CLI] Successfully archived %d and cleaned up %d student absence records from Firestore.", synced, deleted)
 		}
 	}
 

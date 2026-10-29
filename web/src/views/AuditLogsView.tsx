@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAuth } from '../contexts/AuthContext';
+import { useI18n } from '../contexts/I18nContext';
 import {
   getLocalTodayString,
   addDaysToDateString
@@ -48,14 +50,15 @@ export type AuditLogCategory =
 
 export const AuditLogsView: React.FC = () => {
   const { currentUser } = useAuth();
+  const { isFrench } = useI18n();
   const isAdmin = currentUser?.role?.toLowerCase() === 'admin';
 
   // Active Log Category
   const [activeCategory, setActiveCategory] = useState<AuditLogCategory>('dispatch');
 
-  // Date Range with strict 7-day maximum restriction
+  // Date Range: Default is today, with strict 7-day maximum restriction
   const today = getLocalTodayString();
-  const defaultFrom = addDaysToDateString(today, -6); // 7-day span: today - 6 to today
+  const defaultFrom = today; // Default is today
 
   const [dateFrom, setDateFrom] = useState<string>(defaultFrom);
   const [dateTo, setDateTo] = useState<string>(today);
@@ -92,8 +95,8 @@ export const AuditLogsView: React.FC = () => {
   };
 
   const handleDateFromChange = (newFrom: string) => {
-    setDateFrom(newFrom);
     if (!newFrom) return;
+    setDateFrom(newFrom);
 
     // If dateTo is before dateFrom, align it
     if (dateTo < newFrom) {
@@ -107,7 +110,11 @@ export const AuditLogsView: React.FC = () => {
     if (diffDays > 7) {
       const clampedTo = addDaysToDateString(newFrom, 6);
       setDateTo(clampedTo);
-      setRangeWarning('Date range automatically adjusted to maximum permitted limit of 7 days.');
+      setRangeWarning(
+        isFrench
+          ? 'La période a été ajustée automatiquement à la limite maximale autorisée de 7 jours.'
+          : 'Date range automatically adjusted to maximum permitted limit of 7 days.'
+      );
     } else {
       setRangeWarning(null);
     }
@@ -128,7 +135,11 @@ export const AuditLogsView: React.FC = () => {
       const clampedFrom = addDaysToDateString(newTo, -6);
       setDateFrom(clampedFrom);
       setDateTo(newTo);
-      setRangeWarning('Date range automatically adjusted to maximum permitted limit of 7 days.');
+      setRangeWarning(
+        isFrench
+          ? 'La période a été ajustée automatiquement à la limite maximale autorisée de 7 jours.'
+          : 'Date range automatically adjusted to maximum permitted limit of 7 days.'
+      );
     } else {
       setDateTo(newTo);
       setRangeWarning(null);
@@ -137,9 +148,14 @@ export const AuditLogsView: React.FC = () => {
 
   const handleApplyPreset = (days: number) => {
     const currentToday = getLocalTodayString();
-    const newFrom = addDaysToDateString(currentToday, -(days - 1));
-    setDateFrom(newFrom);
-    setDateTo(currentToday);
+    if (days === 1) {
+      setDateFrom(currentToday);
+      setDateTo(currentToday);
+    } else {
+      const newFrom = addDaysToDateString(currentToday, -(days - 1));
+      setDateFrom(newFrom);
+      setDateTo(currentToday);
+    }
     setRangeWarning(null);
   };
 
@@ -149,27 +165,76 @@ export const AuditLogsView: React.FC = () => {
 
     setLoading(true);
 
-    // 1. Dispatch Logs (load for range)
-    const unsubDispatch = DispatchService.subscribeToChangeLogs(
-      today,
-      (todayLogs) => {
-        // Collect logs for the date window
-        setDispatchLogs(todayLogs);
+    // Collect dates in [dateFrom, dateTo] (up to 7 days)
+    const dates: string[] = [];
+    let cur = dateFrom;
+    while (cur <= dateTo && dates.length < 8) {
+      dates.push(cur);
+      cur = addDaysToDateString(cur, 1);
+    }
+
+    let isSubscribed = true;
+
+    // 1. Dispatch Logs across the selected dates
+    Promise.all(dates.map((d) => DispatchService.listChangeLogs(d, { scope: 'all' })))
+      .then((results) => {
+        if (!isSubscribed) return;
+        const allLogs: DispatchChangeLog[] = [];
+        const seen = new Set<string>();
+        results.forEach((dayLogs) => {
+          if (Array.isArray(dayLogs)) {
+            dayLogs.forEach((l) => {
+              const uid = l.id || `${l.dispatchDate}-${l.timestamp}-${l.detail}`;
+              if (!seen.has(uid)) {
+                seen.add(uid);
+                allLogs.push(l);
+              }
+            });
+          }
+        });
+        allLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        setDispatchLogs(allLogs);
         setLoading(false);
-      },
-      () => setLoading(false)
-    );
+      })
+      .catch((err) => {
+        console.error('Failed to load dispatch logs for range:', err);
+        if (isSubscribed) setLoading(false);
+      });
+
+    // If today is in dates, maintain real-time listener for today's logs
+    let unsubToday = () => {};
+    if (dates.includes(today)) {
+      unsubToday = DispatchService.subscribeToChangeLogs(
+        today,
+        (todayLogs) => {
+          if (!isSubscribed) return;
+          setDispatchLogs((prev) => {
+            const map = new Map<string, DispatchChangeLog>();
+            prev.filter((l) => l.dispatchDate !== today).forEach((l) => {
+              map.set(l.id || `${l.dispatchDate}-${l.timestamp}-${l.detail}`, l);
+            });
+            todayLogs.forEach((l) => {
+              map.set(l.id || `${l.dispatchDate}-${l.timestamp}-${l.detail}`, l);
+            });
+            const merged = Array.from(map.values());
+            merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            return merged;
+          });
+        },
+        () => {}
+      );
+    }
 
     // 2. Route Logs
     const unsubRoute = RouteAuditService.subscribeToAllLogs((logs) => {
-      setRouteLogs(logs);
+      if (isSubscribed) setRouteLogs(logs);
     });
 
     // 3. Master Entity Logs
     const unsubMaster = EntityOperationLogService.subscribeToLogs(
       {},
       (logs) => {
-        setMasterLogs(logs);
+        if (isSubscribed) setMasterLogs(logs);
       }
     );
 
@@ -177,7 +242,7 @@ export const AuditLogsView: React.FC = () => {
     const unsubPayroll = PayrollOperationLogService.subscribeToLogs(
       {},
       (logs) => {
-        setPayrollLogs(logs);
+        if (isSubscribed) setPayrollLogs(logs);
       }
     );
 
@@ -185,18 +250,19 @@ export const AuditLogsView: React.FC = () => {
     const unsubSafety = OperationalSafetyLogService.subscribeToLogs(
       {},
       (logs) => {
-        setSafetyLogs(logs);
+        if (isSubscribed) setSafetyLogs(logs);
       }
     );
 
     return () => {
-      unsubDispatch();
+      isSubscribed = false;
+      unsubToday();
       unsubRoute();
       unsubMaster();
       unsubPayroll();
       unsubSafety();
     };
-  }, [isAdmin, today]);
+  }, [isAdmin, dateFrom, dateTo, today]);
 
   // Refresh active category
   const handleRefresh = async () => {
@@ -350,7 +416,7 @@ export const AuditLogsView: React.FC = () => {
     });
   }, [payrollLogs, dateFrom, dateTo, selectedActor, selectedAction, searchQuery]);
 
-  // Filter 5: Safety & Operational Logs
+  // Filter 5: Safety Logs
   const filteredSafetyLogs = useMemo(() => {
     return safetyLogs.filter((log) => {
       const d = log.timestamp ? log.timestamp.slice(0, 10) : '';
@@ -365,18 +431,18 @@ export const AuditLogsView: React.FC = () => {
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         const matchTarget =
-          log.targetTitle.toLowerCase().includes(q) ||
           log.targetIdentifier.toLowerCase().includes(q) ||
           log.targetId.toLowerCase().includes(q);
         const matchSummary = log.summary.toLowerCase().includes(q);
         const matchActor = log.actor.userName.toLowerCase().includes(q);
+        const matchModule = log.module.toLowerCase().includes(q);
         const matchDiff = log.diffs?.some(
           (diff) =>
             diff.fieldLabel.toLowerCase().includes(q) ||
             String(diff.oldValue).toLowerCase().includes(q) ||
             String(diff.newValue).toLowerCase().includes(q)
         );
-        if (!matchTarget && !matchSummary && !matchActor && !matchDiff) {
+        if (!matchTarget && !matchSummary && !matchActor && !matchModule && !matchDiff) {
           return false;
         }
       }
@@ -384,118 +450,117 @@ export const AuditLogsView: React.FC = () => {
     });
   }, [safetyLogs, dateFrom, dateTo, selectedActor, selectedAction, searchQuery]);
 
-  // Distinct actors for current active log category
+  // Distinct actors for dropdown filtering
   const activeActors = useMemo(() => {
     const set = new Set<string>();
-    if (activeCategory === 'dispatch') {
-      dispatchLogs.forEach((l) => l.user && set.add(l.user));
-    } else if (activeCategory === 'routes') {
-      routeLogs.forEach((l) => l.userName && set.add(l.userName));
-    } else if (activeCategory === 'master') {
-      masterLogs.forEach((l) => l.actor?.userName && set.add(l.actor.userName));
-    } else if (activeCategory === 'payroll') {
-      payrollLogs.forEach((l) => l.actor?.userName && set.add(l.actor.userName));
-    } else if (activeCategory === 'safety') {
-      safetyLogs.forEach((l) => l.actor?.userName && set.add(l.actor.userName));
+    switch (activeCategory) {
+      case 'dispatch':
+        dispatchLogs.forEach((l) => l.user && set.add(l.user));
+        break;
+      case 'routes':
+        routeLogs.forEach((l) => l.userName && set.add(l.userName));
+        break;
+      case 'master':
+        masterLogs.forEach((l) => l.actor?.userName && set.add(l.actor.userName));
+        break;
+      case 'payroll':
+        payrollLogs.forEach((l) => l.actor?.userName && set.add(l.actor.userName));
+        break;
+      case 'safety':
+        safetyLogs.forEach((l) => l.actor?.userName && set.add(l.actor.userName));
+        break;
     }
     return Array.from(set).sort();
   }, [activeCategory, dispatchLogs, routeLogs, masterLogs, payrollLogs, safetyLogs]);
 
-  // Total active records for current category
-  const currentCount = useMemo(() => {
+  // Export to CSV for active category
+  const handleExportCSV = () => {
+    let rows: string[][] = [];
+    let filename = `audit_${activeCategory}_${dateFrom}_to_${dateTo}.csv`;
+
     switch (activeCategory) {
       case 'dispatch':
-        return filteredDispatchLogs.length;
+        rows = [
+          ['Type', 'Route', 'Shift', 'Date', 'Time', 'Detail', 'User'],
+          ...filteredDispatchLogs.map((l) => [
+            `"${l.type}"`,
+            `"${l.routeNo || ''}"`,
+            `"${l.shiftType || ''}"`,
+            `"${l.dispatchDate || ''}"`,
+            `"${l.time || ''}"`,
+            `"${(l.detail || '').replace(/"/g, '""')}"`,
+            `"${l.user || ''}"`,
+          ]),
+        ];
+        break;
       case 'routes':
-        return filteredRouteLogs.length;
+        rows = [
+          ['ID', 'Timestamp', 'Route No', 'Category', 'Action', 'Summary', 'User', 'Diffs'],
+          ...filteredRouteLogs.map((l) => [
+            `"${l.id}"`,
+            `"${l.timestamp}"`,
+            `"${l.routeNo || ''}"`,
+            `"${l.category}"`,
+            `"${l.action}"`,
+            `"${l.summary.replace(/"/g, '""')}"`,
+            `"${l.userName} (${l.userRole})"`,
+            `"${(l.diffs || []).map((d) => `${d.fieldLabel}: ${d.oldValue} -> ${d.newValue}`).join('; ').replace(/"/g, '""')}"`,
+          ]),
+        ];
+        break;
       case 'master':
-        return filteredMasterLogs.length;
+        rows = [
+          ['ID', 'Timestamp', 'Target Type', 'Target ID', 'Target Name', 'Action', 'Summary', 'Actor'],
+          ...filteredMasterLogs.map((l) => [
+            `"${l.id}"`,
+            `"${l.timestamp}"`,
+            `"${l.targetType}"`,
+            `"${l.targetIdentifier}"`,
+            `"${l.targetName}"`,
+            `"${l.action}"`,
+            `"${l.summary.replace(/"/g, '""')}"`,
+            `"${l.actor.userName} (${l.actor.userRole})"`,
+          ]),
+        ];
+        break;
       case 'payroll':
-        return filteredPayrollLogs.length;
+        rows = [
+          ['ID', 'Timestamp', 'Category', 'Target', 'Action', 'Amount', 'Summary', 'Actor'],
+          ...filteredPayrollLogs.map((l) => [
+            `"${l.id}"`,
+            `"${l.timestamp}"`,
+            `"${l.category}"`,
+            `"${l.targetIdentifier}"`,
+            `"${l.action}"`,
+            `"${l.amount !== undefined ? l.amount : ''}"`,
+            `"${l.summary.replace(/"/g, '""')}"`,
+            `"${l.actor.userName} (${l.actor.userRole})"`,
+          ]),
+        ];
+        break;
       case 'safety':
-        return filteredSafetyLogs.length;
-    }
-  }, [
-    activeCategory,
-    filteredDispatchLogs.length,
-    filteredRouteLogs.length,
-    filteredMasterLogs.length,
-    filteredPayrollLogs.length,
-    filteredSafetyLogs.length
-  ]);
-
-  // Export CSV handler
-  const handleExportCSV = () => {
-    let headers: string[] = [];
-    let rows: string[][] = [];
-    const filename = `audit_${activeCategory}_${dateFrom}_to_${dateTo}.csv`;
-
-    if (activeCategory === 'dispatch') {
-      headers = ['Date', 'Time', 'Route', 'Shift', 'Type', 'Details', 'Operator'];
-      rows = filteredDispatchLogs.map((l) => [
-        `"${l.dispatchDate}"`,
-        `"${l.time}"`,
-        `"${l.routeNo}"`,
-        `"${l.shiftType}"`,
-        `"${l.type}"`,
-        `"${l.detail.replace(/"/g, '""')}"`,
-        `"${l.user}"`
-      ]);
-    } else if (activeCategory === 'routes') {
-      headers = ['Timestamp', 'Route No', 'Category', 'Action', 'Summary', 'Operator', 'Role'];
-      rows = filteredRouteLogs.map((l) => [
-        `"${l.timestamp}"`,
-        `"${l.routeNo}"`,
-        `"${l.category}"`,
-        `"${l.action}"`,
-        `"${l.summary.replace(/"/g, '""')}"`,
-        `"${l.userName}"`,
-        `"${l.userRole || ''}"`
-      ]);
-    } else if (activeCategory === 'master') {
-      headers = ['Timestamp', 'Target Type', 'ID', 'Name', 'Action', 'Summary', 'Operator', 'Role'];
-      rows = filteredMasterLogs.map((l) => [
-        `"${l.timestamp}"`,
-        `"${l.targetType}"`,
-        `"${l.targetIdentifier}"`,
-        `"${l.targetName.replace(/"/g, '""')}"`,
-        `"${l.action}"`,
-        `"${l.summary.replace(/"/g, '""')}"`,
-        `"${l.actor.userName}"`,
-        `"${l.actor.userRole || ''}"`
-      ]);
-    } else if (activeCategory === 'payroll') {
-      headers = ['Timestamp', 'Category', 'Target', 'Amount', 'Action', 'Summary', 'Operator'];
-      rows = filteredPayrollLogs.map((l) => [
-        `"${l.timestamp}"`,
-        `"${l.category}"`,
-        `"${l.targetIdentifier}"`,
-        `"${l.amount ? `$${l.amount.toFixed(2)}` : ''}"`,
-        `"${l.action}"`,
-        `"${l.summary.replace(/"/g, '""')}"`,
-        `"${l.actor.userName}"`
-      ]);
-    } else if (activeCategory === 'safety') {
-      headers = ['Timestamp', 'Module', 'Target', 'Severity', 'Action', 'Summary', 'Operator'];
-      rows = filteredSafetyLogs.map((l) => [
-        `"${l.timestamp}"`,
-        `"${l.module}"`,
-        `"${l.targetIdentifier}"`,
-        `"${l.severity || ''}"`,
-        `"${l.action}"`,
-        `"${l.summary.replace(/"/g, '""')}"`,
-        `"${l.actor.userName}"`
-      ]);
+        rows = [
+          ['ID', 'Timestamp', 'Module', 'Target ID', 'Action', 'Severity', 'Summary', 'Actor'],
+          ...filteredSafetyLogs.map((l) => [
+            `"${l.id}"`,
+            `"${l.timestamp}"`,
+            `"${l.module}"`,
+            `"${l.targetIdentifier}"`,
+            `"${l.action}"`,
+            `"${l.severity || ''}"`,
+            `"${l.summary.replace(/"/g, '""')}"`,
+            `"${l.actor.userName} (${l.actor.userRole})"`,
+          ]),
+        ];
+        break;
     }
 
     if (rows.length === 0) return;
-
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = rows.map((r) => r.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', url);
     link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
@@ -509,15 +574,40 @@ export const AuditLogsView: React.FC = () => {
         <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mb-4 shadow-lg shadow-rose-500/10">
           <ShieldAlert className="w-8 h-8" />
         </div>
-        <h2 className="text-xl font-bold text-white tracking-tight">Access Restricted</h2>
+        <h2 className="text-xl font-bold text-white tracking-tight">
+          {isFrench ? 'Accès restreint' : 'Access Restricted'}
+        </h2>
         <p className="text-sm text-slate-400 max-w-md mt-2">
-          System Audit Logs are strictly restricted to administrators. Your current account does not have authorization to view operational change histories.
+          {isFrench
+            ? 'Les journaux d\'audit système sont strictement réservés aux administrateurs. Votre compte actuel n\'a pas l\'autorisation de consulter l\'historique des modifications opérationnelles.'
+            : 'System Audit Logs are strictly restricted to administrators. Your current account does not have authorization to view operational change histories.'}
         </p>
       </div>
     );
   }
 
   const selectedDaysCount = calculateDaysDiff(dateFrom, dateTo);
+
+  // Virtual scrolling container for 1,000+ audit logs
+  const logContainerRef = useRef<HTMLDivElement>(null);
+
+  const activeLogsCount = useMemo(() => {
+    switch (activeCategory) {
+      case 'dispatch': return filteredDispatchLogs.length;
+      case 'routes': return filteredRouteLogs.length;
+      case 'master': return filteredMasterLogs.length;
+      case 'payroll': return filteredPayrollLogs.length;
+      case 'safety': return filteredSafetyLogs.length;
+      default: return 0;
+    }
+  }, [activeCategory, filteredDispatchLogs.length, filteredRouteLogs.length, filteredMasterLogs.length, filteredPayrollLogs.length, filteredSafetyLogs.length]);
+
+  const logVirtualizer = useVirtualizer({
+    count: activeLogsCount,
+    getScrollElement: () => logContainerRef.current,
+    estimateSize: () => 140,
+    overscan: 6,
+  });
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
@@ -529,10 +619,12 @@ export const AuditLogsView: React.FC = () => {
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-              System Audit & Operation Logs
+              {isFrench ? 'Journaux d\'audit et d\'opérations système' : 'System Audit & Operation Logs'}
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">
-              Comprehensive compliance audit trails across 5 operational modules (Max 7-day query window)
+              {isFrench
+                ? 'Pistes d\'audit de conformité sur 5 modules opérationnels (Fenêtre max. de 7 jours, défaut : aujourd\'hui)'
+                : 'Comprehensive compliance audit trails across 5 operational modules (Max 7-day query window, default: today)'}
             </p>
           </div>
         </div>
@@ -544,26 +636,30 @@ export const AuditLogsView: React.FC = () => {
             className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
+            <span>{isFrench ? 'Actualiser' : 'Refresh'}</span>
           </button>
 
           <button
             onClick={handleExportCSV}
-            disabled={currentCount === 0}
+            disabled={activeLogsCount === 0}
             className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition disabled:opacity-40"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
+            <span>{isFrench ? 'Exporter CSV' : 'Export CSV'}</span>
           </button>
         </div>
       </div>
 
-      {/* Date Range Selection Bar with Max 7 Days Constraint */}
+      {/* Date Range Selection Bar with Max 7 Days Constraint & Default Today */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
           <div className="flex items-center space-x-2 text-xs font-bold text-slate-300">
             <Calendar className="w-4 h-4 text-amber-400" />
-            <span>Audit Query Window (Maximum 7 Days Allowed)</span>
+            <span>
+              {isFrench
+                ? 'Fenêtre d\'audit (Maximum 7 jours autorisés)'
+                : 'Audit Query Window (Maximum 7 Days Allowed)'}
+            </span>
           </div>
 
           <div className="flex items-center space-x-2">
@@ -574,7 +670,9 @@ export const AuditLogsView: React.FC = () => {
                   : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
               }`}
             >
-              Active Window: {selectedDaysCount} {selectedDaysCount === 1 ? 'day' : 'days'} / 7 max
+              {isFrench
+                ? `Fenêtre active : ${selectedDaysCount} ${selectedDaysCount === 1 ? 'jour' : 'jours'} / 7 max`
+                : `Active Window: ${selectedDaysCount} ${selectedDaysCount === 1 ? 'day' : 'days'} / 7 max`}
             </span>
           </div>
         </div>
@@ -591,7 +689,7 @@ export const AuditLogsView: React.FC = () => {
           <div className="flex flex-wrap items-center gap-3">
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Start Date (From)
+                {isFrench ? 'Date de début (Du)' : 'Start Date (From)'}
               </label>
               <input
                 type="date"
@@ -604,7 +702,7 @@ export const AuditLogsView: React.FC = () => {
 
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                End Date (To)
+                {isFrench ? 'Date de fin (Au)' : 'End Date (To)'}
               </label>
               <input
                 type="date"
@@ -617,26 +715,43 @@ export const AuditLogsView: React.FC = () => {
             </div>
           </div>
 
-          {/* Quick Presets */}
+          {/* Quick Presets with Today as the prominent default */}
           <div className="flex items-center space-x-2 pt-1 md:pt-0">
-            <span className="text-xs text-slate-400 font-medium mr-1">Presets:</span>
+            <span className="text-xs text-slate-400 font-medium mr-1">
+              {isFrench ? 'Préréglages :' : 'Presets:'}
+            </span>
             <button
+              type="button"
               onClick={() => handleApplyPreset(1)}
-              className="px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+              className={`px-2.5 py-1 text-xs rounded-lg border transition font-semibold ${
+                selectedDaysCount === 1 && dateTo === today
+                  ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+              }`}
             >
-              Today
+              {isFrench ? 'Aujourd\'hui (Défaut)' : 'Today (Default)'}
             </button>
             <button
+              type="button"
               onClick={() => handleApplyPreset(3)}
-              className="px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+              className={`px-2.5 py-1 text-xs rounded-lg border transition ${
+                selectedDaysCount === 3 && dateTo === today
+                  ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm font-semibold'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+              }`}
             >
-              Past 3 Days
+              {isFrench ? '3 derniers jours' : 'Past 3 Days'}
             </button>
             <button
+              type="button"
               onClick={() => handleApplyPreset(7)}
-              className="px-2.5 py-1 text-xs rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold transition"
+              className={`px-2.5 py-1 text-xs rounded-lg border transition ${
+                selectedDaysCount === 7 && dateTo === today
+                  ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm font-bold'
+                  : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold'
+              }`}
             >
-              Past 7 Days (Max)
+              {isFrench ? '7 derniers jours (Max)' : 'Past 7 Days (Max)'}
             </button>
           </div>
         </div>
@@ -657,7 +772,7 @@ export const AuditLogsView: React.FC = () => {
           }`}
         >
           <Radio className="w-3.5 h-3.5" />
-          <span>1. Daily Dispatch Logs</span>
+          <span>{isFrench ? '1. Opérations de régulation' : '1. Daily Dispatch Logs'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
             {filteredDispatchLogs.length}
           </span>
@@ -676,7 +791,7 @@ export const AuditLogsView: React.FC = () => {
           }`}
         >
           <Navigation className="w-3.5 h-3.5" />
-          <span>2. Route & Stops Audit</span>
+          <span>{isFrench ? '2. Circuits & Horaires' : '2. Route & Stops Audit'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
             {filteredRouteLogs.length}
           </span>
@@ -695,7 +810,7 @@ export const AuditLogsView: React.FC = () => {
           }`}
         >
           <GraduationCap className="w-3.5 h-3.5" />
-          <span>3. Student & Vehicle Master</span>
+          <span>{isFrench ? '3. Référentiel Élèves & Véhicules' : '3. Student & Vehicle Master'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
             {filteredMasterLogs.length}
           </span>
@@ -714,7 +829,7 @@ export const AuditLogsView: React.FC = () => {
           }`}
         >
           <DollarSign className="w-3.5 h-3.5" />
-          <span>4. Payroll Operations</span>
+          <span>{isFrench ? '4. Opérations de paie' : '4. Payroll Operations'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
             {filteredPayrollLogs.length}
           </span>
@@ -733,7 +848,7 @@ export const AuditLogsView: React.FC = () => {
           }`}
         >
           <ShieldAlert className="w-3.5 h-3.5" />
-          <span>5. Safety & Field Operations</span>
+          <span>{isFrench ? '5. Sécurité & Opérations terrain' : '5. Safety & Field Operations'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
             {filteredSafetyLogs.length}
           </span>
@@ -745,14 +860,18 @@ export const AuditLogsView: React.FC = () => {
         <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
           <div className="flex items-center space-x-2 text-xs font-bold text-slate-300">
             <Filter className="w-4 h-4 text-amber-400" />
-            <span>Search & Filter In Selected Module</span>
+            <span>
+              {isFrench
+                ? 'Recherche & Filtres dans le module sélectionné'
+                : 'Search & Filter In Selected Module'}
+            </span>
           </div>
           {(searchQuery || selectedActor || selectedAction !== 'all') && (
             <button
               onClick={handleResetFilters}
               className="text-xs font-semibold text-rose-400 hover:text-rose-300 transition"
             >
-              Reset Filters
+              {isFrench ? 'Réinitialiser' : 'Reset Filters'}
             </button>
           )}
         </div>
@@ -763,7 +882,7 @@ export const AuditLogsView: React.FC = () => {
             <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500" />
             <input
               type="text"
-              placeholder="Search content, summary, ID, or diff..."
+              placeholder={isFrench ? 'Rechercher par intervenant, circuit, ID ou détail...' : 'Search content, summary, ID, or diff...'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
@@ -777,7 +896,7 @@ export const AuditLogsView: React.FC = () => {
               onChange={(e) => setSelectedActor(e.target.value)}
               className="w-full px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-amber-500/50"
             >
-              <option value="">All Operators / Users</option>
+              <option value="">{isFrench ? 'Tous les utilisateurs / intervenants' : 'All Operators / Users'}</option>
               {activeActors.map((actor) => (
                 <option key={actor} value={actor}>
                   {actor}
@@ -793,51 +912,51 @@ export const AuditLogsView: React.FC = () => {
               onChange={(e) => setSelectedAction(e.target.value)}
               className="w-full px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-amber-500/50"
             >
-              <option value="all">All Actions & Categories</option>
+              <option value="all">{isFrench ? 'Toutes les actions & catégories' : 'All Actions & Categories'}</option>
               {activeCategory === 'dispatch' && (
                 <>
-                  <option value="Driver Replacement">Driver Replacement</option>
-                  <option value="Vehicle Replacement">Vehicle Replacement</option>
-                  <option value="Split Shift">Split Shift</option>
-                  <option value="Student Absence">Student Absence</option>
-                  <option value="Stop Arrival">Stop Arrival</option>
+                  <option value="Driver Replacement">{isFrench ? 'Remplacement chauffeur' : 'Driver Replacement'}</option>
+                  <option value="Vehicle Replacement">{isFrench ? 'Remplacement véhicule' : 'Vehicle Replacement'}</option>
+                  <option value="Split Shift">{isFrench ? 'Scission de trajet' : 'Split Shift'}</option>
+                  <option value="Student Absence">{isFrench ? 'Absence élève' : 'Student Absence'}</option>
+                  <option value="Stop Arrival">{isFrench ? 'Arrivée à l\'arrêt' : 'Stop Arrival'}</option>
                 </>
               )}
               {activeCategory === 'routes' && (
                 <>
-                  <option value="route">Route Settings</option>
-                  <option value="shift">Shift Schedules</option>
-                  <option value="stop">Stop Itinerary</option>
-                  <option value="student">Student Rider Allocations</option>
+                  <option value="route">{isFrench ? 'Paramètres circuit' : 'Route Settings'}</option>
+                  <option value="shift">{isFrench ? 'Horaires trajets' : 'Shift Schedules'}</option>
+                  <option value="stop">{isFrench ? 'Itinéraire arrêts' : 'Stop Itinerary'}</option>
+                  <option value="student">{isFrench ? 'Affectation élèves' : 'Student Rider Allocations'}</option>
                 </>
               )}
               {activeCategory === 'master' && (
                 <>
-                  <option value="create">Created Records</option>
-                  <option value="update">Updated Records</option>
-                  <option value="delete">Deleted Records</option>
-                  <option value="student">Students Only</option>
-                  <option value="vehicle">Vehicles Only</option>
+                  <option value="create">{isFrench ? 'Créations' : 'Created Records'}</option>
+                  <option value="update">{isFrench ? 'Modifications' : 'Updated Records'}</option>
+                  <option value="delete">{isFrench ? 'Suppressions' : 'Deleted Records'}</option>
+                  <option value="student">{isFrench ? 'Élèves seulement' : 'Students Only'}</option>
+                  <option value="vehicle">{isFrench ? 'Véhicules seulement' : 'Vehicles Only'}</option>
                 </>
               )}
               {activeCategory === 'payroll' && (
                 <>
-                  <option value="base_rate">Base Rates</option>
-                  <option value="custom_rate">Custom Override Rates</option>
-                  <option value="dispatch_payroll">Dispatch Shift Payrolls</option>
-                  <option value="finance_payroll">Finance Department Logs</option>
-                  <option value="approve">Approvals</option>
-                  <option value="reject">Rejections</option>
+                  <option value="base_rate">{isFrench ? 'Taux de base' : 'Base Rates'}</option>
+                  <option value="custom_rate">{isFrench ? 'Taux personnalisés' : 'Custom Override Rates'}</option>
+                  <option value="dispatch_payroll">{isFrench ? 'Paie régulation' : 'Dispatch Shift Payrolls'}</option>
+                  <option value="finance_payroll">{isFrench ? 'Paie comptabilité' : 'Finance Department Logs'}</option>
+                  <option value="approve">{isFrench ? 'Approbations' : 'Approvals'}</option>
+                  <option value="reject">{isFrench ? 'Rejets' : 'Rejections'}</option>
                 </>
               )}
               {activeCategory === 'safety' && (
                 <>
-                  <option value="time_off">Time Off Requests</option>
-                  <option value="vehicle_defect">Vehicle Defects</option>
-                  <option value="hazard_report">Hazard Assessments</option>
-                  <option value="student_incident">Student Incidents</option>
-                  <option value="approve">Approved</option>
-                  <option value="resolve">Resolved</option>
+                  <option value="time_off">{isFrench ? 'Demandes de congé' : 'Time Off Requests'}</option>
+                  <option value="vehicle_defect">{isFrench ? 'Défectuosités véhicules' : 'Vehicle Defects'}</option>
+                  <option value="hazard_report">{isFrench ? 'Évaluations des dangers' : 'Hazard Assessments'}</option>
+                  <option value="student_incident">{isFrench ? 'Incidents élèves' : 'Student Incidents'}</option>
+                  <option value="approve">{isFrench ? 'Approuvé' : 'Approved'}</option>
+                  <option value="resolve">{isFrench ? 'Résolu' : 'Resolved'}</option>
                 </>
               )}
             </select>
@@ -849,332 +968,379 @@ export const AuditLogsView: React.FC = () => {
       {loading ? (
         <div className="py-16 flex flex-col items-center justify-center space-y-2 text-slate-500 text-xs">
           <RefreshCw className="w-6 h-6 animate-spin text-amber-400" />
-          <span>Loading audit log records...</span>
+          <span>{isFrench ? 'Chargement des journaux d\'audit...' : 'Loading audit log records...'}</span>
         </div>
-      ) : currentCount === 0 ? (
+      ) : activeLogsCount === 0 ? (
         <div className="py-12 text-center bg-slate-900 border border-slate-800 rounded-2xl p-6">
           <History className="w-8 h-8 text-slate-600 mx-auto mb-2 opacity-50" />
-          <p className="text-sm font-semibold text-slate-400">No audit records found in this range</p>
+          <p className="text-sm font-semibold text-slate-400">
+            {isFrench
+              ? 'Aucun enregistrement d\'audit trouvé pour cette période'
+              : 'No audit records found in this range'}
+          </p>
           <p className="text-xs text-slate-500 mt-1">
-            Try adjusting your 7-day date window ({dateFrom} to {dateTo}) or clearing search filters.
+            {isFrench
+              ? `Ajustez votre période de 7 jours (${dateFrom} au ${dateTo}) ou réinitialisez les filtres.`
+              : `Try adjusting your 7-day date window (${dateFrom} to ${dateTo}) or clearing search filters.`}
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {/* CATEGORY 1: Daily Dispatch Logs */}
-          {activeCategory === 'dispatch' &&
-            filteredDispatchLogs.map((log) => (
-              <div
-                key={log.id}
-                className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2 shadow-sm"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                      {log.type}
-                    </span>
-                    <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                      {log.routeNo} ({log.shiftType})
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-2 text-xs text-slate-400 font-mono">
-                    <Clock className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{log.dispatchDate} {log.time}</span>
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                  {log.detail}
-                </p>
-
-                <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
-                  <div className="flex items-center space-x-1.5">
-                    <User className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="font-semibold text-slate-300">Operator: {log.user}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-          {/* CATEGORY 2: Route & Stops Audit Logs */}
-          {activeCategory === 'routes' &&
-            filteredRouteLogs.map((log) => {
-              const isExpanded = expandedLogIds.has(log.id);
-              const hasDiffs = log.diffs && log.diffs.length > 0;
+        <div ref={logContainerRef} className="overflow-y-auto max-h-[calc(100vh-270px)] pr-1">
+          <div
+            style={{
+              height: `${logVirtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {logVirtualizer.getVirtualItems().map((virtualRow) => {
+              const idx = virtualRow.index;
               return (
                 <div
-                  key={log.id}
-                  className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm"
+                  key={`${activeCategory}-${idx}`}
+                  data-index={idx}
+                  ref={logVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                    paddingBottom: '12px',
+                  }}
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                        {log.category} • {log.action}
-                      </span>
-                      <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                        {log.routeNo}
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
-                      <Clock className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{new Date(log.timestamp).toLocaleString()}</span>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                    {log.summary}
-                  </p>
-
-                  <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
-                    <div className="flex items-center space-x-1.5">
-                      <User className="w-3.5 h-3.5 text-slate-500" />
-                      <span className="font-semibold text-slate-300">{log.userName}</span>
-                      {log.userRole && (
-                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                          {log.userRole}
-                        </span>
-                      )}
-                    </div>
-                    {hasDiffs && (
-                      <button
-                        onClick={() => toggleExpand(log.id)}
-                        className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
-                      >
-                        <span>{isExpanded ? 'Hide Diffs' : 'View Diffs'} ({log.diffs?.length})</span>
-                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </button>
-                    )}
-                  </div>
-
-                  {hasDiffs && isExpanded && (
-                    <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
-                      {log.diffs?.map((diff, i) => (
-                        <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-                          <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
-                          <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || 'none')}</span>
-                          <span className="text-emerald-400 font-bold">{String(diff.newValue || 'none')}</span>
+                  {/* CATEGORY 1: Daily Dispatch Logs */}
+                  {activeCategory === 'dispatch' && (() => {
+                    const log = filteredDispatchLogs[idx];
+                    if (!log) return null;
+                    return (
+                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                              {log.type}
+                            </span>
+                            <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                              {log.routeNo} ({log.shiftType})
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-2 text-xs text-slate-400 font-mono">
+                            <Clock className="w-3.5 h-3.5 text-slate-500" />
+                            <span>{log.dispatchDate} {log.time}</span>
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
+
+                        <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                          {log.detail}
+                        </p>
+
+                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
+                          <div className="flex items-center space-x-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="font-semibold text-slate-300">
+                              {isFrench ? 'Opérateur :' : 'Operator:'} {log.user}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* CATEGORY 2: Route & Stops Audit Logs */}
+                  {activeCategory === 'routes' && (() => {
+                    const log = filteredRouteLogs[idx];
+                    if (!log) return null;
+                    const isExpanded = expandedLogIds.has(log.id);
+                    const hasDiffs = log.diffs && log.diffs.length > 0;
+                    return (
+                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                              {log.category} • {log.action}
+                            </span>
+                            <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                              {log.routeNo}
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
+                            <Clock className="w-3.5 h-3.5 text-slate-500" />
+                            <span>{new Date(log.timestamp).toLocaleString()}</span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                          {log.summary}
+                        </p>
+
+                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
+                          <div className="flex items-center space-x-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="font-semibold text-slate-300">{log.userName}</span>
+                            {log.userRole && (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                {log.userRole}
+                              </span>
+                            )}
+                          </div>
+                          {hasDiffs && (
+                            <button
+                              onClick={() => toggleExpand(log.id)}
+                              className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
+                            >
+                              <span>
+                                {isExpanded
+                                  ? (isFrench ? 'Masquer les écarts' : 'Hide Diffs')
+                                  : (isFrench ? 'Voir les écarts' : 'View Diffs')}{' '}
+                                ({log.diffs?.length})
+                              </span>
+                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                        </div>
+
+                        {hasDiffs && isExpanded && (
+                          <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
+                            {log.diffs?.map((diff, i) => (
+                              <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+                                <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
+                                <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || (isFrench ? 'aucun' : 'none'))}</span>
+                                <span className="text-emerald-400 font-bold">{String(diff.newValue || (isFrench ? 'aucun' : 'none'))}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* CATEGORY 3: Student & Vehicle Master Logs */}
+                  {activeCategory === 'master' && (() => {
+                    const log = filteredMasterLogs[idx];
+                    if (!log) return null;
+                    const isExpanded = expandedLogIds.has(log.id);
+                    const hasDiffs = log.diffs && log.diffs.length > 0;
+                    const isStudent = log.targetType === 'student';
+                    return (
+                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center space-x-2">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase border ${
+                                log.action === 'create'
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                  : log.action === 'update'
+                                  ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+                                  : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                              }`}
+                            >
+                              {log.action}
+                            </span>
+                            <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                              {isStudent ? (isFrench ? 'Élève' : 'Student') : (isFrench ? 'Véhicule' : 'Vehicle')} #{log.targetIdentifier}
+                            </span>
+                            <span className="text-xs text-slate-300 font-semibold">{log.targetName}</span>
+                          </div>
+                          <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
+                            <Clock className="w-3.5 h-3.5 text-slate-500" />
+                            <span>{new Date(log.timestamp).toLocaleString()}</span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                          {log.summary}
+                        </p>
+
+                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
+                          <div className="flex items-center space-x-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="font-semibold text-slate-300">{log.actor.userName}</span>
+                            {log.actor.userRole && (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                {log.actor.userRole}
+                              </span>
+                            )}
+                          </div>
+                          {hasDiffs && (
+                            <button
+                              onClick={() => toggleExpand(log.id)}
+                              className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
+                            >
+                              <span>
+                                {isExpanded
+                                  ? (isFrench ? 'Masquer les écarts' : 'Hide Diffs')
+                                  : (isFrench ? 'Voir les écarts' : 'View Diffs')}{' '}
+                                ({log.diffs?.length})
+                              </span>
+                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                        </div>
+
+                        {hasDiffs && isExpanded && (
+                          <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
+                            {log.diffs?.map((diff, i) => (
+                              <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+                                <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
+                                <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || (isFrench ? 'aucun' : 'none'))}</span>
+                                <span className="text-emerald-400 font-bold">{String(diff.newValue || (isFrench ? 'aucun' : 'none'))}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* CATEGORY 4: Payroll Operation Logs */}
+                  {activeCategory === 'payroll' && (() => {
+                    const log = filteredPayrollLogs[idx];
+                    if (!log) return null;
+                    const isExpanded = expandedLogIds.has(log.id);
+                    const hasDiffs = log.diffs && log.diffs.length > 0;
+                    return (
+                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              {log.category.replace('_', ' ')} • {log.action}
+                            </span>
+                            <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                              {log.targetIdentifier}
+                            </span>
+                            {log.amount !== undefined && (
+                              <span className="font-mono font-bold text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                ${log.amount.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
+                            <Clock className="w-3.5 h-3.5 text-slate-500" />
+                            <span>{new Date(log.timestamp).toLocaleString()}</span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                          {log.summary}
+                        </p>
+
+                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
+                          <div className="flex items-center space-x-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="font-semibold text-slate-300">{log.actor.userName}</span>
+                            {log.actor.userRole && (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                {log.actor.userRole}
+                              </span>
+                            )}
+                          </div>
+                          {hasDiffs && (
+                            <button
+                              onClick={() => toggleExpand(log.id)}
+                              className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
+                            >
+                              <span>
+                                {isExpanded
+                                  ? (isFrench ? 'Masquer les écarts' : 'Hide Diffs')
+                                  : (isFrench ? 'Voir les écarts' : 'View Diffs')}{' '}
+                                ({log.diffs?.length})
+                              </span>
+                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                        </div>
+
+                        {hasDiffs && isExpanded && (
+                          <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
+                            {log.diffs?.map((diff, i) => (
+                              <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+                                <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
+                                <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || (isFrench ? 'aucun' : 'none'))}</span>
+                                <span className="text-emerald-400 font-bold">{String(diff.newValue || (isFrench ? 'aucun' : 'none'))}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* CATEGORY 5: Safety & Operational Logs */}
+                  {activeCategory === 'safety' && (() => {
+                    const log = filteredSafetyLogs[idx];
+                    if (!log) return null;
+                    const isExpanded = expandedLogIds.has(log.id);
+                    const hasDiffs = log.diffs && log.diffs.length > 0;
+                    return (
+                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                              {log.module.replace('_', ' ')} • {log.action}
+                            </span>
+                            <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                              {log.targetIdentifier}
+                            </span>
+                            {log.severity && (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300">
+                                {log.severity}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
+                            <Clock className="w-3.5 h-3.5 text-slate-500" />
+                            <span>{new Date(log.timestamp).toLocaleString()}</span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                          {log.summary}
+                        </p>
+
+                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
+                          <div className="flex items-center space-x-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="font-semibold text-slate-300">{log.actor.userName}</span>
+                            {log.actor.userRole && (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                {log.actor.userRole}
+                              </span>
+                            )}
+                          </div>
+                          {hasDiffs && (
+                            <button
+                              onClick={() => toggleExpand(log.id)}
+                              className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
+                            >
+                              <span>
+                                {isExpanded
+                                  ? (isFrench ? 'Masquer les écarts' : 'Hide Diffs')
+                                  : (isFrench ? 'Voir les écarts' : 'View Diffs')}{' '}
+                                ({log.diffs?.length})
+                              </span>
+                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                        </div>
+
+                        {hasDiffs && isExpanded && (
+                          <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
+                            {log.diffs?.map((diff, i) => (
+                              <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+                                <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
+                                <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || (isFrench ? 'aucun' : 'none'))}</span>
+                                <span className="text-emerald-400 font-bold">{String(diff.newValue || (isFrench ? 'aucun' : 'none'))}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
-
-          {/* CATEGORY 3: Student & Vehicle Master Logs */}
-          {activeCategory === 'master' &&
-            filteredMasterLogs.map((log) => {
-              const isExpanded = expandedLogIds.has(log.id);
-              const hasDiffs = log.diffs && log.diffs.length > 0;
-              const isStudent = log.targetType === 'student';
-              return (
-                <div
-                  key={log.id}
-                  className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase border ${
-                          log.action === 'create'
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                            : log.action === 'update'
-                            ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
-                            : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                        }`}
-                      >
-                        {log.action}
-                      </span>
-                      <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                        {isStudent ? 'Student' : 'Vehicle'} #{log.targetIdentifier}
-                      </span>
-                      <span className="text-xs text-slate-300 font-semibold">{log.targetName}</span>
-                    </div>
-                    <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
-                      <Clock className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{new Date(log.timestamp).toLocaleString()}</span>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                    {log.summary}
-                  </p>
-
-                  <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
-                    <div className="flex items-center space-x-1.5">
-                      <User className="w-3.5 h-3.5 text-slate-500" />
-                      <span className="font-semibold text-slate-300">{log.actor.userName}</span>
-                      {log.actor.userRole && (
-                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                          {log.actor.userRole}
-                        </span>
-                      )}
-                    </div>
-                    {hasDiffs && (
-                      <button
-                        onClick={() => toggleExpand(log.id)}
-                        className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
-                      >
-                        <span>{isExpanded ? 'Hide Diffs' : 'View Diffs'} ({log.diffs?.length})</span>
-                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </button>
-                    )}
-                  </div>
-
-                  {hasDiffs && isExpanded && (
-                    <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
-                      {log.diffs?.map((diff, i) => (
-                        <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-                          <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
-                          <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || 'none')}</span>
-                          <span className="text-emerald-400 font-bold">{String(diff.newValue || 'none')}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-          {/* CATEGORY 4: Payroll Operation Logs */}
-          {activeCategory === 'payroll' &&
-            filteredPayrollLogs.map((log) => {
-              const isExpanded = expandedLogIds.has(log.id);
-              const hasDiffs = log.diffs && log.diffs.length > 0;
-              return (
-                <div
-                  key={log.id}
-                  className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        {log.category.replace('_', ' ')} • {log.action}
-                      </span>
-                      <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                        {log.targetIdentifier}
-                      </span>
-                      {log.amount !== undefined && (
-                        <span className="font-mono font-bold text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                          ${log.amount.toFixed(2)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
-                      <Clock className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{new Date(log.timestamp).toLocaleString()}</span>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                    {log.summary}
-                  </p>
-
-                  <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
-                    <div className="flex items-center space-x-1.5">
-                      <User className="w-3.5 h-3.5 text-slate-500" />
-                      <span className="font-semibold text-slate-300">{log.actor.userName}</span>
-                      {log.actor.userRole && (
-                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                          {log.actor.userRole}
-                        </span>
-                      )}
-                    </div>
-                    {hasDiffs && (
-                      <button
-                        onClick={() => toggleExpand(log.id)}
-                        className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
-                      >
-                        <span>{isExpanded ? 'Hide Diffs' : 'View Diffs'} ({log.diffs?.length})</span>
-                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </button>
-                    )}
-                  </div>
-
-                  {hasDiffs && isExpanded && (
-                    <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
-                      {log.diffs?.map((diff, i) => (
-                        <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-                          <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
-                          <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || 'none')}</span>
-                          <span className="text-emerald-400 font-bold">{String(diff.newValue || 'none')}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-          {/* CATEGORY 5: Safety & Operational Logs */}
-          {activeCategory === 'safety' &&
-            filteredSafetyLogs.map((log) => {
-              const isExpanded = expandedLogIds.has(log.id);
-              const hasDiffs = log.diffs && log.diffs.length > 0;
-              return (
-                <div
-                  key={log.id}
-                  className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                        {log.module.replace('_', ' ')} • {log.action}
-                      </span>
-                      <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                        {log.targetIdentifier}
-                      </span>
-                      {log.severity && (
-                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300">
-                          {log.severity}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
-                      <Clock className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{new Date(log.timestamp).toLocaleString()}</span>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                    {log.summary}
-                  </p>
-
-                  <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
-                    <div className="flex items-center space-x-1.5">
-                      <User className="w-3.5 h-3.5 text-slate-500" />
-                      <span className="font-semibold text-slate-300">{log.actor.userName}</span>
-                      {log.actor.userRole && (
-                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                          {log.actor.userRole}
-                        </span>
-                      )}
-                    </div>
-                    {hasDiffs && (
-                      <button
-                        onClick={() => toggleExpand(log.id)}
-                        className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
-                      >
-                        <span>{isExpanded ? 'Hide Diffs' : 'View Diffs'} ({log.diffs?.length})</span>
-                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </button>
-                    )}
-                  </div>
-
-                  {hasDiffs && isExpanded && (
-                    <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
-                      {log.diffs?.map((diff, i) => (
-                        <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-                          <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
-                          <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || 'none')}</span>
-                          <span className="text-emerald-400 font-bold">{String(diff.newValue || 'none')}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          </div>
         </div>
       )}
     </div>

@@ -83,7 +83,7 @@ func (a *Archiver) EnsureTables(ctx context.Context) error {
 		{Name: "updated_at", Type: bigquery.TimestampFieldType, Required: true},
 	}
 
-	// 1. Business tables (dispatch_shifts, dispatch_payrolls, payroll_logs, time_off_requests, route_assessments, vehicle_signouts, expense_reimbursements)
+	// 1. Business tables (dispatch_shifts, dispatch_payrolls, payroll_logs, time_off_requests, route_assessments, vehicle_signouts, expense_reimbursements, assignment_history, student_absences)
 	bizTables := []string{
 		"dispatch_shifts",
 		"dispatch_payrolls",
@@ -92,6 +92,8 @@ func (a *Archiver) EnsureTables(ctx context.Context) error {
 		"route_assessments",
 		"vehicle_signouts",
 		"expense_reimbursements",
+		"assignment_history",
+		"student_absences",
 	}
 	for _, tblName := range bizTables {
 		tbl := ds.Table(tblName)
@@ -474,6 +476,80 @@ func (a *Archiver) SyncExpensesOlderThan(ctx context.Context, olderThanMonths in
 	return count, nil
 }
 
+// ArchiveAssignmentHistoryOlderThan syncs assignment history records older than olderThanMonths (default 12 months / 1 year) to BigQuery,
+// and upon verified persistence, safely cleans them up from Firestore.
+func (a *Archiver) ArchiveAssignmentHistoryOlderThan(ctx context.Context, olderThanMonths int) (int, int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 12
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Archiving (sync then cleanup) assignment history older than %s (%d months)...", cutoff, olderThanMonths)
+
+	synced, cleaned, err := a.syncAndCleanupCollectionOlderThanDate(ctx, "assignment_history", []string{"effectiveDate", "timestamp", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: archiving assignment_history older than %s failed: %v", cutoff, err)
+		return 0, 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed assignment history archive for records older than %d months: %d synced to BigQuery, %d cleaned up from Firestore.", olderThanMonths, synced, cleaned)
+	return synced, cleaned, nil
+}
+
+// SyncAssignmentHistoryOlderThan copies assignment history records older than olderThanMonths (default 12 months) to BigQuery (read-only from Firestore).
+func (a *Archiver) SyncAssignmentHistoryOlderThan(ctx context.Context, olderThanMonths int) (int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 12
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Copying assignment history older than %s (%d months) to BigQuery...", cutoff, olderThanMonths)
+
+	count, err := a.syncCollectionOlderThanDate(ctx, "assignment_history", []string{"effectiveDate", "timestamp", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: syncing assignment_history older than %s failed: %v", cutoff, err)
+		return 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed copying assignment history older than %d months to BigQuery: %d records copied.", olderThanMonths, count)
+	return count, nil
+}
+
+// ArchiveStudentAbsencesOlderThan syncs student absence records older than olderThanMonths (default 6 months / 180 days) to BigQuery,
+// and upon verified persistence, safely cleans them up from Firestore.
+func (a *Archiver) ArchiveStudentAbsencesOlderThan(ctx context.Context, olderThanMonths int) (int, int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 6
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Archiving (sync then cleanup) student absences older than %s (%d months)...", cutoff, olderThanMonths)
+
+	synced, cleaned, err := a.syncAndCleanupCollectionOlderThanDate(ctx, "student_absences", []string{"date", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: archiving student_absences older than %s failed: %v", cutoff, err)
+		return 0, 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed student absences archive for records older than %d months: %d synced to BigQuery, %d cleaned up from Firestore.", olderThanMonths, synced, cleaned)
+	return synced, cleaned, nil
+}
+
+// SyncStudentAbsencesOlderThan copies student absence records older than olderThanMonths (default 6 months) to BigQuery (read-only from Firestore).
+func (a *Archiver) SyncStudentAbsencesOlderThan(ctx context.Context, olderThanMonths int) (int, error) {
+	if olderThanMonths <= 0 {
+		olderThanMonths = 6
+	}
+	cutoff := time.Now().AddDate(0, -olderThanMonths, 0).Format("2006-01-02")
+	log.Printf("[ARCHIVER] Copying student absences older than %s (%d months) to BigQuery...", cutoff, olderThanMonths)
+
+	count, err := a.syncCollectionOlderThanDate(ctx, "student_absences", []string{"date", "createdAt"}, cutoff)
+	if err != nil {
+		log.Printf("[ARCHIVER] Warning: syncing student_absences older than %s failed: %v", cutoff, err)
+		return 0, err
+	}
+
+	log.Printf("[ARCHIVER] Completed copying student absences older than %d months to BigQuery: %d records copied.", olderThanMonths, count)
+	return count, nil
+}
+
 // syncAndCleanupCollectionOlderThanDate queries Firestore, persists to BigQuery, and ONLY on 100% success removes the documents from Firestore.
 func (a *Archiver) syncAndCleanupCollectionOlderThanDate(ctx context.Context, collName string, dateFields []string, cutoff string) (int, int, error) {
 	var rows []*ArchiveRow
@@ -484,7 +560,9 @@ func (a *Archiver) syncAndCleanupCollectionOlderThanDate(ctx context.Context, co
 
 	for _, df := range dateFields {
 		var iter *firestore.DocumentIterator
-		if (df == "createdAt" || df == "timestamp" || df == "assessmentDate") && errTime == nil {
+		if df == "timestamp" {
+			iter = a.fsClient.Collection(collName).Where(df, "<", cutoff+"T23:59:59Z").Documents(ctx)
+		} else if (df == "createdAt" || df == "assessmentDate") && errTime == nil {
 			iter = a.fsClient.Collection(collName).Where(df, "<", cutoffTime).Documents(ctx)
 		} else {
 			iter = a.fsClient.Collection(collName).Where(df, "<", cutoff).Documents(ctx)
@@ -609,7 +687,9 @@ func (a *Archiver) syncCollectionOlderThanDate(ctx context.Context, collName str
 
 	for _, df := range dateFields {
 		var iter *firestore.DocumentIterator
-		if (df == "createdAt" || df == "timestamp" || df == "assessmentDate") && errTime == nil {
+		if df == "timestamp" {
+			iter = a.fsClient.Collection(collName).Where(df, "<", cutoff+"T23:59:59Z").Documents(ctx)
+		} else if (df == "createdAt" || df == "assessmentDate") && errTime == nil {
 			iter = a.fsClient.Collection(collName).Where(df, "<", cutoffTime).Documents(ctx)
 		} else {
 			iter = a.fsClient.Collection(collName).Where(df, "<", cutoff).Documents(ctx)

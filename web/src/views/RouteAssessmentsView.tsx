@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useI18n } from '../contexts/I18nContext';
 import {
   ClipboardCheck,
   Search,
@@ -222,6 +224,20 @@ export const RouteAssessmentsView: React.FC = () => {
       return true;
     });
   }, [assessments, statusFilter, typeFilter, searchQuery]);
+
+  const { isFrench } = useI18n();
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filteredAssessments.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 72,
+    overscan: 8,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalHeight = rowVirtualizer.getTotalSize();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start ?? 0 : 0;
+  const paddingBottom =
+    virtualRows.length > 0 ? totalHeight - (virtualRows[virtualRows.length - 1]?.end ?? 0) : 0;
 
   const openReviewModal = (item: RouteAssessment) => {
     setSelectedAssessment(item);
@@ -620,20 +636,32 @@ export const RouteAssessmentsView: React.FC = () => {
 
       {/* Main Table */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
           <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
-            <thead className="bg-slate-50 dark:bg-slate-900/60 text-xs uppercase font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+            <colgroup>
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '5%' }} />
+              <col style={{ width: '5%' }} />
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 text-xs uppercase font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
               <tr>
-                <th className="px-4 py-3.5">Type</th>
-                <th className="px-4 py-3.5">Route</th>
-                <th className="px-4 py-3.5">Date / Created</th>
-                <th className="px-4 py-3.5">School & Board</th>
-                <th className="px-4 py-3.5">Conducted By</th>
-                <th className="px-4 py-3.5">Findings Summary</th>
-                <th className="px-4 py-3.5">Safety Concerns</th>
-                <th className="px-4 py-3.5">Assigned To</th>
-                <th className="px-4 py-3.5 text-center">Status</th>
-                <th className="px-4 py-3.5 text-right">Actions</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Type' : 'Type'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Trajet' : 'Route'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Date / Créé' : 'Date / Created'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'École & Conseil' : 'School & Board'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Mené Par' : 'Conducted By'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Résumé des Constats' : 'Findings Summary'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Préoccupations' : 'Safety Concerns'}</th>
+                <th className="px-4 py-3.5">{isFrench ? 'Assigné À' : 'Assigned To'}</th>
+                <th className="px-4 py-3.5 text-center">{isFrench ? 'Statut' : 'Status'}</th>
+                <th className="px-4 py-3.5 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
@@ -641,7 +669,7 @@ export const RouteAssessmentsView: React.FC = () => {
                 <tr>
                   <td colSpan={10} className="px-4 py-12 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-500" />
-                    Loading route assessments...
+                    {isFrench ? 'Chargement des évaluations de trajet...' : 'Loading route assessments...'}
                   </td>
                 </tr>
               ) : filteredAssessments.length === 0 ? (
@@ -650,21 +678,31 @@ export const RouteAssessmentsView: React.FC = () => {
                     {timeRange === 'all' && !searchQuery.trim() ? (
                       <div className="space-y-1">
                         <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          Enter Route #, Driver, or Keyword to Search 10-Year Archive
+                          {isFrench ? 'Rechercher dans les archives de 10 ans' : 'Enter Route #, Driver, or Keyword to Search 10-Year Archive'}
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                          Live route assessments cover the most recent 1 year. Type a query above and click &quot;Search Archive&quot; to inspect historical records.
+                          {isFrench
+                            ? 'Les évaluations récentes couvrent la dernière année. Saisissez une requête ci-dessus pour inspecter les archives historiques.'
+                            : 'Live route assessments cover the most recent 1 year. Type a query above and click "Search Archive" to inspect historical records.'}
                         </div>
                       </div>
                     ) : (
-                      <>No route assessments found matching your filters.</>
+                      <>{isFrench ? 'Aucune évaluation de trajet ne correspond à vos filtres.' : 'No route assessments found matching your filters.'}</>
                     )}
                   </td>
                 </tr>
               ) : (
-                filteredAssessments.map((item) => {
-                  const riskCount = countFlaggedRisks(item);
-                  return (
+                <>
+                  {paddingTop > 0 && (
+                    <tr>
+                      <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={10} />
+                    </tr>
+                  )}
+                  {virtualRows.map((virtualRow) => {
+                    const item = filteredAssessments[virtualRow.index];
+                    if (!item) return null;
+                    const riskCount = countFlaggedRisks(item);
+                    return (
                     <tr
                       key={item.id}
                       onClick={() => openReviewModal(item)}
@@ -811,9 +849,15 @@ export const RouteAssessmentsView: React.FC = () => {
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
+                })}
+                {paddingBottom > 0 && (
+                  <tr>
+                    <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={10} />
+                  </tr>
+                )}
+              </>
+            )}
+          </tbody>
           </table>
         </div>
       </div>

@@ -1,9 +1,38 @@
-import { doc, getDoc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, deleteDoc, collection } from 'firebase/firestore';
 import { db } from './firebase';
 import { apiRequest } from './api';
 import { SchoolCalendar, CalendarEvent } from '../types/calendar';
 
 export const CalendarService = {
+  /**
+   * Real-time subscription to all calendars in Firestore with local IndexedDB persistence
+   */
+  subscribeToAllCalendars: (
+    onUpdate: (calendars: SchoolCalendar[]) => void,
+    onError?: (err: Error) => void
+  ) => {
+    if (!db) return () => {};
+    try {
+      const collRef = collection(db, 'school_calendars');
+      return onSnapshot(
+        collRef,
+        (snapshot) => {
+          const list: SchoolCalendar[] = [];
+          snapshot.forEach((d) => {
+            list.push({ ...(d.data() as SchoolCalendar), id: d.id });
+          });
+          onUpdate(list);
+        },
+        (err) => {
+          console.warn('[CalendarService] subscribeToAllCalendars notice:', err);
+          if (onError) onError(err);
+        }
+      );
+    } catch (e) {
+      console.error('[CalendarService] subscribeToAllCalendars error:', e);
+      return () => {};
+    }
+  },
   /**
    * Fetches calendar via Go backend API (with fallback to direct Firestore)
    */

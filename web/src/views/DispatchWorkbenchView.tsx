@@ -120,13 +120,6 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
       setDefectReports(Array.isArray(data) ? data : []);
     });
 
-    VehicleInspectionService.getInspections(vehicles)
-      .then((list) => setInspectionRecords(Array.isArray(list) ? list : []))
-      .catch(() => {});
-    VehicleInspectionService.getPMRecords(vehicles)
-      .then((list) => setPmRecords(Array.isArray(list) ? list : []))
-      .catch(() => {});
-
     const unsubInsp = VehicleInspectionService.subscribe((updated) => {
       setInspectionRecords(Array.isArray(updated) ? updated : []);
     });
@@ -135,10 +128,21 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
     });
 
     return () => {
-      unsubDefects();
-      unsubInsp();
-      unsubPM();
+      setTimeout(() => {
+        try { unsubDefects(); } catch {}
+        try { unsubInsp(); } catch {}
+        try { unsubPM(); } catch {}
+      }, 150);
     };
+  }, []);
+
+  useEffect(() => {
+    VehicleInspectionService.getInspections(vehicles)
+      .then((list) => setInspectionRecords(Array.isArray(list) ? list : []))
+      .catch(() => {});
+    VehicleInspectionService.getPMRecords(vehicles)
+      .then((list) => setPmRecords(Array.isArray(list) ? list : []))
+      .catch(() => {});
   }, [vehicles]);
 
   const unavailableVehiclesMap = useMemo(
@@ -262,28 +266,62 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
   // Real-time Firestore subscription to dispatch_shifts for the selectedDate
   useEffect(() => {
     setLoading(true);
+    let isMounted = true;
+
+    // Failsafe timer: if real-time listener doesn't emit within 3.5s, fetch via REST API
+    const fallbackTimer = setTimeout(() => {
+      if (isMounted) {
+        DispatchService.list(selectedDate)
+          .then((apiShifts) => {
+            if (isMounted) {
+              setShifts((prev) => (prev.length === 0 ? (Array.isArray(apiShifts) ? apiShifts : []) : prev));
+              setLoading(false);
+            }
+          })
+          .catch(() => {
+            if (isMounted) setLoading(false);
+          });
+      }
+    }, 3500);
+
     const unsubscribe = DispatchService.subscribeToDayShifts(
       selectedDate,
       (updatedShifts) => {
+        if (!isMounted) return;
+        clearTimeout(fallbackTimer);
         setShifts(Array.isArray(updatedShifts) ? updatedShifts : []);
         setLoading(false);
       },
       (err) => {
+        if (!isMounted) return;
+        clearTimeout(fallbackTimer);
         console.warn('[DispatchWorkbench] Realtime listener notice (falling back to REST API):', err);
         DispatchService.list(selectedDate)
           .then((apiShifts) => {
-            setShifts(Array.isArray(apiShifts) ? apiShifts : []);
-            setLoading(false);
+            if (isMounted) {
+              setShifts(Array.isArray(apiShifts) ? apiShifts : []);
+              setLoading(false);
+            }
           })
           .catch(() => {
-            setShifts([]);
-            setLoading(false);
+            if (isMounted) {
+              setShifts([]);
+              setLoading(false);
+            }
           });
       }
     );
 
     return () => {
-      unsubscribe();
+      isMounted = false;
+      clearTimeout(fallbackTimer);
+      setTimeout(() => {
+        try {
+          unsubscribe();
+        } catch (err) {
+          console.warn('[DispatchWorkbench] Unsubscribe warning:', err);
+        }
+      }, 150);
     };
   }, [selectedDate]);
 

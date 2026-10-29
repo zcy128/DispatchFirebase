@@ -339,6 +339,7 @@ type StudentAbsenceRecord struct {
 	CreatedAt      string   `json:"createdAt,omitempty" firestore:"createdAt,omitempty"`
 	Status         string   `json:"status" firestore:"status"` // "ACTIVE", "CANCELLED"
 	AffectedShifts []string `json:"affectedShifts,omitempty" firestore:"affectedShifts,omitempty"`
+	IsCold         bool     `json:"isCold,omitempty" firestore:"isCold,omitempty"`
 }
 
 // ListStudentAbsencesFilter defines date range and criteria for querying absences
@@ -348,6 +349,7 @@ type ListStudentAbsencesFilter struct {
 	StudentID int    `json:"studentId,omitempty"`
 	RouteNo   string `json:"routeNo,omitempty"`
 	ShiftType string `json:"shiftType,omitempty"`
+	Query     string `json:"query,omitempty"`
 }
 
 // CheckInReminderSettings defines configuration for late check-in reminders via FCM

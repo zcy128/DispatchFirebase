@@ -139,7 +139,10 @@ export const CharterService = {
       (snapshot) => {
         const list: CharterTrip[] = [];
         snapshot.forEach((d) => {
-          list.push({ ...d.data(), id: d.id } as CharterTrip);
+          const trip = d.data() as CharterTrip;
+          const assignedEmployeeIds =
+            trip.assignedEmployeeIds || extractAssignedEmployeeIds(trip.assignments);
+          list.push({ ...trip, assignedEmployeeIds, id: d.id });
         });
         list.sort((a, b) => (b.departsAt || '').localeCompare(a.departsAt || ''));
         onUpdate(list);

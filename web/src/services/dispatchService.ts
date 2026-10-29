@@ -55,13 +55,11 @@ export const DispatchService = {
           const list: DispatchShift[] = [];
           snapshot.forEach((d) => {
             const data = d.data() as DispatchShift;
-            // Auto-heal missing assignedEmployeeIds for Firestore index-level driver queries
-            if (db && !data.assignedEmployeeIds && (data.driverId || data.driverName || data.attendantId || data.attendantName)) {
-              const ids = extractDispatchAssignedEmployeeIds(data);
-              setDoc(doc(db, 'dispatch_shifts', d.id), { assignedEmployeeIds: ids }, { merge: true }).catch(() => {});
-            }
+            const assignedEmployeeIds =
+              data.assignedEmployeeIds || extractDispatchAssignedEmployeeIds(data);
             list.push({
               ...data,
+              assignedEmployeeIds,
               id: d.id,
             });
           });
@@ -198,7 +196,8 @@ export const DispatchService = {
     endDate: string,
     routeNo?: string,
     studentId?: number,
-    shiftType?: string
+    shiftType?: string,
+    query?: string
   ): Promise<StudentAbsenceRecord[]> => {
     const params = new URLSearchParams();
     if (startDate) params.append('startDate', startDate);
@@ -206,13 +205,22 @@ export const DispatchService = {
     if (routeNo && routeNo !== 'ALL') params.append('routeNo', routeNo);
     if (studentId) params.append('studentId', String(studentId));
     if (shiftType && shiftType !== 'ALL') params.append('shiftType', shiftType);
+    if (query) params.append('query', query);
 
-    const query = params.toString() ? `?${params.toString()}` : '';
+    const qs = params.toString() ? `?${params.toString()}` : '';
     try {
-      return await apiRequest<StudentAbsenceRecord[]>(`/api/dispatch/students/absences${query}`);
+      return await apiRequest<StudentAbsenceRecord[]>(`/api/dispatch/students/absences${qs}`);
     } catch {
-      return await apiRequest<StudentAbsenceRecord[]>(`/api/public/dispatch/students/absences${query}`);
+      return await apiRequest<StudentAbsenceRecord[]>(`/api/public/dispatch/students/absences${qs}`);
     }
+  },
+
+  isColdAbsence: (dateStr?: string): boolean => {
+    if (!dateStr) return false;
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 6);
+    const target = new Date(dateStr + (dateStr.length === 10 ? 'T00:00:00' : ''));
+    return target.getTime() < cutoff.getTime();
   },
 
   cancelStudentAbsence: async (id: string): Promise<void> => {

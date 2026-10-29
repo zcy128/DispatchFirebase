@@ -48,4 +48,5 @@ export interface AssignmentHistoryFilter {
   dateFrom?: string;
   dateTo?: string;
   searchQuery?: string;
+  timeRange?: '1year' | 'all';
 }

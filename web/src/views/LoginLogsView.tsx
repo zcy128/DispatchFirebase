@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAuth } from '../contexts/AuthContext';
+import { useI18n } from '../contexts/I18nContext';
 import { LoginLogService } from '../services/loginLogService';
 import { LoginLogEntry, LoginStatus } from '../types/loginLog';
 import {
@@ -43,11 +44,12 @@ const changeDateByDays = (dateStr: string, days: number): string => {
 
 export const LoginLogsView: React.FC = () => {
   const { currentUser } = useAuth();
+  const { isFrench } = useI18n();
   const [logs, setLogs] = useState<LoginLogEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  // Date Selection: default to today (按日期查看，单日约1000条记录)
+  // Date Selection: default to today (daily logs ~1,000 records)
   const todayStr = useMemo(() => getTodayStr(), []);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
 
@@ -193,7 +195,7 @@ export const LoginLogsView: React.FC = () => {
     return { total, successes, failures, successRate };
   }, [filteredLogs]);
 
-  // 虚拟滚动 (Virtual Scrolling for ~1000 daily login logs)
+  // Virtual Scrolling for ~1000 daily login logs
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
     count: filteredLogs.length,
@@ -282,7 +284,9 @@ export const LoginLogsView: React.FC = () => {
                 </span>
               </h1>
               <p className="text-xs text-slate-400 mt-0.5">
-                按日期审计各端（Web Hub / Driver App）登录流水，单日承载约 1,000 条记录并支持毫秒级平滑滚动
+                {isFrench
+                  ? 'Audit de connexion (Web Hub / Driver App), volume quotidien ~1 000 événements avec défilement virtuel fluide'
+                  : 'Daily user and driver authentication audit trail across Web Hub and Driver App with smooth virtual scrolling'}
               </p>
             </div>
           </div>
@@ -293,19 +297,19 @@ export const LoginLogsView: React.FC = () => {
             onClick={handleManualRefresh}
             disabled={refreshing}
             className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
-            title="Refresh current day logs"
+            title={isFrench ? 'Actualiser les journaux du jour sélectionné' : 'Refresh current day logs'}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
+            <span>{isFrench ? 'Actualiser' : 'Refresh'}</span>
           </button>
 
           <button
             onClick={handleRegenerateSeed}
             className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 text-xs font-medium transition"
-            title="一键生成/模拟当日 1,000 条高保真测试数据"
+            title={isFrench ? 'Générer 1 000 exemples de journaux pour la date sélectionnée' : 'Simulate ~1,000 test logs for selected date'}
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>模拟1000条</span>
+            <span>{isFrench ? 'Simuler 1 000' : 'Simulate 1,000'}</span>
           </button>
 
           <button
@@ -314,12 +318,12 @@ export const LoginLogsView: React.FC = () => {
             className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
+            <span>{isFrench ? 'Exporter CSV' : 'Export CSV'}</span>
           </button>
         </div>
       </div>
 
-      {/* Date Navigation & Selector (按日期显示) */}
+      {/* Date Navigation & Selector */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-lg">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Quick Date Stepper & Picker */}
@@ -327,7 +331,7 @@ export const LoginLogsView: React.FC = () => {
             <button
               onClick={() => setSelectedDate(changeDateByDays(selectedDate, -1))}
               className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
-              title="前一天"
+              title={isFrench ? 'Jour précédent' : 'Previous Day'}
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -347,7 +351,7 @@ export const LoginLogsView: React.FC = () => {
               onClick={() => setSelectedDate(changeDateByDays(selectedDate, 1))}
               disabled={isToday}
               className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition disabled:opacity-30 disabled:cursor-not-allowed"
-              title="后一天"
+              title={isFrench ? 'Jour suivant' : 'Next Day'}
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -360,18 +364,18 @@ export const LoginLogsView: React.FC = () => {
                   : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
               }`}
             >
-              今天 (Today)
+              {isFrench ? 'Aujourd\'hui' : 'Today'}
             </button>
           </div>
 
           {/* Current Date Status Badge */}
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-400">当前审计日期:</span>
+            <span className="text-slate-400">{isFrench ? 'Date d\'audit :' : 'Audit Date:'}</span>
             <span className="font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg">
               {selectedDate}
             </span>
             <span className="text-slate-400 text-[11px]">
-              (共 <b className="text-white">{logs.length}</b> 条日记录)
+              ({isFrench ? 'Total' : 'Total'} <b className="text-white">{logs.length}</b> {isFrench ? 'entrées' : 'records'})
             </span>
           </div>
         </div>
@@ -379,13 +383,13 @@ export const LoginLogsView: React.FC = () => {
         {/* Quick Date Chips (Past 7 Days) */}
         <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
-            快速跳转:
+            {isFrench ? 'Accès rapide :' : 'Quick Jump:'}
           </span>
           {recentDays.map((d, index) => {
             const isSelected = selectedDate === d;
             let label = d.slice(5); // MM-DD
-            if (index === 0) label = `今天 (${d.slice(5)})`;
-            else if (index === 1) label = `昨天 (${d.slice(5)})`;
+            if (index === 0) label = `${isFrench ? "Aujourd'hui" : 'Today'} (${d.slice(5)})`;
+            else if (index === 1) label = `${isFrench ? 'Hier' : 'Yesterday'} (${d.slice(5)})`;
 
             return (
               <button
@@ -407,13 +411,17 @@ export const LoginLogsView: React.FC = () => {
       {/* KPI Cards for the Selected Day */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">当日总尝试次数</span>
+          <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
+            {isFrench ? 'Tentatives totales' : 'Total Attempts'}
+          </span>
           <div className="text-2xl font-black text-white mt-1">{stats.total}</div>
           <span className="text-[11px] text-slate-400">Captured on {selectedDate}</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[11px] font-bold uppercase text-emerald-400 block tracking-wider">成功登录</span>
+          <span className="text-[11px] font-bold uppercase text-emerald-400 block tracking-wider">
+            {isFrench ? 'Connexions réussies' : 'Successful Logins'}
+          </span>
           <div className="text-2xl font-black text-emerald-400 mt-1 flex items-center space-x-1.5">
             <CheckCircle2 className="w-5 h-5" />
             <span>{stats.successes}</span>
@@ -422,7 +430,9 @@ export const LoginLogsView: React.FC = () => {
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[11px] font-bold uppercase text-rose-400 block tracking-wider">失败/拦截尝试</span>
+          <span className="text-[11px] font-bold uppercase text-rose-400 block tracking-wider">
+            {isFrench ? 'Échecs / Rejets' : 'Failed Attempts'}
+          </span>
           <div className="text-2xl font-black text-rose-400 mt-1 flex items-center space-x-1.5">
             <XCircle className="w-5 h-5" />
             <span>{stats.failures}</span>
@@ -431,7 +441,9 @@ export const LoginLogsView: React.FC = () => {
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-          <span className="text-[11px] font-bold uppercase text-amber-400 block tracking-wider">登录成功率</span>
+          <span className="text-[11px] font-bold uppercase text-amber-400 block tracking-wider">
+            {isFrench ? 'Taux de réussite' : 'Success Rate'}
+          </span>
           <div className="text-2xl font-black text-amber-400 mt-1">{stats.successRate}%</div>
           <span className="text-[11px] text-slate-400">Overall ratio for this date</span>
         </div>
@@ -568,9 +580,13 @@ export const LoginLogsView: React.FC = () => {
         ) : filteredLogs.length === 0 ? (
           <div className="p-16 text-center space-y-2">
             <History className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-slate-300">No login records found for {selectedDate}</p>
+            <p className="text-sm font-semibold text-slate-300">
+              {isFrench ? `Aucun enregistrement de connexion pour le ${selectedDate}` : `No login records found for ${selectedDate}`}
+            </p>
             <p className="text-xs text-slate-500">
-              Try adjusting your date or keyword filters above, or click "模拟1000条" to seed test logs.
+              {isFrench
+                ? 'Ajustez vos filtres ci-dessus ou cliquez sur "Simuler 1 000" pour générer des données de test.'
+                : 'Try adjusting your date or keyword filters above, or click "Simulate 1,000" to seed test logs.'}
             </p>
           </div>
         ) : (

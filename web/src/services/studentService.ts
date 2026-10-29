@@ -1,4 +1,4 @@
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore';
 import { db } from './firebase';
 import { apiRequest } from './api';
 import { Student, StudentStats } from '../types/student';
@@ -78,6 +78,58 @@ export const StudentService = {
       StudentService.list().then(onUpdate).catch(onError);
       return () => {};
     }
+  },
+
+  // On-demand real-time onSnapshot listener scoped strictly to a single school
+  subscribeToSchoolStudents: (
+    schoolId: number,
+    onUpdate: (students: Student[]) => void,
+    onError?: (err: Error) => void
+  ) => {
+    if (!db) {
+      console.warn(`[StudentService] Firestore SDK not initialized, falling back to REST for school ${schoolId}`);
+      StudentService.list({ schoolId }).then(onUpdate).catch(onError);
+      return () => {};
+    }
+
+    try {
+      const q = query(
+        collection(db, 'students'),
+        where('schoolId', '==', schoolId),
+        orderBy('studentNo', 'asc')
+      );
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const list: Student[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data() as Student;
+            list.push({
+              ...data,
+              id: doc.id
+            });
+          });
+          onUpdate(list);
+        },
+        (error) => {
+          console.error(`[StudentService] onSnapshot error for school ${schoolId}:`, error);
+          if (onError) onError(error);
+          StudentService.list({ schoolId }).then(onUpdate).catch(console.error);
+        }
+      );
+      return unsubscribe;
+    } catch (e) {
+      console.error(`[StudentService] Exception creating onSnapshot for school ${schoolId}:`, e);
+      StudentService.list({ schoolId }).then(onUpdate).catch(onError);
+      return () => {};
+    }
+  },
+
+  // On-demand server-side search across schools (returns only matching students)
+  search: async (search: string, schoolId?: number): Promise<Student[]> => {
+    const params: { search: string; schoolId?: number } = { search };
+    if (schoolId) params.schoolId = schoolId;
+    return StudentService.list(params);
   },
 
   list: async (params?: { search?: string; schoolId?: number; grade?: string; route?: string }): Promise<Student[]> => {

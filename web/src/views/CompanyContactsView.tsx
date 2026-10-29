@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { canEditPage } from '../utils/permissions';
 import {
@@ -14,105 +14,42 @@ import {
   X,
   Phone
 } from 'lucide-react';
+import { CompanyContact, CompanyContactsService, INITIAL_COMPANY_CONTACTS } from '../services/companyContactsService';
 
-export interface CompanyContact {
-  id: string;
-  name: string;
-  title: string;
-  department: 'Operations' | 'Emergency' | 'HR' | 'Fleet' | 'Training' | 'Finance';
-  phone: string;
-  extension?: string;
-  email: string;
-  hours: string;
-  is24x7?: boolean;
-  notes?: string;
+export type { CompanyContact };
+
+interface CompanyContactsViewProps {
+  contacts?: CompanyContact[];
 }
 
-const INITIAL_CONTACTS: CompanyContact[] = [
-  {
-    id: 'CC-01',
-    name: '24/7 Dispatch Operations Desk',
-    title: 'Central Dispatch Command',
-    department: 'Operations',
-    phone: '613-555-0100',
-    extension: 'Ext. 101',
-    email: 'dispatch@dispatch.local',
-    hours: '24 Hours / 7 Days',
-    is24x7: true,
-    notes: 'Primary channel for on-road bus issues, route diversions, and delays'
-  },
-  {
-    id: 'CC-02',
-    name: 'Student Incident & Safety Emergency Line',
-    title: 'Student Care Safety Officer',
-    department: 'Emergency',
-    phone: '613-555-0199',
-    extension: 'Hotline',
-    email: 'safety-desk@dispatch.local',
-    hours: '24 Hours / 7 Days',
-    is24x7: true,
-    notes: 'Urgent behavioral incidents, child welfare, missing passengers'
-  },
-  {
-    id: 'CC-03',
-    name: 'Fleet Maintenance & Roadside Recovery',
-    title: 'Head Mechanic & Shop Dispatch',
-    department: 'Fleet',
-    phone: '613-555-0150',
-    extension: 'Ext. 204',
-    email: 'fleet-shop@dispatch.local',
-    hours: '05:00 AM - 08:00 PM',
-    is24x7: false,
-    notes: 'Mechanical breakdowns, flat tires, emergency bus towing'
-  },
-  {
-    id: 'CC-04',
-    name: 'Human Resources & Crew Staffing',
-    title: 'HR Employee Relations Manager',
-    department: 'HR',
-    phone: '613-555-0120',
-    extension: 'Ext. 305',
-    email: 'hr@dispatch.local',
-    hours: '08:00 AM - 05:00 PM',
-    is24x7: false,
-    notes: 'Staff absence coverage, benefits, CDL compliance certification'
-  },
-  {
-    id: 'CC-05',
-    name: 'Safety Training & Recertification Office',
-    title: 'Chief Driver Instructor',
-    department: 'Training',
-    phone: '613-555-0133',
-    extension: 'Ext. 402',
-    email: 'training@dispatch.local',
-    hours: '07:30 AM - 04:30 PM',
-    is24x7: false,
-    notes: 'Driver evaluations, defensive driving refresher seminars'
-  },
-  {
-    id: 'CC-06',
-    name: 'Driver Payroll & Compensation Office',
-    title: 'Payroll Coordinator',
-    department: 'Finance',
-    phone: '613-555-0144',
-    extension: 'Ext. 501',
-    email: 'payroll@dispatch.local',
-    hours: '08:30 AM - 04:30 PM',
-    is24x7: false,
-    notes: 'Bi-weekly timesheets, charter mileage adjustments, expense payouts'
-  }
-];
-
-export const CompanyContactsView: React.FC = () => {
+export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contacts: initialPropsContacts }) => {
   const { currentUser } = useAuth();
   const [contacts, setContacts] = useState<CompanyContact[]>(() => {
+    if (initialPropsContacts && initialPropsContacts.length > 0) {
+      return initialPropsContacts;
+    }
     try {
       const saved = localStorage.getItem('dispatch_company_contacts');
-      return saved ? JSON.parse(saved) : INITIAL_CONTACTS;
+      return saved ? JSON.parse(saved) : INITIAL_COMPANY_CONTACTS;
     } catch {
-      return INITIAL_CONTACTS;
+      return INITIAL_COMPANY_CONTACTS;
     }
   });
+
+  useEffect(() => {
+    if (initialPropsContacts && initialPropsContacts.length > 0) {
+      setContacts(initialPropsContacts);
+    }
+  }, [initialPropsContacts]);
+
+  useEffect(() => {
+    if (!initialPropsContacts) {
+      const unsub = CompanyContactsService.subscribeToCompanyContacts((data) => {
+        setContacts(data);
+      });
+      return () => unsub();
+    }
+  }, [initialPropsContacts]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState<string>('ALL');
@@ -132,15 +69,6 @@ export const CompanyContactsView: React.FC = () => {
 
   // Check RBAC permission for this page
   const canEdit = canEditPage(currentUser, 'company_contacts');
-
-  const saveContacts = (nextList: CompanyContact[]) => {
-    setContacts(nextList);
-    try {
-      localStorage.setItem('dispatch_company_contacts', JSON.stringify(nextList));
-    } catch (e) {
-      console.warn('Could not save contacts to localStorage:', e);
-    }
-  };
 
   const filteredContacts = useMemo(() => {
     return contacts.filter((c) => {
@@ -186,32 +114,39 @@ export const CompanyContactsView: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this company contact?')) {
-      saveContacts(contacts.filter((c) => c.id !== id));
+      const nextList = contacts.filter((c) => c.id !== id);
+      setContacts(nextList);
+      try {
+        await CompanyContactsService.deleteContact(id);
+      } catch (err) {
+        console.error('Failed to delete contact from Firestore:', err);
+      }
     }
   };
 
-  const handleSaveModal = (e: React.FormEvent) => {
+  const handleSaveModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingContact) {
-      const updated = contacts.map((c) =>
-        c.id === editingContact.id
-          ? {
-              ...c,
-              name: formName,
-              title: formTitle,
-              department: formDept,
-              phone: formPhone,
-              extension: formExt,
-              email: formEmail,
-              hours: formHours,
-              is24x7: formIs24x7,
-              notes: formNotes
-            }
-          : c
-      );
-      saveContacts(updated);
+      const updatedContact: CompanyContact = {
+        ...editingContact,
+        name: formName,
+        title: formTitle,
+        department: formDept,
+        phone: formPhone,
+        extension: formExt,
+        email: formEmail,
+        hours: formHours,
+        is24x7: formIs24x7,
+        notes: formNotes
+      };
+      setContacts(contacts.map((c) => (c.id === editingContact.id ? updatedContact : c)));
+      try {
+        await CompanyContactsService.saveContact(updatedContact);
+      } catch (err) {
+        console.error('Failed to save contact to Firestore:', err);
+      }
     } else {
       const newContact: CompanyContact = {
         id: `CC-${Date.now()}`,
@@ -225,7 +160,12 @@ export const CompanyContactsView: React.FC = () => {
         is24x7: formIs24x7,
         notes: formNotes
       };
-      saveContacts([newContact, ...contacts]);
+      setContacts([newContact, ...contacts]);
+      try {
+        await CompanyContactsService.saveContact(newContact);
+      } catch (err) {
+        console.error('Failed to create contact in Firestore:', err);
+      }
     }
     setIsModalOpen(false);
   };

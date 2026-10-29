@@ -35,26 +35,89 @@ import { useAuth } from '../contexts/AuthContext';
 import { getLocalTodayString } from '../utils/dateUtils';
 import { PayrollOperationLogService } from '../services/payrollOperationLogService';
 import { PayrollOperationActor, PayrollFieldDiff } from '../types/payrollOperationLog';
+import { SchoolBoard } from '../types/school';
+import { BusRoute } from '../types/route';
+import { Employee } from '../types/employee';
 
-export const PayrollRateView: React.FC = () => {
+interface PayrollRateViewProps {
+  initialBoardRates?: SchoolBoardBaseRatesDTO[];
+  cachedRates?: BusRoutePayrollRate[];
+  boards?: SchoolBoard[];
+  routes?: BusRoute[];
+  employees?: Employee[];
+  onBoardRatesChange?: (rates: SchoolBoardBaseRatesDTO[]) => void;
+}
+
+export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
+  initialBoardRates,
+  cachedRates,
+  boards: propsBoards,
+  routes: propsRoutes,
+  employees: propsEmployees,
+  onBoardRatesChange,
+}) => {
   const { currentUser } = useAuth();
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<'board-rates' | 'custom-rates' | 'calculator' | 'dispatch-rates' | 'dispatch-payroll' | 'payroll-dept-log' | 'biweekly-payroll'>(
     currentUser?.role === 'payroll' ? 'payroll-dept-log' : 'board-rates'
   );
 
-  // Data states
-  const [boardRates, setBoardRates] = useState<SchoolBoardBaseRatesDTO[]>([]);
-  const [customRates, setCustomRates] = useState<BusRoutePayrollRate[]>([]);
-  const [lookups, setLookups] = useState<PayrollLookups>({
-    schoolBoards: [],
-    routes: [],
-    employees: [],
-    jobTitles: [],
-    shiftTypes: [],
+  // Data states initialized from permanent cache
+  const [boardRates, setBoardRates] = useState<SchoolBoardBaseRatesDTO[]>(() => {
+    if (initialBoardRates && initialBoardRates.length > 0) return initialBoardRates;
+    return PayrollService.getCachedBoardRates();
   });
 
-  const [loading, setLoading] = useState<boolean>(true);
+  const [customRates, setCustomRates] = useState<BusRoutePayrollRate[]>(() => {
+    if (cachedRates && cachedRates.length > 0) return cachedRates;
+    return PayrollService.getCachedCustomRates();
+  });
+
+  const [lookups, setLookups] = useState<PayrollLookups>(() => {
+    const cached = PayrollService.getCachedLookups();
+    if (cached) return cached;
+    return {
+      schoolBoards: (propsBoards || []).map((b) => ({
+        schoolBoardId: b.schoolBoardId,
+        schoolBoardName: b.schoolBoardName,
+        schoolBoardCode: b.schoolBoardCode,
+      })),
+      routes: (propsRoutes || []).map((r) => ({
+        busRouteId: r.busRouteId || 0,
+        routeNo: r.routeNo || '',
+        routeName: r.routeName || '',
+        shifts: (r.shifts || []).map((s) => ({
+          shiftId: s.shiftId,
+          shiftType: s.shiftType,
+        })),
+      })),
+      employees: (propsEmployees || []).map((e) => ({
+        employeeId: Number(e.id || e.employeeNumber || 0),
+        firstName: e.firstName || '',
+        lastName: e.lastName || '',
+        jobPosition: e.jobPosition || e.role,
+      })),
+      jobTitles: [
+        { id: 1, name: 'driver', displayName: 'School Bus Driver' },
+        { id: 2, name: 'attendant', displayName: 'Bus Attendant / Monitor' },
+        { id: 3, name: 'lpn', displayName: 'Licensed Practical Nurse (LPN)' },
+      ],
+      shiftTypes: [
+        { id: 1, name: 'AM', displayName: 'Morning Shift (AM)' },
+        { id: 2, name: 'MIDDAY', displayName: 'Midday Shift (MID)' },
+        { id: 3, name: 'PM', displayName: 'Afternoon Shift (PM)' },
+        { id: 4, name: 'ALL', displayName: 'All Day Package' },
+      ],
+    };
+  });
+
+  // Zero-latency startup if cache is already present
+  const [loading, setLoading] = useState<boolean>(() => {
+    const hasCache =
+      (initialBoardRates && initialBoardRates.length > 0) ||
+      PayrollService.getCachedBoardRates().length > 0;
+    return !hasCache;
+  });
   const [error, setError] = useState<string | null>(null);
 
   // Modals
@@ -122,9 +185,38 @@ export const PayrollRateView: React.FC = () => {
   const [simResult, setSimResult] = useState<RateCalculationResponse | null>(null);
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
 
-  // Load all initial payroll data
-  const loadData = async () => {
-    setLoading(true);
+  // Synchronize when initialBoardRates updates from parent
+  useEffect(() => {
+    if (initialBoardRates && initialBoardRates.length > 0) {
+      setBoardRates(initialBoardRates);
+      setLoading(false);
+    }
+  }, [initialBoardRates]);
+
+  // Hydrate instantly from top-level permanent cache when available
+  useEffect(() => {
+    if (cachedRates && cachedRates.length > 0) {
+      if (propsBoards && propsBoards.length > 0) {
+        const aggregated = PayrollService.aggregateSchoolBoardBaseRates(propsBoards, cachedRates);
+        setBoardRates(aggregated);
+        onBoardRatesChange?.(aggregated);
+        if (!simBoardId && aggregated.length > 0) {
+          setSimBoardId(aggregated[0].schoolBoardId);
+        }
+      }
+      const customs = PayrollService.filterCustomRates(cachedRates);
+      setCustomRates(customs);
+      setLoading(false);
+    }
+  }, [cachedRates, propsBoards]);
+
+  // Load all initial payroll data & lookups
+  const loadData = async (isManual = false) => {
+    const hasData = boardRates.length > 0;
+    // Only show full loading spinner if we have ZERO data on screen or if manual force-refresh
+    if (!hasData || isManual) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const [boardsData, customsData, lookupsData] = await Promise.all([
@@ -132,17 +224,24 @@ export const PayrollRateView: React.FC = () => {
         PayrollService.getCustomRates(),
         PayrollService.getLookups(),
       ]);
-      setBoardRates(boardsData || []);
-      setCustomRates(customsData || []);
-      setLookups(lookupsData);
-
-      // Default simulator school board
-      if (boardsData && boardsData.length > 0 && !simBoardId) {
-        setSimBoardId(boardsData[0].schoolBoardId);
+      if (boardsData && boardsData.length > 0) {
+        setBoardRates(boardsData);
+        onBoardRatesChange?.(boardsData);
+        if (!simBoardId) {
+          setSimBoardId(boardsData[0].schoolBoardId);
+        }
+      }
+      if (customsData && customsData.length > 0) {
+        setCustomRates(customsData);
+      }
+      if (lookupsData) {
+        setLookups(lookupsData);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load payroll data';
-      setError(msg);
+      if (!hasData) {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -317,7 +416,9 @@ export const PayrollRateView: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={loadData}
+            onClick={() => {
+              loadData(true);
+            }}
             disabled={loading}
             className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm disabled:opacity-50"
             title="Refresh"
