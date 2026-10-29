@@ -1,6 +1,12 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
-import { initializeFirestore, getFirestore, Firestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  Firestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore';
 
 // User populates these via .env.local (ignored by git)
 const firebaseConfig = {
@@ -19,11 +25,23 @@ let db: Firestore | null = null;
 try {
   if (getApps().length === 0) {
     app = initializeApp(firebaseConfig);
-    db = initializeFirestore(app, { ignoreUndefinedProperties: true });
+    db = initializeFirestore(app, {
+      ignoreUndefinedProperties: true,
+      experimentalAutoDetectLongPolling: true,
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
   } else {
     app = getApps()[0];
     try {
-      db = initializeFirestore(app, { ignoreUndefinedProperties: true });
+      db = initializeFirestore(app, {
+        ignoreUndefinedProperties: true,
+        experimentalAutoDetectLongPolling: true,
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+        }),
+      });
     } catch {
       db = getFirestore(app);
     }

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { AssignmentHistoryService } from '../services/assignmentHistoryService';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { AssignmentHistoryService, isColdRecord } from '../services/assignmentHistoryService';
 import {
   AssignmentHistoryRecord,
   AssignmentAction
@@ -19,15 +20,21 @@ import {
   CheckCircle2,
   User,
   Navigation,
-  GraduationCap
+  GraduationCap,
+  Info
 } from 'lucide-react';
 import { RouteAuditHistoryPanel } from '../components/routes/RouteAuditHistoryPanel';
 import { EntityOperationLogPanel } from '../components/common/EntityOperationLogPanel';
+import { useI18n } from '../contexts/I18nContext';
 
 export const AssignmentTrackingView: React.FC = () => {
+  const { isFrench } = useI18n();
   const [history, setHistory] = useState<AssignmentHistoryRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Time Range: '1year' (live data <= 1 year) | 'all' (cold storage in BigQuery > 1 year)
+  const [timeRange, setTimeRange] = useState<'1year' | 'all'>('1year');
 
   // Active Tab: 'all' | 'driver_route' | 'driver_vehicle' | 'route_modifications' | 'entity_operations'
   const [activeTab, setActiveTab] = useState<'all' | 'driver_route' | 'driver_vehicle' | 'route_modifications' | 'entity_operations'>('all');
@@ -41,28 +48,69 @@ export const AssignmentTrackingView: React.FC = () => {
   const [selectedAction, setSelectedAction] = useState<AssignmentAction | 'all'>('all');
   const [selectedDate, setSelectedDate] = useState<string>('');
 
-  // Subscribe to real-time events
-  useEffect(() => {
-    setLoading(true);
-    const unsubscribe = AssignmentHistoryService.subscribeToHistory(
-      (records) => {
-        setHistory(records);
-        setLoading(false);
-        setRefreshing(false);
-      },
-      () => {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    );
+  const isArchivedDate = (effectiveDate?: string, timestamp?: string) => {
+    return isColdRecord(effectiveDate, timestamp);
+  };
 
-    return () => unsubscribe();
-  }, []);
+  const loadHistory = async (targetQuery?: string) => {
+    const q = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
+    if (timeRange === 'all' && !q && !selectedDriverId && !selectedRouteNo && !selectedUnitNumber && !selectedDate) {
+      setHistory([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await AssignmentHistoryService.listHistory({
+        timeRange,
+        type: activeTab !== 'route_modifications' && activeTab !== 'entity_operations' ? activeTab : 'all',
+        action: selectedAction,
+        driverId: selectedDriverId,
+        routeNo: selectedRouteNo,
+        unitNumber: selectedUnitNumber,
+        searchQuery: q,
+        dateFrom: selectedDate,
+        dateTo: selectedDate,
+      });
+      setHistory(data);
+    } catch (err) {
+      console.error('Failed to load assignment history:', err);
+      setHistory([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Subscribe to real-time events (<= 1 year live data) or load targeted archives (> 1 year)
+  useEffect(() => {
+    if (timeRange === '1year') {
+      setLoading(true);
+      const unsubscribe = AssignmentHistoryService.subscribeToHistory(
+        (records) => {
+          setHistory(records);
+          setLoading(false);
+          setRefreshing(false);
+        },
+        () => {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      );
+
+      return () => unsubscribe();
+    } else {
+      loadHistory();
+    }
+  }, [timeRange, activeTab, selectedAction, selectedDriverId, selectedRouteNo, selectedUnitNumber, selectedDate]);
 
   const handleManualRefresh = async () => {
     setRefreshing(true);
-    const records = await AssignmentHistoryService.getHistory();
-    setHistory(records);
+    if (timeRange === '1year') {
+      const records = await AssignmentHistoryService.getHistory('1year');
+      setHistory(records);
+    } else {
+      await loadHistory();
+    }
     setRefreshing(false);
   };
 
@@ -192,6 +240,22 @@ export const AssignmentTrackingView: React.FC = () => {
       vehicleUnassignments
     };
   }, [filteredRecords]);
+
+  // Virtual scrolling for 1,000+ assignment tracking records
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: filteredRecords.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 64,
+    overscan: 8,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start || 0 : 0;
+  const paddingBottom = virtualRows.length > 0
+    ? rowVirtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1]?.end || 0)
+    : 0;
 
   // Export CSV
   const handleExportCSV = () => {
@@ -409,20 +473,69 @@ export const AssignmentTrackingView: React.FC = () => {
         <>
           {/* Multi-Faceted Query & Filter Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4 shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800/80 pb-2.5 gap-2">
           <div className="flex items-center space-x-2 text-xs font-bold text-slate-300">
             <Filter className="w-4 h-4 text-amber-400" />
             <span>Targeted History Query</span>
           </div>
-          {(searchQuery || selectedDriverId || selectedRouteNo || selectedUnitNumber || selectedAction !== 'all' || selectedDate) && (
-            <button
-              onClick={handleResetFilters}
-              className="text-[11px] font-semibold text-rose-400 hover:text-rose-300"
-            >
-              Reset Filters
-            </button>
-          )}
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Time Range Filter (1-Year Live vs All History BigQuery) */}
+            <div className="flex items-center bg-slate-800/80 p-0.5 rounded-xl border border-slate-700">
+              <button
+                type="button"
+                onClick={() => setTimeRange('1year')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  timeRange === '1year'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                ⏱️ {isFrench ? 'En direct (≤1 an)' : 'Live (≤1 Year)'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTimeRange('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                  timeRange === 'all'
+                    ? 'bg-sky-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>🧊 {isFrench ? 'Tout l\'historique (Archive BigQuery)' : 'All History (BigQuery Archive)'}</span>
+              </button>
+            </div>
+
+            {(searchQuery || selectedDriverId || selectedRouteNo || selectedUnitNumber || selectedAction !== 'all' || selectedDate) && (
+              <button
+                onClick={handleResetFilters}
+                className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 ml-2"
+              >
+                {isFrench ? 'Réinitialiser les filtres' : 'Reset Filters'}
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* 10-Year Safe Scan Notice Banner */}
+        {timeRange === 'all' && (
+          <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3 text-xs text-amber-300">
+            <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="font-semibold text-amber-200 flex items-center gap-1.5">
+                <span>{isFrench ? 'Mode Tout l\'historique (Archive froide BigQuery)' : 'All History Mode (BigQuery Cold Archive)'}</span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium border border-amber-500/30">
+                  {isFrench ? 'Recherche sécurisée 10 ans' : '10-Year Safe Scan'}
+                </span>
+              </div>
+              <p className="text-slate-300">
+                {isFrench
+                  ? 'Les affectations en direct couvrent la dernière année. Les données plus anciennes sont archivées dans BigQuery. Pour éviter une analyse complète, veuillez saisir un nom de chauffeur, matricule, route, véhicule ou mot-clé.'
+                  : 'Live assignment lifecycle records cover the most recent 1 year. Older data is stored in BigQuery cold archives. To prevent unbounded full-table scans, please enter a driver name, employee ID, route #, vehicle unit #, or keyword.'}
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
           {/* Freeform Search */}
@@ -559,17 +672,45 @@ export const AssignmentTrackingView: React.FC = () => {
           </div>
         ) : filteredRecords.length === 0 ? (
           <div className="p-12 text-center space-y-2">
-            <History className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-slate-300">No assignment records found</p>
-            <p className="text-xs text-slate-500">
-              Try adjusting your driver, route, or vehicle query filters above.
-            </p>
+            {timeRange === 'all' && !searchQuery.trim() && !selectedDriverId && !selectedRouteNo && !selectedUnitNumber && !selectedDate ? (
+              <>
+                <Search className="w-8 h-8 text-amber-500 mx-auto mb-2" />
+                <p className="text-sm font-semibold text-slate-200">
+                  {isFrench ? 'Rechercher dans les archives d\'affectation' : 'Search Historical Assignment Archives'}
+                </p>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  {isFrench
+                    ? 'Mode Tout l\'historique actif. Entrez un chauffeur, matricule, route, véhicule ou mot-clé pour interroger les archives BigQuery.'
+                    : 'Currently in All History mode. Enter a driver, employee ID, route, vehicle #, or keyword to query BigQuery archives older than 1 year.'}
+                </p>
+              </>
+            ) : (
+              <>
+                <History className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                <p className="text-sm font-semibold text-slate-300">
+                  {isFrench ? 'Aucun enregistrement d\'affectation trouvé' : 'No assignment records found'}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {isFrench ? 'Ajustez vos filtres de chauffeur, route ou véhicule ci-dessus.' : 'Try adjusting your driver, route, or vehicle query filters above.'}
+                </p>
+              </>
+            )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-950/50 border-b border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+            <table className="w-full text-left border-collapse table-fixed min-w-[1150px]">
+              <colgroup>
+                <col style={{ width: '160px' }} />
+                <col style={{ width: '140px' }} />
+                <col style={{ width: '150px' }} />
+                <col style={{ width: '160px' }} />
+                <col style={{ width: '180px' }} />
+                <col style={{ width: '130px' }} />
+                <col style={{ width: '160px' }} />
+                <col style={{ minWidth: '160px' }} />
+              </colgroup>
+              <thead className="sticky top-0 z-10 bg-slate-900 border-b border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-400 shadow-xs">
+                <tr>
                   <th className="py-3 px-4">Effective Timeline</th>
                   <th className="py-3 px-4">Assignment Category</th>
                   <th className="py-3 px-4">Action</th>
@@ -581,7 +722,14 @@ export const AssignmentTrackingView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-xs text-slate-300">
-                {filteredRecords.map((rec) => {
+                {paddingTop > 0 && (
+                  <tr>
+                    <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={8} />
+                  </tr>
+                )}
+                {virtualRows.map((virtualRow) => {
+                  const rec = filteredRecords[virtualRow.index];
+                  if (!rec) return null;
                   const isRoute = rec.type === 'driver_route';
                   const isAssign = rec.action === 'assign';
                   const isUnassign = rec.action === 'unassign';
@@ -591,10 +739,17 @@ export const AssignmentTrackingView: React.FC = () => {
                   const dispatcherDisplayName = rec.dispatcherName || rec.assignedBy || 'Dispatcher';
 
                   return (
-                    <tr key={rec.id} className="hover:bg-slate-800/40 transition-colors">
+                    <tr key={rec.id} className="hover:bg-slate-800/40 transition-colors h-16">
                       {/* Timeline */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="text-white font-mono font-medium">{rec.effectiveDate}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-white font-mono font-medium">{rec.effectiveDate}</span>
+                          {isArchivedDate(rec.effectiveDate, rec.timestamp) && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20 whitespace-nowrap">
+                              🧊 {isFrench ? 'Archive BigQuery (>1 an)' : 'BigQuery Archive (>1y)'}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[10px] text-slate-500 flex items-center space-x-1 mt-0.5">
                           <Clock className="w-3 h-3 text-slate-500" />
                           <span>Logged: {timeStr}</span>
@@ -732,6 +887,11 @@ export const AssignmentTrackingView: React.FC = () => {
                     </tr>
                   );
                 })}
+                {paddingBottom > 0 && (
+                  <tr>
+                    <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={8} />
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

@@ -49,6 +49,11 @@ import { Yard } from './types/yard';
 import { YardListView } from './views/YardListView';
 import { hasPageAccess, initCloudRolePermissionsListener } from './utils/permissions';
 import { YardService } from './services/yardService';
+import { CalendarService } from './services/calendarService';
+import { SchoolCalendar } from './types/calendar';
+import { PayrollService } from './services/payrollService';
+import { BusRoutePayrollRate, SchoolBoardBaseRatesDTO } from './types/payroll';
+import { CompanyContact, CompanyContactsService } from './services/companyContactsService';
 import { DispatchWorkbenchView } from './views/DispatchWorkbenchView';
 import { CharterManagementView } from './views/CharterManagementView';
 import { DispatchChangeLogView } from './views/DispatchChangeLogView';
@@ -202,6 +207,16 @@ export const AppContent: React.FC = () => {
     return map;
   }, [students]);
 
+  // Top-level permanent caches
+  const [schoolCalendars, setSchoolCalendars] = useState<SchoolCalendar[]>([]);
+  const [payrollBoardRates, setPayrollBoardRates] = useState<SchoolBoardBaseRatesDTO[]>(() =>
+    PayrollService.getCachedBoardRates()
+  );
+  const [payrollRates, setPayrollRates] = useState<BusRoutePayrollRate[]>(() =>
+    PayrollService.getCachedCustomRates()
+  );
+  const [companyContacts, setCompanyContacts] = useState<CompanyContact[]>([]);
+
   // Drawer and modal states
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -228,6 +243,26 @@ export const AppContent: React.FC = () => {
       setDataLoading(false);
     }
   };
+
+  const handleStudentsLoaded = React.useCallback((loadedStudents: Student[]) => {
+    setStudents((prev) => {
+      const existingMap = new Map(prev.map((s) => [s.id, s]));
+      let hasChange = false;
+      for (const s of loadedStudents) {
+        if (!existingMap.has(s.id)) {
+          existingMap.set(s.id, s);
+          hasChange = true;
+        } else {
+          const old = existingMap.get(s.id);
+          if (old && (old.updatedAt !== s.updatedAt || old.routes !== s.routes || old.active !== s.active)) {
+            existingMap.set(s.id, s);
+            hasChange = true;
+          }
+        }
+      }
+      return hasChange ? Array.from(existingMap.values()) : prev;
+    });
+  }, []);
 
   const handleStudentRefresh = async () => {
     try {
@@ -322,16 +357,10 @@ export const AppContent: React.FC = () => {
         }
       );
 
-      // Real-time Firestore onSnapshot listener for Students
-      const unsubStudents = StudentService.subscribeToStudents(
-        (stuList) => {
-          setStudents(stuList);
-          setStudentStats(calculateStudentStats(stuList));
-        },
-        (error) => {
-          console.warn("Realtime Firestore student notice:", error);
-        }
-      );
+      // Lightweight Student Stats hydration (Zero bulk student document reads on launch)
+      StudentService.getStats()
+        .then((s) => setStudentStats(s))
+        .catch((error) => console.warn("Initial student stats notice:", error));
 
       // Real-time Firestore onSnapshot listener for Routes
       const unsubRoutes = RouteService.subscribeToRoutes(
@@ -365,6 +394,53 @@ export const AppContent: React.FC = () => {
         }
       );
 
+      // Real-time Firestore onSnapshot listener for Company Contacts
+      const unsubContacts = CompanyContactsService.subscribeToCompanyContacts(
+        (contactList) => {
+          setCompanyContacts(contactList);
+        },
+        (error) => {
+          console.warn("Realtime Firestore company contacts notice:", error);
+        }
+      );
+
+      // Real-time Firestore onSnapshot listener for School Calendars
+      const unsubCalendars = CalendarService.subscribeToAllCalendars(
+        (calList) => {
+          setSchoolCalendars(calList);
+        },
+        (error) => {
+          console.warn("Realtime Firestore calendar notice:", error);
+        }
+      );
+
+      // Real-time Firestore onSnapshot listener for Payroll Rates (for authorized users)
+      let unsubPayrollRates: (() => void) | undefined;
+      if (
+        currentUser.role === 'admin' ||
+        currentUser.role === 'payroll' ||
+        currentUser.role === 'manager' ||
+        hasPageAccess(currentUser, 'payroll')
+      ) {
+        unsubPayrollRates = PayrollService.subscribeToPayrollRates(
+          (rateList) => {
+            setPayrollRates(rateList);
+          },
+          (error) => {
+            console.warn("Realtime Firestore payroll rates notice:", error);
+          }
+        );
+
+        // Pre-hydrate Payroll Board Rates in the background on startup
+        PayrollService.getSchoolBoardBaseRates()
+          .then((rates) => {
+            if (rates && rates.length > 0) {
+              setPayrollBoardRates(rates);
+            }
+          })
+          .catch((e) => console.warn("Payroll board rates pre-load notice:", e));
+      }
+
       // Failsafe: if onSnapshot takes more than 2.5s to respond, hydrate from Go API
       const failsafe = setTimeout(() => {
         if (!isResolved) {
@@ -376,10 +452,12 @@ export const AppContent: React.FC = () => {
         unsubEmployees();
         unsubSchools();
         unsubBoards();
-        unsubStudents();
         unsubRoutes();
         unsubVehicles();
         unsubYards();
+        unsubContacts();
+        unsubCalendars();
+        if (unsubPayrollRates) unsubPayrollRates();
         clearTimeout(failsafe);
       };
     }
@@ -863,6 +941,7 @@ export const AppContent: React.FC = () => {
               onSelectSchool={(school) => {
                 setCalendarSelectedSchoolId(school ? school.schoolId : null);
               }}
+              cachedCalendars={schoolCalendars}
             />
           )}
 
@@ -878,6 +957,7 @@ export const AppContent: React.FC = () => {
               onDeleteStudent={handleDeleteStudent}
               onRefresh={handleStudentRefresh}
               onMessageParent={handleOpenParentChat}
+              onStudentsLoaded={handleStudentsLoaded}
             />
           )}
 
@@ -1059,7 +1139,14 @@ export const AppContent: React.FC = () => {
           )}
 
           {currentTab === 'payroll' && (
-            <PayrollRateView />
+            <PayrollRateView
+              initialBoardRates={payrollBoardRates}
+              cachedRates={payrollRates}
+              boards={boards}
+              routes={routes}
+              employees={employees}
+              onBoardRatesChange={setPayrollBoardRates}
+            />
           )}
 
           {currentTab === 'biweekly_payroll' && (
@@ -1098,7 +1185,7 @@ export const AppContent: React.FC = () => {
             />
           )}
 
-          {currentTab === 'company_contacts' && <CompanyContactsView />}
+          {currentTab === 'company_contacts' && <CompanyContactsView contacts={companyContacts} />}
 
           {currentTab === 'login_logs' && <LoginLogsView />}
 

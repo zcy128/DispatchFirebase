@@ -1,4 +1,4 @@
-import { collection, onSnapshot, query, orderBy, where, getDocs, setDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, where, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 import { apiRequest } from './api';
 import { BusRoute, BusRouteShift, RouteStats, extractRouteAssignedEmployeeIds } from '../types/route';
@@ -51,13 +51,11 @@ export const RouteService = {
           const list: BusRoute[] = [];
           snapshot.forEach((d) => {
             const data = d.data() as BusRoute;
-            // Auto-heal missing assignedEmployeeIds for Firestore index-level driver queries
-            if (db && !data.assignedEmployeeIds && (data.driverId || data.driverName || data.attendantId || data.attendantName)) {
-              const ids = extractRouteAssignedEmployeeIds(data);
-              setDoc(doc(db, 'routes', d.id), { assignedEmployeeIds: ids }, { merge: true }).catch(() => {});
-            }
+            const assignedEmployeeIds =
+              data.assignedEmployeeIds || extractRouteAssignedEmployeeIds(data);
             list.push({
               ...data,
+              assignedEmployeeIds,
               id: d.id
             });
           });

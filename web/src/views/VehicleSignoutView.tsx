@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useI18n } from '../contexts/I18nContext';
 import { useAuth } from '../contexts/AuthContext';
 import { VehicleSignout, CreateVehicleSignoutPayload, VehicleSignoutAttachment } from '../types/vehicleSignout';
 import { VehicleSignoutService } from '../services/vehicleSignoutService';
@@ -310,6 +312,20 @@ export const VehicleSignoutView: React.FC = () => {
     });
   }, [records, typeFilter, dateFilter, searchQuery]);
 
+  const { isFrench } = useI18n();
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filteredRecords.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 72,
+    overscan: 8,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalHeight = rowVirtualizer.getTotalSize();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start ?? 0 : 0;
+  const paddingBottom =
+    virtualRows.length > 0 ? totalHeight - (virtualRows[virtualRows.length - 1]?.end ?? 0) : 0;
+
   // Statistics
   const stats = useMemo(() => {
     const total = records.length;
@@ -616,19 +632,30 @@ export const VehicleSignoutView: React.FC = () => {
 
       {/* Record Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-        <div className="overflow-x-auto">
+        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
           <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-950/60 border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wider font-semibold">
+            <colgroup>
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '16%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '4%' }} />
+              <col style={{ width: '6%' }} />
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-slate-950 border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wider font-semibold">
               <tr>
-                <th className="py-3.5 px-4">Type</th>
-                <th className="py-3.5 px-4">Date</th>
-                <th className="py-3.5 px-4">Vehicle Unit</th>
-                <th className="py-3.5 px-4">Driver / Recipient</th>
-                <th className="py-3.5 px-4">Route</th>
-                <th className="py-3.5 px-4">Odometer & Fuel</th>
-                <th className="py-3.5 px-4">Condition</th>
-                <th className="py-3.5 px-4 text-center">Photos</th>
-                <th className="py-3.5 px-4 text-right">Actions</th>
+                <th className="py-3.5 px-4">{isFrench ? 'Type' : 'Type'}</th>
+                <th className="py-3.5 px-4">{isFrench ? 'Date' : 'Date'}</th>
+                <th className="py-3.5 px-4">{isFrench ? 'Unité Véhicule' : 'Vehicle Unit'}</th>
+                <th className="py-3.5 px-4">{isFrench ? 'Chauffeur / Destinataire' : 'Driver / Recipient'}</th>
+                <th className="py-3.5 px-4">{isFrench ? 'Trajet' : 'Route'}</th>
+                <th className="py-3.5 px-4">{isFrench ? 'Odomètre & Carburant' : 'Odometer & Fuel'}</th>
+                <th className="py-3.5 px-4">{isFrench ? 'État' : 'Condition'}</th>
+                <th className="py-3.5 px-4 text-center">{isFrench ? 'Photos' : 'Photos'}</th>
+                <th className="py-3.5 px-4 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -636,7 +663,7 @@ export const VehicleSignoutView: React.FC = () => {
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-500">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-amber-500" />
-                    Loading vehicle handover records...
+                    {isFrench ? 'Chargement des fiches de transfert...' : 'Loading vehicle handover records...'}
                   </td>
                 </tr>
               ) : filteredRecords.length === 0 ? (
@@ -646,146 +673,164 @@ export const VehicleSignoutView: React.FC = () => {
                     {timeRange === 'all' && !searchQuery.trim() && !dateFilter ? (
                       <div className="space-y-1">
                         <div className="text-sm font-semibold text-slate-300">
-                          Enter Bus #, Driver Name, Route, or Date to Search 10-Year Archive
+                          {isFrench ? 'Rechercher dans les archives de 10 ans' : 'Enter Bus #, Driver Name, Route, or Date to Search 10-Year Archive'}
                         </div>
                         <div className="text-xs text-slate-500 max-w-md mx-auto">
-                          Live vehicle handover records cover the most recent 1 year. Type a query above and click &quot;Search Archive&quot; to inspect historical records.
+                          {isFrench
+                            ? 'Les données en direct couvrent la dernière année. Saisissez une requête ci-dessus pour inspecter les archives historiques.'
+                            : 'Live vehicle handover records cover the most recent 1 year. Type a query above and click "Search Archive" to inspect historical records.'}
                         </div>
                       </div>
                     ) : (
-                      <>No vehicle handover records match your filters.</>
+                      <>{isFrench ? 'Aucune fiche de transfert ne correspond à vos filtres.' : 'No vehicle handover records match your filters.'}</>
                     )}
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-800/40 transition-colors">
-                    {/* Type */}
-                    <td className="py-3.5 px-4">
-                      {r.isSignIn ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          Sign In
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                          <ArrowRightLeft className="w-3.5 h-3.5" />
-                          Sign Out
-                        </span>
-                      )}
-                    </td>
+                <>
+                  {paddingTop > 0 && (
+                    <tr>
+                      <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={9} />
+                    </tr>
+                  )}
+                  {virtualRows.map((virtualRow) => {
+                    const r = filteredRecords[virtualRow.index];
+                    if (!r) return null;
+                    return (
+                      <tr key={r.id} className="hover:bg-slate-800/40 transition-colors">
+                        {/* Type */}
+                        <td className="py-3.5 px-4">
+                          {r.isSignIn ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              {isFrench ? 'Entrée' : 'Sign In'}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                              <ArrowRightLeft className="w-3.5 h-3.5" />
+                              {isFrench ? 'Sortie' : 'Sign Out'}
+                            </span>
+                          )}
+                        </td>
 
-                    {/* Date */}
-                    <td className="py-3.5 px-4 text-slate-200 font-medium">
-                      <div className="flex items-center gap-1.5 whitespace-nowrap">
-                        <span>{r.signDate || (r.createdAt ? r.createdAt.split('T')[0] : '—')}</span>
-                        {isArchivedDate(r.signDate || r.createdAt) && (
-                          <span
-                            title="Record is older than 1 year and retrieved from BigQuery cold archive"
-                            className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-sky-950/80 text-sky-300 border border-sky-800"
-                          >
-                            BigQuery
-                          </span>
-                        )}
-                      </div>
-                    </td>
+                        {/* Date */}
+                        <td className="py-3.5 px-4 text-slate-200 font-medium">
+                          <div className="flex items-center gap-1.5 whitespace-nowrap">
+                            <span>{r.signDate || (r.createdAt ? r.createdAt.split('T')[0] : '—')}</span>
+                            {isArchivedDate(r.signDate || r.createdAt) && (
+                              <span
+                                title="Record is older than 1 year and retrieved from BigQuery cold archive"
+                                className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-sky-950/80 text-sky-300 border border-sky-800"
+                              >
+                                BigQuery
+                              </span>
+                            )}
+                          </div>
+                        </td>
 
-                    {/* Vehicle */}
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-slate-100 flex items-center gap-1.5">
-                        <Truck className="w-3.5 h-3.5 text-amber-400" />
-                        Unit #{r.unitNumber}
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        {r.unitMaker} {r.unitModel} {r.licensePlate ? `· ${r.licensePlate}` : ''}
-                      </div>
-                    </td>
+                        {/* Vehicle */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-slate-100 flex items-center gap-1.5">
+                            <Truck className="w-3.5 h-3.5 text-amber-400" />
+                            Unit #{r.unitNumber}
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            {r.unitMaker} {r.unitModel} {r.licensePlate ? `· ${r.licensePlate}` : ''}
+                          </div>
+                        </td>
 
-                    {/* Driver */}
-                    <td className="py-3.5 px-4">
-                      <div className="font-medium text-slate-100 flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-slate-400" />
-                        {r.employeeName}
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        {r.driverLicenseClass || 'Class 2-S'} {r.cellPhone ? `· ${r.cellPhone}` : ''}
-                      </div>
-                    </td>
+                        {/* Driver */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-medium text-slate-100 flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-slate-400" />
+                            {r.employeeName}
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            {r.driverLicenseClass || 'Class 2-S'} {r.cellPhone ? `· ${r.cellPhone}` : ''}
+                          </div>
+                        </td>
 
-                    {/* Route */}
-                    <td className="py-3.5 px-4">
-                      {r.routeId ? (
-                        <div>
-                          <span className="font-semibold text-slate-200">{r.routeId}</span>
-                          {r.routeName && <div className="text-xs text-slate-400 truncate max-w-[120px]">{r.routeName}</div>}
-                        </div>
-                      ) : (
-                        <span className="text-slate-600">—</span>
-                      )}
-                    </td>
+                        {/* Route */}
+                        <td className="py-3.5 px-4">
+                          {r.routeId ? (
+                            <div>
+                              <span className="font-semibold text-slate-200">{r.routeId}</span>
+                              {r.routeName && <div className="text-xs text-slate-400 truncate max-w-[120px]">{r.routeName}</div>}
+                            </div>
+                          ) : (
+                            <span className="text-slate-600">—</span>
+                          )}
+                        </td>
 
-                    {/* Odometer & Fuel */}
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-1 text-slate-200 font-mono text-xs">
-                        <Gauge className="w-3 h-3 text-slate-400" />
-                        {r.odometer ? r.odometer.toLocaleString() + ' km' : '—'}
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-slate-400">
-                        <Fuel className="w-3 h-3 text-amber-400" />
-                        {r.fuelLevelDescription || 'Full'} ({r.fuelTypeDescription || 'Diesel'})
-                      </div>
-                    </td>
+                        {/* Odometer & Fuel */}
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-1 text-slate-200 font-mono text-xs">
+                            <Gauge className="w-3 h-3 text-slate-400" />
+                            {r.odometer ? r.odometer.toLocaleString() + ' km' : '—'}
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-slate-400">
+                            <Fuel className="w-3 h-3 text-amber-400" />
+                            {r.fuelLevelDescription || 'Full'} ({r.fuelTypeDescription || 'Diesel'})
+                          </div>
+                        </td>
 
-                    {/* Condition Comments */}
-                    <td className="py-3.5 px-4">
-                      {r.conditionComments ? (
-                        <div className="text-xs text-slate-300 max-w-[180px] truncate" title={r.conditionComments}>
-                          {r.conditionKey && <span className="font-bold text-amber-400 mr-1">[{r.conditionKey}]</span>}
-                          {r.conditionComments}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-500 italic">No notes</span>
-                      )}
-                    </td>
+                        {/* Condition Comments */}
+                        <td className="py-3.5 px-4">
+                          {r.conditionComments ? (
+                            <div className="text-xs text-slate-300 max-w-[180px] truncate" title={r.conditionComments}>
+                              {r.conditionKey && <span className="font-bold text-amber-400 mr-1">[{r.conditionKey}]</span>}
+                              {r.conditionComments}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-500 italic">{isFrench ? 'Aucune note' : 'No notes'}</span>
+                          )}
+                        </td>
 
-                    {/* Photos */}
-                    <td className="py-3.5 px-4 text-center">
-                      {r.attachments && r.attachments.length > 0 ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-amber-400 border border-amber-500/30">
-                          <Camera className="w-3 h-3" />
-                          {r.attachments.length}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-600">0</span>
-                      )}
-                    </td>
+                        {/* Photos */}
+                        <td className="py-3.5 px-4 text-center">
+                          {r.attachments && r.attachments.length > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-amber-400 border border-amber-500/30">
+                              <Camera className="w-3 h-3" />
+                              {r.attachments.length}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-600">0</span>
+                          )}
+                        </td>
 
-                    {/* Actions */}
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => setSelectedRecord(r)}
-                          className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
-                          title="View Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={async () => {
-                            if (confirm(`Delete vehicle handover record for Unit #${r.unitNumber}?`)) {
-                              await VehicleSignoutService.delete(r.id);
-                              fetchData();
-                            }
-                          }}
-                          className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                          title="Delete Record"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                        {/* Actions */}
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => setSelectedRecord(r)}
+                              className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
+                              title={isFrench ? 'Voir Détails' : 'View Details'}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (confirm(`Delete vehicle handover record for Unit #${r.unitNumber}?`)) {
+                                  await VehicleSignoutService.delete(r.id);
+                                  fetchData();
+                                }
+                              }}
+                              className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                              title={isFrench ? 'Supprimer' : 'Delete Record'}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {paddingBottom > 0 && (
+                    <tr>
+                      <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={9} />
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>

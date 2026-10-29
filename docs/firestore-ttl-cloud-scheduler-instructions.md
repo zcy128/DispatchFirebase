@@ -26,6 +26,8 @@ To minimize cloud operational expenses while maintaining fast mobile and web res
 | **Audit & Stream Logs** | `dispatch_change_logs`, `route_change_logs`, `entity_operation_logs`, `payroll_operation_logs`, `operational_safety_logs` | 7–14 days | Weekly (every Saturday) | **2 Years** (730-day automatic partition expiration) |
 | **Pre-Trip Inspections** | `pretrip_inspections` | 14 days | Weekly archive via `sync-all` (14-day sync then cleanup) | **2 Years** (730-day automatic partition expiration) |
 | **Expense Claims & Receipts** | `expense_reimbursements` | 6 months (180 days) | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
+| **Student Absences & Leave Logs** | `student_absences` | 6 months (180 days) | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
+| **Assignment History Tracking** | `assignment_history` | 12 months (365 days) | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
 | **Employee Time-Off** | `time_off_requests` | 30 days past `endDate` | Weekly via unified sync | Permanent |
 | **Vehicle Defects & Incidents** | `vehicle_defects`, `student_incidents` | 180 days | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
 | **Hazard & Safety Concerns** | `hazard_reports` | 12 months (365 days) | Weekly archive via `sync-all` (sync then cleanup) | Permanent |
@@ -75,6 +77,8 @@ In a single execution, `sync-all` runs:
 6. **Route Assessments & Vehicle Handovers (12-Month Sync then Cleanup)**: Automatically archives `route_assessments` and `vehicle_signouts` older than 12 months to BigQuery and safely purges them from Firestore upon successful write.
 7. **Pre-Trip Inspections (14-Day Sync then Cleanup)**: Automatically scans `pretrip_inspections` older than 14 days, syncs them to BigQuery table `pretrip_inspections` (with 2-year table partition expiration), and safely removes them from Firestore upon verified persistence.
 8. **Expense Claims (6-Month Sync then Cleanup)**: Automatically scans `expense_reimbursements` older than 6 months (180 days based on `claimDate` and `createdAt`), syncs them to BigQuery table `expense_reimbursements`, and safely purges them from Firestore upon verified persistence.
+9. **Assignment History Tracking (1-Year Sync then Cleanup)**: Automatically archives driver-route and driver-vehicle assignment tracking records (`assignment_history`) older than 12 months (365 days based on `effectiveDate` and `timestamp`) to BigQuery, and safely cleans them up from Firestore upon verified persistence.
+10. **Student Absences & Leave Logs (6-Month Sync then Cleanup)**: Automatically archives student absence and leave records (`student_absences`) older than 6 months (180 days based on `date` and `createdAt`) to BigQuery, and safely cleans them up from Firestore upon verified persistence.
 
 #### Setting up the Cloud Scheduler Job in GCP Console:
 1. Open the [Cloud Scheduler Console](https://console.cloud.google.com/cloudscheduler?project=schoolbusdispatchapp).
@@ -176,6 +180,8 @@ Pour minimiser les coûts d'infrastructure infonuagique tout en garantissant des
 | **Journaux d'Audit & Flux** | `dispatch_change_logs`, `route_change_logs`, `entity_operation_logs`, `payroll_operation_logs`, `operational_safety_logs` | 7 à 14 jours | Hebdomadaire (samedi) | **2 ans** (Expiration automatique par partitionnement sur 730 jours) |
 | **Inspections Pré-Départ** | `pretrip_inspections` | 14 jours | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 14j) | **2 ans** (Expiration 730 jours) |
 | **Notes de Frais & Dépenses** | `expense_reimbursements` | 6 mois (180 jours) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 6 mois) | Permanente |
+| **Absences des Élèves & Congés** | `student_absences` | 6 mois (180 jours) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 6 mois) | Permanente |
+| **Historique des Affectations** | `assignment_history` | 12 mois (365 jours) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage après 1 an) | Permanente |
 | **Demandes de Congé** | `time_off_requests` | 30 jours après `endDate` | Hebdomadaire via `sync-all` | Permanente |
 | **Vehicle Defects & Incidents** | `vehicle_defects`, `student_incidents` | 180 jours | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage) | Permanente |
 | **Signalements de Dangers** | `hazard_reports` | 12 mois (365 j) | Archivage hebdomadaire via `sync-all` (sauvegarde puis nettoyage) | Permanente |
@@ -225,6 +231,8 @@ En une seule exécution, `sync-all` prend en charge :
 6. **Évaluations d'itinéraires & Remises de véhicules (Archivage +12 mois)** : Détection et transfert des fiches `route_assessments` et `vehicle_signouts` de plus de 12 mois vers BigQuery avec purge sécurisée dans Firestore.
 7. **Inspections pré-départ (+14 jours)** : Synchronisation automatique des fiches d'inspection `pretrip_inspections` de plus de 14 jours vers BigQuery et suppression sécurisée dans Firestore.
 8. **Remboursements de frais (+6 mois)** : Synchronisation automatique des fiches de frais `expense_reimbursements` datant de plus de 6 mois vers BigQuery et suppression sécurisée dans Firestore après validation de la persistance.
+9. **Historique des affectations (+12 mois)** : Synchronisation automatique des historiques d'affectation chauffeurs-circuits et chauffeurs-véhicules (`assignment_history`) de plus de 12 mois vers BigQuery et nettoyage sécurisé dans Firestore.
+10. **Absences des élèves (+6 mois)** : Synchronisation automatique des déclarations d'absence et congés des élèves (`student_absences`) de plus de 6 mois vers BigQuery et suppression sécurisée dans Firestore.
 
 #### Création de la tâche dans la Console Cloud Scheduler :
 1. Ouvrez la [Console Cloud Scheduler](https://console.cloud.google.com/cloudscheduler?project=schoolbusdispatchapp).
@@ -305,6 +313,8 @@ go run ./cmd/archive -archive-incidents -incidents-days=180
 | **系统审计流水日志** | `dispatch_change_logs`, `route_change_logs`, `entity_operation_logs`, `payroll_operation_logs`, `operational_safety_logs` | 7～14 天 | 每周六执行 | **2 年**（730 天按分区时间自动过期销毁） |
 | **出车前检查** | `pretrip_inspections` | 14 天 | 每周随 `sync-all` 归档（超 14 天备份后清理） | **2 年**（730 天按分区时间自动过期销毁） |
 | **费用报销与支出凭证** | `expense_reimbursements` | 6 个月（180 天） | 每周随 `sync-all` 归档（超 6 个月备份后清理） | 长期归档保留 |
+| **学生缺勤与请假记录** | `student_absences` | 6 个月（180 天） | 每周随 `sync-all` 归档（超 6 个月备份后清理） | 长期归档保留 |
+| **司机与车辆排班分配追踪** | `assignment_history` | 12 个月（365 天） | 每周随 `sync-all` 归档（超 1 年备份后清理） | 长期归档保留 |
 | **员工请假申请** | `time_off_requests` | 超过 `endDate` 30 天 | 每周随 `sync-all` 执行 | 长期归档保留 |
 | **车辆缺陷与学生事故** | `vehicle_defects`, `student_incidents` | 180 天 | 每周随 `sync-all` 归档（备份后清理） | 长期归档保留 |
 | **道路与安全隐患报告** | `hazard_reports` | 12 个月（365 天） | 每周随 `sync-all` 归档（备份后清理） | 长期归档保留 |
@@ -354,6 +364,8 @@ gcloud firestore fields ttls update expireAt \
 6. **超 12 个月路线评估与车辆交接归档与清理（route_assessments / vehicle_signouts）**：自动筛选创建/发生时间超过 12 个月的路线评估单与车队领还车交接单，同步到 BigQuery 并在确认写入无误后安全从 Firestore 中批量清理，释放热库容量。
 7. **超 14 天出车前检查归档与清理（pretrip_inspections）**：自动筛选检查日期/创建时间超过 14 天的车辆出车检查记录，同步至 BigQuery 数据表（带 2 年分区 TTL），并在确认写入成功后安全从 Firestore 中批量清理释放空间。
 8. **超 6 个月费用报销单归档与清理（expense_reimbursements）**：自动筛选发生日期/创建时间超过 6 个月（180 天）的司机报销申请与支出凭据，同步至 BigQuery 数据表，并在确认写入成功后安全从 Firestore 中批量清理释放空间。
+9. **超 1 年司机与车辆分配追踪归档与清理（assignment_history）**：自动筛选变更时间/生效时间（`timestamp` / `effectiveDate`）超过 1 年（12 个月）的司机-线路与司机-车辆分配记录，同步至 BigQuery 数据表，并在确认写入成功后安全从 Firestore 中批量清理释放热库空间。
+10. **超 6 个月学生缺勤与请假单归档与清理（student_absences）**：自动筛选请假/缺勤日期（`date` / `createdAt`）超过 6 个月（180 天）的学生缺勤及请假单，同步至 BigQuery 数据表，并在确认写入成功后安全从 Firestore 中批量清理释放空间。
 
 #### 在 GCP 控制台配置 Cloud Scheduler 定时任务：
 1. 打开 [Cloud Scheduler 控制台](https://console.cloud.google.com/cloudscheduler?project=schoolbusdispatchapp)。
@@ -388,7 +400,7 @@ gcloud scheduler jobs create http weekly-unified-archive \
 ### 4. 业务无感知查询（Repository 自动兜底）
 
 系统后端 Repository 内置了**双引擎智能路由**：
-- 当调度员或管理员查询排班（`ListShifts`）、流水日志（`ListChangeLogs`）、请假单（`ListTimeOffRequests`）、车辆缺陷（`ListDefectReports`）、学生事故（`ListStudentIncidents`）、安全隐患（`ListHazardReports`）、路线评估（`ListRouteAssessments`）、车辆交接（`ListVehicleSignouts`）、出车前检查（`ListPreTripInspections`）或费用报销单（`ListExpenseClaims`），以及根据单号查询详情（`GetDefectReportByID` / `GetStudentIncidentByID` / `GetHazardReportByID` / `GetRouteAssessmentByID` / `GetVehicleSignoutByID` / `GetExpenseClaimByID`）时：
+- 当调度员或管理员查询排班（`ListShifts`）、流水日志（`ListChangeLogs`）、请假单（`ListTimeOffRequests`）、车辆缺陷（`ListDefectReports`）、学生事故（`ListStudentIncidents`）、安全隐患（`ListHazardReports`）、路线评估（`ListRouteAssessments`）、车辆交接（`ListVehicleSignouts`）、出车前检查（`ListPreTripInspections`）、费用报销单（`ListExpenseClaims`）或学生缺勤记录（`ListStudentAbsences`），以及根据单号查询详情（`GetDefectReportByID` / `GetStudentIncidentByID` / `GetHazardReportByID` / `GetRouteAssessmentByID` / `GetVehicleSignoutByID` / `GetExpenseClaimByID`）时：
   1. 系统优先检索 Firestore 当前热数据；
   2. 对于历史单据或已归档数据，Repository 会自动透明兜底/合并检索 BigQuery 冷数据库并去重；
   3. 前端 Web 调度台与 Flutter 移动端完全无需改动，历史记录无缝呈现。

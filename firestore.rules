@@ -97,6 +97,16 @@ service cloud.firestore {
       allow write: if canWrite('calendar', ['dispatcher']);
     }
 
+    match /school_calendars/{calendarId} {
+      allow read: if isAuthenticated();
+      allow write: if canWrite('calendar', ['dispatcher']);
+    }
+
+    match /company_contacts/{contactId} {
+      allow read: if isAuthenticated();
+      allow write: if canWrite('company_contacts', ['HR', 'manager', 'dispatcher']);
+    }
+
     match /yards/{yardId} {
       allow read: if isAuthenticated();
       allow write: if canWrite('yards', ['fleet', 'dispatcher']);
@@ -266,7 +276,11 @@ service cloud.firestore {
     // ═════════════════════════════════════════════════════════════════════════
 
     match /payroll_rates/{rateId} {
-      allow read, write: if canRead('payroll', ['payroll']);
+      allow read, write: if canRead('payroll', ['payroll', 'manager']);
+    }
+
+    match /busroute_payroll_rates/{rateId} {
+      allow read, write: if canRead('payroll', ['payroll', 'manager']);
     }
 
     match /payroll_base_rates/{rateId} {

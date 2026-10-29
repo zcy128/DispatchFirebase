@@ -47,6 +47,8 @@ export interface StudentAbsenceRecord {
   createdAt?: string;
   status: string;
   affectedShifts?: string[];
+  isCold?: boolean;
+  isArchivedToBigQuery?: boolean;
 }
 
 export interface DispatchShiftStop {

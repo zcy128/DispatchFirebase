@@ -120,6 +120,20 @@ type ExpenseClaimFilter struct {
 	EndDate    string `json:"endDate"`   // YYYY-MM-DD
 }
 
+// AssignmentHistoryFilter contains criteria for querying assignment history with 1-year live data and BigQuery cold storage
+type AssignmentHistoryFilter struct {
+	Type       string `json:"type"`       // "driver_route", "driver_vehicle", "all"
+	Action     string `json:"action"`     // "assign", "unassign", "reassign", "all"
+	DriverID   string `json:"driverId"`
+	DriverName string `json:"driverName"`
+	RouteNo    string `json:"routeNo"`
+	UnitNumber string `json:"unitNumber"`
+	Query      string `json:"query"`      // Driver name, driver ID, route, vehicle, reason, assigned by, notes
+	TimeRange  string `json:"timeRange"`  // "1year" (default live data <= 1 year), "all" (archive)
+	StartDate  string `json:"startDate"`  // YYYY-MM-DD
+	EndDate    string `json:"endDate"`    // YYYY-MM-DD
+}
+
 type DispatchRepository interface {
 	CreateDay(ctx context.Context, date string, routeNoFilter []string) (*models.CreateDispatchDayResult, error)
 	DeleteDay(ctx context.Context, date string) error
@@ -244,6 +258,9 @@ type DispatchRepository interface {
 	ListVehicleSignoutsFiltered(ctx context.Context, filter VehicleSignoutFilter) ([]*models.VehicleSignout, error)
 	UpdateVehicleSignout(ctx context.Context, id string, req *models.UpdateVehicleSignoutPayload) (*models.VehicleSignout, error)
 	DeleteVehicleSignout(ctx context.Context, id string) error
+
+	// Assignment History
+	ListAssignmentHistoryFiltered(ctx context.Context, filter AssignmentHistoryFilter) ([]*models.AssignmentHistoryRecord, error)
 }
 
 type FirestoreDispatchRepository struct {
@@ -273,6 +290,7 @@ type FirestoreDispatchRepository struct {
 	routeAssessmentColl     string
 	vehicleSignoutColl      string
 	vehicleColl             string
+	assignmentHistoryColl   string
 }
 
 func NewFirestoreDispatchRepository(client *firestore.Client) *FirestoreDispatchRepository {
@@ -301,6 +319,7 @@ func NewFirestoreDispatchRepository(client *firestore.Client) *FirestoreDispatch
 		routeAssessmentColl:      "route_assessments",
 		vehicleSignoutColl:       "vehicle_signouts",
 		vehicleColl:              "vehicles",
+		assignmentHistoryColl:   "assignment_history",
 	}
 }
 
@@ -2520,7 +2539,79 @@ func (r *FirestoreDispatchRepository) RecordStudentAbsence(ctx context.Context, 
 	}, nil
 }
 
-func (r *FirestoreDispatchRepository) ListStudentAbsences(ctx context.Context, filter models.ListStudentAbsencesFilter) ([]*models.StudentAbsenceRecord, error) {
+func (r *FirestoreDispatchRepository) listStudentAbsencesFromBigQuery(ctx context.Context, filter models.ListStudentAbsencesFilter, startDate, endDate string) ([]*models.StudentAbsenceRecord, error) {
+	if r.bqClient == nil {
+		return nil, errors.New("bigquery client not initialized")
+	}
+
+	querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.student_absences` WHERE 1=1",
+		r.projectID, r.bqDataset)
+	var params []bigquery.QueryParameter
+
+	if filter.StudentID > 0 {
+		querySQL += " AND (SAFE_CAST(JSON_VALUE(data, '$.studentId') AS INT64) = @stuId OR SAFE_CAST(JSON_VALUE(data, '$.studentID') AS INT64) = @stuId)"
+		params = append(params, bigquery.QueryParameter{Name: "stuId", Value: filter.StudentID})
+	}
+	if filter.RouteNo != "" {
+		querySQL += " AND JSON_VALUE(data, '$.routeNo') = @routeNo"
+		params = append(params, bigquery.QueryParameter{Name: "routeNo", Value: filter.RouteNo})
+	}
+	if filter.ShiftType != "" && filter.ShiftType != "ALL" {
+		querySQL += " AND UPPER(JSON_VALUE(data, '$.shiftType')) = @shiftType"
+		params = append(params, bigquery.QueryParameter{Name: "shiftType", Value: strings.ToUpper(filter.ShiftType)})
+	}
+	if filter.Query != "" {
+		querySQL += " AND (LOWER(JSON_VALUE(data, '$.studentName')) LIKE @q OR LOWER(JSON_VALUE(data, '$.schoolName')) LIKE @q OR LOWER(JSON_VALUE(data, '$.reason')) LIKE @q OR LOWER(JSON_VALUE(data, '$.studentNo')) LIKE @q OR LOWER(JSON_VALUE(data, '$.reportedBy')) LIKE @q OR LOWER(JSON_VALUE(data, '$.routeNo')) LIKE @q)"
+		params = append(params, bigquery.QueryParameter{Name: "q", Value: "%" + strings.ToLower(filter.Query) + "%"})
+	}
+	if startDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.date'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) >= @startDate"
+		params = append(params, bigquery.QueryParameter{Name: "startDate", Value: startDate})
+	}
+	if endDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.date'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) <= @endDate"
+		params = append(params, bigquery.QueryParameter{Name: "endDate", Value: endDate})
+	}
+
+	querySQL += " ORDER BY COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.date'), 1, 10) AS DATE)) ASC"
+
+	q := r.bqClient.Query(querySQL)
+	q.Parameters = params
+
+	it, err := q.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []*models.StudentAbsenceRecord
+	for {
+		var row struct {
+			ID   string `bigquery:"id"`
+			Data string `bigquery:"data"`
+		}
+		err := it.Next(&row)
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		var rec models.StudentAbsenceRecord
+		if err := json.Unmarshal([]byte(row.Data), &rec); err == nil {
+			if rec.ID == "" {
+				rec.ID = row.ID
+			}
+			if rec.Status == "CANCELLED" {
+				continue
+			}
+			rec.IsCold = true
+			results = append(results, &rec)
+		}
+	}
+	return results, nil
+}
+
+func (r *FirestoreDispatchRepository) listStudentAbsencesFromFirestore(ctx context.Context, filter models.ListStudentAbsencesFilter) ([]*models.StudentAbsenceRecord, error) {
 	var results []*models.StudentAbsenceRecord
 	seen := make(map[string]bool)
 
@@ -2549,6 +2640,18 @@ func (r *FirestoreDispatchRepository) ListStudentAbsences(ctx context.Context, f
 				}
 				if filter.ShiftType != "" && filter.ShiftType != "ALL" && rec.ShiftType != "ALL" && !strings.EqualFold(rec.ShiftType, filter.ShiftType) {
 					continue
+				}
+				if filter.Query != "" {
+					q := strings.ToLower(filter.Query)
+					matches := strings.Contains(strings.ToLower(rec.StudentName), q) ||
+						strings.Contains(strings.ToLower(rec.StudentNo), q) ||
+						strings.Contains(strings.ToLower(rec.SchoolName), q) ||
+						strings.Contains(strings.ToLower(rec.Reason), q) ||
+						strings.Contains(strings.ToLower(rec.ReportedBy), q) ||
+						strings.Contains(strings.ToLower(rec.RouteNo), q)
+					if !matches {
+						continue
+					}
 				}
 				key := fmt.Sprintf("%s-%d", rec.Date, rec.StudentID)
 				seen[key] = true
@@ -2602,10 +2705,103 @@ func (r *FirestoreDispatchRepository) ListStudentAbsences(ctx context.Context, f
 		}
 	}
 
-	// Sort by date ascending
+	// Sort by date descending (newest / upcoming first)
 	sort.Slice(results, func(i, j int) bool {
 		if results[i].Date != results[j].Date {
-			return results[i].Date < results[j].Date
+			return results[i].Date > results[j].Date
+		}
+		return results[i].StudentName < results[j].StudentName
+	})
+
+	return results, nil
+}
+
+// ListStudentAbsences performs hybrid dual-engine queries across Firestore (live data <= 6 months)
+// and BigQuery (cold archive > 6 months), seamlessly merging and deduplicating student absence records.
+func (r *FirestoreDispatchRepository) ListStudentAbsences(ctx context.Context, filter models.ListStudentAbsencesFilter) ([]*models.StudentAbsenceRecord, error) {
+	now := time.Now()
+	cutoffDate := now.AddDate(0, -6, 0).Format("2006-01-02")
+
+	startDate := strings.TrimSpace(filter.StartDate)
+	endDate := strings.TrimSpace(filter.EndDate)
+	if startDate == "" {
+		startDate = now.Format("2006-01-02")
+	}
+	if endDate == "" {
+		endDate = now.AddDate(0, 0, 14).Format("2006-01-02")
+	}
+
+	// Case 1: Entire range is within last 6 months (Live Data Only -> Firestore)
+	if startDate >= cutoffDate {
+		return r.listStudentAbsencesFromFirestore(ctx, filter)
+	}
+
+	// Case 2: Entire range is older than 6 months (Cold Data Only -> BigQuery)
+	if endDate < cutoffDate {
+		if r.bqClient != nil {
+			bqRes, bqErr := r.listStudentAbsencesFromBigQuery(ctx, filter, startDate, endDate)
+			if bqErr == nil {
+				return bqRes, nil
+			}
+			log.Printf("[STUDENT_ABSENCES] Warning: cold BigQuery query failed: %v", bqErr)
+		}
+		return r.listStudentAbsencesFromFirestore(ctx, filter)
+	}
+
+	// Case 3: Range spans the 6-month boundary -> Concurrent Hybrid Dual-Engine
+	var wg sync.WaitGroup
+	var hotRes, coldRes []*models.StudentAbsenceRecord
+	var hotErr, coldErr error
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		hotFilter := filter
+		hotFilter.StartDate = cutoffDate
+		hotFilter.EndDate = endDate
+		hotRes, hotErr = r.listStudentAbsencesFromFirestore(ctx, hotFilter)
+	}()
+
+	if r.bqClient != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			coldRes, coldErr = r.listStudentAbsencesFromBigQuery(ctx, filter, startDate, cutoffDate)
+		}()
+	}
+
+	wg.Wait()
+
+	if hotErr != nil && coldErr != nil {
+		return nil, fmt.Errorf("hybrid query failed: hot error: %v, cold error: %v", hotErr, coldErr)
+	}
+	if hotErr != nil {
+		log.Printf("[STUDENT_ABSENCES] Warning: hot Firestore query error: %v", hotErr)
+	}
+	if coldErr != nil {
+		log.Printf("[STUDENT_ABSENCES] Warning: cold BigQuery query error: %v", coldErr)
+	}
+
+	merged := make(map[string]*models.StudentAbsenceRecord)
+	for _, rec := range coldRes {
+		key := fmt.Sprintf("%s-%d", rec.Date, rec.StudentID)
+		merged[key] = rec
+	}
+	// Hot data takes precedence
+	for _, rec := range hotRes {
+		key := fmt.Sprintf("%s-%d", rec.Date, rec.StudentID)
+		merged[key] = rec
+	}
+
+	results := make([]*models.StudentAbsenceRecord, 0, len(merged))
+	for _, rec := range merged {
+		results = append(results, rec)
+	}
+
+	// Sort by date descending (newest / upcoming first)
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Date != results[j].Date {
+			return results[i].Date > results[j].Date
 		}
 		return results[i].StudentName < results[j].StudentName
 	})
@@ -5677,6 +5873,7 @@ type MemoryDispatchRepository struct {
 	hazardReports        map[string]*models.HazardReport
 	routeAssessments     map[string]*models.RouteAssessment
 	vehicleSignouts      map[string]*models.VehicleSignout
+	assignmentHistory    map[string]*models.AssignmentHistoryRecord
 	vehicleOdometers        map[string]int
 	checkInReminderSettings *models.CheckInReminderSettings
 	simulationSettings      *models.SimulationSettings
@@ -5702,6 +5899,7 @@ func NewMemoryDispatchRepository() *MemoryDispatchRepository {
 		hazardReports:           make(map[string]*models.HazardReport),
 		routeAssessments:        make(map[string]*models.RouteAssessment),
 		vehicleSignouts:         make(map[string]*models.VehicleSignout),
+		assignmentHistory:       make(map[string]*models.AssignmentHistoryRecord),
 		vehicleOdometers:        make(map[string]int),
 		checkInReminderSettings: models.DefaultCheckInReminderSettings(),
 		simulationSettings:      models.DefaultSimulationSettings(),
@@ -6247,6 +6445,7 @@ func (m *MemoryDispatchRepository) ListStudentAbsences(ctx context.Context, filt
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	cutoffDate := time.Now().AddDate(0, -6, 0).Format("2006-01-02")
 	var results []*models.StudentAbsenceRecord
 	seen := make(map[string]bool)
 
@@ -6269,9 +6468,25 @@ func (m *MemoryDispatchRepository) ListStudentAbsences(ctx context.Context, filt
 		if filter.ShiftType != "" && filter.ShiftType != "ALL" && rec.ShiftType != "ALL" && !strings.EqualFold(rec.ShiftType, filter.ShiftType) {
 			continue
 		}
-		key := fmt.Sprintf("%s-%d", rec.Date, rec.StudentID)
+		if filter.Query != "" {
+			q := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.StudentName), q) ||
+				strings.Contains(strings.ToLower(rec.StudentNo), q) ||
+				strings.Contains(strings.ToLower(rec.SchoolName), q) ||
+				strings.Contains(strings.ToLower(rec.Reason), q) ||
+				strings.Contains(strings.ToLower(rec.ReportedBy), q) ||
+				strings.Contains(strings.ToLower(rec.RouteNo), q)
+			if !matches {
+				continue
+			}
+		}
+		recCopy := *rec
+		if recCopy.Date < cutoffDate {
+			recCopy.IsCold = true
+		}
+		key := fmt.Sprintf("%s-%d", recCopy.Date, recCopy.StudentID)
 		seen[key] = true
-		results = append(results, rec)
+		results = append(results, &recCopy)
 	}
 
 	// Also inspect shifts in memory for any student marked absent
@@ -6291,9 +6506,22 @@ func (m *MemoryDispatchRepository) ListStudentAbsences(ctx context.Context, filt
 					if filter.StudentID > 0 && stu.StudentID != filter.StudentID {
 						continue
 					}
+					if filter.Query != "" {
+						q := strings.ToLower(filter.Query)
+						matches := strings.Contains(strings.ToLower(stu.StudentName), q) ||
+							strings.Contains(strings.ToLower(stu.StudentNo), q) ||
+							strings.Contains(strings.ToLower(stu.SchoolName), q) ||
+							strings.Contains(strings.ToLower(stu.AbsenceReason), q) ||
+							strings.Contains(strings.ToLower(stu.AbsenceReportedBy), q) ||
+							strings.Contains(strings.ToLower(s.RouteNo), q)
+						if !matches {
+							continue
+						}
+					}
 					key := fmt.Sprintf("%s-%d", s.DispatchDate, stu.StudentID)
 					if !seen[key] {
 						seen[key] = true
+						isCold := s.DispatchDate < cutoffDate
 						results = append(results, &models.StudentAbsenceRecord{
 							ID:             fmt.Sprintf("ABS-%s-%d", s.DispatchDate, stu.StudentID),
 							Date:           s.DispatchDate,
@@ -6308,6 +6536,7 @@ func (m *MemoryDispatchRepository) ListStudentAbsences(ctx context.Context, filt
 							ReportedAt:     stu.AbsenceReportedAt,
 							Status:         "ACTIVE",
 							AffectedShifts: []string{s.ID},
+							IsCold:         isCold,
 						})
 					}
 				}
@@ -6315,9 +6544,10 @@ func (m *MemoryDispatchRepository) ListStudentAbsences(ctx context.Context, filt
 		}
 	}
 
+	// Sort by date descending (newest / upcoming first)
 	sort.Slice(results, func(i, j int) bool {
 		if results[i].Date != results[j].Date {
-			return results[i].Date < results[j].Date
+			return results[i].Date > results[j].Date
 		}
 		return results[i].StudentName < results[j].StudentName
 	})
@@ -10985,6 +11215,270 @@ func (r *FirestoreDispatchRepository) DeleteVehicleSignout(ctx context.Context, 
 	return nil
 }
 
+// ─── Firestore & BigQuery: Assignment History ──────────────────────────────────
+
+func (r *FirestoreDispatchRepository) listAssignmentHistoryFromBigQuery(ctx context.Context, filter AssignmentHistoryFilter, startDate, endDate string) ([]*models.AssignmentHistoryRecord, error) {
+	if r.bqClient == nil {
+		return nil, errors.New("bigquery client not initialized")
+	}
+
+	querySQL := fmt.Sprintf("SELECT id, data FROM `%s.%s.%s` WHERE 1=1",
+		r.projectID, r.bqDataset, r.assignmentHistoryColl)
+	var params []bigquery.QueryParameter
+
+	if filter.Type != "" && filter.Type != "all" {
+		querySQL += " AND JSON_VALUE(data, '$.type') = @asgType"
+		params = append(params, bigquery.QueryParameter{Name: "asgType", Value: filter.Type})
+	}
+	if filter.Action != "" && filter.Action != "all" {
+		querySQL += " AND JSON_VALUE(data, '$.action') = @asgAction"
+		params = append(params, bigquery.QueryParameter{Name: "asgAction", Value: filter.Action})
+	}
+	if filter.DriverID != "" {
+		querySQL += " AND (JSON_VALUE(data, '$.driverId') = @driverId OR JSON_VALUE(data, '$.driverNumber') = @driverId)"
+		params = append(params, bigquery.QueryParameter{Name: "driverId", Value: filter.DriverID})
+	}
+	if filter.RouteNo != "" {
+		querySQL += " AND (LOWER(JSON_VALUE(data, '$.routeNo')) = @routeNo OR LOWER(JSON_VALUE(data, '$.routeId')) = @routeNo)"
+		params = append(params, bigquery.QueryParameter{Name: "routeNo", Value: strings.ToLower(filter.RouteNo)})
+	}
+	if filter.UnitNumber != "" {
+		querySQL += " AND (LOWER(JSON_VALUE(data, '$.unitNumber')) = @unitNum OR LOWER(JSON_VALUE(data, '$.plateNumber')) = @unitNum)"
+		params = append(params, bigquery.QueryParameter{Name: "unitNum", Value: strings.ToLower(filter.UnitNumber)})
+	}
+	if filter.Query != "" {
+		querySQL += " AND (LOWER(JSON_VALUE(data, '$.driverName')) LIKE @query OR LOWER(JSON_VALUE(data, '$.driverId')) LIKE @query OR LOWER(JSON_VALUE(data, '$.routeNo')) LIKE @query OR LOWER(JSON_VALUE(data, '$.routeName')) LIKE @query OR LOWER(JSON_VALUE(data, '$.unitNumber')) LIKE @query OR LOWER(JSON_VALUE(data, '$.reason')) LIKE @query OR LOWER(JSON_VALUE(data, '$.assignedBy')) LIKE @query OR LOWER(JSON_VALUE(data, '$.dispatcherName')) LIKE @query OR LOWER(JSON_VALUE(data, '$.notes')) LIKE @query)"
+		params = append(params, bigquery.QueryParameter{Name: "query", Value: "%" + strings.ToLower(filter.Query) + "%"})
+	}
+	if startDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.effectiveDate'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.timestamp'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) >= @startDate"
+		params = append(params, bigquery.QueryParameter{Name: "startDate", Value: startDate})
+	}
+	if endDate != "" {
+		querySQL += " AND COALESCE(SAFE_CAST(dispatch_date AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.effectiveDate'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.timestamp'), 1, 10) AS DATE), SAFE_CAST(SUBSTR(JSON_VALUE(data, '$.createdAt'), 1, 10) AS DATE)) <= @endDate"
+		params = append(params, bigquery.QueryParameter{Name: "endDate", Value: endDate})
+	}
+
+	q := r.bqClient.Query(querySQL)
+	q.Parameters = params
+
+	it, err := q.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []*models.AssignmentHistoryRecord
+	for {
+		var row struct {
+			ID   string `bigquery:"id"`
+			Data string `bigquery:"data"`
+		}
+		err := it.Next(&row)
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		var rec models.AssignmentHistoryRecord
+		if err := json.Unmarshal([]byte(row.Data), &rec); err == nil {
+			if rec.ID == "" {
+				rec.ID = row.ID
+			}
+			results = append(results, &rec)
+		}
+	}
+	return results, nil
+}
+
+func (r *FirestoreDispatchRepository) listAssignmentHistoryFromFirestore(ctx context.Context, filter AssignmentHistoryFilter, startDate, endDate string) ([]*models.AssignmentHistoryRecord, error) {
+	if r.client == nil {
+		return nil, errors.New("firestore client not initialized")
+	}
+
+	q := r.client.Collection(r.assignmentHistoryColl).Query
+	if startDate != "" {
+		q = q.Where("effectiveDate", ">=", startDate)
+	}
+	if endDate != "" {
+		q = q.Where("effectiveDate", "<=", endDate)
+	}
+
+	q = q.Limit(1500)
+
+	snaps, err := q.Documents(ctx).GetAll()
+	if err != nil {
+		// Fallback without effectiveDate query if index is missing
+		snaps, err = r.client.Collection(r.assignmentHistoryColl).Limit(1000).Documents(ctx).GetAll()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var results []*models.AssignmentHistoryRecord
+	for _, snap := range snaps {
+		var rec models.AssignmentHistoryRecord
+		if err := snap.DataTo(&rec); err == nil {
+			rec.ID = snap.Ref.ID
+
+			rDate := rec.EffectiveDate
+			if rDate == "" && rec.Timestamp != "" && len(rec.Timestamp) >= 10 {
+				rDate = rec.Timestamp[:10]
+			}
+			if startDate != "" && rDate != "" && rDate < startDate {
+				continue
+			}
+			if endDate != "" && rDate != "" && rDate > endDate {
+				continue
+			}
+
+			if filter.Type != "" && filter.Type != "all" && rec.Type != filter.Type {
+				continue
+			}
+			if filter.Action != "" && filter.Action != "all" && rec.Action != filter.Action {
+				continue
+			}
+			if filter.DriverID != "" && rec.DriverID != filter.DriverID && rec.DriverNumber != filter.DriverID {
+				continue
+			}
+			if filter.RouteNo != "" && !strings.EqualFold(rec.RouteNo, filter.RouteNo) && !strings.EqualFold(rec.RouteID, filter.RouteNo) {
+				continue
+			}
+			if filter.UnitNumber != "" && !strings.EqualFold(rec.UnitNumber, filter.UnitNumber) && !strings.EqualFold(rec.PlateNumber, filter.UnitNumber) {
+				continue
+			}
+			if filter.Query != "" {
+				qLow := strings.ToLower(filter.Query)
+				matched := strings.Contains(strings.ToLower(rec.DriverName), qLow) ||
+					strings.Contains(strings.ToLower(rec.DriverID), qLow) ||
+					strings.Contains(strings.ToLower(rec.RouteNo), qLow) ||
+					strings.Contains(strings.ToLower(rec.RouteName), qLow) ||
+					strings.Contains(strings.ToLower(rec.UnitNumber), qLow) ||
+					strings.Contains(strings.ToLower(rec.Reason), qLow) ||
+					strings.Contains(strings.ToLower(rec.AssignedBy), qLow) ||
+					strings.Contains(strings.ToLower(rec.DispatcherName), qLow) ||
+					strings.Contains(strings.ToLower(rec.Notes), qLow)
+				if !matched {
+					continue
+				}
+			}
+
+			results = append(results, &rec)
+		}
+	}
+	return results, nil
+}
+
+// ListAssignmentHistoryFiltered performs time-sliced hybrid dual-engine queries across Firestore (live data <= 1 year)
+// and BigQuery (cold archive > 1 year), merging and deduplicating assignment lifecycle records.
+func (r *FirestoreDispatchRepository) ListAssignmentHistoryFiltered(ctx context.Context, filter AssignmentHistoryFilter) ([]*models.AssignmentHistoryRecord, error) {
+	now := time.Now()
+	todayStr := now.Format("2006-01-02")
+	// Cutoff for live data: 1 year (365 days)
+	cutoffDate := now.AddDate(-1, 0, 0).Format("2006-01-02")
+
+	startDate := strings.TrimSpace(filter.StartDate)
+	endDate := strings.TrimSpace(filter.EndDate)
+	if endDate == "" {
+		endDate = todayStr
+	}
+
+	switch filter.TimeRange {
+	case "all":
+		// For "all" history, prevent scanning across 10 years without criteria.
+		hasTarget := strings.TrimSpace(filter.DriverID) != "" ||
+			strings.TrimSpace(filter.RouteNo) != "" ||
+			strings.TrimSpace(filter.UnitNumber) != "" ||
+			strings.TrimSpace(filter.Query) != "" ||
+			startDate != ""
+		if !hasTarget {
+			return []*models.AssignmentHistoryRecord{}, nil
+		}
+		if startDate == "" {
+			startDate = now.AddDate(-10, 0, 0).Format("2006-01-02")
+		}
+	default:
+		// Default live data: last 1 year
+		if startDate == "" {
+			startDate = cutoffDate
+		}
+	}
+
+	var results []*models.AssignmentHistoryRecord
+
+	// Case 1: Entire range is within last 1 year (Live Data Only -> Firestore)
+	if startDate >= cutoffDate {
+		var err error
+		results, err = r.listAssignmentHistoryFromFirestore(ctx, filter, startDate, endDate)
+		if err != nil {
+			return nil, err
+		}
+	} else if endDate < cutoffDate {
+		// Case 2: Entire range is older than 1 year (Old Data Only -> BigQuery)
+		if r.bqClient != nil {
+			var err error
+			results, err = r.listAssignmentHistoryFromBigQuery(ctx, filter, startDate, endDate)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		// Case 3: Range spans the 1-year boundary -> Concurrent Hybrid Dual-Engine
+		var wg sync.WaitGroup
+		var hotRes, coldRes []*models.AssignmentHistoryRecord
+		var hotErr, coldErr error
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hotRes, hotErr = r.listAssignmentHistoryFromFirestore(ctx, filter, cutoffDate, endDate)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if r.bqClient != nil {
+				coldRes, coldErr = r.listAssignmentHistoryFromBigQuery(ctx, filter, startDate, cutoffDate)
+			}
+		}()
+
+		wg.Wait()
+
+		if hotErr != nil && len(hotRes) == 0 {
+			log.Printf("[ASSIGNMENT_HISTORY] Warning: live query error: %v", hotErr)
+		}
+		if coldErr != nil {
+			log.Printf("[ASSIGNMENT_HISTORY] Warning: old BigQuery query error: %v", coldErr)
+		}
+
+		seenIDs := make(map[string]bool)
+		for _, rec := range hotRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+		for _, rec := range coldRes {
+			if rec != nil && !seenIDs[rec.ID] {
+				seenIDs[rec.ID] = true
+				results = append(results, rec)
+			}
+		}
+	}
+
+	// Sort descending by timestamp
+	sort.Slice(results, func(i, j int) bool {
+		tI := results[i].Timestamp
+		tJ := results[j].Timestamp
+		if tI != tJ {
+			return tI > tJ
+		}
+		return results[i].EffectiveDate > results[j].EffectiveDate
+	})
+
+	return results, nil
+}
+
 // ─── Memory: Student Incident Reports ───────────────────────────────────────
 
 func (m *MemoryDispatchRepository) CreateStudentIncident(ctx context.Context, req *models.CreateStudentIncidentPayload) (*models.StudentIncident, error) {
@@ -12307,6 +12801,91 @@ func (m *MemoryDispatchRepository) DeleteVehicleSignout(ctx context.Context, id 
 	}
 	delete(m.vehicleSignouts, id)
 	return nil
+}
+
+func (m *MemoryDispatchRepository) ListAssignmentHistoryFiltered(ctx context.Context, filter AssignmentHistoryFilter) ([]*models.AssignmentHistoryRecord, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	now := time.Now()
+	cutoffDate := now.AddDate(-1, 0, 0).Format("2006-01-02")
+	startDate := filter.StartDate
+	endDate := filter.EndDate
+	if endDate == "" {
+		endDate = now.Format("2006-01-02")
+	}
+
+	switch filter.TimeRange {
+	case "all":
+		hasTarget := strings.TrimSpace(filter.DriverID) != "" ||
+			strings.TrimSpace(filter.RouteNo) != "" ||
+			strings.TrimSpace(filter.UnitNumber) != "" ||
+			strings.TrimSpace(filter.Query) != "" ||
+			startDate != ""
+		if !hasTarget {
+			return []*models.AssignmentHistoryRecord{}, nil
+		}
+	default:
+		if startDate == "" {
+			startDate = cutoffDate
+		}
+	}
+
+	var list []*models.AssignmentHistoryRecord
+	for _, rec := range m.assignmentHistory {
+		if filter.Type != "" && filter.Type != "all" && rec.Type != filter.Type {
+			continue
+		}
+		if filter.Action != "" && filter.Action != "all" && rec.Action != filter.Action {
+			continue
+		}
+		if filter.DriverID != "" && rec.DriverID != filter.DriverID && rec.DriverNumber != filter.DriverID {
+			continue
+		}
+		if filter.RouteNo != "" && !strings.EqualFold(rec.RouteNo, filter.RouteNo) && !strings.EqualFold(rec.RouteID, filter.RouteNo) {
+			continue
+		}
+		if filter.UnitNumber != "" && !strings.EqualFold(rec.UnitNumber, filter.UnitNumber) && !strings.EqualFold(rec.PlateNumber, filter.UnitNumber) {
+			continue
+		}
+		rDate := rec.EffectiveDate
+		if rDate == "" && rec.Timestamp != "" && len(rec.Timestamp) >= 10 {
+			rDate = rec.Timestamp[:10]
+		}
+		if startDate != "" && rDate != "" && rDate < startDate {
+			continue
+		}
+		if endDate != "" && rDate != "" && rDate > endDate {
+			continue
+		}
+		if filter.Query != "" {
+			qLow := strings.ToLower(filter.Query)
+			matches := strings.Contains(strings.ToLower(rec.DriverName), qLow) ||
+				strings.Contains(strings.ToLower(rec.DriverID), qLow) ||
+				strings.Contains(strings.ToLower(rec.RouteNo), qLow) ||
+				strings.Contains(strings.ToLower(rec.RouteName), qLow) ||
+				strings.Contains(strings.ToLower(rec.UnitNumber), qLow) ||
+				strings.Contains(strings.ToLower(rec.Reason), qLow) ||
+				strings.Contains(strings.ToLower(rec.AssignedBy), qLow) ||
+				strings.Contains(strings.ToLower(rec.DispatcherName), qLow) ||
+				strings.Contains(strings.ToLower(rec.Notes), qLow)
+			if !matches {
+				continue
+			}
+		}
+		list = append(list, rec)
+	}
+
+	sort.Slice(list, func(i, j int) bool {
+		tI := list[i].Timestamp
+		tJ := list[j].Timestamp
+		if tI != tJ {
+			return tI > tJ
+		}
+		return list[i].EffectiveDate > list[j].EffectiveDate
+	})
+
+	return list, nil
 }
 
 // ─── Operations Simulation Settings & Execution ────────────────────────────
