@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>方向 A · Things 3 纯净原生 (Native Polish) - PCY Parent App</title>
+  <!-- React 18 & Babel -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap');
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Plus Jakarta Sans", sans-serif;
+      background: #F4F6F9;
+      color: #1D1D1F;
+      margin: 0;
+      padding: 0;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body class="p-6 md:p-10">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    // iOS Frame Component matching iPhone 15 Pro specifications
+    const iosFrameStyles = {
+      wrapper: {
+        display: 'inline-block',
+        padding: '10px',
+        background: '#0F172A',
+        borderRadius: '52px',
+        boxShadow: '0 25px 60px -15px rgba(15, 23, 42, 0.4), 0 0 0 1px rgba(255,255,255,0.1) inset',
+        position: 'relative',
+        flexShrink: 0,
+      },
+      screen: {
+        width: '360px',
+        height: '760px',
+        position: 'relative',
+        borderRadius: '42px',
+        overflow: 'hidden',
+        background: '#FFFFFF',
+      },
+      statusBar: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: '48px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 26px',
+        fontSize: '13px',
+        fontWeight: '700',
+        zIndex: 30,
+        pointerEvents: 'none',
+        color: '#1D1D1F',
+      },
+      dynamicIsland: {
+        position: 'absolute',
+        top: '10px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '108px',
+        height: '28px',
+        background: '#000000',
+        borderRadius: '999px',
+        zIndex: 40,
+      },
+      content: {
+        position: 'absolute',
+        top: '48px',
+        left: 0,
+        right: 0,
+        bottom: '24px',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        background: '#F8FAFC',
+      },
+      homeIndicator: {
+        position: 'absolute',
+        bottom: '8px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '120px',
+        height: '4px',
+        background: '#94A3B8',
+        borderRadius: '999px',
+        zIndex: 50,
+      }
+    };
+
+    function IosPhoneFrame({ children, time = "9:41" }) {
+      return (
+        <div style={iosFrameStyles.wrapper}>
+          <div style={iosFrameStyles.screen}>
+            <div style={iosFrameStyles.dynamicIsland}></div>
+            <div style={iosFrameStyles.statusBar}>
+              <span>{time}</span>
+              <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px' }}>5G</span>
+                <span style={{ fontSize: '11px' }}>100%</span>
+              </div>
+            </div>
+            <div style={iosFrameStyles.content}>
+              {children}
+            </div>
+            <div style={iosFrameStyles.homeIndicator}></div>
+          </div>
+        </div>
+      );
+    }
+
+    // Direction A Screen Component: Native Polish
+    function NativePolishApp({ initialScreen = 'live', onNavigate }) {
+      const [currentScreen, setCurrentScreen] = useState(initialScreen);
+      const [selectedKid, setSelectedKid] = useState('Ethan');
+      const [showAbsenceModal, setShowAbsenceModal] = useState(false);
+      const [absenceReason, setAbsenceReason] = useState('Illness / Fever');
+      const [absenceSubmitted, setAbsenceSubmitted] = useState(false);
+
+      const isEthan = selectedKid === 'Ethan';
+
+      return (
+        <div className="flex flex-col h-full bg-[#F8FAFC] text-[#1E293B] font-sans relative">
+          
+          {/* Top Bar with Kid Switcher */}
+          <div className="bg-white px-4 pt-3 pb-3 border-b border-slate-200/80 sticky top-0 z-20 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">PCY Parent Portal</span>
+                <h1 className="text-lg font-extrabold tracking-tight text-slate-900 leading-tight">School Bus Escort</h1>
+              </div>
+              <div className="flex bg-slate-100 p-0.5 rounded-full border border-slate-200">
+                <button 
+                  onClick={() => setSelectedKid('Ethan')}
+                  className={`px-3 py-1 text-xs font-bold rounded-full transition ${isEthan ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600'}`}>
+                  Ethan
+                </button>
+                <button 
+                  onClick={() => setSelectedKid('Emma')}
+                  className={`px-3 py-1 text-xs font-bold rounded-full transition ${!isEthan ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600'}`}>
+                  Emma
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Screen Content */}
+          <div className="flex-1 p-3.5 overflow-y-auto space-y-3">
+            
+            {/* Screen 1: Live Telemetry */}
+            {currentScreen === 'live' && (
+              <div className="space-y-3 animate-fade-in">
+                {/* Hero Status Card */}
+                <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-sm">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                      <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
+                      Morning Run · En Route
+                    </span>
+                    <span className="text-xs font-semibold text-slate-500">Route 104 · Bus #42</span>
+                  </div>
+
+                  <div className="my-3 text-center">
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Estimated Stop Arrival</span>
+                    <div className="text-4xl font-extrabold text-blue-600 tracking-tight my-1">
+                      {isEthan ? '3 mins' : '14 mins'}
+                    </div>
+                    <p className="text-xs text-slate-600 font-medium">
+                      {isEthan ? '07:44 AM (On Schedule)' : '08:02 AM (On Schedule)'}
+                    </p>
+                  </div>
+
+                  {/* Pickup Stop Spec */}
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 text-xs space-y-1">
+                    <div className="text-slate-500">Designated Stop:</div>
+                    <div className="font-bold text-slate-800 text-[13px]">
+                      {isEthan ? '142 Elmwood Ave & Oak Street' : 'Maple Woods Community Center'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Simulated Map Card */}
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                  <div className="relative h-44 bg-slate-200 flex items-center justify-center overflow-hidden">
+                    {/* Map Vector Grid Mockup */}
+                    <div className="absolute inset-0 opacity-40" 
+                         style={{ backgroundImage: 'linear-gradient(#94A3B8 1px, transparent 1px), linear-gradient(90deg, #94A3B8 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
+                    </div>
+                    {/* Simulated Path Line */}
+                    <svg className="absolute inset-0 w-full h-full" style={{ zIndex: 1 }}>
+                      <path d="M 40 130 Q 120 40 220 80 T 320 60" fill="none" stroke="#2563EB" strokeWidth="4" strokeLinecap="round" strokeDasharray="6 4" />
+                      {/* Destination Home Dot */}
+                      <circle cx="220" cy="80" r="8" fill="#10B981" />
+                      <circle cx="220" cy="80" r="14" fill="#10B981" fillOpacity="0.2" />
+                    </svg>
+                    {/* Bus Moving Pin */}
+                    <div className="absolute z-10 flex items-center gap-1.5 bg-blue-600 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-lg"
+                         style={{ top: '80px', left: '110px' }}>
+                      <span>🚌 Bus 42</span>
+                      <span className="text-[10px] bg-blue-800 px-1 rounded">38 km/h</span>
+                    </div>
+                    {/* Stop Pin */}
+                    <div className="absolute z-10 flex items-center gap-1 bg-emerald-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold shadow-md"
+                         style={{ top: '95px', left: '210px' }}>
+                      <span>📍 Stop</span>
+                    </div>
+                  </div>
+                  <div className="p-3 bg-white flex justify-between items-center text-xs">
+                    <span className="text-slate-500 font-medium">Driver: <strong className="text-slate-800">Robert Miller</strong></span>
+                    <button 
+                      onClick={() => setCurrentScreen('emergency')}
+                      className="text-blue-600 font-bold hover:underline">
+                      Contact Desk →
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Action Grid */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button 
+                    onClick={() => setShowAbsenceModal(true)}
+                    className="p-3 bg-white rounded-xl border border-slate-200 text-left hover:border-blue-400 transition shadow-sm">
+                    <div className="text-base mb-1">🤒</div>
+                    <div className="font-bold text-xs text-slate-900">Report Absence</div>
+                    <div className="text-[10px] text-slate-500">1-Tap Notify Dispatch</div>
+                  </button>
+                  <button 
+                    onClick={() => setCurrentScreen('schedule')}
+                    className="p-3 bg-white rounded-xl border border-slate-200 text-left hover:border-blue-400 transition shadow-sm">
+                    <div className="text-base mb-1">📋</div>
+                    <div className="font-bold text-xs text-slate-900">Student Commute</div>
+                    <div className="text-[10px] text-slate-500">Boarding & Roster Info</div>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Screen 2: Student Schedule & Commute Info */}
+            {currentScreen === 'schedule' && (
+              <div className="space-y-3 animate-fade-in">
+                <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+                    <div className="w-12 h-12 rounded-full bg-blue-600 text-white text-lg font-bold flex items-center justify-center">
+                      {isEthan ? 'E' : 'M'}
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900">{isEthan ? 'Ethan Zhang' : 'Emma Zhang'}</h2>
+                      <div className="text-xs text-slate-500">{isEthan ? 'Grade 4 · St. Matthew Catholic School' : 'Grade 2 · Maple Elementary'}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-2.5 text-xs">
+                    <div className="flex justify-between py-1.5 border-b border-slate-50">
+                      <span className="text-slate-500">Assigned Route:</span>
+                      <span className="font-bold text-slate-900">{isEthan ? 'Route 104 (Run #02)' : 'Route 108 (Run #01)'}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-slate-50">
+                      <span className="text-slate-500">Morning Pickup:</span>
+                      <span className="font-bold text-emerald-600">07:44 AM (Stop #5)</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-slate-50">
+                      <span className="text-slate-500">Afternoon Dropoff:</span>
+                      <span className="font-bold text-slate-800">03:22 PM (Stop #5)</span>
+                    </div>
+                    <div className="flex justify-between py-1.5">
+                      <span className="text-slate-500">Status Verification:</span>
+                      <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Roster Confirmed</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-2.5">
+                  <div className="text-xs font-bold text-slate-900">Today's Timeline Logs</div>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center gap-2.5 text-slate-700">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      <span>07:15 AM: Bus departed yard facility on time</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 text-slate-700">
+                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                      <span>07:38 AM: Stop #3 completed (2 students boarded)</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 font-semibold text-blue-600">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                      <span>07:42 AM: Approaching Elmwood pickup stop</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Screen 3: Emergency & Dispatch Directory */}
+            {currentScreen === 'emergency' && (
+              <div className="space-y-3 animate-fade-in">
+                <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+                  <h2 className="text-sm font-bold text-slate-900 mb-1">Company & Dispatch Contacts</h2>
+                  <p className="text-xs text-slate-500 mb-3">Direct hotline access for delays, inquiries, or emergencies.</p>
+
+                  <div className="space-y-2.5 text-xs">
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex justify-between items-center">
+                      <div>
+                        <div className="font-bold text-rose-900">24/7 Operations Command</div>
+                        <div className="text-[10px] text-rose-700">Live on-road delays & emergency</div>
+                      </div>
+                      <a href="tel:6135550100" className="px-3 py-1.5 bg-rose-600 text-white rounded-lg font-bold text-xs shadow-sm">
+                        Call Desk
+                      </a>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center">
+                      <div>
+                        <div className="font-bold text-slate-900">Student Safety Hotline</div>
+                        <div className="text-[10px] text-slate-500">613-555-0199 (Student Care)</div>
+                      </div>
+                      <a href="tel:6135550199" className="px-3 py-1.5 bg-slate-800 text-white rounded-lg font-bold text-xs">
+                        Call
+                      </a>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center">
+                      <div>
+                        <div className="font-bold text-slate-900">SMS Inquiry Line</div>
+                        <div className="text-[10px] text-slate-500">Text 'BUS' to 613-555-0100</div>
+                      </div>
+                      <button className="px-3 py-1.5 bg-slate-200 text-slate-800 rounded-lg font-bold text-xs">
+                        SMS Guide
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+
+          {/* Quick Absence Modal */}
+          {showAbsenceModal && (
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end">
+              <div className="w-full bg-white rounded-t-3xl p-5 border-t border-slate-200 shadow-2xl space-y-4 animate-slide-up">
+                <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-1"></div>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-base font-extrabold text-slate-900">Report Student Absence</h3>
+                  <button onClick={() => setShowAbsenceModal(false)} className="text-slate-400 font-bold text-lg">×</button>
+                </div>
+                
+                {absenceSubmitted ? (
+                  <div className="py-6 text-center space-y-2">
+                    <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">✓</div>
+                    <div className="font-bold text-sm text-slate-900">Absence Reported Successfully</div>
+                    <p className="text-xs text-slate-500">Driver of Bus #42 and Dispatch desk have been notified.</p>
+                    <button 
+                      onClick={() => { setShowAbsenceModal(false); setAbsenceSubmitted(false); }}
+                      className="mt-3 px-5 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold">
+                      Done
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="text-xs text-slate-500">
+                      Reporting for: <strong className="text-slate-800">{selectedKid} Zhang</strong> (Today, All Day)
+                    </div>
+                    <div className="space-y-1.5 text-xs font-medium">
+                      {['Illness / Fever', 'Doctor / Medical Appointment', 'Family Matter / Leave'].map(reason => (
+                        <label key={reason} className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                          <input 
+                            type="radio" 
+                            name="absence" 
+                            checked={absenceReason === reason} 
+                            onChange={() => setAbsenceReason(reason)} 
+                            className="text-blue-600"
+                          />
+                          <span>{reason}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <button 
+                      onClick={() => setAbsenceSubmitted(true)}
+                      className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md transition">
+                      Confirm & Send to Dispatch
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Bottom Tabs */}
+          <div className="bg-white border-t border-slate-200 py-2 px-6 flex justify-around items-center text-[10px] font-bold text-slate-400">
+            <button 
+              onClick={() => setCurrentScreen('live')}
+              className={`flex flex-col items-center gap-0.5 ${currentScreen === 'live' ? 'text-blue-600 font-extrabold' : 'hover:text-slate-700'}`}>
+              <span className="text-base">📍</span>
+              <span>Live Map</span>
+            </button>
+            <button 
+              onClick={() => setCurrentScreen('schedule')}
+              className={`flex flex-col items-center gap-0.5 ${currentScreen === 'schedule' ? 'text-blue-600 font-extrabold' : 'hover:text-slate-700'}`}>
+              <span className="text-base">🧒</span>
+              <span>Student</span>
+            </button>
+            <button 
+              onClick={() => setCurrentScreen('emergency')}
+              className={`flex flex-col items-center gap-0.5 ${currentScreen === 'emergency' ? 'text-blue-600 font-extrabold' : 'hover:text-slate-700'}`}>
+              <span className="text-base">📞</span>
+              <span>Directory</span>
+            </button>
+          </div>
+
+        </div>
+      );
+    }
+
+    // Direction A Showcase Canvas (4 Interactive Phones Screen Overview)
+    function DirectionAShowcase() {
+      return (
+        <div className="max-w-7xl mx-auto space-y-8">
+          
+          {/* Header Spec */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-3 py-0.5 text-xs font-bold rounded-full bg-blue-600 text-white">方向 A · 最佳设计师</span>
+                <span className="text-xs font-semibold text-slate-400">Things 3 式 Native Polish</span>
+              </div>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">极简原生 · 极致信任感 (Clean Trust & Native HIG)</h1>
+              <p className="text-xs md:text-sm text-slate-500 mt-1 max-w-2xl">
+                针对清晨慌乱中只用单手操作的家长：纯净白底、大字号清晰读数、极克制的功能分区。每台手机均可真实交互测试！
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs">纯净白 #FFF</span>
+              <span className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 font-bold text-xs border border-blue-200">信任蓝 #2563EB</span>
+            </div>
+          </div>
+
+          {/* 4 Interactive iPhones Showcase Board */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8 justify-items-center">
+            
+            {/* Phone 1: Live Telemetry */}
+            <div className="flex flex-col items-center">
+              <div className="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                <span>Screen 1: 实时到站与动态地图</span>
+              </div>
+              <IosPhoneFrame time="07:41">
+                <NativePolishApp initialScreen="live" />
+              </IosPhoneFrame>
+            </div>
+
+            {/* Phone 2: Student Commute Details */}
+            <div className="flex flex-col items-center">
+              <div className="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>Screen 2: 学生行程与乘车刷卡</span>
+              </div>
+              <IosPhoneFrame time="07:44">
+                <NativePolishApp initialScreen="schedule" />
+              </IosPhoneFrame>
+            </div>
+
+            {/* Phone 3: Absence Sheet Opened */}
+            <div className="flex flex-col items-center">
+              <div className="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                <span>Screen 3: 极速 1-Tap 请假报备</span>
+              </div>
+              <IosPhoneFrame time="07:45">
+                <NativePolishApp initialScreen="live" />
+              </IosPhoneFrame>
+            </div>
+
+            {/* Phone 4: Dispatcher Emergency Hotline */}
+            <div className="flex flex-col items-center">
+              <div className="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                <span>Screen 4: 紧急联系与调度热线</span>
+              </div>
+              <IosPhoneFrame time="07:46">
+                <NativePolishApp initialScreen="emergency" />
+              </IosPhoneFrame>
+            </div>
+
+          </div>
+
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<DirectionAShowcase />);
+  </script>
+</body>
+</html>

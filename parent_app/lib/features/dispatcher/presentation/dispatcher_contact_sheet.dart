@@ -31,6 +31,7 @@ class DispatcherContactSheet extends StatefulWidget {
   final String parentContact;
   final ApiClient apiClient;
   final bool autoOpenCustomAbsence;
+  final bool isTabMode;
 
   const DispatcherContactSheet({
     super.key,
@@ -39,6 +40,7 @@ class DispatcherContactSheet extends StatefulWidget {
     required this.parentContact,
     required this.apiClient,
     this.autoOpenCustomAbsence = false,
+    this.isTabMode = false,
   });
 
   @override
@@ -392,7 +394,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
       builder: (ctx) {
         return Container(
           decoration: const BoxDecoration(
-            color: Colors.white,
+            color: AppColors.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -508,7 +510,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
 
             return Container(
               decoration: const BoxDecoration(
-                color: Colors.white,
+                color: AppColors.surface,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -874,31 +876,38 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
     final busNo = widget.commute?.busUnitNumber.isNotEmpty == true ? widget.commute!.busUnitNumber : '42';
 
     return Material(
-      color: Colors.white,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      color: AppColors.surface,
+      borderRadius: widget.isTabMode ? BorderRadius.zero : const BorderRadius.vertical(top: Radius.circular(24)),
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
-        top: false,
+        top: widget.isTabMode,
         child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.78,
+          height: widget.isTabMode ? double.infinity : MediaQuery.of(context).size.height * 0.78,
           child: Column(
             children: [
               // 1. Grab Bar & Header
               Padding(
-                padding: const EdgeInsets.only(top: 10, left: 20, right: 12, bottom: 6),
+                padding: EdgeInsets.only(
+                  top: widget.isTabMode ? 14 : 10,
+                  left: 16,
+                  right: 12,
+                  bottom: 8,
+                ),
                 child: Column(
                   children: [
-                    Center(
-                      child: Container(
-                        width: 44,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: AppColors.border,
-                          borderRadius: BorderRadius.circular(2),
+                    if (!widget.isTabMode) ...[
+                      Center(
+                        child: Container(
+                          width: 44,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppColors.border,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
+                      const SizedBox(height: 10),
+                    ],
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -938,29 +947,33 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                             ),
                           ],
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close_rounded, color: AppColors.textMuted),
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
+                        if (!widget.isTabMode)
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, color: AppColors.textMuted),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
                       ],
                     ),
                   ],
                 ),
               ),
 
-              // 2. Tab Bar: Live Chat vs Call/SMS (Clean tabs to prevent overflow)
+              // 2. Tab Bar: Live Chat vs Call/SMS (Clean dark Bento tabs)
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceMuted,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.border),
                 ),
                 child: TabBar(
                   controller: _tabController,
+                  indicatorSize: TabBarIndicatorSize.tab,
                   indicator: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+                    color: AppColors.surfaceHighlight,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.6), width: 1.2),
+                    boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 6)],
                   ),
                   labelColor: AppColors.primary,
                   unselectedLabelColor: AppColors.textSecondary,
@@ -1142,7 +1155,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: const BoxDecoration(
-            color: Colors.white,
+            color: AppColors.surface,
             border: Border(top: BorderSide(color: AppColors.border)),
           ),
           child: Row(
@@ -1153,14 +1166,17 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                   decoration: BoxDecoration(
                     color: AppColors.surfaceMuted,
                     borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: AppColors.border),
                   ),
                   child: TextField(
                     controller: _textController,
-                    style: const TextStyle(fontSize: 13),
+                    style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
                     decoration: const InputDecoration(
                       hintText: 'Type inquiry (e.g. "Student waiting at stop")...',
                       hintStyle: TextStyle(fontSize: 12, color: AppColors.textMuted),
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
                       isDense: true,
                       contentPadding: EdgeInsets.symmetric(vertical: 10),
                     ),
@@ -1172,13 +1188,13 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
               IconButton(
                 style: IconButton.styleFrom(
                   backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF0B101D),
                 ),
                 icon: _isSending
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0B101D)),
                       )
                     : const Icon(Icons.send_rounded, size: 18),
                 onPressed: _isSending ? null : () => _sendChatMessage(_textController.text),
@@ -1195,10 +1211,20 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: ActionChip(
-        avatar: Icon(icon, size: 14, color: isAbsentAction ? AppColors.error : AppColors.primary),
-        label: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-        backgroundColor: Colors.white,
-        side: BorderSide(color: isAbsentAction ? AppColors.error.withValues(alpha: 0.35) : AppColors.border),
+        avatar: Icon(icon, size: 14, color: isAbsentAction ? AppColors.coral : AppColors.primary),
+        label: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: isAbsentAction ? AppColors.coral : AppColors.textPrimary,
+          ),
+        ),
+        backgroundColor: AppColors.surfaceHighlight,
+        side: BorderSide(
+          color: isAbsentAction ? AppColors.coral.withValues(alpha: 0.5) : AppColors.border,
+          width: 1.2,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         onPressed: _isSending
             ? null
@@ -1226,9 +1252,9 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.88),
           decoration: BoxDecoration(
-            color: const Color(0xFFF0FDF4), // Emerald tint
+            color: AppColors.surfaceHighlight,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF86EFAC)),
+            border: Border.all(color: AppColors.secondary.withValues(alpha: 0.35)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1236,14 +1262,14 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
               const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.smart_toy_outlined, size: 14, color: Color(0xFF15803D)),
+                  Icon(Icons.smart_toy_outlined, size: 14, color: AppColors.secondary),
                   SizedBox(width: 6),
                   Text(
                     'System Action Log',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF15803D),
+                      color: AppColors.secondary,
                     ),
                   ),
                 ],
@@ -1253,7 +1279,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                 msg.text,
                 style: const TextStyle(
                   fontSize: 11,
-                  color: Color(0xFF166534),
+                  color: AppColors.textPrimary,
                   height: 1.35,
                 ),
               ),
@@ -1262,7 +1288,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                 alignment: Alignment.bottomRight,
                 child: Text(
                   '${msg.time.hour.toString().padLeft(2, '0')}:${msg.time.minute.toString().padLeft(2, '0')}',
-                  style: const TextStyle(fontSize: 9, color: Color(0xFF15803D)),
+                  style: const TextStyle(fontSize: 9, color: AppColors.textSecondary),
                 ),
               ),
             ],
@@ -1299,7 +1325,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                   Icon(
                     isDispatcher ? Icons.headset_mic_rounded : Icons.person_outline_rounded,
                     size: 12,
-                    color: isDispatcher ? AppColors.primary : Colors.white70,
+                    color: isDispatcher ? AppColors.primary : const Color(0xCC0B101D),
                   ),
                   const SizedBox(width: 4),
                   Text(
@@ -1307,7 +1333,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
-                      color: isDispatcher ? AppColors.primaryDark : Colors.white70,
+                      color: isDispatcher ? AppColors.primary : const Color(0xFF0B101D),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -1315,7 +1341,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                     '${msg.time.hour.toString().padLeft(2, '0')}:${msg.time.minute.toString().padLeft(2, '0')}',
                     style: TextStyle(
                       fontSize: 9,
-                      color: isDispatcher ? AppColors.textMuted : Colors.white60,
+                      color: isDispatcher ? AppColors.textMuted : const Color(0x990B101D),
                     ),
                   ),
                 ],
@@ -1326,7 +1352,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
               style: TextStyle(
                 fontSize: 13,
                 height: 1.35,
-                color: isDispatcher ? AppColors.textPrimary : Colors.white,
+                color: isDispatcher ? AppColors.textPrimary : const Color(0xFF0B101D),
               ),
             ),
           ],
@@ -1343,10 +1369,10 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppColors.surfaceMuted,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppColors.border),
-            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))],
+            boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2))],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1356,17 +1382,17 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: AppColors.success.withValues(alpha: 0.12),
+                      color: AppColors.secondary.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.phone_in_talk_rounded, color: AppColors.success, size: 22),
+                    child: const Icon(Icons.phone_in_talk_rounded, color: AppColors.secondary, size: 22),
                   ),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Dispatch Hotline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text('Dispatch Hotline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textPrimary)),
                         Text('Direct operator line for urgent inquiries (06:00 - 18:30)', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                       ],
                     ),
@@ -1386,8 +1412,8 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                     icon: const Icon(Icons.call_rounded, size: 16),
                     label: const Text('Call Now'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.success,
-                      foregroundColor: Colors.white,
+                      backgroundColor: AppColors.secondary,
+                      foregroundColor: const Color(0xFF0B101D),
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     ),
                   ),
@@ -1403,10 +1429,10 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppColors.surfaceMuted,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppColors.border),
-            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))],
+            boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2))],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1416,7 +1442,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.12),
+                      color: AppColors.primary.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.sms_rounded, color: AppColors.primary, size: 22),
@@ -1426,7 +1452,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Twilio 2-Way SMS Hotline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text('Twilio 2-Way SMS Hotline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textPrimary)),
                         Text('Instant automatic SMS replies for ETA & bus telemetry', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                       ],
                     ),
@@ -1447,7 +1473,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                     label: const Text('Send SMS'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF0B101D),
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     ),
                   ),
@@ -1459,18 +1485,27 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                 runSpacing: 6,
                 children: [
                   ActionChip(
-                    avatar: const Icon(Icons.touch_app_rounded, size: 14),
-                    label: const Text('Text "ETA"', style: TextStyle(fontSize: 11)),
+                    avatar: const Icon(Icons.touch_app_rounded, size: 14, color: AppColors.primary),
+                    label: const Text('Text "ETA"', style: TextStyle(fontSize: 11, color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+                    backgroundColor: AppColors.surfaceHighlight,
+                    side: const BorderSide(color: AppColors.border),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     onPressed: () => _sendSms(customBody: 'ETA'),
                   ),
                   ActionChip(
-                    avatar: const Icon(Icons.touch_app_rounded, size: 14),
-                    label: const Text('Text "WHERE"', style: TextStyle(fontSize: 11)),
+                    avatar: const Icon(Icons.touch_app_rounded, size: 14, color: AppColors.primary),
+                    label: const Text('Text "WHERE"', style: TextStyle(fontSize: 11, color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+                    backgroundColor: AppColors.surfaceHighlight,
+                    side: const BorderSide(color: AppColors.border),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     onPressed: () => _sendSms(customBody: 'WHERE'),
                   ),
                   ActionChip(
-                    avatar: const Icon(Icons.copy_rounded, size: 14),
-                    label: const Text('Copy SMS Number', style: TextStyle(fontSize: 11)),
+                    avatar: const Icon(Icons.copy_rounded, size: 14, color: AppColors.secondary),
+                    label: const Text('Copy SMS Number', style: TextStyle(fontSize: 11, color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+                    backgroundColor: AppColors.surfaceHighlight,
+                    side: const BorderSide(color: AppColors.border),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     onPressed: () => _copyToClipboard(dispatchSmsNumber, 'SMS hotline copied: $dispatchDisplaySms'),
                   ),
                 ],

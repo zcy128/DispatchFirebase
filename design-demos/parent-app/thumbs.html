@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PCY Parent App 移动端改版 · 六候选缩略图画廊</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #090D16;
+      color: #E2E8F0;
+    }
+    .thumb-phone {
+      width: 290px;
+      height: 580px;
+      border-radius: 38px;
+      border: 3.5px solid #1E293B;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8);
+      position: relative;
+      flex-shrink: 0;
+    }
+    .island {
+      width: 86px;
+      height: 24px;
+      background: #000;
+      border-radius: 999px;
+      margin: 8px auto 6px;
+    }
+  </style>
+</head>
+<body class="p-6 md:p-10">
+  <div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <header class="mb-10 pb-6 border-b border-slate-800">
+      <div class="flex items-center gap-3 mb-2">
+        <span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">HUASHU-DESIGN</span>
+        <span class="text-xs text-slate-400">Phase 4c: 6 Candidates Parent App Explorations</span>
+      </div>
+      <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">PCY Parent Mobile App 移动端改版 · 六大候选方案</h1>
+      <p class="text-slate-400 mt-2 text-sm max-w-3xl">
+        针对家长手机端使用场景：早晨出行争分夺秒、急需获知到站倒计时、确认孩子刷卡乘车安全、极速请假报备。以下为 6 种不同设计逻辑推导的原型初稿缩略图：
+      </p>
+    </header>
+
+    <!-- 6 Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      
+      <!-- 候选 1: Things 3 极简原生 (入选方向 A) -->
+      <div class="bg-slate-900/70 p-5 rounded-2xl border-2 border-blue-500/40 flex flex-col items-center relative">
+        <span class="absolute -top-3 right-5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-500 text-white shadow">入选方向 A</span>
+        <div class="flex items-center justify-between w-full mb-3">
+          <span class="text-xs font-bold text-blue-400">#01 最佳设计师</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300">Things 3 纯净原生</span>
+        </div>
+        <div class="thumb-phone bg-slate-50 text-slate-900 flex flex-col justify-between p-3.5 select-none">
+          <div>
+            <div class="island"></div>
+            <div class="flex justify-between items-center text-[10px] text-slate-500 font-bold mb-3 px-1">
+              <span>9:41</span>
+              <span class="text-blue-600 font-bold">PCY Parent</span>
+              <span>100%</span>
+            </div>
+            <!-- Student Pill -->
+            <div class="bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-sm flex items-center justify-between mb-2.5">
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center">E</div>
+                <div>
+                  <div class="text-xs font-bold text-slate-900">Ethan Zhang</div>
+                  <div class="text-[10px] text-slate-500">Route 104 · Bus #42</div>
+                </div>
+              </div>
+              <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">On Bus</span>
+            </div>
+            <!-- ETA Big Hero -->
+            <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm mb-3 text-center">
+              <span class="text-[10px] tracking-wider uppercase font-bold text-slate-400">Estimated Arrival</span>
+              <div class="text-4xl font-extrabold text-blue-600 tracking-tight my-1">3 <span class="text-lg font-medium text-slate-700">mins</span></div>
+              <div class="text-[11px] text-slate-600 font-medium">Stop: 142 Elmwood Ave</div>
+            </div>
+            <!-- Clean Action Row -->
+            <div class="grid grid-cols-2 gap-2 mb-3">
+              <div class="bg-white p-2.5 rounded-xl border border-slate-200 text-center">
+                <div class="text-xs font-bold text-slate-800">Report Leave</div>
+                <div class="text-[9px] text-slate-400">1-Tap Absence</div>
+              </div>
+              <div class="bg-white p-2.5 rounded-xl border border-slate-200 text-center">
+                <div class="text-xs font-bold text-slate-800">Dispatch Desk</div>
+                <div class="text-[9px] text-slate-400">Direct Call</div>
+              </div>
+            </div>
+          </div>
+          <!-- Bottom Tab Bar -->
+          <div class="bg-white rounded-xl py-2 px-4 border border-slate-200 flex justify-around text-[10px] font-bold text-slate-400">
+            <span class="text-blue-600">Tracking</span>
+            <span>Schedule</span>
+            <span>Notifications</span>
+          </div>
+        </div>
+        <p class="text-xs text-slate-300 mt-3 text-center">纯白克制底板、大字号清晰读数、极简原生层次</p>
+      </div>
+
+      <!-- 候选 2: Apple Liquid Glass 灵动半透 -->
+      <div class="bg-slate-900/60 p-5 rounded-2xl border border-slate-800 flex flex-col items-center">
+        <div class="flex items-center justify-between w-full mb-3">
+          <span class="text-xs font-bold text-indigo-400">#02 最佳设计师</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300">iOS 26 Liquid Glass</span>
+        </div>
+        <div class="thumb-phone bg-gradient-to-b from-blue-900 via-indigo-950 to-slate-950 text-white flex flex-col justify-between p-3.5 select-none">
+          <div>
+            <div class="island"></div>
+            <div class="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/20 mb-3 shadow-lg">
+              <div class="text-[10px] text-cyan-300 font-bold uppercase tracking-wider">Live Pulse Tracking</div>
+              <div class="text-2xl font-bold mt-1">Bus #42 · En Route</div>
+              <div class="text-xs text-slate-300 mt-0.5">Speed: 42 km/h · On Time</div>
+            </div>
+            <!-- Glass Floating Card -->
+            <div class="bg-white/15 backdrop-blur-xl rounded-2xl p-4 border border-white/25 shadow-2xl text-center">
+              <div class="text-3xl font-extrabold text-cyan-400">07:44 AM</div>
+              <div class="text-xs text-slate-200 mt-1">Pickup Stop in 400 meters</div>
+              <div class="mt-3 inline-block px-3 py-1 bg-cyan-400/20 text-cyan-300 border border-cyan-400/40 rounded-full text-[10px] font-bold">
+                Approaching Geofence
+              </div>
+            </div>
+          </div>
+          <div class="bg-white/10 backdrop-blur-lg rounded-full py-2 px-6 border border-white/20 flex justify-around text-[10px] font-bold text-slate-300">
+            <span class="text-cyan-400">Live</span>
+            <span>Roster</span>
+            <span>Alerts</span>
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 mt-3 text-center">全幅渐变与玻璃悬浮胶囊控件、未来感视觉</p>
+      </div>
+
+      <!-- 候选 3: Citymapper 实时通勤时间轴 (入选方向 B) -->
+      <div class="bg-slate-900/70 p-5 rounded-2xl border-2 border-emerald-500/40 flex flex-col items-center relative">
+        <span class="absolute -top-3 right-5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500 text-slate-950 shadow">入选方向 B</span>
+        <div class="flex items-center justify-between w-full mb-3">
+          <span class="text-xs font-bold text-emerald-400">#03 现实参照</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300">Citymapper 动态轴</span>
+        </div>
+        <div class="thumb-phone bg-slate-950 text-white flex flex-col justify-between p-3.5 select-none">
+          <div>
+            <div class="island"></div>
+            <!-- Live Activity Floating Pill -->
+            <div class="bg-emerald-500/15 border border-emerald-500/40 rounded-xl p-2.5 flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                <span class="text-xs font-bold text-emerald-400">LIVE BUS RADAR</span>
+              </div>
+              <span class="text-xs font-mono font-bold text-white">ETA 3m</span>
+            </div>
+            <!-- Stepper Timeline -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
+              <div class="flex items-start gap-2.5 text-xs">
+                <div class="w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-slate-900 mt-0.5"></div>
+                <div>
+                  <div class="font-bold text-slate-200">Depot Departure</div>
+                  <div class="text-[10px] text-slate-500">07:15 AM · Passed</div>
+                </div>
+              </div>
+              <div class="flex items-start gap-2.5 text-xs bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
+                <div class="w-3.5 h-3.5 rounded-full bg-amber-400 border-2 border-slate-900 mt-0.5 animate-pulse"></div>
+                <div>
+                  <div class="font-bold text-amber-300">Your Stop (Elmwood)</div>
+                  <div class="text-[10px] text-emerald-400 font-bold">Arriving in 3 mins</div>
+                </div>
+              </div>
+              <div class="flex items-start gap-2.5 text-xs opacity-60">
+                <div class="w-3.5 h-3.5 rounded-full bg-slate-700 mt-0.5"></div>
+                <div>
+                  <div class="font-bold text-slate-400">Maple High School</div>
+                  <div class="text-[10px] text-slate-500">08:05 AM Scheduled</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Action Button -->
+          <button class="w-full py-2.5 bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs">
+            Notify Absence (Today)
+          </button>
+        </div>
+        <p class="text-xs text-slate-300 mt-3 text-center">动态行程时间轴、站点进度胶囊、清晰行程走马灯</p>
+      </div>
+
+      <!-- 候选 4: Apple Find My 家庭安全圈 -->
+      <div class="bg-slate-900/60 p-5 rounded-2xl border border-slate-800 flex flex-col items-center">
+        <div class="flex items-center justify-between w-full mb-3">
+          <span class="text-xs font-bold text-purple-400">#04 现实参照</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300">Find My 安全圈</span>
+        </div>
+        <div class="thumb-phone bg-slate-900 text-white flex flex-col justify-between p-3.5 select-none">
+          <div>
+            <div class="island"></div>
+            <!-- Geofence Radar Circle -->
+            <div class="w-32 h-32 mx-auto my-4 rounded-full border border-purple-500/40 bg-purple-500/10 flex items-center justify-center relative">
+              <div class="w-16 h-16 rounded-full bg-purple-600/30 border border-purple-400 flex items-center justify-center font-bold text-xs">
+                Bus 42
+              </div>
+              <span class="absolute bottom-1 text-[9px] text-purple-300">500m Safe Zone</span>
+            </div>
+            <!-- Bottom Drawer Preview -->
+            <div class="bg-slate-800/90 rounded-2xl p-3.5 border border-slate-700">
+              <div class="text-xs font-bold text-white mb-2">Children Status</div>
+              <div class="flex justify-between items-center text-xs py-1 border-b border-slate-700">
+                <span>Ethan</span>
+                <span class="text-emerald-400 font-bold">Inside Bus</span>
+              </div>
+              <div class="flex justify-between items-center text-xs py-1 mt-1">
+                <span>Emma</span>
+                <span class="text-amber-400 font-bold">At Home</span>
+              </div>
+            </div>
+          </div>
+          <div class="text-[11px] text-center text-slate-400">Geofence Proximity Alert Active</div>
+        </div>
+        <p class="text-xs text-slate-400 mt-3 text-center">孩子头像为视觉圆心、电子围栏半透明范围雷达</p>
+      </div>
+
+      <!-- 候选 5: Gentler Streak 暖心家庭便当盒 (入选方向 C) -->
+      <div class="bg-slate-900/70 p-5 rounded-2xl border-2 border-amber-500/40 flex flex-col items-center relative">
+        <span class="absolute -top-3 right-5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500 text-slate-950 shadow">入选方向 C</span>
+        <div class="flex items-center justify-between w-full mb-3">
+          <span class="text-xs font-bold text-amber-400">#05 秒数轮盘 (S=58)</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300">Gentler Streak 便当盒</span>
+        </div>
+        <div class="thumb-phone bg-[#121929] text-white flex flex-col justify-between p-3.5 select-none">
+          <div>
+            <div class="island"></div>
+            <div class="text-xs font-bold text-[#FCD34D] mb-1">Morning Escort</div>
+            <div class="text-lg font-extrabold text-white leading-tight mb-3">Ethan is safely on board, smooth ride.</div>
+            <!-- Bento Box Grid -->
+            <div class="grid grid-cols-2 gap-2.5 mb-2.5">
+              <div class="bg-[#1C263D] p-3 rounded-2xl border border-slate-700/60">
+                <span class="text-[10px] text-emerald-400 font-bold uppercase">Status</span>
+                <div class="text-sm font-bold mt-1 text-slate-100">Boarded</div>
+                <div class="text-[10px] text-slate-400 mt-0.5">07:42 AM verified</div>
+              </div>
+              <div class="bg-[#1C263D] p-3 rounded-2xl border border-slate-700/60">
+                <span class="text-[10px] text-amber-400 font-bold uppercase">Arrival</span>
+                <div class="text-sm font-bold mt-1 text-slate-100">3 mins away</div>
+                <div class="text-[10px] text-slate-400 mt-0.5">No delay</div>
+              </div>
+            </div>
+            <!-- Multi-kid switcher pill -->
+            <div class="bg-[#1C263D] p-2.5 rounded-2xl border border-slate-700/60 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="w-7 h-7 rounded-full bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center">E</div>
+                <div class="text-xs font-bold">Emma (Grade 2)</div>
+              </div>
+              <span class="text-[10px] text-slate-400">Tap to switch</span>
+            </div>
+          </div>
+          <button class="w-full py-2.5 bg-[#FCD34D] text-slate-950 font-bold rounded-xl text-xs">
+            Quick Absence / Leave
+          </button>
+        </div>
+        <p class="text-xs text-slate-300 mt-3 text-center">28px 圆角便当盒卡片、深海蓝+低饱和粉彩暖心守护</p>
+      </div>
+
+      <!-- 候选 6: 东方节气色谱雅致纸质 -->
+      <div class="bg-slate-900/60 p-5 rounded-2xl border border-slate-800 flex flex-col items-center">
+        <div class="flex items-center justify-between w-full mb-3">
+          <span class="text-xs font-bold text-rose-400">#06 东方雅致</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300">节气色谱·温润纸韵</span>
+        </div>
+        <div class="thumb-phone bg-[#F7F4EB] text-slate-900 flex flex-col justify-between p-3.5 select-none">
+          <div>
+            <div class="island"></div>
+            <div class="text-center my-3">
+              <span class="text-[10px] tracking-widest text-slate-500 font-serif">校车护航 · 晨间迎候</span>
+              <div class="text-2xl font-serif font-bold text-[#8C2D19] mt-1">预计三分钟后抵达</div>
+            </div>
+            <div class="bg-white p-3 rounded-xl border border-[#E5DECC] space-y-2 font-serif text-xs">
+              <div class="flex justify-between border-b border-[#F0EAE1] pb-1.5">
+                <span class="text-slate-500">乘车学童</span>
+                <span class="font-bold">Ethan Zhang (四年级)</span>
+              </div>
+              <div class="flex justify-between border-b border-[#F0EAE1] pb-1.5">
+                <span class="text-slate-500">当班校车</span>
+                <span class="font-bold">42 号车 (线路 104)</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">乘车状态</span>
+                <span class="text-[#8C2D19] font-bold">已准时登车</span>
+              </div>
+            </div>
+          </div>
+          <div class="text-center font-serif text-[11px] text-slate-500 pb-2">
+            平安归家 · 谨护启程
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 mt-3 text-center">温润宣纸色、朱砂印章式打卡与雅致排印</p>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>

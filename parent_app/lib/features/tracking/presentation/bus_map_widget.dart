@@ -221,15 +221,16 @@ class _BusMapWidgetState extends State<BusMapWidget> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                         decoration: BoxDecoration(
-                          color: AppColors.success,
-                          borderRadius: BorderRadius.circular(6),
-                          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.secondary, width: 1.2),
+                          boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 6)],
                         ),
                         child: const Text(
                           'Pickup Stop',
-                          style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.secondary),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -237,12 +238,12 @@ class _BusMapWidgetState extends State<BusMapWidget> {
                         width: 30,
                         height: 30,
                         decoration: BoxDecoration(
-                          color: AppColors.success,
+                          color: AppColors.secondary,
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
+                          border: Border.all(color: AppColors.surface, width: 2.5),
+                          boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 6)],
                         ),
-                        child: const Icon(Icons.person_pin_circle_rounded, size: 18, color: Colors.white),
+                        child: const Icon(Icons.person_pin_circle_rounded, size: 18, color: Color(0xFF0B101D)),
                       ),
                     ],
                   ),
@@ -258,15 +259,16 @@ class _BusMapWidgetState extends State<BusMapWidget> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                         decoration: BoxDecoration(
-                          color: AppColors.secondary,
-                          borderRadius: BorderRadius.circular(6),
-                          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.primary, width: 1.2),
+                          boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 6)],
                         ),
                         child: Text(
                           'Bus #${widget.commute.busUnitNumber.isNotEmpty ? widget.commute.busUnitNumber : '42'}',
-                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.primary),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -278,12 +280,12 @@ class _BusMapWidgetState extends State<BusMapWidget> {
                         decoration: BoxDecoration(
                           color: AppColors.primary,
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
+                          border: Border.all(color: AppColors.surface, width: 2.5),
+                          boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 6)],
                         ),
                         child: Transform.rotate(
                           angle: (snapped.bearingDegrees * (math.pi / 180)),
-                          child: const Icon(Icons.navigation_rounded, size: 18, color: Colors.white),
+                          child: const Icon(Icons.navigation_rounded, size: 18, color: Color(0xFF0B101D)),
                         ),
                       ),
                     ],
@@ -300,12 +302,12 @@ class _BusMapWidgetState extends State<BusMapWidget> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1E293B),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFFBBF24), width: 1.2),
-                          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.lavender, width: 1.2),
+                          boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 6)],
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -318,7 +320,7 @@ class _BusMapWidgetState extends State<BusMapWidget> {
                                 style: const TextStyle(
                                   fontSize: 9,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                                  color: AppColors.lavender,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -332,12 +334,12 @@ class _BusMapWidgetState extends State<BusMapWidget> {
                         width: 32,
                         height: 32,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFD97706),
+                          color: AppColors.lavender,
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
+                          border: Border.all(color: AppColors.surface, width: 2.5),
+                          boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 6)],
                         ),
-                        child: const Icon(Icons.school_rounded, size: 18, color: Colors.white),
+                        child: const Icon(Icons.school_rounded, size: 18, color: Color(0xFF0B101D)),
                       ),
                     ],
                   ),
@@ -347,16 +349,16 @@ class _BusMapWidgetState extends State<BusMapWidget> {
           ],
         ),
 
-        // Road polyline overlay (outside FlutterMap layers so it can never be culled/clipped by them)
+        // Road polyline overlay (Warm Amber school bus route with dark navy casing)
         Positioned.fill(
           child: RoadPolylineLayer(
             points: routePoints,
             mapController: _mapController,
-            borderColor: const Color(0xFF0F172A),
+            borderColor: const Color(0xFF0B101D),
             borderStrokeWidth: 9.0,
-            casingColor: Colors.white,
+            casingColor: const Color(0xFF1E2D4A),
             casingStrokeWidth: 7.0,
-            color: const Color(0xFF2563EB),
+            color: AppColors.primary,
             strokeWidth: 4.5,
           ),
         ),
@@ -370,8 +372,12 @@ class _BusMapWidgetState extends State<BusMapWidget> {
             children: [
               FloatingActionButton.small(
                 heroTag: 'recenter_route',
-                backgroundColor: Colors.white,
+                backgroundColor: AppColors.surface,
                 foregroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: AppColors.border),
+                ),
                 tooltip: 'Focus Full Route',
                 onPressed: _fitRouteBounds,
                 child: const Icon(Icons.alt_route_rounded, size: 18),
@@ -379,8 +385,12 @@ class _BusMapWidgetState extends State<BusMapWidget> {
               const SizedBox(height: 6),
               FloatingActionButton.small(
                 heroTag: 'recenter_bus',
-                backgroundColor: Colors.white,
+                backgroundColor: AppColors.surface,
                 foregroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: AppColors.border),
+                ),
                 tooltip: 'Focus Bus',
                 onPressed: () {
                   _mapController.move(LatLng(busPos.latitude - 0.0035, busPos.longitude), 14.2);
@@ -390,8 +400,12 @@ class _BusMapWidgetState extends State<BusMapWidget> {
               const SizedBox(height: 6),
               FloatingActionButton.small(
                 heroTag: 'recenter_stop',
-                backgroundColor: Colors.white,
-                foregroundColor: AppColors.success,
+                backgroundColor: AppColors.surface,
+                foregroundColor: AppColors.secondary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: AppColors.border),
+                ),
                 tooltip: 'Focus Stop',
                 onPressed: () {
                   _mapController.move(LatLng(stopPos.latitude - 0.0035, stopPos.longitude), 14.2);
@@ -401,8 +415,12 @@ class _BusMapWidgetState extends State<BusMapWidget> {
               const SizedBox(height: 6),
               FloatingActionButton.small(
                 heroTag: 'recenter_school',
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFFD97706),
+                backgroundColor: AppColors.surface,
+                foregroundColor: AppColors.lavender,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: AppColors.border),
+                ),
                 tooltip: 'Focus School',
                 onPressed: () {
                   _mapController.move(LatLng(schoolPos.latitude - 0.0035, schoolPos.longitude), 14.2);
@@ -410,37 +428,6 @@ class _BusMapWidgetState extends State<BusMapWidget> {
                 child: const Icon(Icons.school_rounded, size: 18),
               ),
             ],
-          ),
-        ),
-        // Active Route Status Chip on top
-        Positioned(
-          top: 150,
-          left: 14,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F172A).withValues(alpha: 0.88),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF2563EB),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'Route: ${widget.commute.routeNo.isNotEmpty ? widget.commute.routeNo : 'Active Corridor'}',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-              ],
-            ),
           ),
         ),
       ],

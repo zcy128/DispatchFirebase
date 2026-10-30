@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>方向 B · Citymapper 实时态势 (Transit Radar) - PCY Parent App</title>
+  <!-- React 18 & Babel -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Plus Jakarta Sans", sans-serif;
+      background: #060911;
+      color: #F8FAFC;
+      margin: 0;
+      padding: 0;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body class="p-6 md:p-10">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    const iosFrameStyles = {
+      wrapper: {
+        display: 'inline-block',
+        padding: '10px',
+        background: '#000000',
+        borderRadius: '52px',
+        boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255,255,255,0.15) inset',
+        position: 'relative',
+        flexShrink: 0,
+      },
+      screen: {
+        width: '360px',
+        height: '760px',
+        position: 'relative',
+        borderRadius: '42px',
+        overflow: 'hidden',
+        background: '#090D16',
+      },
+      statusBar: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: '48px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 26px',
+        fontSize: '13px',
+        fontWeight: '700',
+        zIndex: 30,
+        pointerEvents: 'none',
+        color: '#FFFFFF',
+      },
+      dynamicIsland: {
+        position: 'absolute',
+        top: '10px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '108px',
+        height: '28px',
+        background: '#1E293B',
+        borderRadius: '999px',
+        zIndex: 40,
+        border: '1px solid rgba(255,255,255,0.1)',
+      },
+      content: {
+        position: 'absolute',
+        top: '48px',
+        left: 0,
+        right: 0,
+        bottom: '24px',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        background: '#090D16',
+      },
+      homeIndicator: {
+        position: 'absolute',
+        bottom: '8px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '120px',
+        height: '4px',
+        background: '#64748B',
+        borderRadius: '999px',
+        zIndex: 50,
+      }
+    };
+
+    function IosPhoneFrame({ children, time = "07:42" }) {
+      return (
+        <div style={iosFrameStyles.wrapper}>
+          <div style={iosFrameStyles.screen}>
+            <div style={iosFrameStyles.dynamicIsland}></div>
+            <div style={iosFrameStyles.statusBar}>
+              <span>{time}</span>
+              <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', color: '#10B981' }}>5G</span>
+                <span style={{ fontSize: '11px' }}>100%</span>
+              </div>
+            </div>
+            <div style={iosFrameStyles.content}>
+              {children}
+            </div>
+            <div style={iosFrameStyles.homeIndicator}></div>
+          </div>
+        </div>
+      );
+    }
+
+    // Direction B App: Citymapper / Uber Transit Radar
+    function TransitRadarApp({ initialTab = 'radar' }) {
+      const [activeTab, setActiveTab] = useState(initialTab);
+      const [currentKid, setCurrentKid] = useState('Ethan');
+      const [showAbsenceModal, setShowAbsenceModal] = useState(false);
+      const [absenceDone, setAbsenceDone] = useState(false);
+
+      const isEthan = currentKid === 'Ethan';
+
+      return (
+        <div className="flex flex-col h-full bg-[#090D16] text-slate-100 font-sans relative">
+          
+          {/* Header Bar */}
+          <div className="px-4 py-2.5 bg-slate-900/90 border-b border-slate-800 backdrop-blur sticky top-0 z-20 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+              <div>
+                <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">LIVE TELEMETRY</span>
+                <h1 className="text-sm font-extrabold text-white">Route 104 Radar</h1>
+              </div>
+            </div>
+
+            {/* Kid Selector */}
+            <div className="flex bg-slate-800/80 p-0.5 rounded-lg border border-slate-700 text-xs">
+              <button 
+                onClick={() => setCurrentKid('Ethan')}
+                className={`px-2.5 py-1 rounded-md font-bold transition ${isEthan ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>
+                Ethan
+              </button>
+              <button 
+                onClick={() => setCurrentKid('Emma')}
+                className={`px-2.5 py-1 rounded-md font-bold transition ${!isEthan ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>
+                Emma
+              </button>
+            </div>
+          </div>
+
+          {/* Body Content */}
+          <div className="flex-1 p-3.5 space-y-3 overflow-y-auto">
+
+            {/* TAB 1: RADAR & TIMELINE */}
+            {activeTab === 'radar' && (
+              <div className="space-y-3">
+                {/* Live Activity Top Card */}
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/80 to-slate-900 border border-emerald-500/40 shadow-lg">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Bus #42 · En Route</span>
+                      <div className="text-3xl font-extrabold text-white mt-1">
+                        {isEthan ? 'ETA 3 MINS' : 'ETA 14 MINS'}
+                      </div>
+                      <div className="text-xs text-slate-300 mt-0.5">
+                        {isEthan ? '142 Elmwood Ave Stop' : 'Maple Woods Stop'}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                        38 km/h
+                      </span>
+                      <div className="text-[10px] text-slate-400 mt-1">On Time (0 delay)</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Simulated Radar Map View */}
+                <div className="relative h-44 rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden shadow-inner flex items-center justify-center">
+                  <div className="absolute inset-0 opacity-20"
+                       style={{ backgroundImage: 'radial-gradient(#10B981 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
+                  <svg className="absolute inset-0 w-full h-full">
+                    {/* Route Path */}
+                    <path d="M 30 130 C 100 40, 180 140, 320 60" fill="none" stroke="#10B981" strokeWidth="4" strokeLinecap="round" />
+                    <circle cx="160" cy="98" r="8" fill="#10B981" />
+                    <circle cx="160" cy="98" r="16" fill="#10B981" fillOpacity="0.25" />
+                    <circle cx="260" cy="80" r="6" fill="#F59E0B" />
+                  </svg>
+                  <div className="absolute z-10 px-2 py-1 rounded-full bg-emerald-500 text-slate-950 font-extrabold text-[11px] shadow-lg"
+                       style={{ top: '80px', left: '125px' }}>
+                    🚌 Bus #42
+                  </div>
+                  <div className="absolute z-10 px-2 py-0.5 rounded bg-slate-900 border border-amber-400 text-amber-300 font-bold text-[10px]"
+                       style={{ top: '95px', left: '235px' }}>
+                    📍 Your Stop
+                  </div>
+                </div>
+
+                {/* Transit Stop Stepper */}
+                <div className="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 space-y-3">
+                  <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase tracking-wider pb-1 border-b border-slate-800">
+                    <span>Sequential Stops</span>
+                    <span className="text-emerald-400">Run AM-02</span>
+                  </div>
+
+                  <div className="space-y-3 relative pl-4 border-l-2 border-slate-800">
+                    {/* Stop 1 (Passed) */}
+                    <div className="relative">
+                      <span className="w-2.5 h-2.5 rounded-full bg-slate-600 absolute -left-[21px] top-1"></span>
+                      <div className="text-xs font-semibold text-slate-400 line-through">Stop 3: Willow Crest Dr</div>
+                      <div className="text-[10px] text-slate-500">Departed 07:38 AM · 3 students picked up</div>
+                    </div>
+
+                    {/* Stop 2 (Active Next Stop) */}
+                    <div className="relative bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/30">
+                      <span className="w-3 h-3 rounded-full bg-emerald-400 absolute -left-[22px] top-3 animate-ping"></span>
+                      <div className="flex justify-between items-center">
+                        <div className="text-xs font-bold text-emerald-300">Stop 4: Elmwood & Oak (Your Stop)</div>
+                        <span className="text-[10px] font-bold bg-emerald-500 text-slate-950 px-1.5 py-0.5 rounded">NEXT</span>
+                      </div>
+                      <div className="text-[11px] text-slate-300 mt-0.5">Estimated in 3 mins (07:44 AM)</div>
+                    </div>
+
+                    {/* Stop 3 (Future) */}
+                    <div className="relative opacity-60">
+                      <span className="w-2.5 h-2.5 rounded-full bg-slate-700 absolute -left-[21px] top-1"></span>
+                      <div className="text-xs font-semibold text-slate-400">Destination: St. Matthew Catholic School</div>
+                      <div className="text-[10px] text-slate-500">Scheduled 08:05 AM arrival</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Grid */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button 
+                    onClick={() => setShowAbsenceModal(true)}
+                    className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-left hover:border-emerald-500 transition">
+                    <span className="text-sm">⚡</span>
+                    <div className="text-xs font-bold text-white mt-1">Quick Absence</div>
+                    <div className="text-[10px] text-slate-400">Notify driver instantly</div>
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('contacts')}
+                    className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-left hover:border-emerald-500 transition">
+                    <span className="text-sm">📞</span>
+                    <div className="text-xs font-bold text-white mt-1">Dispatch Hotline</div>
+                    <div className="text-[10px] text-slate-400">Direct operations line</div>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: ROSTER DETAILS */}
+            {activeTab === 'roster' && (
+              <div className="space-y-3">
+                <div className="bg-slate-900 rounded-2xl p-4 border border-slate-800">
+                  <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+                    <div className="w-10 h-10 rounded-full bg-emerald-500 text-slate-950 font-bold flex items-center justify-center">
+                      {isEthan ? 'E' : 'M'}
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-white">{isEthan ? 'Ethan Zhang' : 'Emma Zhang'}</div>
+                      <div className="text-xs text-slate-400">Student ID: #ST-88219 · Grade {isEthan ? '4' : '2'}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-2 text-xs">
+                    <div className="flex justify-between py-1 border-b border-slate-800/60">
+                      <span className="text-slate-400">Driver Assignment:</span>
+                      <span className="font-bold text-slate-200">Robert Miller</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-800/60">
+                      <span className="text-slate-400">Vehicle Unit:</span>
+                      <span className="font-bold text-slate-200">Bus #42 (Capacity: 72)</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-800/60">
+                      <span className="text-slate-400">Morning Pickup:</span>
+                      <span className="font-bold text-emerald-400">07:44 AM (Stop #4)</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-slate-400">Geofence Status:</span>
+                      <span className="text-emerald-400 font-bold">500m Alert Armed</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: CONTACTS */}
+            {activeTab === 'contacts' && (
+              <div className="space-y-3">
+                <div className="bg-slate-900 rounded-2xl p-4 border border-slate-800 space-y-3">
+                  <h2 className="text-sm font-bold text-white">Operations & Emergency Directory</h2>
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex justify-between items-center">
+                    <div>
+                      <div className="font-bold text-xs text-rose-300">24/7 Dispatch Operations</div>
+                      <div className="text-[10px] text-slate-400">Emergency & live route issues</div>
+                    </div>
+                    <a href="tel:6135550100" className="px-3 py-1 bg-rose-600 text-white rounded-lg text-xs font-bold">
+                      Call
+                    </a>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700 flex justify-between items-center">
+                    <div>
+                      <div className="font-bold text-xs text-slate-200">Student Safety Hotline</div>
+                      <div className="text-[10px] text-slate-400">Child care officer</div>
+                    </div>
+                    <a href="tel:6135550199" className="px-3 py-1 bg-slate-700 text-white rounded-lg text-xs font-bold">
+                      Call
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+
+          {/* Quick Absence Sheet */}
+          {showAbsenceModal && (
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end">
+              <div className="w-full bg-slate-900 border-t border-slate-800 rounded-t-3xl p-5 space-y-4">
+                <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto"></div>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-white">Report Absence · {currentKid}</h3>
+                  <button onClick={() => setShowAbsenceModal(false)} className="text-slate-400 font-bold text-lg">×</button>
+                </div>
+                {absenceDone ? (
+                  <div className="py-4 text-center space-y-2">
+                    <div className="text-2xl text-emerald-400">✓</div>
+                    <div className="text-xs font-bold text-white">Dispatched to Driver #42</div>
+                    <button onClick={() => { setShowAbsenceModal(false); setAbsenceDone(false); }} className="mt-2 px-4 py-1.5 bg-slate-800 text-white rounded-lg text-xs">Close</button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="text-xs text-slate-400">Select reason for absence:</div>
+                    <div className="grid grid-cols-1 gap-1.5 text-xs">
+                      {['Illness / Sick at home', 'Medical appointment', 'Family travel / Leave'].map(r => (
+                        <div key={r} className="p-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200">{r}</div>
+                      ))}
+                    </div>
+                    <button 
+                      onClick={() => setAbsenceDone(true)}
+                      className="w-full py-2.5 bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs">
+                      Confirm & Send Alert
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Bottom Tabs */}
+          <div className="bg-slate-900 border-t border-slate-800 py-2 px-6 flex justify-around text-[10px] font-bold text-slate-400">
+            <button 
+              onClick={() => setActiveTab('radar')}
+              className={`flex flex-col items-center gap-0.5 ${activeTab === 'radar' ? 'text-emerald-400' : 'hover:text-white'}`}>
+              <span className="text-sm">⚡</span>
+              <span>Live Radar</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('roster')}
+              className={`flex flex-col items-center gap-0.5 ${activeTab === 'roster' ? 'text-emerald-400' : 'hover:text-white'}`}>
+              <span className="text-sm">📋</span>
+              <span>Roster</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('contacts')}
+              className={`flex flex-col items-center gap-0.5 ${activeTab === 'contacts' ? 'text-emerald-400' : 'hover:text-white'}`}>
+              <span className="text-sm">📞</span>
+              <span>Contacts</span>
+            </button>
+          </div>
+
+        </div>
+      );
+    }
+
+    // Direction B Showcase Board
+    function DirectionBShowcase() {
+      return (
+        <div className="max-w-7xl mx-auto space-y-8">
+          
+          <div className="bg-slate-900/90 p-6 rounded-3xl border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-3 py-0.5 text-xs font-bold rounded-full bg-emerald-500 text-slate-950">方向 B · 现实参照</span>
+                <span className="text-xs font-semibold text-slate-400">Citymapper / Uber Transit Radar</span>
+              </div>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">实时态势 · 动态步进 (Live Transit Stepper & Telemetry)</h1>
+              <p className="text-xs md:text-sm text-slate-400 mt-1 max-w-2xl">
+                高信息能见度：站点步进时间轴、实时路况走马灯、Live Activity 到站胶囊。每台手机均可真实交互测试！
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <span className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs">深空黑 #090D16</span>
+              <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-bold text-xs border border-emerald-500/30">态势绿 #10B981</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8 justify-items-center">
+            
+            <div className="flex flex-col items-center">
+              <div className="text-xs font-bold text-slate-400 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span>Screen 1: 实时到站与动态时间轴</span>
+              </div>
+              <IosPhoneFrame time="07:41">
+                <TransitRadarApp initialTab="radar" />
+              </IosPhoneFrame>
+            </div>
+
+            <div className="flex flex-col items-center">
+              <div className="text-xs font-bold text-slate-400 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                <span>Screen 2: 学生档案与乘车详情</span>
+              </div>
+              <IosPhoneFrame time="07:44">
+                <TransitRadarApp initialTab="roster" />
+              </IosPhoneFrame>
+            </div>
+
+            <div className="flex flex-col items-center">
+              <div className="text-xs font-bold text-slate-400 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                <span>Screen 3: 极速 1-Tap 请假报备</span>
+              </div>
+              <IosPhoneFrame time="07:45">
+                <TransitRadarApp initialTab="radar" />
+              </IosPhoneFrame>
+            </div>
+
+            <div className="flex flex-col items-center">
+              <div className="text-xs font-bold text-slate-400 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-rose-400"></span>
+                <span>Screen 4: 紧急联系与调度中心</span>
+              </div>
+              <IosPhoneFrame time="07:46">
+                <TransitRadarApp initialTab="contacts" />
+              </IosPhoneFrame>
+            </div>
+
+          </div>
+
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<DirectionBShowcase />);
+  </script>
+</body>
+</html>

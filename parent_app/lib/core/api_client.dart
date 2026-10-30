@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -263,22 +263,40 @@ class ApiClient {
     String? grade,
   }) async {
     final url = Uri.parse('$baseUrl/api/public/chat/channels/parent');
-    final resp = await http.post(
-      url,
-      headers: _headers(),
-      body: jsonEncode({
-        'parentContact': parentContact,
-        'parentName': parentName ?? 'Parent ($parentContact)',
-        'studentId': studentId,
-        'studentName': studentName,
-        'busUnitNumber': busUnitNumber,
-        'routeNo': routeNo,
-        'schoolName': schoolName,
-        'grade': grade,
-      }),
-    );
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return jsonDecode(resp.body) as Map<String, dynamic>;
+    try {
+      final resp = await http.post(
+        url,
+        headers: _headers(),
+        body: jsonEncode({
+          'parentContact': parentContact,
+          'parentName': parentName ?? 'Parent ($parentContact)',
+          'studentId': studentId,
+          'studentName': studentName,
+          'busUnitNumber': busUnitNumber,
+          'routeNo': routeNo,
+          'schoolName': schoolName,
+          'grade': grade,
+        }),
+      ).timeout(const Duration(seconds: 4));
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+    } catch (_) {
+      if (AppMode.isDemo || _isDemoContact(parentContact)) {
+        return {
+          'id': 'channel-demo-${parentContact.replaceAll(RegExp(r'\D'), '')}',
+          'name': 'Dispatch Support ($studentName)',
+          'status': 'active',
+        };
+      }
+      rethrow;
+    }
+    if (AppMode.isDemo || _isDemoContact(parentContact)) {
+      return {
+        'id': 'channel-demo-${parentContact.replaceAll(RegExp(r'\D'), '')}',
+        'name': 'Dispatch Support ($studentName)',
+        'status': 'active',
+      };
     }
     throw Exception('Failed to open chat channel with dispatch');
   }
@@ -286,10 +304,36 @@ class ApiClient {
   // 8. Fetch Messages from channel
   Future<List<Map<String, dynamic>>> fetchChatMessages(String channelId, {int limit = 50}) async {
     final url = Uri.parse('$baseUrl/api/public/chat/channels/$channelId/messages?limit=$limit');
-    final resp = await http.get(url, headers: _headers());
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      final list = jsonDecode(resp.body) as List<dynamic>;
-      return list.map((e) => e as Map<String, dynamic>).toList();
+    try {
+      final resp = await http.get(url, headers: _headers()).timeout(const Duration(seconds: 4));
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final list = jsonDecode(resp.body) as List<dynamic>;
+        return list.map((e) => e as Map<String, dynamic>).toList();
+      }
+    } catch (_) {
+      if (channelId.startsWith('channel-demo') || AppMode.isDemo) {
+        return [
+          {
+            'id': 'msg-welcome',
+            'text': 'Hello! Operations Dispatch desk is online. How can we help you regarding your child\'s school bus route today?',
+            'senderName': 'Operations Dispatch',
+            'senderId': 'dispatch-operator',
+            'createdAt': DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
+          }
+        ];
+      }
+      rethrow;
+    }
+    if (channelId.startsWith('channel-demo') || AppMode.isDemo) {
+      return [
+        {
+          'id': 'msg-welcome',
+          'text': 'Hello! Operations Dispatch desk is online. How can we help you regarding your child\'s school bus route today?',
+          'senderName': 'Operations Dispatch',
+          'senderId': 'dispatch-operator',
+          'createdAt': DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
+        }
+      ];
     }
     throw Exception('Failed to load chat messages');
   }
@@ -303,16 +347,38 @@ class ApiClient {
   }) async {
     final sid = senderId ?? channelId;
     final url = Uri.parse('$baseUrl/api/public/chat/channels/$channelId/messages?userId=${Uri.encodeComponent(sid)}');
-    final resp = await http.post(
-      url,
-      headers: _headers(),
-      body: jsonEncode({
+    try {
+      final resp = await http.post(
+        url,
+        headers: _headers(),
+        body: jsonEncode({
+          'text': text,
+          'senderName': senderName ?? 'Parent',
+        }),
+      ).timeout(const Duration(seconds: 4));
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+    } catch (_) {
+      if (channelId.startsWith('channel-demo') || AppMode.isDemo) {
+        return {
+          'id': 'msg-${DateTime.now().millisecondsSinceEpoch}',
+          'text': text,
+          'senderName': senderName ?? 'Parent',
+          'senderId': sid,
+          'createdAt': DateTime.now().toIso8601String(),
+        };
+      }
+      rethrow;
+    }
+    if (channelId.startsWith('channel-demo') || AppMode.isDemo) {
+      return {
+        'id': 'msg-${DateTime.now().millisecondsSinceEpoch}',
         'text': text,
         'senderName': senderName ?? 'Parent',
-      }),
-    );
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return jsonDecode(resp.body) as Map<String, dynamic>;
+        'senderId': sid,
+        'createdAt': DateTime.now().toIso8601String(),
+      };
     }
     throw Exception('Failed to send chat message');
   }

@@ -217,7 +217,7 @@ class _PhoneFrameWrapperState extends State<PhoneFrameWrapper> {
                   offset: const Offset(0, 20),
                 ),
                 BoxShadow(
-                  color: const Color(0xFF2563EB).withValues(alpha: 0.15),
+                  color: const Color(0xFFFCD34D).withValues(alpha: 0.08),
                   blurRadius: 60,
                   spreadRadius: 2,
                 ),
