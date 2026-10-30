@@ -82,15 +82,18 @@ La plateforme est structurée autour d'un écosystème d'applications dédiées,
 ---
 
 ### 3. Application Parent de Suivi en Direct (`parent_app`)
-*Application mobile et web claire et intuitive conçue avec Flutter pour les parents et tuteurs légaux.*
+*Application mobile Flutter axée sur l'expérience parentale avec le thème Direction C (Family Bento), sombre et apaisant.*
 
-- **Connexion Sécurisée Sans Mot de Passe (OTP)** : Authentification simple par numéro de téléphone SMS ou adresse courriel avec code d'accès temporaire à 6 chiffres.
-- **Télémétrie GPS en Direct & Tracé Cartographique** : Visualisation en temps réel de la position de l'autobus scolaire se déplaçant le long de l'itinéraire vers l'arrêt de l'élève.
-- **Estimation d'Arrivée (ETA) & Distance en Temps Réel** : Calcul dynamique du délai d'attente estimé en minutes et de la distance restante avant l'arrêt de l'enfant.
+- **Connexion Sécurisée Sans Mot de Passe (OTP)** : Authentification simple par numéro de téléphone SMS ou adresse courriel avec code d'accès temporaire à 6 chiffres et remplissage automatique des identifiants de démonstration.
+- **Thème Direction C Gentler Streak Family Bento** : Palette sombre obsidienne (`#0B101D`) et ambre scolaire (`#FACC15`) avec des cartes d'information compactes laissant plus de 74 % de l'écran visible pour la carte en temps réel.
+- **Navigation Claire à 3 Onglets** :
+  - **🏠 Bento** : Carte interactive plein écran avec télémétrie GPS en direct, tracé de route avec accrochage, compte à rebours d'arrivée (`< 2 MINS AWAY`), barre de progression micro-étapes, appel direct du chauffeur et déclaration d'absence rapide.
+  - **📅 Schedule (Horaires)** : Calendrier maître hebdomadaire comparé aux horaires de départ réels (ex. départ standard à 15h00 du lundi au jeudi vs 13h00 le vendredi), itinéraire arrêt par arrêt et alertes d'ajustement.
+  - **📞 Support (Bureau de Régulation)** : Espace d'assistance avec messagerie en direct bidirectionnelle, guide des commandes SMS 24/7, appel d'urgence en un clic et sélecteur multi-enfants.
+- **Affichage Épuré Sans Code Interne** : Les numéros de ligne techniques (`OCDSB-001`) sont masqués pour afficher uniquement le numéro de bus (`Bus #42`), le nom du chauffeur et les heures de passage.
+- **Déclaration d'Absence Directe par le Parent** : Signalement en 1 clic de l'absence de l'enfant pour le matin ou le soir, alertant directement la régulation et retirant l'arrêt de la tournée du chauffeur.
 - **Prise en Charge Multi-Enfants** : Basculement fluide entre les profils de plusieurs enfants pour suivre leurs circuits respectifs du matin et de l'après-midi.
 - **Indicateurs d'État du Trajet en Direct** : Suivi des étapes clés du trajet (`SCHEDULED` Prévu, `EN_ROUTE` En route, `APPROACHING` Approche imminente, `BOARDED` À bord, `DROPPED_OFF` Déposé en toute sécurité, `ABSENT` Absent).
-- **Déclaration d'Absence Directe par le Parent** : Signalement en 1 clic de l'absence de l'enfant pour le matin ou le soir, alertant directement la régulation et retirant l'arrêt de la tournée du chauffeur.
-- **Messagerie Dédiée avec la Régulation** : Canal de contact direct pour prévenir d'un imprévu, signaler un objet oublié ou poser une question au régulateur.
 - **Alertes Personnalisables** : Notifications configurables à l'approche du bus (ex. 5 minutes avant), confirmation de montée à bord et confirmation de descente (par push, SMS ou courriel).
 
 ---

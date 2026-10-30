@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/app_mode.dart';
 import '../../../core/theme.dart';
@@ -99,21 +99,21 @@ class _LoginScreenState extends State<LoginScreen> {
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF), // Blue tint
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                        color: AppColors.surfaceMuted,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
                       ),
-                      child: Row(
+                      child: const Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.info_outline_rounded, size: 20, color: AppColors.primary),
-                          const SizedBox(width: 10),
+                          Icon(Icons.shield_outlined, size: 20, color: AppColors.primary),
+                          SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               'No password required. Enter the phone number or email registered with your school to receive a one-time passcode.',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: Colors.blue.shade900,
+                                color: AppColors.textSecondary,
                                 height: 1.35,
                               ),
                             ),

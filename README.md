@@ -82,15 +82,18 @@ The platform consists of a deeply integrated ecosystem of specialized applicatio
 ---
 
 ### 3. Parent Bus Tracker App (`parent_app`)
-*Clean, parent-friendly mobile and web app built with Flutter for parents and legal guardians.*
+*Mobile-first Flutter application featuring Direction C (Family Bento) calming dark design, tailored for parents and legal guardians.*
 
-- **Passwordless One-Time Passcode (OTP) Login**: Secure, frictionless sign-in using SMS mobile phone number or email address—no passwords to create or reset.
-- **Real-Time GPS Bus Telemetry & Map**: Interactive map tracking the school bus in real-time as it travels along the designated route polyline toward the student's stop.
-- **Live Arrival ETA & Distance Countdown**: Dynamic, real-time estimated time of arrival calculation displaying exact remaining minutes and distance to the student's pickup or drop-off point.
+- **Passwordless One-Time Passcode (OTP) Login**: Secure, frictionless sign-in using SMS mobile phone number or email address—no passwords to create or reset—with 1-tap demo credentials autofill.
+- **Direction C Gentler Streak Family Bento Theme**: Calming obsidian (`#0B101D`) and warm school bus amber (`#FACC15`) palette with compact, non-intrusive cards preserving 74%+ screen space for live mapping.
+- **3-Tab Navigation Architecture**:
+  - **🏠 Bento**: Full-screen interactive map with real-time GPS telemetry, road polyline snapping, arrival ETA countdown slot (`< 2 MINS AWAY`), micro-stepper progress bar, direct driver call, and quick absence reporting.
+  - **📅 Schedule**: Master weekly route plan vs. daily live dispatch view (e.g. Mon–Thu 3:00 PM standard vs. Friday 1:00 PM early dismissal), stop-by-stop itinerary, and live deviation indicators.
+  - **📞 Support**: Dispatch Operations Desk with tabbed real-time live chat with dispatch, 24/7 SMS hotline guide with automated keywords, 1-tap emergency dialer, and multi-child switchable picker.
+- **Parent-Centric Information Display**: Internal dispatcher route IDs (e.g. `OCDSB-001`) are omitted from the parent view to keep information clean and focused on bus unit numbers, driver names, and stop schedules.
+- **Direct Student Absence Reporting**: Parents can report student absences in advance directly through the app, instantly notifying dispatch and removing the stop from the driver's active morning or afternoon pickup queue.
 - **Multi-Student Family Support**: Parents with multiple enrolled children can seamlessly toggle between student profiles to track independent morning and afternoon bus runs.
 - **Commute Lifecycle Status Badges**: Real-time visual status updates for student commute stages (`SCHEDULED`, `EN_ROUTE`, `APPROACHING`, `BOARDED`, `DROPPED_OFF`, `ABSENT`).
-- **Direct Student Absence Reporting**: Parents can report student absences in advance directly through the app, instantly notifying dispatch and removing the stop from the driver's active morning or afternoon pickup queue.
-- **Two-Way Dispatch Messaging**: Dedicated communication channel allowing parents to message dispatch regarding unexpected delays, lost items, or special arrangements.
 - **Customizable Commute Alerts**: Configurable push, SMS, and email alerts for when the bus is approaching the stop (e.g. 5 minutes away), safe boarding confirmation, and safe drop-off delivery.
 
 ---

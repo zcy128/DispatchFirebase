@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PCY Parent App 移动端改版 · 三大方向原型评审中心</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      background: #090D16;
+      color: #E2E8F0;
+    }
+  </style>
+</head>
+<body class="p-6 md:p-12">
+  <div class="max-w-6xl mx-auto space-y-10">
+    
+    <!-- Top Header -->
+    <header class="border-b border-slate-800 pb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div>
+        <div class="flex items-center gap-2 mb-2">
+          <span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+            花叔 DESIGN · 移动端高保真原型
+          </span>
+          <span class="text-xs text-slate-400">Phase 6: Direction Selection Gate</span>
+        </div>
+        <h1 class="text-3xl md:text-5xl font-extrabold text-white tracking-tight">
+          Parent App 移动端改版 · 三大方向评审
+        </h1>
+        <p class="text-slate-400 text-sm md:text-base mt-2 max-w-3xl">
+          专为广大家长在手机单手操作设计：早晨匆忙出行获知到站倒计时、确认孩子乘车安全、1-Tap 极速请假报备、一键连通调度与紧急热线。
+        </p>
+      </div>
+
+      <div class="flex gap-3">
+        <a href="thumbs.html" target="_blank" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition flex items-center gap-2">
+          <span>🖼️ 查看 6 大候选缩略图</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- 3 Direction Cards Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+      <!-- Direction A -->
+      <div class="bg-slate-900/80 rounded-3xl p-6 border-2 border-blue-500/40 flex flex-col justify-between hover:border-blue-400 transition shadow-xl relative overflow-hidden group">
+        <div class="absolute -right-12 -top-12 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl pointer-events-none"></div>
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <span class="px-3 py-1 rounded-full text-xs font-bold bg-blue-600 text-white">方向 A · 最佳设计师</span>
+            <span class="text-xs font-mono text-slate-400">Things 3 式</span>
+          </div>
+          <h2 class="text-2xl font-bold text-white mb-2">极简原生 · 极致信任感</h2>
+          <p class="text-xs text-slate-400 leading-relaxed mb-4">
+            纯净白底、大字号清晰读数、极克制的功能分区。专为清晨 1 秒获知到站时间设计，没有任何多余认知负担。
+          </p>
+
+          <div className="space-y-2 mb-6 text-xs text-slate-300">
+            <div class="p-3 bg-slate-800/60 rounded-xl border border-slate-800">
+              <span class="text-blue-400 font-bold block mb-1">特色基因：</span>
+              大字号 3 mins 到站倒计时 + 纯净地图卡片 + 单手拇指浮动操作
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-800 flex items-center justify-between">
+          <span class="text-xs text-slate-500 font-mono">4 台 iPhone 交互演示</span>
+          <a href="dir-1-native.html" target="_blank" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition">
+            体验原型 A →
+          </a>
+        </div>
+      </div>
+
+      <!-- Direction B -->
+      <div class="bg-slate-900/80 rounded-3xl p-6 border-2 border-emerald-500/40 flex flex-col justify-between hover:border-emerald-400 transition shadow-xl relative overflow-hidden group">
+        <div class="absolute -right-12 -top-12 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none"></div>
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-slate-950">方向 B · 现实参照</span>
+            <span class="text-xs font-mono text-slate-400">Citymapper / Uber</span>
+          </div>
+          <h2 class="text-2xl font-bold text-white mb-2">实时态势 · 动态步进</h2>
+          <p class="text-xs text-slate-400 leading-relaxed mb-4">
+            高信息能见度：站点步进时间轴（Live Stepper）、灵动胶囊动态到站提醒、校车速度与路况实时感知。
+          </p>
+
+          <div className="space-y-2 mb-6 text-xs text-slate-300">
+            <div class="p-3 bg-slate-800/60 rounded-xl border border-slate-800">
+              <span class="text-emerald-400 font-bold block mb-1">特色基因：</span>
+              动态站点步进时间轴 + 灵动岛到站胶囊 + 清晰上下车打卡走马灯
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-800 flex items-center justify-between">
+          <span class="text-xs text-slate-500 font-mono">4 台 iPhone 交互演示</span>
+          <a href="dir-2-transit.html" target="_blank" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/30 transition">
+            体验原型 B →
+          </a>
+        </div>
+      </div>
+
+      <!-- Direction C -->
+      <div class="bg-slate-900/80 rounded-3xl p-6 border-2 border-amber-500/40 flex flex-col justify-between hover:border-amber-400 transition shadow-xl relative overflow-hidden group">
+        <div class="absolute -right-12 -top-12 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-400 text-slate-950">方向 C · 秒数轮盘</span>
+            <span class="text-xs font-mono text-slate-400">Gentler Streak 暖心风</span>
+          </div>
+          <h2 class="text-2xl font-bold text-white mb-2">暖心守护 · 便当盒架构</h2>
+          <p class="text-xs text-slate-400 leading-relaxed mb-4">
+            28px 圆角便当盒卡片、深海蓝底+柔和粉彩。多子女一键并列总览与切换，以“安心安抚文案”大幅舒缓早高峰焦虑。
+          </p>
+
+          <div className="space-y-2 mb-6 text-xs text-slate-300">
+            <div class="p-3 bg-slate-800/60 rounded-xl border border-slate-800">
+              <span class="text-amber-400 font-bold block mb-1">特色基因：</span>
+              多子女便当盒卡片 + 500m 安全围栏路径 + 零焦虑温暖守护体验
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-800 flex items-center justify-between">
+          <span class="text-xs text-slate-500 font-mono">4 台 iPhone 交互演示</span>
+          <a href="dir-3-bento.html" target="_blank" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs shadow-lg shadow-amber-400/30 transition">
+            体验原型 C →
+          </a>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Instructions Footer -->
+    <div class="bg-slate-900/40 p-5 rounded-2xl border border-slate-800 text-xs text-slate-400 flex flex-col md:flex-row justify-between items-center gap-4">
+      <div>
+        <strong>评审指引：</strong> 每个方案内含 4 台可独立交互的真实 iPhone 15 Pro 仿真外壳，支持点击切换 Tab、多孩切换及请假弹层交互。
+      </div>
+      <div class="text-slate-500">
+        原型保存路径：<code>design-demos/parent-app/</code>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

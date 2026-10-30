@@ -10,7 +10,6 @@ void main() {
 
     final points = MapSnappingEngine.decodePolyline(mockPolyline);
     expect(points.length, greaterThan(2));
-    print('Decoded ${points.length} points. First: ${points.first.latitude}, ${points.first.longitude}');
 
     final commute = ParentStudentCommute(
       studentId: 101,
@@ -67,10 +66,8 @@ void main() {
 
     // Verify RoadPolylineLayer exists in the widget tree
     expect(find.byType(RoadPolylineLayer), findsOneWidget);
-    print('RoadPolylineLayer found successfully in widget tree!');
 
-    // Verify Active Route Status Chip exists
-    expect(find.textContaining('Route: Route 101 - Morning Commute'), findsOneWidget);
-    print('Active Route Chip found successfully!');
+    // Route number chip was removed per user requirement (cleaner map, no route code)
+    expect(find.textContaining('Route: Route 101'), findsNothing);
   });
 }
