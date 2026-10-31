@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // ChannelType represents the scope and accessibility of a chat channel
 type ChannelType string
@@ -90,4 +93,10 @@ type CreateParentChannelPayload struct {
 	RouteNo       string `json:"routeNo,omitempty"`
 	SchoolName    string `json:"schoolName,omitempty"`
 	Grade         string `json:"grade,omitempty"`
+}
+
+// CleanParentContact normalizes a phone number or email into a stable channel key.
+func CleanParentContact(contact string) string {
+	clean := strings.ToLower(strings.TrimSpace(contact))
+	return strings.NewReplacer("-", "", " ", "", "+", "", "(", "", ")", "").Replace(clean)
 }

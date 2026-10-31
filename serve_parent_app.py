@@ -10,6 +10,25 @@ class NoCacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
 
+    def translate_path(self, path):
+        # Strip query string or hash for file lookup
+        clean_path = path.split('?')[0].split('#')[0]
+        if clean_path in ("/parent", "/parent/"):
+            clean_path = "/index.html"
+        elif clean_path.startswith("/parent/"):
+            clean_path = "/" + clean_path[len("/parent/"):]
+        return super().translate_path(clean_path)
+
+    def do_GET(self):
+        # Redirect root / to /parent/ so base href="/parent/" matches browser location
+        clean = self.path.split('?')[0].split('#')[0]
+        if clean in ("", "/"):
+            self.send_response(302)
+            self.send_header("Location", "/parent/")
+            self.end_headers()
+            return
+        super().do_GET()
+
     def end_headers(self):
         # Force browser to never cache any files in development/testing
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")

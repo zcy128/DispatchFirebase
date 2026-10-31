@@ -233,6 +233,7 @@ func TestVerifyOTP_And_Register(t *testing.T) {
 	// 3. Optional Account Registration
 	regBody := `{"contact":"parent@pcytech.ca","password":"SecretPassword123","name":"David Watson"}`
 	reqReg := httptest.NewRequest("POST", "/api/parent/auth/register", strings.NewReader(regBody))
+	reqReg.Header.Set("Authorization", "Bearer "+verifyResp.Token)
 	recReg := httptest.NewRecorder()
 	parentHandler.Register(recReg, reqReg)
 

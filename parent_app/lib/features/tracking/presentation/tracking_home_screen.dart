@@ -94,6 +94,14 @@ class _TrackingHomeScreenState extends State<TrackingHomeScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant TrackingHomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.user != oldWidget.user) {
+      _currentUser = widget.user;
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
     _currentUser = widget.user;
@@ -123,7 +131,7 @@ class _TrackingHomeScreenState extends State<TrackingHomeScreen> {
 
   Widget _buildMobileScaffold(BuildContext context) {
     final activeCommute = _activeCommute;
-    final isRegistered = widget.user?.isRegistered ?? false;
+    final isRegistered = (_currentUser ?? widget.user)?.isRegistered ?? false;
 
     if (activeCommute == null) {
       return const Scaffold(

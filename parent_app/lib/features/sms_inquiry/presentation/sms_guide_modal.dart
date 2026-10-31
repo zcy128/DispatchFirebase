@@ -63,7 +63,7 @@ class SmsGuideModal extends StatelessWidget {
                     Icon(Icons.phone_rounded, size: 18, color: AppColors.primary),
                     SizedBox(width: 8),
                     Text(
-                      '+1 (800) 555-0199',
+                      '(613) 555-0188',
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                     ),
                   ],
