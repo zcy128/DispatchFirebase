@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -265,19 +267,25 @@ func main() {
 	// BambooHR employee-change webhook. The path key is not the BambooHR API key.
 	r.Post("/api/bamboohr/webhook/{apikey}", bambooHandler.ReceiveWebhook)
 
-	// Parent App API Routes
+	// Parent App API Routes. OTP stays open. Everything else requires a parent session.
 	r.Route("/api/parent", func(parentRouter chi.Router) {
 		parentRouter.Post("/auth/request-otp", parentHandler.RequestOTP)
 		parentRouter.Post("/auth/verify-otp", parentHandler.VerifyOTP)
-		parentRouter.Post("/auth/register", parentHandler.Register)
-		parentRouter.Get("/students", parentHandler.ListMyStudents)
-		parentRouter.Get("/bus-tracking/{unitNumber}", parentHandler.GetVehicleTracking)
-		parentRouter.Get("/preferences", parentHandler.GetPreferences)
-		parentRouter.Put("/preferences", parentHandler.SavePreferences)
-		parentRouter.Post("/devices/register", parentHandler.RegisterDevice)
-		parentRouter.Post("/absence", dispatchHandler.RecordStudentAbsence)
-		parentRouter.Get("/profile", parentHandler.GetProfile)
-		parentRouter.Put("/profile", parentHandler.UpdateProfile)
+		parentRouter.Group(func(secured chi.Router) {
+			secured.Use(parentHandler.RequireSession)
+			secured.Post("/auth/register", parentHandler.Register)
+			secured.Get("/students", parentHandler.ListMyStudents)
+			secured.Get("/bus-tracking/{unitNumber}", parentHandler.GetVehicleTracking)
+			secured.Get("/preferences", parentHandler.GetPreferences)
+			secured.Put("/preferences", parentHandler.SavePreferences)
+			secured.Post("/devices/register", parentHandler.RegisterDevice)
+			secured.Post("/absence", parentHandler.RecordStudentAbsence)
+			secured.Get("/profile", parentHandler.GetProfile)
+			secured.Put("/profile", parentHandler.UpdateProfile)
+			secured.Post("/chat/channels/parent", parentCreateChatChannel(parentHandler, chatHandler))
+			secured.Get("/chat/channels/{id}/messages", parentListChatMessages(parentHandler, chatHandler))
+			secured.Post("/chat/channels/{id}/messages", parentSendChatMessage(parentHandler, chatHandler))
+		})
 	})
 
 	// Protected Routes (Or dev bypass)
@@ -1802,6 +1810,57 @@ func seedMemoryParentAndStudentData(
 		})
 	}
 	log.Println("[INIT] Seeded test students (Emma & Lucas Watson) and OCDSB-001 AM/PM dispatch shifts.")
+}
+
+func parentCreateChatChannel(parentHandler *handlers.ParentHandler, chatHandler *handlers.ChatHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		contact := parentHandler.VerifiedContact(r)
+		var payload models.CreateParentChannelPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, `{"error":"invalid request payload"}`, http.StatusBadRequest)
+			return
+		}
+		payload.ParentContact = contact
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			http.Error(w, `{"error":"invalid request payload"}`, http.StatusBadRequest)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(encoded))
+		r.ContentLength = int64(len(encoded))
+		chatHandler.CreateOrGetParentChannel(w, r)
+	}
+}
+
+func parentListChatMessages(parentHandler *handlers.ParentHandler, chatHandler *handlers.ChatHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !parentOwnsChatChannel(w, r, parentHandler) {
+			return
+		}
+		chatHandler.ListMessages(w, r)
+	}
+}
+
+func parentSendChatMessage(parentHandler *handlers.ParentHandler, chatHandler *handlers.ChatHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		contact := parentHandler.VerifiedContact(r)
+		if !parentOwnsChatChannel(w, r, parentHandler) {
+			return
+		}
+		r.Header.Set("X-User-Id", handlers.ParentChannelID(contact))
+		chatHandler.SendMessage(w, r)
+	}
+}
+
+func parentOwnsChatChannel(w http.ResponseWriter, r *http.Request, parentHandler *handlers.ParentHandler) bool {
+	contact := parentHandler.VerifiedContact(r)
+	channelID := chi.URLParam(r, "id")
+	if channelID == "" || channelID != handlers.ParentChannelID(contact) {
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, `{"error":"forbidden: you can only access your own parent chat"}`, http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 // makeRegisterDeviceHandler handles FCM device token registration with authentication & permission validation.

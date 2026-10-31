@@ -158,9 +158,13 @@ class ApiClient {
         'password': password,
         'name': name,
       }),
-    );
+    ).timeout(const Duration(seconds: 8));
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      final token = data['token']?.toString() ?? '';
+      if (token.isNotEmpty) {
+        await saveSession(token, contact);
+      }
       return data;
     }
     throw Exception(data['error'] ?? 'Failed to register account');
@@ -194,9 +198,13 @@ class ApiClient {
   // 5. Fetch Notification Preferences
   Future<ParentNotificationConfig> fetchPreferences() async {
     final url = Uri.parse('$baseUrl/api/parent/preferences');
-    final resp = await http.get(url, headers: _headers());
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return ParentNotificationConfig.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
+    try {
+      final resp = await http.get(url, headers: _headers()).timeout(const Duration(seconds: 8));
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        return ParentNotificationConfig.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
+      }
+    } catch (e) {
+      debugPrint('[ParentApi] preferences request failed: $e');
     }
     return ParentNotificationConfig();
   }
@@ -204,21 +212,24 @@ class ApiClient {
   // 6. Save Notification Preferences
   Future<void> savePreferences(ParentNotificationConfig config) async {
     final url = Uri.parse('$baseUrl/api/parent/preferences');
-    await http.put(
+    final resp = await http.put(
       url,
       headers: _headers(),
       body: jsonEncode(config.toJson()),
-    );
+    ).timeout(const Duration(seconds: 8));
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw Exception(_errorFromBody(resp.body, 'Failed to save alert preferences'));
+    }
   }
 
   // 6b. Fetch Parent Profile
   Future<ParentUser> fetchProfile(String contact) async {
     final url = Uri.parse('$baseUrl/api/parent/profile?contact=${Uri.encodeComponent(contact)}');
-    final resp = await http.get(url, headers: _headers());
+    final resp = await http.get(url, headers: _headers()).timeout(const Duration(seconds: 8));
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
       return ParentUser.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
     }
-    throw Exception('Failed to load profile');
+    throw Exception(_errorFromBody(resp.body, 'Failed to load profile'));
   }
 
   // 6c. Update Parent Profile (Phone, Email, Home Address, Display Name)
@@ -239,7 +250,7 @@ class ApiClient {
         'email': email,
         'homeAddress': homeAddress,
       }),
-    );
+    ).timeout(const Duration(seconds: 8));
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
       return ParentUser.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
     }
@@ -262,7 +273,7 @@ class ApiClient {
     String? schoolName,
     String? grade,
   }) async {
-    final url = Uri.parse('$baseUrl/api/public/chat/channels/parent');
+    final url = Uri.parse('$baseUrl/api/parent/chat/channels/parent');
     try {
       final resp = await http.post(
         url,
@@ -303,7 +314,10 @@ class ApiClient {
 
   // 8. Fetch Messages from channel
   Future<List<Map<String, dynamic>>> fetchChatMessages(String channelId, {int limit = 50}) async {
-    final url = Uri.parse('$baseUrl/api/public/chat/channels/$channelId/messages?limit=$limit');
+    if (channelId.startsWith('channel-demo')) {
+      return _demoChatMessages();
+    }
+    final url = Uri.parse('$baseUrl/api/parent/chat/channels/$channelId/messages?limit=$limit');
     try {
       final resp = await http.get(url, headers: _headers()).timeout(const Duration(seconds: 4));
       if (resp.statusCode >= 200 && resp.statusCode < 300) {
@@ -311,34 +325,30 @@ class ApiClient {
         return list.map((e) => e as Map<String, dynamic>).toList();
       }
     } catch (_) {
-      if (channelId.startsWith('channel-demo') || AppMode.isDemo) {
-        return [
-          {
-            'id': 'msg-welcome',
-            'text': 'Hello! Operations Dispatch desk is online. How can we help you regarding your child\'s school bus route today?',
-            'senderName': 'Operations Dispatch',
-            'senderId': 'dispatch-operator',
-            'createdAt': DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
-          }
-        ];
+      if (AppMode.isDemo) {
+        return _demoChatMessages();
       }
       rethrow;
     }
-    if (channelId.startsWith('channel-demo') || AppMode.isDemo) {
-      return [
-        {
-          'id': 'msg-welcome',
-          'text': 'Hello! Operations Dispatch desk is online. How can we help you regarding your child\'s school bus route today?',
-          'senderName': 'Operations Dispatch',
-          'senderId': 'dispatch-operator',
-          'createdAt': DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
-        }
-      ];
+    if (AppMode.isDemo) {
+      return _demoChatMessages();
     }
     throw Exception('Failed to load chat messages');
   }
 
   // 9. Send Message to channel
+  List<Map<String, dynamic>> _demoChatMessages() {
+    return [
+      {
+        'id': 'msg-welcome',
+        'text': 'Hello! Operations Dispatch desk is online. How can we help you regarding your child\'s school bus route today?',
+        'senderName': 'Operations Dispatch',
+        'senderId': 'dispatch-operator',
+        'createdAt': DateTime.now().subtract(const Duration(minutes: 5)).toIso8601String(),
+      }
+    ];
+  }
+
   Future<Map<String, dynamic>> sendChatMessage({
     required String channelId,
     required String text,
@@ -346,7 +356,16 @@ class ApiClient {
     String? senderId,
   }) async {
     final sid = senderId ?? channelId;
-    final url = Uri.parse('$baseUrl/api/public/chat/channels/$channelId/messages?userId=${Uri.encodeComponent(sid)}');
+    if (channelId.startsWith('channel-demo')) {
+      return {
+        'id': 'msg-${DateTime.now().millisecondsSinceEpoch}',
+        'text': text,
+        'senderName': senderName ?? 'Parent',
+        'senderId': sid,
+        'createdAt': DateTime.now().toIso8601String(),
+      };
+    }
+    final url = Uri.parse('$baseUrl/api/parent/chat/channels/$channelId/messages');
     try {
       final resp = await http.post(
         url,
@@ -394,7 +413,7 @@ class ApiClient {
     required String reason,
     String? reportedBy,
   }) async {
-    final url = Uri.parse('$baseUrl/api/public/dispatch/students/absence');
+    final url = Uri.parse('$baseUrl/api/parent/absence');
     final resp = await http.post(
       url,
       headers: _headers(),
@@ -408,7 +427,7 @@ class ApiClient {
         'reason': reason,
         'reportedBy': reportedBy ?? 'Parent',
       }),
-    );
+    ).timeout(const Duration(seconds: 8));
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
       return jsonDecode(resp.body) as Map<String, dynamic>;
     }
@@ -419,6 +438,18 @@ class ApiClient {
       throw Exception('Server returned status ${resp.statusCode}');
     }
   }
+
+  String _errorFromBody(String body, String fallback) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        final message = decoded['error']?.toString().trim() ?? '';
+        if (message.isNotEmpty) return message;
+      }
+    } catch (_) {}
+    return fallback;
+  }
+
   Map<String, dynamic> _getDemoOtpResponse(String contact) {
     return {
       'success': true,

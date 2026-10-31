@@ -312,7 +312,7 @@ class _EtaCardWidgetState extends State<EtaCardWidget> with SingleTickerProvider
                       const SizedBox(width: 5),
                       Expanded(
                         child: Text(
-                          'Stop: ',
+                          'Stop: ${commute.scheduledTime}',
                           style: const TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w600,
@@ -446,7 +446,7 @@ class _EtaCardWidgetState extends State<EtaCardWidget> with SingleTickerProvider
 
   String _getReassuranceTitle(ParentStudentCommute commute) {
     if (commute.status == 'BOARDED') {
-      return 'On Board • ';
+      return 'On Board • ${commute.schoolName}';
     }
     if (commute.status == 'DROPPED_OFF') {
       return 'Arrived at School';
@@ -457,7 +457,7 @@ class _EtaCardWidgetState extends State<EtaCardWidget> with SingleTickerProvider
     if (commute.status == 'DELAYED') {
       return 'Commute Delayed';
     }
-    return ' • On Schedule';
+    return '${commute.studentName} • On Schedule';
   }
 
   (String, String) _getEtaDisplay(ParentStudentCommute commute) {
@@ -468,7 +468,7 @@ class _EtaCardWidgetState extends State<EtaCardWidget> with SingleTickerProvider
       return ('Safe', 'ARRIVED');
     }
     if (commute.minutesAway != null && commute.minutesAway! > 0) {
-      return ('', 'MINS AWAY');
+      return ('${commute.minutesAway}', 'MINS AWAY');
     }
     if (commute.status == 'APPROACHING') {
       return ('< 2', 'MINS AWAY');
@@ -513,10 +513,10 @@ class _EtaCardWidgetState extends State<EtaCardWidget> with SingleTickerProvider
     if (commute.status == 'DROPPED_OFF') return 'ARRIVED';
     if (commute.status == 'APPROACHING') return 'APPROACHING';
     if (commute.minutesAway != null && commute.minutesAway! > 0) {
-      return ' MINS';
+      return '${commute.minutesAway} MINS';
     }
     if (commute.status == 'DELAYED') {
-      return 'DELAYED (+m)';
+      return 'DELAYED (+${commute.lateMinutes}m)';
     }
     return 'ON TIME';
   }

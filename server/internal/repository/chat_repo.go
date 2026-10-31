@@ -354,8 +354,7 @@ func (r *FirestoreChatRepository) CreateOrGetParentChannel(ctx context.Context, 
 		return nil, fmt.Errorf("parent contact is required")
 	}
 
-	cleanContact := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(payload.ParentContact, "-", ""), " ", ""), "+", "")
-	channelID := "parent-" + cleanContact
+	channelID := "parent-" + models.CleanParentContact(payload.ParentContact)
 
 	docRef := r.client.Collection(r.channelColl).Doc(channelID)
 	snap, err := docRef.Get(ctx)
@@ -825,8 +824,7 @@ func (m *MemoryChatRepository) CreateOrGetParentChannel(ctx context.Context, pay
 		return nil, fmt.Errorf("parent contact is required")
 	}
 
-	cleanContact := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(payload.ParentContact, "-", ""), " ", ""), "+", "")
-	channelID := "parent-" + cleanContact
+	channelID := "parent-" + models.CleanParentContact(payload.ParentContact)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()

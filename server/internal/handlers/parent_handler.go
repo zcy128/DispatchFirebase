@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -256,7 +258,16 @@ func (h *ParentHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contact := strings.TrimSpace(payload.Contact)
+	sessionContact := h.extractContactFromRequest(r)
+	if sessionContact == "" {
+		http.Error(w, `{"error":"unauthorized: missing or invalid parent token"}`, http.StatusUnauthorized)
+		return
+	}
+	contact := sessionContact
+	if bodyContact := strings.TrimSpace(payload.Contact); bodyContact != "" && !parentContactsMatch(bodyContact, sessionContact) {
+		http.Error(w, `{"error":"forbidden: you can only register your own parent account"}`, http.StatusForbidden)
+		return
+	}
 	password := strings.TrimSpace(payload.Password)
 	name := strings.TrimSpace(payload.Name)
 
@@ -325,10 +336,80 @@ func (h *ParentHandler) ListMyStudents(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(commutes)
 }
 
+func (h *ParentHandler) studentsForContact(ctx context.Context, contact string) []*models.Student {
+	students, err := h.studentRepo.FindStudentsByContact(ctx, contact)
+	if (err != nil || len(students) == 0) && h.allowsDemo() && isDemoContact(contact) {
+		return getDemoStudents()
+	}
+	if err != nil || students == nil {
+		return nil
+	}
+	return students
+}
+
+func (h *ParentHandler) parentOwnsStudent(ctx context.Context, contact string, studentID int) bool {
+	for _, student := range h.studentsForContact(ctx, contact) {
+		if student.StudentID == studentID {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *ParentHandler) parentOwnsBus(ctx context.Context, contact, unitNumber string) bool {
+	want := strings.TrimPrefix(strings.TrimSpace(unitNumber), "#")
+	if want == "" {
+		return false
+	}
+	var ids []string
+	for _, student := range h.studentsForContact(ctx, contact) {
+		if student.ID != "" {
+			ids = append(ids, student.ID)
+		}
+	}
+	for _, commute := range h.aggregateStudentCommutes(ctx, ids) {
+		got := strings.TrimPrefix(strings.TrimSpace(commute.BusUnitNumber), "#")
+		if got != "" && strings.EqualFold(got, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// RecordStudentAbsence records an absence only for a student linked to the signed-in parent.
+func (h *ParentHandler) RecordStudentAbsence(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	contact := h.extractContactFromRequest(r)
+	var req models.RecordStudentAbsenceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request payload"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Date == "" || req.StudentID <= 0 {
+		http.Error(w, `{"error":"date and studentId are required"}`, http.StatusBadRequest)
+		return
+	}
+	if !h.parentOwnsStudent(r.Context(), contact, req.StudentID) {
+		http.Error(w, `{"error":"forbidden: you can only report an absence for your own student"}`, http.StatusForbidden)
+		return
+	}
+	res, err := h.dispatchRepo.RecordStudentAbsence(r.Context(), &req)
+	if err != nil {
+		http.Error(w, `{"error":"failed to record student absence: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(res)
+}
+
 // GetVehicleTracking returns live coordinates and telemetry for a specific bus unit
 func (h *ParentHandler) GetVehicleTracking(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	unitNumber := chi.URLParam(r, "unitNumber")
+	contact := h.extractContactFromRequest(r)
+	if !h.parentOwnsBus(r.Context(), contact, unitNumber) {
+		http.Error(w, `{"error":"forbidden: you can only track a bus assigned to your student"}`, http.StatusForbidden)
+		return
+	}
 
 	loc, err := h.parentRepo.GetVehicleLiveLocation(r.Context(), unitNumber)
 	if (err != nil || loc == nil) && (unitNumber == "42" || unitNumber == "#42") {
@@ -842,47 +923,145 @@ func (h *ParentHandler) generateParentSessionToken(parentID, contact string) str
 	return fmt.Sprintf("PAR_SESSION.%s.%s.%d.%s", b64ParentID, b64Contact, timestamp, sig)
 }
 
-func (h *ParentHandler) extractContactFromRequest(r *http.Request) string {
-	// First check query or explicit header
-	if c := r.URL.Query().Get("contact"); c != "" {
-		return c
-	}
-	if c := r.Header.Get("X-Parent-Contact"); c != "" {
-		return c
-	}
+type parentSessionContextKey struct{}
 
-	authHdr := r.Header.Get("Authorization")
-	if strings.HasPrefix(authHdr, "Bearer ") {
-		token := strings.TrimPrefix(authHdr, "Bearer ")
-		parts := strings.Split(token, ".")
-		if len(parts) >= 5 && parts[0] == "PAR_SESSION" {
-			// Try decoding base64-encoded contact
-			if decoded, err := base64.RawURLEncoding.DecodeString(parts[2]); err == nil && len(decoded) > 0 {
-				return string(decoded)
-			}
-			// Fallback: if email contained dots in older format, parts[2:len-2]
-			if len(parts) > 5 {
-				return strings.Join(parts[2:len(parts)-2], ".")
-			}
-			return parts[2]
+type verifiedParentSession struct {
+	ParentID string
+	Contact  string
+}
+
+const demoParentSessionToken = "demo-session-token-pcytech"
+const parentSessionTTL = 7 * 24 * time.Hour
+
+// RequireSession rejects parent API calls that do not carry a signed session.
+func (h *ParentHandler) RequireSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parentID, contact, ok := h.authenticateParent(r)
+		if !ok || strings.TrimSpace(contact) == "" {
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error":"unauthorized: missing or invalid parent token"}`, http.StatusUnauthorized)
+			return
 		}
+		ctx := context.WithValue(r.Context(), parentSessionContextKey{}, verifiedParentSession{
+			ParentID: parentID,
+			Contact:  contact,
+		})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (h *ParentHandler) sessionFromContext(r *http.Request) (verifiedParentSession, bool) {
+	session, ok := r.Context().Value(parentSessionContextKey{}).(verifiedParentSession)
+	return session, ok && strings.TrimSpace(session.Contact) != ""
+}
+
+// VerifiedContact returns the parent contact proven by the session token.
+func (h *ParentHandler) VerifiedContact(r *http.Request) string {
+	return h.extractContactFromRequest(r)
+}
+
+func (h *ParentHandler) extractContactFromRequest(r *http.Request) string {
+	if session, ok := h.sessionFromContext(r); ok {
+		return session.Contact
+	}
+	_, contact, ok := h.authenticateParent(r)
+	if ok {
+		return contact
 	}
 	return ""
 }
 
 func (h *ParentHandler) extractParentIDFromRequest(r *http.Request) string {
-	authHdr := r.Header.Get("Authorization")
-	if strings.HasPrefix(authHdr, "Bearer ") {
-		token := strings.TrimPrefix(authHdr, "Bearer ")
-		parts := strings.Split(token, ".")
-		if len(parts) >= 5 && parts[0] == "PAR_SESSION" {
-			if decoded, err := base64.RawURLEncoding.DecodeString(parts[1]); err == nil && len(decoded) > 0 {
-				return string(decoded)
-			}
-			return parts[1]
-		}
+	if session, ok := h.sessionFromContext(r); ok && session.ParentID != "" {
+		return session.ParentID
+	}
+	parentID, _, ok := h.authenticateParent(r)
+	if ok {
+		return parentID
 	}
 	return ""
+}
+
+func (h *ParentHandler) authenticateParent(r *http.Request) (string, string, bool) {
+	token := bearerToken(r)
+	if token == "" {
+		return "", "", false
+	}
+	if token == demoParentSessionToken {
+		if !h.allowsDemo() {
+			return "", "", false
+		}
+		contact := strings.TrimSpace(r.Header.Get("X-Parent-Contact"))
+		if contact == "" {
+			return "", "", false
+		}
+		return "PAR-demo", contact, true
+	}
+	return h.verifyParentSession(token)
+}
+
+func bearerToken(r *http.Request) string {
+	authHdr := strings.TrimSpace(r.Header.Get("Authorization"))
+	if len(authHdr) < 8 || !strings.EqualFold(authHdr[:7], "bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(authHdr[7:])
+}
+
+func (h *ParentHandler) parentSessionSecret() string {
+	if h.cfg == nil {
+		return ""
+	}
+	if strings.TrimSpace(h.cfg.ParentJWTSigningKey) != "" {
+		return h.cfg.ParentJWTSigningKey
+	}
+	return h.cfg.ApprovalSecret
+}
+
+func (h *ParentHandler) verifyParentSession(token string) (string, string, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 5 || parts[0] != "PAR_SESSION" {
+		return "", "", false
+	}
+	parentIDBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil || len(parentIDBytes) == 0 {
+		return "", "", false
+	}
+	contactBytes, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || len(contactBytes) == 0 {
+		return "", "", false
+	}
+	issuedAt, err := strconv.ParseInt(parts[3], 10, 64)
+	if err != nil {
+		return "", "", false
+	}
+	issued := time.Unix(issuedAt, 0)
+	if time.Since(issued) > parentSessionTTL || issued.After(time.Now().Add(5*time.Minute)) {
+		return "", "", false
+	}
+	secret := h.parentSessionSecret()
+	if secret == "" {
+		return "", "", false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(fmt.Sprintf("%s:%s:%d", string(parentIDBytes), string(contactBytes), issuedAt)))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	if subtle.ConstantTimeCompare([]byte(expected), []byte(parts[4])) != 1 {
+		return "", "", false
+	}
+	return string(parentIDBytes), string(contactBytes), true
+}
+
+// ParentChannelID is the chat channel owned by this parent contact.
+func ParentChannelID(contact string) string {
+	return "parent-" + models.CleanParentContact(contact)
+}
+
+func parentContactsMatch(left, right string) bool {
+	if strings.EqualFold(strings.TrimSpace(left), strings.TrimSpace(right)) {
+		return true
+	}
+	return models.CleanParentContact(left) == models.CleanParentContact(right)
 }
 
 func generateSecureOTP() string {
