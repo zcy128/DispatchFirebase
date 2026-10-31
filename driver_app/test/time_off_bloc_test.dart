@@ -317,33 +317,32 @@ void main() {
         ),
       ];
 
+      final nextLoaded = bloc.stream.firstWhere((s) => s is TimeOffLoaded && s.totalCount == 3);
       bloc.add(FirestoreTimeOffUpdatedEvent(requests));
-      await Future.delayed(const Duration(milliseconds: 50));
-
-      var loaded = bloc.state as TimeOffLoaded;
+      var loaded = (await nextLoaded) as TimeOffLoaded;
       expect(loaded.totalCount, equals(3));
       expect(loaded.pendingCount, equals(1));
       expect(loaded.approvedCount, equals(1));
       expect(loaded.rejectedCount, equals(1));
 
       // Filter by Approved
+      final filterApprovedFuture = bloc.stream.firstWhere((s) => s is TimeOffLoaded && s.statusFilter == TimeOffStatus.approved);
       bloc.add(const FilterTimeOffStatusEvent(TimeOffStatus.approved));
-      await Future.delayed(const Duration(milliseconds: 50));
-      loaded = bloc.state as TimeOffLoaded;
+      loaded = (await filterApprovedFuture) as TimeOffLoaded;
       expect(loaded.requests.length, equals(1));
       expect(loaded.requests.first.id, equals('TOR-2'));
 
       // Filter by Pending
+      final filterPendingFuture = bloc.stream.firstWhere((s) => s is TimeOffLoaded && s.statusFilter == TimeOffStatus.pending);
       bloc.add(const FilterTimeOffStatusEvent(TimeOffStatus.pending));
-      await Future.delayed(const Duration(milliseconds: 50));
-      loaded = bloc.state as TimeOffLoaded;
+      loaded = (await filterPendingFuture) as TimeOffLoaded;
       expect(loaded.requests.length, equals(1));
       expect(loaded.requests.first.id, equals('TOR-1'));
 
       // Clear filter (All)
+      final filterAllFuture = bloc.stream.firstWhere((s) => s is TimeOffLoaded && s.statusFilter == null);
       bloc.add(const FilterTimeOffStatusEvent(null));
-      await Future.delayed(const Duration(milliseconds: 50));
-      loaded = bloc.state as TimeOffLoaded;
+      loaded = (await filterAllFuture) as TimeOffLoaded;
       expect(loaded.requests.length, equals(3));
 
       await bloc.close();

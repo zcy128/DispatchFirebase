@@ -159,8 +159,19 @@ export const LoginView: React.FC = () => {
             </div>
             <button
               type="button"
-              onClick={() => loginAsMockAdmin()}
-              className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 font-bold text-xs rounded-xl transition"
+              disabled={loading}
+              onClick={async () => {
+                try {
+                  setLoading(true);
+                  setError(null);
+                  await loginAsMockAdmin();
+                } catch (err: any) {
+                  setError(err?.message || 'Demo login failed');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 font-bold text-xs rounded-xl transition disabled:opacity-50"
             >
               <span>{t.login.quickDemoAdmin}</span>
               <ArrowRight className="w-3.5 h-3.5" />

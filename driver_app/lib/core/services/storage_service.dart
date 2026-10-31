@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../network/api_client.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api_config.dart';
 
@@ -20,7 +21,7 @@ class StorageService {
     http.Client? httpClient,
   })  : _storageOverride = storage,
         _picker = picker ?? ImagePicker(),
-        _httpClient = httpClient ?? http.Client();
+        _httpClient = httpClient ?? AuthenticatedHttpClient.instance;
 
   /// Singleton instance for convenience.
   static final StorageService instance = StorageService();

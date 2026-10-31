@@ -556,7 +556,7 @@ class _GoogleRouteMapCardState extends State<GoogleRouteMapCard> {
                         ),
                         Text(
                           _vehicleLocation != null
-                              ? '${resolved.length} Stops · 🚌 Live GPS: ${_vehicleSpeedKmH > 0 ? "$_vehicleSpeedKmH km/h" : "Boarding"}'
+                              ? '${resolved.length} Stops · Demo GPS: ${_vehicleSpeedKmH > 0 ? "$_vehicleSpeedKmH km/h" : "Boarding"}'
                               : '${resolved.length} Stops · Tap any pin or stop to preview & navigate',
                           style: TextStyle(
                             fontSize: 10.5,
@@ -715,7 +715,7 @@ class _GoogleRouteMapCardState extends State<GoogleRouteMapCard> {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
-                                          '🚌 Bus Live GPS Telematics · Speed: $_vehicleSpeedKmH km/h · Heading: ${_vehicleHeading.round()}° · Status: $_vehicleStatus',
+                                          'Demo GPS, not a live bus. Speed: $_vehicleSpeedKmH km/h · Heading: ${_vehicleHeading.round()}° · Status: $_vehicleStatus',
                                         ),
                                         duration: const Duration(seconds: 2),
                                       ),
@@ -770,7 +770,7 @@ class _GoogleRouteMapCardState extends State<GoogleRouteMapCard> {
                                             border: Border.all(color: Colors.amber, width: 0.8),
                                           ),
                                           child: Text(
-                                            _vehicleSpeedKmH > 0 ? '$_vehicleSpeedKmH km/h' : 'STOP',
+                                            'DEMO',
                                             style: const TextStyle(
                                               fontSize: 8.5,
                                               fontWeight: FontWeight.bold,

@@ -4,12 +4,14 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../core/api_config.dart';
+import '../../core/network/api_client.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/app_mode.dart';
 import '../../core/services/device_token_service.dart';
 import '../../core/theme.dart';
 import '../home/driver_home_page.dart';
+import 'driver_session.dart';
 import 'forgot_password_dialog.dart';
 
 class LoginPage extends StatefulWidget {
@@ -100,7 +102,7 @@ class _LoginPageState extends State<LoginPage> {
             _emailController.text = savedEmail;
           } else if (AppMode.isDemo) {
             _emailController.text = 'driver1d';
-            _passwordController.text = 'Dispatch2026!';
+            _passwordController.text = LoginResolver.demoPassword;
           }
         });
       }
@@ -167,21 +169,11 @@ class _LoginPageState extends State<LoginPage> {
       await _requestNotificationPermission();
     }
 
-    // Simulate authentication processing
-    await Future.delayed(const Duration(milliseconds: 800));
-
     await _savePreferences();
 
     final emailInput = _emailController.text.trim();
-    final defaultDisplayName = emailInput.contains('@')
-        ? emailInput.split('@')[0]
-        : (emailInput.isNotEmpty ? emailInput : 'Driver');
-
-    String resolvedRole = _selectedRole;
-    String resolvedDisplayName = defaultDisplayName;
-    String resolvedEmployeeId = '';
-
-    // Authenticate and resolve user profile with role & allowed modules from backend
+    final password = _passwordController.text;
+    LoginResolution resolution;
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}/api/auth/login');
       final res = await http.post(
@@ -189,39 +181,54 @@ class _LoginPageState extends State<LoginPage> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'username': emailInput,
-          'password': _passwordController.text.trim(),
+          'password': password,
         }),
-      ).timeout(const Duration(seconds: 4));
+      ).timeout(const Duration(seconds: 12));
 
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final user = data['user'] as Map<String, dynamic>?;
-        if (user != null) {
-          resolvedRole = user['role']?.toString() ?? _selectedRole;
-          resolvedDisplayName = user['fullName']?.toString() ?? user['username']?.toString() ?? defaultDisplayName;
-          resolvedEmployeeId = user['employeeId']?.toString() ?? '';
-          final overrides = user['overrides'] as Map<String, dynamic>?;
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('driver_saved_role', resolvedRole);
-          if (resolvedEmployeeId.isNotEmpty) {
-            await prefs.setString('driver_saved_employee_id', resolvedEmployeeId);
-          }
-          if (overrides != null && overrides.isNotEmpty) {
-            await prefs.setString('driver_saved_overrides', jsonEncode(overrides));
-          } else {
-            await prefs.remove('driver_saved_overrides');
-          }
-        }
-      }
+      resolution = LoginResolver.resolve(
+        allowDemoFallback: AppMode.isDemo,
+        username: emailInput,
+        password: password,
+        selectedRole: _selectedRole,
+        statusCode: res.statusCode,
+        body: _decodeLoginBody(res.body),
+      );
     } catch (e) {
       debugPrint('[LoginPage] Backend login notice: $e');
+      resolution = LoginResolver.resolve(
+        allowDemoFallback: AppMode.isDemo,
+        username: emailInput,
+        password: password,
+        selectedRole: _selectedRole,
+        transportFailed: true,
+      );
     }
 
-    // Record successful login audit log
+    final session = resolution.session;
+    if (session == null) {
+      _recordLoginLog(
+        isSuccess: false,
+        username: emailInput,
+        failureReason: resolution.errorMessage,
+      );
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = resolution.errorMessage ?? 'Sign-in failed. Try again.';
+      });
+      return;
+    }
+
+    try {
+      await _persistSession(session);
+    } catch (e) {
+      debugPrint('[LoginPage] Session save notice: $e');
+    }
+
     _recordLoginLog(
       isSuccess: true,
       username: emailInput,
-      employeeName: resolvedDisplayName,
+      employeeName: session.displayName,
     );
 
     if (!mounted) return;
@@ -229,11 +236,51 @@ class _LoginPageState extends State<LoginPage> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => DriverHomePage(
-          username: resolvedDisplayName,
-          role: resolvedRole,
+          username: session.displayName,
+          role: session.role,
+          employeeId: session.employeeId,
         ),
       ),
     );
+  }
+
+  Map<String, dynamic>? _decodeLoginBody(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> _persistSession(DriverSession session) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('driver_saved_role', session.role);
+    await prefs.setString('driver_saved_employee_id', session.employeeId);
+    await prefs.setString('driver_saved_display_name', session.displayName);
+    await prefs.setString('driver_saved_username', session.username);
+    final existingToken = prefs.getString('driver_auth_token');
+    final hasGenuineExistingToken = existingToken != null &&
+        existingToken.trim().isNotEmpty &&
+        !existingToken.startsWith('mock-token-');
+
+    if (session.token.isNotEmpty && !session.token.startsWith('mock-token-')) {
+      // Genuine token issued by backend
+      await prefs.setString('driver_auth_token', session.token);
+      AuthenticatedHttpClient.setToken(session.token);
+    } else if (hasGenuineExistingToken) {
+      // Offline fallback: preserve existing genuine token (MCP token or Firebase JWT token)
+      AuthenticatedHttpClient.setToken(existingToken);
+    } else {
+      // Offline fallback without an existing token: do not store invalid mock token that causes 401
+      await prefs.remove('driver_auth_token');
+      AuthenticatedHttpClient.setToken(null);
+    }
+    if (session.overrides != null && session.overrides!.isNotEmpty) {
+      await prefs.setString('driver_saved_overrides', jsonEncode(session.overrides));
+    } else {
+      await prefs.remove('driver_saved_overrides');
+    }
   }
 
   @override
@@ -610,7 +657,7 @@ class _LoginPageState extends State<LoginPage> {
                         onPressed: () {
                           setState(() {
                             _emailController.text = 'driver1d';
-                            _passwordController.text = 'Dispatch2026!';
+                            _passwordController.text = LoginResolver.demoPassword;
                             _selectedRole = 'Driver';
                             _errorMessage = null;
                           });

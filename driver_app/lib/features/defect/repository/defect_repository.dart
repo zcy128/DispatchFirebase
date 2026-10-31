@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/api_config.dart';
+import '../../../core/network/api_client.dart';
 import '../models/defect_model.dart';
 
 class DefectRepository {
@@ -14,9 +15,11 @@ class DefectRepository {
 
   Box? _box;
   final FirebaseFirestore? _firestoreOverride;
+  final http.Client _httpClient;
 
-  DefectRepository({FirebaseFirestore? firestore})
-      : _firestoreOverride = firestore;
+  DefectRepository({FirebaseFirestore? firestore, http.Client? httpClient})
+      : _firestoreOverride = firestore,
+        _httpClient = httpClient ?? AuthenticatedHttpClient.instance;
 
   bool get isFirestoreAvailable {
     try {
@@ -86,7 +89,7 @@ class DefectRepository {
 
       final uri = Uri.parse('$_baseUrl/vehicle-defects')
           .replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
-      final res = await http.get(uri).timeout(const Duration(seconds: 6));
+      final res = await _httpClient.get(uri).timeout(const Duration(seconds: 6));
 
       if (res.statusCode == 200) {
         final List list = jsonDecode(res.body);
@@ -153,7 +156,7 @@ class DefectRepository {
         'confirmedAccurate': report.confirmedAccurate,
       });
 
-      final res = await http.post(
+      final res = await _httpClient.post(
         uri,
         headers: {'Content-Type': 'application/json'},
         body: body,

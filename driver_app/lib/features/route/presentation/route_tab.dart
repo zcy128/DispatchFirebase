@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/phone_link.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/google_route_map_card.dart';
 import '../bloc/route_bloc.dart';
@@ -978,7 +979,7 @@ class _RouteTabState extends State<RouteTab> {
             const SizedBox(height: 8),
             InkWell(
               onTap: () {
-                _callNumber(context, student.guardianPhone!, student.guardianName!);
+                placePhoneCall(context, student.guardianPhone, student.guardianName ?? 'Guardian');
               },
               borderRadius: BorderRadius.circular(6),
               child: Container(
@@ -1010,18 +1011,9 @@ class _RouteTabState extends State<RouteTab> {
     );
   }
 
-  void _callNumber(BuildContext context, String phone, String contactName) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Calling $contactName at $phone...'),
-        backgroundColor: AppColors.primaryDark,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
   void _showAttendantDialog(BuildContext context, DriverRouteInfo route) {
-    final phone = route.attendantPhone ?? '+1 (613) 555-0184';
+    final phone = (route.attendantPhone ?? '').trim();
+    final contactName = route.attendantName ?? 'Attendant';
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
@@ -1033,27 +1025,30 @@ class _RouteTabState extends State<RouteTab> {
             const Text('Assigned Route Attendant / Monitor:'),
             const SizedBox(height: 8),
             Text(
-              phone,
+              phone.isEmpty ? 'No phone number is on file.' : phone,
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: phone));
-              Navigator.of(dialogCtx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Phone number copied to clipboard!')),
-              );
-            },
-            child: const Text('Copy Number'),
-          ),
+          if (phone.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: phone));
+                Navigator.of(dialogCtx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Phone number copied to clipboard!')),
+                );
+              },
+              child: const Text('Copy Number'),
+            ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.of(dialogCtx).pop();
-              _callNumber(context, phone, route.attendantName ?? 'Attendant');
-            },
+            onPressed: phone.isEmpty
+                ? null
+                : () {
+                    Navigator.of(dialogCtx).pop();
+                    placePhoneCall(context, phone, contactName);
+                  },
             child: const Text('Call'),
           ),
         ],

@@ -34,10 +34,10 @@ export const logDispatchAction = async ({
     let actor = user;
     if (!actor) {
       try {
-        const storedMock = localStorage.getItem('dispatch_mock_user');
-        if (storedMock) {
-          const parsed = JSON.parse(storedMock);
-          actor = parsed.name || parsed.displayName || parsed.email;
+        const storedAuth = localStorage.getItem('dispatch_auth_user');
+        if (storedAuth) {
+          const parsed = JSON.parse(storedAuth);
+          actor = parsed.fullName || parsed.displayName || parsed.email || parsed.username;
         }
       } catch {
         // ignore

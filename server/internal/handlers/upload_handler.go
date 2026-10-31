@@ -31,6 +31,19 @@ const (
 	MaxUploadSize = 32 << 20 // 32 MB max
 )
 
+var allowedUploadExts = map[string]bool{
+	".jpg":  true,
+	".jpeg": true,
+	".png":  true,
+	".gif":  true,
+	".webp": true,
+	".pdf":  true,
+	".mp4":  true,
+	".mov":  true,
+	".txt":  true,
+	".csv":  true,
+}
+
 // EnsureUploadDir ensures the upload destination directory exists.
 func EnsureUploadDir() error {
 	return os.MkdirAll(UploadDir, 0755)
@@ -75,6 +88,10 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	if ext == "" {
 		ext = ".jpg"
+	}
+	if !allowedUploadExts[ext] {
+		http.Error(w, fmt.Sprintf("File extension %q is not allowed for security reasons", ext), http.StatusBadRequest)
+		return
 	}
 
 	randBytes := make([]byte, 6)
@@ -128,6 +145,10 @@ func handleBase64Upload(w http.ResponseWriter, r *http.Request) {
 	ext := strings.ToLower(filepath.Ext(req.Filename))
 	if ext == "" {
 		ext = ".jpg"
+	}
+	if !allowedUploadExts[ext] {
+		http.Error(w, fmt.Sprintf("File extension %q is not allowed for security reasons", ext), http.StatusBadRequest)
+		return
 	}
 
 	randBytes := make([]byte, 6)

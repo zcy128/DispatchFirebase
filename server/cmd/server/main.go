@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -246,48 +247,13 @@ func main() {
 	r.Get("/api/auth/resolve-username", authHandler.ResolveUsername)
 	r.Post("/api/auth/login", authHandler.Login)
 	r.Post("/api/public/auth/login", authHandler.Login)
+	r.Post("/api/auth/forgot-password", authHandler.ForgotPassword)
+	r.Post("/api/public/auth/forgot-password", authHandler.ForgotPassword)
 	r.Post("/api/auth/mcp-login", authHandler.LoginMCP)
 
-	// File uploads & static file serving
+	// Static file serving with directory traversal & XSS defenses
 	_ = handlers.EnsureUploadDir()
-	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(handlers.UploadDir))))
-	r.Post("/api/upload", handlers.UploadFileHandler)
-	r.Post("/api/public/upload", handlers.UploadFileHandler)
-
-	// Device Registration for FCM Push Notifications
-	r.Post("/api/public/devices/register", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		var body struct {
-			EmployeeID string `json:"employeeId"`
-			Token      string `json:"token"`
-			Platform   string `json:"platform"`
-			DeviceName string `json:"deviceName"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, `{"error":"invalid request payload"}`, http.StatusBadRequest)
-			return
-		}
-		if strings.TrimSpace(body.EmployeeID) == "" || strings.TrimSpace(body.Token) == "" {
-			http.Error(w, `{"error":"employeeId and token are required"}`, http.StatusBadRequest)
-			return
-		}
-		if body.Platform == "" {
-			body.Platform = "unknown"
-		}
-
-		err := repo.RegisterDeviceToken(r.Context(), strings.TrimSpace(body.EmployeeID), models.DeviceToken{
-			Token:      strings.TrimSpace(body.Token),
-			Platform:   body.Platform,
-			DeviceName: body.DeviceName,
-		})
-		if err != nil {
-			log.Printf("[FCM] Failed to register device token for employee %s: %v", body.EmployeeID, err)
-			http.Error(w, fmt.Sprintf(`{"error":"failed to register device token: %v"}`, err), http.StatusInternalServerError)
-			return
-		}
-		log.Printf("[FCM] Registered device token for employee %s (%s, %s)", body.EmployeeID, body.Platform, body.DeviceName)
-		w.Write([]byte(`{"success":true,"message":"device token registered successfully"}`))
-	})
+	r.Handle("/uploads/*", makeSecureUploadServer(handlers.UploadDir))
 
 	// Amazon SES & SNS Inbound Email Webhook & One-Click HR Actions
 	r.Post("/api/integrations/sns/inbound-email", snsWebhookHandler.HandleSNSInboundEmail)
@@ -313,7 +279,6 @@ func main() {
 		parentRouter.Get("/profile", parentHandler.GetProfile)
 		parentRouter.Put("/profile", parentHandler.UpdateProfile)
 	})
-	r.Post("/api/public/bus-tracking/telemetry", parentHandler.UpdateVehicleTelemetry)
 
 	// Protected Routes (Or dev bypass)
 	r.Group(func(protected chi.Router) {
@@ -552,13 +517,21 @@ func main() {
 		// MCP Server & Personal Access Token routes (Authenticated & RBAC enforced on API server)
 		protected.Post("/api/auth/mcp-token", authHandler.IssueMCPToken)
 		protected.Get("/api/mcp", mcpHandler.HandleHTTP)
+		protected.Post("/api/devices/register", makeRegisterDeviceHandler(repo))
+		protected.Post("/api/upload", handlers.UploadFileHandler)
 		protected.Post("/api/mcp", mcpHandler.HandleHTTP)
 		protected.Get("/api/mcp/sse", mcpHandler.HandleSSE)
 		protected.Post("/api/mcp/message", mcpHandler.HandleSSEMessage)
 	})
 
-	// Public fallback for read-only preview in dev mode if requested
+	// Public fallback for read-only preview in dev mode if requested.
+	// Protected by PublicAPISecurityMiddleware to prevent anonymous exploitation, data harvesting, and AI quota abuse.
 	r.Group(func(publicDev chi.Router) {
+		publicDev.Use(auth.PublicAPISecurityMiddleware(cfg.AllowsDemo(), authenticator))
+
+		publicDev.Post("/api/public/devices/register", makeRegisterDeviceHandler(repo))
+		publicDev.Post("/api/public/upload", handlers.UploadFileHandler)
+		publicDev.Post("/api/public/bus-tracking/telemetry", parentHandler.UpdateVehicleTelemetry)
 		publicDev.Get("/api/public/employees", empHandler.List)
 		publicDev.Get("/api/public/employees/stats", empHandler.Stats)
 		publicDev.Get("/api/public/schools", schoolHandler.List)
@@ -1432,6 +1405,7 @@ func seedMemoryData(ctx context.Context, repo repository.EmployeeRepository) {
 	// Seed Driver 1 (License Expiring Soon)
 	driver1 := &models.Employee{
 		EmployeeNumber:  "EMP-2001",
+		Username:        "driver1d",
 		FirstName:       "David",
 		LastName:        "Miller",
 		JobPosition:     "Senior School Bus Driver",
@@ -1828,4 +1802,101 @@ func seedMemoryParentAndStudentData(
 		})
 	}
 	log.Println("[INIT] Seeded test students (Emma & Lucas Watson) and OCDSB-001 AM/PM dispatch shifts.")
+}
+
+// makeRegisterDeviceHandler handles FCM device token registration with authentication & permission validation.
+func makeRegisterDeviceHandler(repo repository.EmployeeRepository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var body struct {
+			EmployeeID string `json:"employeeId"`
+			Token      string `json:"token"`
+			Platform   string `json:"platform"`
+			DeviceName string `json:"deviceName"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, `{"error":"invalid request payload"}`, http.StatusBadRequest)
+			return
+		}
+		token := strings.TrimSpace(body.Token)
+		if token == "" {
+			http.Error(w, `{"error":"token is required"}`, http.StatusBadRequest)
+			return
+		}
+
+		authUser := auth.GetUser(r.Context())
+		if authUser == nil {
+			http.Error(w, `{"error":"authentication required to register device token"}`, http.StatusUnauthorized)
+			return
+		}
+
+		reqEmpID := strings.TrimSpace(body.EmployeeID)
+		if reqEmpID == "" {
+			reqEmpID = authUser.EmployeeID
+		}
+
+		// Security: Prevent unprivileged callers from hijacking another employee's push notifications
+		if authUser.Role != "admin" && authUser.Role != "dispatcher" && authUser.Role != "manager" {
+			allowed := false
+			if strings.EqualFold(reqEmpID, authUser.EmployeeID) ||
+				strings.EqualFold(reqEmpID, authUser.Username) ||
+				strings.EqualFold(reqEmpID, authUser.UID) ||
+				strings.EqualFold(strings.TrimPrefix(strings.ToUpper(reqEmpID), "EMP-"), strings.TrimPrefix(strings.ToUpper(authUser.EmployeeID), "EMP-")) {
+				allowed = true
+			} else {
+				// Also check if employee username maps to this employee number in repository
+				if emp, err := repo.GetByUsername(r.Context(), authUser.Username); err == nil && emp != nil {
+					if strings.EqualFold(reqEmpID, emp.EmployeeNumber) || strings.EqualFold(reqEmpID, emp.ID) {
+						allowed = true
+					}
+				}
+			}
+
+			if !allowed {
+				http.Error(w, `{"error":"forbidden: you can only register device tokens for your own employee account"}`, http.StatusForbidden)
+				return
+			}
+		}
+
+		platform := body.Platform
+		if platform == "" {
+			platform = "unknown"
+		}
+
+		err := repo.RegisterDeviceToken(r.Context(), reqEmpID, models.DeviceToken{
+			Token:      token,
+			Platform:   platform,
+			DeviceName: body.DeviceName,
+		})
+		if err != nil {
+			log.Printf("[FCM] Failed to register device token for employee %s: %v", reqEmpID, err)
+			http.Error(w, fmt.Sprintf(`{"error":"failed to register device token: %v"}`, err), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("[FCM] Registered device token for employee %s (%s, %s)", reqEmpID, platform, body.DeviceName)
+		w.Write([]byte(`{"success":true,"message":"device token registered successfully"}`))
+	}
+}
+
+// makeSecureUploadServer serves uploaded files safely without directory listing and with nosniff/CSP headers
+func makeSecureUploadServer(uploadDir string) http.Handler {
+	fs := http.FileServer(http.Dir(uploadDir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cleanPath := filepath.Clean(strings.TrimPrefix(r.URL.Path, "/uploads"))
+		if cleanPath == "" || cleanPath == "." || cleanPath == "/" || strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		fullPath := filepath.Join(uploadDir, filepath.FromSlash(cleanPath))
+		fi, err := os.Stat(fullPath)
+		if err != nil || fi.IsDir() {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+		http.StripPrefix("/uploads/", fs).ServeHTTP(w, r)
+	})
 }

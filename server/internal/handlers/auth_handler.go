@@ -491,6 +491,99 @@ func (h *AuthHandler) IssueMCPToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type ForgotPasswordRequest struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
+// ForgotPassword sends a Firebase password-reset email for a staff username or email.
+// A missing account still returns success so the response does not reveal who is registered.
+func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req ForgotPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"Enter your staff ID or email."}`, http.StatusBadRequest)
+		return
+	}
+
+	identifier := strings.ToLower(strings.TrimSpace(req.Username))
+	if identifier == "" {
+		identifier = strings.ToLower(strings.TrimSpace(req.Email))
+	}
+	if identifier == "" {
+		http.Error(w, `{"error":"Enter your staff ID or email."}`, http.StatusBadRequest)
+		return
+	}
+
+	loginEmail := identifier
+	if !strings.Contains(identifier, "@") {
+		loginEmail = identifier + AuthEmailDomain
+	}
+
+	if h.cfg == nil || strings.TrimSpace(h.cfg.FirebaseWebAPIKey) == "" {
+		http.Error(w, `{"error":"Password reset is not configured on this server."}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := h.sendPasswordResetEmail(r.Context(), loginEmail); err != nil {
+		if errors.Is(err, errPasswordResetNotFound) {
+			writeForgotPasswordAccepted(w)
+			return
+		}
+		http.Error(w, `{"error":"Could not send the password reset email. Try again or contact dispatch."}`, http.StatusBadGateway)
+		return
+	}
+
+	writeForgotPasswordAccepted(w)
+}
+
+func writeForgotPasswordAccepted(w http.ResponseWriter) {
+	json.NewEncoder(w).Encode(map[string]any{
+		"success": true,
+		"message": "If an account exists for that staff ID, a reset link has been sent to the registered email.",
+	})
+}
+
+var errPasswordResetNotFound = errors.New("password reset account not found")
+
+func (h *AuthHandler) sendPasswordResetEmail(ctx context.Context, email string) error {
+	url := fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=%s", h.cfg.FirebaseWebAPIKey)
+	payload, _ := json.Marshal(map[string]string{
+		"requestType": "PASSWORD_RESET",
+		"email":       email,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+
+	var result struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&result)
+	message := strings.ToUpper(result.Error.Message)
+	if strings.Contains(message, "EMAIL_NOT_FOUND") || strings.Contains(message, "USER_NOT_FOUND") {
+		return errPasswordResetNotFound
+	}
+	return fmt.Errorf("firebase password reset status %d: %s", resp.StatusCode, result.Error.Message)
+}
+
 type LoginRequest struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
@@ -636,11 +729,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	token := idToken
 	if token == "" {
 		generatedToken, _, genErr := auth.GenerateMCPToken(secret, resolvedUser, 30*24*time.Hour)
-		if genErr == nil {
-			token = generatedToken
-		} else {
-			token = "mock-token-" + resolvedUser.Username
+		if genErr != nil {
+			http.Error(w, `{"error":"failed to generate access token"}`, http.StatusInternalServerError)
+			return
 		}
+		token = generatedToken
 	}
 
 	json.NewEncoder(w).Encode(LoginResponse{
@@ -822,10 +915,10 @@ func (h *AuthHandler) verifyPasswordWithFirebaseREST(ctx context.Context, email,
 	}
 
 	var result struct {
-		LocalID      string `json:"localId"`
-		Email        string `json:"email"`
-		DisplayName  string `json:"displayName"`
-		IDToken      string `json:"idToken"`
+		LocalID     string `json:"localId"`
+		Email       string `json:"email"`
+		DisplayName string `json:"displayName"`
+		IDToken     string `json:"idToken"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err

@@ -3,15 +3,13 @@ import { onAuthStateChanged, User, signInWithEmailAndPassword, signOut as fbSign
 import { auth } from '../services/firebase';
 import { AuthUser, PermissionLevel } from '../types/employee';
 import { LoginLogService } from '../services/loginLogService';
-import { isDemoMode } from '../config/appMode';
 import { apiRequest } from '../services/api';
-import { normalizeRole } from '../utils/permissions';
 
 interface AuthContextType {
   currentUser: AuthUser | null;
   loading: boolean;
   isMockMode: boolean;
-  loginAsMockAdmin: (customUser?: { username?: string; role?: string; displayName?: string; overrides?: Record<string, PermissionLevel> }) => void;
+  loginAsMockAdmin: (customUser?: { username?: string; role?: string; displayName?: string; overrides?: Record<string, PermissionLevel> }) => Promise<void>;
   loginWithFirebase: (email: string, pass: string) => Promise<void>;
   logout: () => Promise<void>;
   setupFirstAdmin: (email?: string, password?: string) => Promise<void>;
@@ -25,34 +23,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isMockMode, setIsMockMode] = useState<boolean>(false);
 
   useEffect(() => {
-    if (!isDemoMode) {
+    // Purge any legacy mock user and token keys to ensure genuine authentication
+    try {
       localStorage.removeItem('dispatch_mock_user');
       localStorage.removeItem('dispatch_mock_token');
+    } catch {
+      // ignore
     }
 
-    // 1. Check stored auth user from previous backend login
+    // 1. Check stored auth user and token from genuine backend login
     const storedAuthUser = localStorage.getItem('dispatch_auth_user');
-    if (storedAuthUser) {
+    const storedAuthToken = localStorage.getItem('dispatch_auth_token');
+    if (storedAuthUser && storedAuthToken) {
       try {
         setCurrentUser(JSON.parse(storedAuthUser));
         setIsMockMode(false);
         setLoading(false);
         return;
       } catch {
-        // ignore
-      }
-    }
-
-    // 2. Check stored mock user
-    const storedMock = localStorage.getItem('dispatch_mock_user');
-    if (storedMock) {
-      try {
-        setCurrentUser(JSON.parse(storedMock));
-        setIsMockMode(true);
-        setLoading(false);
-        return;
-      } catch {
-        // ignore
+        localStorage.removeItem('dispatch_auth_user');
+        localStorage.removeItem('dispatch_auth_token');
       }
     }
 
@@ -82,16 +72,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.warn('Failed to get idTokenResult:', e);
         }
       } else {
-        const mockSaved = localStorage.getItem('dispatch_mock_user');
-        if (mockSaved) {
-          try {
-            setCurrentUser(JSON.parse(mockSaved));
-            setIsMockMode(true);
-          } catch {
-            setCurrentUser(null);
-            setIsMockMode(false);
-          }
-        } else {
+        const storedAuthUser = localStorage.getItem('dispatch_auth_user');
+        const storedAuthToken = localStorage.getItem('dispatch_auth_token');
+        if (!storedAuthUser || !storedAuthToken) {
           setCurrentUser(null);
           setIsMockMode(false);
         }
@@ -102,38 +85,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  const loginAsMockAdmin = (customUser?: { username?: string; role?: string; displayName?: string; overrides?: Record<string, PermissionLevel> }) => {
-    if (!isDemoMode) {
-      return;
-    }
+  const loginAsMockAdmin = async (customUser?: { username?: string; role?: string; displayName?: string; overrides?: Record<string, PermissionLevel> }) => {
     const uname = customUser?.username || 'admin';
-    const role = normalizeRole(customUser?.role || 'admin');
-    const overrides = customUser?.overrides || {};
-
-    const mockUser: AuthUser = {
-      uid: `mock-uid-${uname}`,
-      email: `${uname}@dispatch.pcy.ca`,
-      role: role as any,
-      employeeId: `EMP-${uname.toUpperCase()}`,
-      displayName: customUser?.displayName || (uname === 'admin' ? 'Alex Morgan (Operations Admin)' : uname),
-      overrides,
-    };
-    localStorage.setItem('dispatch_mock_user', JSON.stringify(mockUser));
-    localStorage.setItem('dispatch_mock_token', uname === 'admin' ? 'mock-admin-token-secret-dev' : `mock-token-${uname}`);
-    setCurrentUser(mockUser);
-    setIsMockMode(true);
-
-    // Record login audit log
-    LoginLogService.recordLog({
-      status: 'success',
-      username: mockUser.email,
-      employeeName: mockUser.displayName,
-      employeeId: mockUser.employeeId,
-      role: mockUser.role,
-      app: 'Dispatch Web Hub',
-      appVersion: 'v1.0.0',
-      deviceInfo: typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser',
-    }).catch((err) => console.warn('Failed to record mock admin login log:', err));
+    await loginWithFirebase(uname, 'demo');
   };
 
   const loginWithFirebase = async (identifier: string, pass: string) => {

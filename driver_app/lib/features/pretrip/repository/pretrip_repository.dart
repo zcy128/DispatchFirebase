@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/api_config.dart';
+import '../../../core/network/api_client.dart';
 import '../models/pretrip_model.dart';
 
 class PreTripRepository {
@@ -13,9 +14,11 @@ class PreTripRepository {
 
   Box? _box;
   final FirebaseFirestore? _firestoreOverride;
+  final http.Client _httpClient;
 
-  PreTripRepository({FirebaseFirestore? firestore})
-      : _firestoreOverride = firestore;
+  PreTripRepository({FirebaseFirestore? firestore, http.Client? httpClient})
+      : _firestoreOverride = firestore,
+        _httpClient = httpClient ?? AuthenticatedHttpClient.instance;
 
   bool get isFirestoreAvailable {
     try {
@@ -86,7 +89,7 @@ class PreTripRepository {
     try {
       final uri = Uri.parse(
           '$_baseUrl/pretrip-inspections/today/$vehicleUnit?date=$date');
-      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      final res = await _httpClient.get(uri).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final found = data['found'] as bool? ?? false;
@@ -126,7 +129,7 @@ class PreTripRepository {
     try {
       final uri = Uri.parse(
           '$_baseUrl/pretrip-inspections/today/$vehicleUnit?date=$date');
-      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      final res = await _httpClient.get(uri).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         if (data['found'] == true && data['inspection'] != null) {
@@ -192,7 +195,7 @@ class PreTripRepository {
     // 1. Try REST API
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}/api/public/vehicles/$vehicleUnit');
-      final res = await http.get(uri).timeout(const Duration(seconds: 4));
+      final res = await _httpClient.get(uri).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final odo = data['odometer'];

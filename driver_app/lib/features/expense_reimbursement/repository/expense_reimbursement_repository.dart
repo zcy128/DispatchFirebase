@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
+import '../../../core/network/api_client.dart';
 import '../../../core/api_config.dart';
 import '../models/expense_reimbursement_model.dart';
 
@@ -20,7 +21,7 @@ class ExpenseReimbursementRepository {
     FirebaseFirestore? firestore,
     http.Client? httpClient,
   })  : _firestoreOverride = firestore,
-        _httpClient = httpClient ?? http.Client();
+        _httpClient = httpClient ?? AuthenticatedHttpClient.instance;
 
   bool get isFirestoreAvailable {
     try {

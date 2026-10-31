@@ -7,8 +7,18 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import '../../../core/api_config.dart';
+import '../../../core/network/api_client.dart';
 import '../../route/repository/route_repository.dart';
 import '../models/dispatch_model.dart';
+
+class DispatchRejected implements Exception {
+  final String message;
+
+  const DispatchRejected(this.message);
+
+  @override
+  String toString() => message;
+}
 
 class DispatchRepository {
   static const String boxName = 'dispatch_records_v1';
@@ -27,7 +37,7 @@ class DispatchRepository {
   DispatchRepository({
     http.Client? httpClient,
     String? apiBaseUrl,
-  })  : _httpClient = httpClient ?? http.Client(),
+  })  : _httpClient = httpClient ?? AuthenticatedHttpClient.instance,
         apiBaseUrl = apiBaseUrl ?? ApiConfig.baseUrl;
 
   Future<void> init() async {
@@ -59,8 +69,8 @@ class DispatchRepository {
   bool isWithinAllowedWindow(DateTime targetDate, {DateTime? referenceToday}) {
     final today = normalizeDate(referenceToday ?? DateTime.now());
     final target = normalizeDate(targetDate);
-    final minDate = today.subtract(const Duration(days: 7));
-    final maxDate = today.add(const Duration(days: 7));
+    final minDate = DateTime(today.year, today.month, today.day - 7);
+    final maxDate = DateTime(today.year, today.month, today.day + 7);
     return !target.isBefore(minDate) && !target.isAfter(maxDate);
   }
 
@@ -409,6 +419,39 @@ class DispatchRepository {
     await box.put(record.id, record.toJson());
   }
 
+  Future<void> _sendAccepted(
+    String method,
+    Uri uri,
+    Map<String, dynamic> body,
+    String failureMessage,
+  ) async {
+    final headers = {'Content-Type': 'application/json'};
+    final encoded = jsonEncode(body);
+    final http.Response res;
+    try {
+      final request = method == 'POST'
+          ? _httpClient.post(uri, headers: headers, body: encoded)
+          : _httpClient.put(uri, headers: headers, body: encoded);
+      res = await request.timeout(const Duration(seconds: 12));
+    } catch (_) {
+      throw DispatchRejected(failureMessage);
+    }
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw DispatchRejected(_messageFromResponse(res, failureMessage));
+    }
+  }
+
+  String _messageFromResponse(http.Response res, String fallback) {
+    try {
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map) {
+        final message = decoded['error']?.toString().trim() ?? '';
+        if (message.isNotEmpty) return message;
+      }
+    } catch (_) {}
+    return fallback;
+  }
+
   Future<DispatchRecord> checkInDriver(String dispatchId, {DateTime? now}) async {
     final record = getDispatchById(dispatchId);
     if (record == null) {
@@ -418,16 +461,12 @@ class DispatchRepository {
     final currentTime = now ?? DateTime.now();
     final timeStr = formatTime(currentTime);
 
-    try {
-      final uri = Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/check-in');
-      await _httpClient.put(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'checkInTime': timeStr}),
-      ).timeout(const Duration(seconds: 4));
-    } catch (_) {
-      // Offline fallback: continue saving locally
-    }
+    await _sendAccepted(
+      'PUT',
+      Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/check-in'),
+      {'checkInTime': timeStr},
+      'Check-in was not saved on the server. Try again.',
+    );
 
     final updated = record.copyWith(
       status: 'in_progress',
@@ -497,21 +536,16 @@ class DispatchRepository {
       }
     }
 
-    // 2. REST API call to Go server
-    try {
-      final uri = Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/check-out');
-      await _httpClient.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'role': 'driver',
-          'checkOutTime': timeStr,
-          if (hasComments) 'payrollComments': comments,
-        }),
-      ).timeout(const Duration(seconds: 4));
-    } catch (_) {
-      // Offline fallback: continue saving locally
-    }
+    await _sendAccepted(
+      'POST',
+      Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/check-out'),
+      {
+        'role': 'driver',
+        'checkOutTime': timeStr,
+        if (hasComments) 'payrollComments': comments,
+      },
+      'Check-out was not saved on the server. Try again.',
+    );
 
     final updated = record.copyWith(
       status: 'completed',
@@ -532,16 +566,12 @@ class DispatchRepository {
     final currentTime = now ?? DateTime.now();
     final timeStr = formatTime(currentTime);
 
-    try {
-      final uri = Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/arrive');
-      await _httpClient.put(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'actualArrivalTime': timeStr}),
-      ).timeout(const Duration(seconds: 4));
-    } catch (_) {
-      // Offline fallback: continue saving locally
-    }
+    await _sendAccepted(
+      'PUT',
+      Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/arrive'),
+      {'actualArrivalTime': timeStr},
+      'Stop arrival was not saved on the server. Try again.',
+    );
 
     final updatedStops = record.stops.map((stop) {
       if (stop.stopId == stopId) {
@@ -577,6 +607,19 @@ class DispatchRepository {
 
     if (record.isCheckedOut) {
       throw StateError('Cannot modify attendance after driver check-out.');
+    }
+
+    if (!record.stops.any((s) => s.stopId == stopId)) {
+      throw ArgumentError('Stop $stopId not found in dispatch $dispatchId');
+    }
+
+    if (newDropoffStatus == 'dropped_off') {
+      final wasAbsentAtHome = record.stops.any((s) =>
+          !s.isSchoolStop &&
+          s.students.any((st) => st.studentId == studentId && st.pickupStatus == 'absent'));
+      if (wasAbsentAtHome) {
+        throw StateError('Cannot drop off student who was marked absent at home pickup stop.');
+      }
     }
 
     final currentTime = now ?? DateTime.now();
@@ -626,28 +669,15 @@ class DispatchRepository {
       if (dropoffTime != null) payload['dropoffTime'] = dropoffTime;
       if (pickupTime != null) payload['pickupTime'] = pickupTime;
 
-      await _httpClient.put(
+      await _sendAccepted(
+        'PUT',
         uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 4));
-    } catch (_) {
-      // Offline fallback: continue saving locally
-    }
-
-    // Identify target stop existence
-    if (!record.stops.any((s) => s.stopId == stopId)) {
-      throw ArgumentError('Stop $stopId not found in dispatch $dispatchId');
-    }
-
-    // Validation: if attempting drop-off at a school dropoff stop, verify student was not absent at home
-    if (newDropoffStatus == 'dropped_off') {
-      final wasAbsentAtHome = record.stops.any((s) =>
-          !s.isSchoolStop &&
-          s.students.any((st) => st.studentId == studentId && st.pickupStatus == 'absent'));
-      if (wasAbsentAtHome) {
-        throw StateError('Cannot drop off student who was marked absent at home pickup stop.');
-      }
+        payload,
+        'Attendance was not saved on the server. Try again.',
+      );
+    } catch (error) {
+      if (error is DispatchRejected) rethrow;
+      throw DispatchRejected('Attendance was not saved on the server. Try again.');
     }
 
     final updatedStops = record.stops.map((stop) {
@@ -660,6 +690,8 @@ class DispatchRepository {
         String finalDropoffStatus = student.dropoffStatus;
         String? pickupTime = student.pickupTime;
         String? dropoffTime = student.dropoffTime;
+        var clearPickupTime = false;
+        var clearDropoffTime = false;
 
         if (newPickupStatus == 'picked_up') {
           finalPickupStatus = 'picked_up';
@@ -672,6 +704,8 @@ class DispatchRepository {
           finalDropoffStatus = 'bypassed_absent';
           pickupTime = null;
           dropoffTime = null;
+          clearPickupTime = true;
+          clearDropoffTime = true;
         }
 
         if (newDropoffStatus == 'dropped_off') {
@@ -688,6 +722,8 @@ class DispatchRepository {
           dropoffStatus: finalDropoffStatus,
           pickupTime: pickupTime,
           dropoffTime: dropoffTime,
+          clearPickupTime: clearPickupTime,
+          clearDropoffTime: clearDropoffTime,
           notes: student.notes,
         );
       }).toList();
@@ -737,54 +773,45 @@ class DispatchRepository {
       orElse: () => throw ArgumentError('Stop $stopId not found in dispatch $dispatchId'),
     );
 
-    // 1. Synchronize stop arrival to backend API
-    try {
-      final uri = Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/arrive');
-      await _httpClient.put(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'actualArrivalTime': formattedTime}),
-      ).timeout(const Duration(seconds: 4));
-    } catch (_) {
-      // Offline fallback: continue saving locally
-    }
+    const attendanceFailure = 'Attendance was not saved on the server. Try again.';
+    await _sendAccepted(
+      'PUT',
+      Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/arrive'),
+      {'actualArrivalTime': formattedTime},
+      attendanceFailure,
+    );
 
-    // 2. Determine affected students and notify backend
     final affectedStudentIds = <int>{};
     for (final student in targetStop.students) {
       if (actionType == 'pickup_all' && student.pickupStatus != 'absent') {
         affectedStudentIds.add(student.studentId);
-        try {
-          final uri = Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/students/${student.studentId}');
-          _httpClient.put(
-            uri,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'isPresent': true,
-              'pickupTime': formattedTime,
-              'actualArrivalTime': formattedTime,
-              'status': 'picked_up',
-              'reportedBy': 'driver',
-            }),
-          ).timeout(const Duration(seconds: 4)).ignore();
-        } catch (_) {}
+        await _sendAccepted(
+          'PUT',
+          Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/students/${student.studentId}'),
+          {
+            'isPresent': true,
+            'pickupTime': formattedTime,
+            'actualArrivalTime': formattedTime,
+            'status': 'picked_up',
+            'reportedBy': 'driver',
+          },
+          attendanceFailure,
+        );
       } else if (actionType == 'dropoff_all' && student.pickupStatus == 'picked_up' && student.dropoffStatus != 'bypassed_absent') {
         affectedStudentIds.add(student.studentId);
-        try {
-          final uri = Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/students/${student.studentId}');
-          _httpClient.put(
-            uri,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'isPresent': true,
-              'status': 'dropped_off',
-              'dropoffStatus': 'dropped_off',
-              'dropoffTime': formattedTime,
-              'actualArrivalTime': formattedTime,
-              'reportedBy': 'driver',
-            }),
-          ).timeout(const Duration(seconds: 4)).ignore();
-        } catch (_) {}
+        await _sendAccepted(
+          'PUT',
+          Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/students/${student.studentId}'),
+          {
+            'isPresent': true,
+            'status': 'dropped_off',
+            'dropoffStatus': 'dropped_off',
+            'dropoffTime': formattedTime,
+            'actualArrivalTime': formattedTime,
+            'reportedBy': 'driver',
+          },
+          attendanceFailure,
+        );
       }
     }
 
