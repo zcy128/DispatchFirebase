@@ -46,6 +46,8 @@ class StudentAttendance extends Equatable {
     String? pickupTime,
     String? dropoffTime,
     String? notes,
+    bool clearPickupTime = false,
+    bool clearDropoffTime = false,
   }) {
     return StudentAttendance(
       studentId: studentId ?? this.studentId,
@@ -56,8 +58,8 @@ class StudentAttendance extends Equatable {
       schoolName: schoolName ?? this.schoolName,
       pickupStatus: pickupStatus ?? this.pickupStatus,
       dropoffStatus: dropoffStatus ?? this.dropoffStatus,
-      pickupTime: pickupTime ?? this.pickupTime,
-      dropoffTime: dropoffTime ?? this.dropoffTime,
+      pickupTime: clearPickupTime ? null : (pickupTime ?? this.pickupTime),
+      dropoffTime: clearDropoffTime ? null : (dropoffTime ?? this.dropoffTime),
       notes: notes ?? this.notes,
     );
   }

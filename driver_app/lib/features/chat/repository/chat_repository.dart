@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../../../core/network/api_client.dart';
 import '../models/chat_model.dart';
 
 class ChatRepository {
@@ -20,7 +21,7 @@ class ChatRepository {
     http.Client? httpClient,
     FirebaseFirestore? firestore,
   })  : apiBaseUrl = apiBaseUrl ?? (kDebugMode ? _localDevUrl : _defaultCloudRunUrl),
-        _httpClient = httpClient ?? http.Client(),
+        _httpClient = httpClient ?? AuthenticatedHttpClient.instance,
         _firestoreOverride = firestore;
 
   bool get isFirestoreAvailable {

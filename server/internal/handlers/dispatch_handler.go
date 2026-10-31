@@ -2192,23 +2192,12 @@ func (h *DispatchHandler) DeleteRouteAssessment(w http.ResponseWriter, r *http.R
 func (h *DispatchHandler) checkFleetRole(w http.ResponseWriter, r *http.Request) bool {
 	user := auth.GetUser(r.Context())
 	if user != nil {
-		if strings.EqualFold(user.Role, "fleet") || strings.EqualFold(user.Role, "admin") {
+		if strings.EqualFold(user.Role, "fleet") || strings.EqualFold(user.Role, "admin") || strings.EqualFold(user.Role, "manager") || strings.EqualFold(user.Role, "dispatcher") {
 			return true
 		}
 	}
 
-	roleHdr := r.Header.Get("X-User-Role")
-	if roleHdr == "" {
-		roleHdr = r.URL.Query().Get("role")
-	}
-	if roleHdr == "" {
-		roleHdr = r.URL.Query().Get("userRole")
-	}
-	if strings.EqualFold(roleHdr, "fleet") || strings.EqualFold(roleHdr, "admin") {
-		return true
-	}
-
-	http.Error(w, `{"error":"forbidden: only users with the fleet role can create or view vehicle handover records"}`, http.StatusForbidden)
+	http.Error(w, `{"error":"forbidden: only authorized fleet or dispatch staff can manage vehicle handover records"}`, http.StatusForbidden)
 	return false
 }
 

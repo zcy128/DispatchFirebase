@@ -43,6 +43,7 @@ Thumbs.db
 # Server Uploads
 server/uploads/*
 !server/uploads/.gitkeep
+server/internal/handlers/uploads/
 
 # Environment & Local Configuration
 **/.env

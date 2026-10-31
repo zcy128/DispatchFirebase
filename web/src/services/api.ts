@@ -1,5 +1,4 @@
 import { auth } from './firebase';
-import { isDemoMode } from '../config/appMode';
 
 // When running with Vite dev proxy, empty string calls same origin /api which proxies to :8080
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
@@ -15,20 +14,19 @@ export async function getAuthToken(): Promise<string> {
     }
   }
 
-  // 2. Stored auth or mock token
+  // 2. Real signed HMAC token from backend login
   const authToken = localStorage.getItem('dispatch_auth_token');
   if (authToken) {
     return authToken;
   }
-  const mockToken = localStorage.getItem('dispatch_mock_token');
-  if (mockToken) {
-    return mockToken;
+
+  // Legacy cleanup: remove any obsolete mock token
+  try {
+    localStorage.removeItem('dispatch_mock_token');
+  } catch {
+    // ignore
   }
 
-  // 3. Demo deployments fall back to the mock admin token. Production builds do not.
-  if (isDemoMode) {
-    return 'mock-admin-token-secret-dev';
-  }
   return '';
 }
 
@@ -43,20 +41,6 @@ export async function apiRequest<T>(
 
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
-  }
-
-  if (!headers.has('X-User-Role')) {
-    try {
-      const mockRaw = localStorage.getItem('dispatch_mock_user');
-      if (mockRaw) {
-        const u = JSON.parse(mockRaw);
-        if (u?.role) {
-          headers.set('X-User-Role', u.role);
-        }
-      }
-    } catch {
-      // ignore
-    }
   }
 
   let path = endpoint;

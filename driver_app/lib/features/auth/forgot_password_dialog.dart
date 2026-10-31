@@ -1,4 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
+import '../../core/api_config.dart';
 import '../../core/theme.dart';
 
 class ForgotPasswordDialog extends StatefulWidget {
@@ -14,6 +19,8 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
   bool _isLoading = false;
   bool _isSuccess = false;
   String? _errorMessage;
+  String _successMessage =
+      'If an account exists for that email, a reset link has been sent.';
 
   @override
   void dispose() {
@@ -29,15 +36,54 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
       _errorMessage = null;
     });
 
-    // Simulate API request delay
-    await Future.delayed(const Duration(milliseconds: 900));
+    final identifier = _emailController.text.trim();
+    try {
+      final uri = Uri.parse('${ApiConfig.baseUrl}/api/auth/forgot-password');
+      final res = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': identifier}),
+      ).timeout(const Duration(seconds: 12));
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      _isLoading = false;
-      _isSuccess = true;
-    });
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final message = _messageFromBody(res.body);
+        setState(() {
+          _isLoading = false;
+          _isSuccess = true;
+          if (message != null && message.isNotEmpty) {
+            _successMessage = message;
+          }
+        });
+        return;
+      }
+
+      setState(() {
+        _isLoading = false;
+        _errorMessage = _messageFromBody(res.body) ??
+            'Password reset is unavailable right now. Try again or contact dispatch.';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Cannot reach the sign-in service. Check your connection and try again.';
+      });
+    }
+  }
+
+  String? _messageFromBody(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        final message = decoded['message']?.toString().trim() ?? '';
+        if (message.isNotEmpty) return message;
+        final error = decoded['error']?.toString().trim() ?? '';
+        if (error.isNotEmpty) return error;
+      }
+    } catch (_) {}
+    return null;
   }
 
   @override
@@ -257,7 +303,7 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
         ),
         const SizedBox(height: 8),
         Text(
-          'We have dispatched password recovery instructions to ${_emailController.text}. Please check your inbox and follow the steps provided.',
+          _successMessage,
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 13,

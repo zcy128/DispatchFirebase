@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../network/api_client.dart';
 import '../../main.dart';
 import '../api_config.dart';
 
@@ -22,7 +23,7 @@ class DeviceTokenService {
     }
   }
 
-  final http.Client _httpClient = http.Client();
+  final http.Client _httpClient = AuthenticatedHttpClient.instance;
   StreamSubscription<String>? _tokenRefreshSub;
   StreamSubscription<RemoteMessage>? _messageSub;
   String? _currentEmployeeId;

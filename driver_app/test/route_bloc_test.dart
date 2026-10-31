@@ -31,7 +31,7 @@ void main() {
       expect(route, isNotNull);
       expect(route!.routeNo, equals('OCDSB-001'));
       expect(route.routeName, equals('Route 001 - Hillcrest High School'));
-      expect(route.driverName, equals('Driver1 Doe'));
+      expect(route.driverName, equals('David Miller'));
       expect(route.vehicleUnit, equals('1001'));
       expect(route.attendantName, equals('Sarah Connor'));
       expect(route.shifts.length, equals(2));

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import '../../../core/phone_link.dart';
 import '../../../core/theme.dart';
 import '../../../core/feedback_utils.dart';
 import '../../../core/widgets/google_route_map_card.dart';
@@ -1109,7 +1110,8 @@ class _ShiftSelectorCard extends StatelessWidget {
 
   void _showAttendantDetailsModal(BuildContext context, DispatchRecord dispatch) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final phone = dispatch.attendantPhone ?? '+1 (613) 555-0184';
+    final phone = (dispatch.attendantPhone ?? '').trim();
+    final contactName = dispatch.attendantName ?? 'Attendant';
     final isOnline = dispatch.attendantStatus == 'online';
 
     showModalBottomSheet(
@@ -1198,22 +1200,24 @@ class _ShiftSelectorCard extends StatelessWidget {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          phone,
+                          phone.isEmpty ? 'No phone number is on file.' : phone,
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                         ),
                       ),
                       IconButton(
                         tooltip: 'Copy Number',
                         icon: const Icon(Icons.copy_rounded, size: 18),
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: phone));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Attendant phone number copied to clipboard!'),
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
-                        },
+                        onPressed: phone.isEmpty
+                            ? null
+                            : () {
+                                Clipboard.setData(ClipboardData(text: phone));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Attendant phone number copied to clipboard!'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              },
                       ),
                     ],
                   ),
@@ -1222,17 +1226,14 @@ class _ShiftSelectorCard extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.of(modalCtx).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Calling attendant Claire Dufresne at $phone...'),
-                          backgroundColor: AppColors.primaryDark,
-                        ),
-                      );
-                    },
+                    onPressed: phone.isEmpty
+                        ? null
+                        : () {
+                            Navigator.of(modalCtx).pop();
+                            placePhoneCall(context, phone, contactName);
+                          },
                     icon: const Icon(Icons.call_rounded),
-                    label: Text('Call $phone'),
+                    label: Text(phone.isEmpty ? 'Call' : 'Call $phone'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: const Color(0xFF0F172A),

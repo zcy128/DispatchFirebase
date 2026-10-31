@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/api_config.dart';
+import '../../../core/network/api_client.dart';
 import '../../route/repository/route_repository.dart';
 import '../models/time_off_model.dart';
 
@@ -14,6 +15,10 @@ class TimeOffRepository {
   static String get serverBaseUrl => ApiConfig.baseUrl;
 
   Box? _box;
+  final http.Client _httpClient;
+
+  TimeOffRepository({http.Client? httpClient})
+      : _httpClient = httpClient ?? AuthenticatedHttpClient.instance;
 
   bool get isFirestoreAvailable {
     try {
@@ -141,7 +146,7 @@ class TimeOffRepository {
 
       final uri = Uri.parse(
           '$serverBaseUrl/api/public/dispatch/time-off-requests?employeeId=${Uri.encodeComponent(queryId)}');
-      final res = await http.get(uri).timeout(const Duration(seconds: 4));
+      final res = await _httpClient.get(uri).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
         final list = jsonDecode(res.body) as List<dynamic>;
         final models = list
@@ -219,7 +224,7 @@ class TimeOffRepository {
         'requestedByName': updated.requestedByName,
       };
 
-      await http.post(
+      await _httpClient.post(
         uri,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(payload),
@@ -269,7 +274,7 @@ class TimeOffRepository {
     // 3. Notify REST endpoint
     try {
       final uri = Uri.parse('$serverBaseUrl/api/public/dispatch/time-off-requests/$requestId/cancel');
-      await http.post(uri).timeout(const Duration(seconds: 4));
+      await _httpClient.post(uri).timeout(const Duration(seconds: 4));
     } catch (e) {
       debugPrint('REST cancelTimeOffRequest notice: $e');
     }

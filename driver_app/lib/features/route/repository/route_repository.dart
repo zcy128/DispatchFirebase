@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/api_config.dart';
+import '../../../core/network/api_client.dart';
 import '../models/route_model.dart';
 
 class RouteRepository {
@@ -28,19 +29,12 @@ class RouteRepository {
     String? apiBaseUrl,
     http.Client? httpClient,
   })  : apiBaseUrl = apiBaseUrl ?? defaultApiBase,
-        _httpClient = httpClient ?? http.Client();
+        _httpClient = httpClient ?? AuthenticatedHttpClient.instance;
 
   Future<void> init() async {
     _box = await Hive.openBox<String>(boxName);
     if (_box!.isEmpty) {
       await _seedDefaultRoute();
-    } else {
-      // Auto-migrate if old test seed data exists
-      final existing = await getAssignedRoute('EMP-001');
-      if (existing == null || existing.routeName.contains('Colonel By')) {
-        await _box!.clear();
-        await _seedDefaultRoute();
-      }
     }
   }
 
@@ -56,8 +50,8 @@ class RouteRepository {
   static String resolveEmployeeId(String input) {
     final clean = input.trim();
     final lower = clean.toLowerCase();
-    if (lower == 'driver1d' || lower == 'driver1' || lower == 'drv-1021') {
-      return 'EMP-001';
+    if (lower == 'driver1d' || lower == 'driver1' || lower == 'drv-1021' || lower == 'emp-2001' || lower == 'emp-001') {
+      return 'EMP-2001';
     }
     final match = RegExp(r'^(?:driver|drv-?)(\d+)d?$', caseSensitive: false).firstMatch(lower);
     if (match != null) {
@@ -94,12 +88,14 @@ class RouteRepository {
         if (routeDriver == normalized || matchesDriver(routeDriver, normalized)) {
           return route;
         }
-        // Match aliases for Driver 1 (driver1d, EMP-001, DRV-1021)
+        // Match aliases for Driver 1 (driver1d, EMP-2001, EMP-001, DRV-1021)
         final isDriver1Alias = normalized == 'driver1d' ||
             normalized == 'driver1' ||
+            normalized == 'emp-2001' ||
             normalized == 'emp-001' ||
             normalized == 'drv-1021';
-        final isRouteDriver1Alias = routeDriver == 'emp-001' ||
+        final isRouteDriver1Alias = routeDriver == 'emp-2001' ||
+            routeDriver == 'emp-001' ||
             routeDriver == 'driver1d' ||
             routeDriver == 'drv-1021';
         if (isDriver1Alias && isRouteDriver1Alias) {
@@ -199,10 +195,9 @@ class RouteRepository {
           }
         }
 
-        // If school stop has no specific stop students, assign the full shift roster
-        final stopStudents = (isSchool && students.isEmpty)
-            ? (allShiftStudents.isNotEmpty ? allShiftStudents : _knownStudents.values.toList())
-            : students;
+        // A school stop with no explicit roster uses the students already
+        // assigned to this shift. It does not fall back to the demo roster.
+        final stopStudents = (isSchool && students.isEmpty) ? allShiftStudents : students;
 
         stops.add(DriverRouteStop(
           stopId: stopId,
@@ -228,25 +223,27 @@ class RouteRepository {
         runDays: s['runDays']?.toString() ?? 'MTWRF',
         firstStopTime: formatTimeDisplay(s['firstStopTime']?.toString() ?? ''),
         lastStopTime: formatTimeDisplay(s['lastStopTime']?.toString() ?? ''),
-        schoolsServiced: matchingRoute['routeName']?.toString() ?? 'Hillcrest High School',
+        schoolsServiced: matchingRoute['routeName']?.toString() ?? '',
         stops: stops,
       ));
     }
 
     return DriverRouteInfo(
       id: routeId,
-      routeNo: matchingRoute['routeNo']?.toString() ?? 'OCDSB-001',
-      routeName: matchingRoute['routeName']?.toString() ?? 'Route 001 - Hillcrest High School',
-      schoolBoard: matchingRoute['schoolBoardCode']?.toString() ?? 'OCDSB',
-      yardName: matchingRoute['yardName']?.toString() ?? 'Yard 1',
+      routeNo: matchingRoute['routeNo']?.toString() ?? '',
+      routeName: matchingRoute['routeName']?.toString() ?? '',
+      schoolBoard: matchingRoute['schoolBoardCode']?.toString() ?? '',
+      yardName: matchingRoute['yardName']?.toString() ?? '',
       driverId: matchingRoute['driverId']?.toString() ?? driverId,
-      driverName: matchingRoute['driverName']?.toString() ?? 'Assigned Driver',
-      vehicleUnit: matchingRoute['unitNumber']?.toString() ?? '1001',
-      plateNumber: matchingRoute['plateNumber']?.toString() ?? 'ON-1001',
-      attendantName: matchingRoute['attendantName']?.toString() ?? 'Sarah Connor',
-      attendantPhone: matchingRoute['attendantPhone']?.toString() ?? '613-555-0999',
-      attendantStatus: 'online',
-      instructions: 'Main school bay dropoff. Be mindful of peak traffic.',
+      driverName: matchingRoute['driverName']?.toString() ?? '',
+      vehicleUnit: matchingRoute['unitNumber']?.toString() ?? '',
+      plateNumber: matchingRoute['plateNumber']?.toString() ?? '',
+      attendantName: matchingRoute['attendantName']?.toString() ?? '',
+      attendantPhone: matchingRoute['attendantPhone']?.toString() ?? '',
+      attendantStatus: matchingRoute['attendantStatus']?.toString() ?? '',
+      instructions: matchingRoute['instructions']?.toString() ??
+          matchingRoute['comment']?.toString() ??
+          '',
       shifts: shifts,
     );
   }
@@ -291,8 +288,7 @@ class RouteRepository {
               final rDriverId = (data['driverId'] ?? '').toString();
               final rDriverName = (data['driverName'] ?? '').toString();
               final matches = matchesDriver(rDriverId, normalized) ||
-                  matchesDriver(rDriverName, normalized) ||
-                  (empId == 'EMP-001' && (data['id'] == 'RT-001' || data['id'] == 'OCDSB-001'));
+                  matchesDriver(rDriverName, normalized);
               if (matches) {
                 matchingRoute = data;
                 break;
@@ -326,7 +322,7 @@ class RouteRepository {
                 }).toList();
 
                 final liveRoute = buildRouteInfoFromMap(routeMeta, shiftsJson, normalized);
-                await saveRoute(liveRoute);
+                await cacheLiveRoute(liveRoute);
                 if (!controller.isClosed) controller.add(liveRoute);
               }, onError: (err) {
                 debugPrint('[Firestore Route Shifts] Stream error: $err');
@@ -368,13 +364,11 @@ class RouteRepository {
       final List<dynamic> routesJson = jsonDecode(res.body);
       Map<String, dynamic>? matchingRoute;
 
-      final empId = resolveEmployeeId(normalized);
       for (final r in routesJson) {
         final rDriverId = (r['driverId'] ?? '').toString();
         final rDriverName = (r['driverName'] ?? '').toString();
         final matches = matchesDriver(rDriverId, normalized) ||
-            matchesDriver(rDriverName, normalized) ||
-            (empId == 'EMP-001' && (r['id'] == 'RT-001' || r['id'] == 'OCDSB-001'));
+            matchesDriver(rDriverName, normalized);
         if (matches) {
           matchingRoute = Map<String, dynamic>.from(r as Map);
           break;
@@ -392,8 +386,7 @@ class RouteRepository {
       final List<dynamic> shiftsJson = jsonDecode(shiftsRes.body);
       final liveRoute = buildRouteInfoFromMap(matchingRoute, shiftsJson, normalized);
 
-      // Cache live route to local Hive storage
-      await saveRoute(liveRoute);
+      await cacheLiveRoute(liveRoute);
       return liveRoute;
     } catch (_) {
       // Offline fallback: returns null, calling layers will use cached Hive route
@@ -402,20 +395,42 @@ class RouteRepository {
   }
 
   static DriverRouteStudent _resolveStudent(int studentId, dynamic rawJson, String fallbackAddress) {
-    if (_knownStudents.containsKey(studentId)) {
-      return _knownStudents[studentId]!;
-    }
+    final payload = rawJson is Map ? rawJson : const <String, dynamic>{};
     return DriverRouteStudent(
       studentId: studentId,
-      studentNo: rawJson['studentNo']?.toString() ?? 'STU-$studentId',
-      name: rawJson['studentName']?.toString() ?? rawJson['name']?.toString() ?? 'Student #$studentId',
-      grade: rawJson['grade']?.toString() ?? 'Gr 5',
-      schoolName: rawJson['schoolName']?.toString() ?? 'Hillcrest High School',
-      address: fallbackAddress,
-      guardianName: rawJson['guardianName']?.toString(),
-      guardianPhone: rawJson['guardianPhone']?.toString(),
-      specialNeeds: rawJson['specialNeeds']?.toString(),
+      studentNo: payload['studentNo']?.toString() ?? 'STU-$studentId',
+      name: payload['studentName']?.toString() ??
+          payload['name']?.toString() ??
+          'Student #$studentId',
+      grade: payload['grade']?.toString() ?? '',
+      schoolName: payload['schoolName']?.toString() ?? '',
+      address: payload['address']?.toString().trim().isNotEmpty == true
+          ? payload['address'].toString()
+          : fallbackAddress,
+      guardianName: payload['guardianName']?.toString(),
+      guardianPhone: payload['guardianPhone']?.toString(),
+      specialNeeds: payload['specialNeeds']?.toString(),
     );
+  }
+
+  /// Stores a route returned by the server and drops other cached routes
+  /// for the same driver, including the offline demo seed.
+  Future<void> cacheLiveRoute(DriverRouteInfo route) async {
+    final staleKeys = <dynamic>[];
+    for (final key in box.keys) {
+      final raw = box.get(key);
+      if (raw == null) continue;
+      try {
+        final existing = DriverRouteInfo.fromJson(raw);
+        if (existing.id != route.id && matchesDriver(existing.driverId, route.driverId)) {
+          staleKeys.add(key);
+        }
+      } catch (_) {}
+    }
+    await saveRoute(route);
+    for (final key in staleKeys) {
+      await box.delete(key);
+    }
   }
 
   static String formatTimeDisplay(String raw) {
@@ -652,8 +667,8 @@ class RouteRepository {
       routeName: 'Route 001 - Hillcrest High School',
       schoolBoard: 'OCDSB',
       yardName: 'Yard 1',
-      driverId: 'EMP-001',
-      driverName: 'Driver1 Doe',
+      driverId: 'EMP-2001',
+      driverName: 'David Miller',
       vehicleUnit: '1001',
       plateNumber: 'ON-1001',
       attendantName: 'Sarah Connor',

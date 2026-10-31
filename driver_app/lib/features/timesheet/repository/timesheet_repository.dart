@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import '../../../core/api_config.dart';
+import '../../../core/network/api_client.dart';
 import '../../dispatch/repository/dispatch_repository.dart';
 import '../../expense_reimbursement/repository/expense_reimbursement_repository.dart';
 import '../../route/repository/route_repository.dart';
@@ -23,7 +24,7 @@ class TimesheetRepository {
     this.dispatchRepository,
     this.routeRepository,
     this.expenseRepository,
-  })  : _httpClient = httpClient ?? http.Client(),
+  })  : _httpClient = httpClient ?? AuthenticatedHttpClient.instance,
         apiBaseUrl = apiBaseUrl ?? ApiConfig.baseUrl;
 
   bool get isFirestoreAvailable {

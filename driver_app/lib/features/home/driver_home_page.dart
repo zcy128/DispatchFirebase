@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/network/api_client.dart';
 import '../../core/theme.dart';
 import '../auth/login_page.dart';
 import '../dispatch/presentation/dispatch_page.dart';
@@ -49,12 +51,14 @@ import '../../core/services/device_token_service.dart';
 class DriverHomePage extends StatefulWidget {
   final String username;
   final String role;
+  final String employeeId;
   final int initialTab;
 
   const DriverHomePage({
     super.key,
     required this.username,
     this.role = 'Driver',
+    this.employeeId = '',
     this.initialTab = 0,
   });
 
@@ -90,6 +94,8 @@ class _DriverHomePageState extends State<DriverHomePage> {
   }
 
   String get _resolvedDriverId {
+    final provided = widget.employeeId.trim();
+    if (provided.isNotEmpty) return provided;
     return RouteRepository.resolveEmployeeId(widget.username);
   }
 
@@ -509,7 +515,17 @@ class _DriverHomePageBody extends StatelessWidget {
     );
   }
 
-  void _signOut(BuildContext context) {
+  Future<void> _signOut(BuildContext context) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('driver_auth_token');
+      AuthenticatedHttpClient.setToken(null);
+      await prefs.remove('driver_saved_employee_id');
+      await prefs.remove('driver_saved_display_name');
+      await prefs.remove('driver_saved_username');
+      await prefs.remove('driver_saved_overrides');
+    } catch (_) {}
+    if (!context.mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const LoginPage()),
     );

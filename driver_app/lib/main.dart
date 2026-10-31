@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'core/network/api_client.dart';
 import 'core/theme.dart';
 import 'features/auth/login_page.dart';
 import 'features/dispatch/repository/dispatch_repository.dart';
@@ -22,9 +24,24 @@ import 'firebase_options.dart';
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
+bool get _showLocalPhoneFrame {
+  if (!kIsWeb) return false;
+  final host = Uri.base.host.toLowerCase();
+  return host == 'localhost' || host == '127.0.0.1';
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
+
+  // Restore active driver auth token for transparent API authentication
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final savedToken = prefs.getString('driver_auth_token');
+    if (savedToken != null && savedToken.trim().isNotEmpty) {
+      AuthenticatedHttpClient.setToken(savedToken.trim());
+    }
+  } catch (_) {}
 
   try {
     if (Firebase.apps.isEmpty) {
@@ -129,7 +146,7 @@ class DriverApp extends StatelessWidget {
         // Mobile phone viewport wrapper for desktop web preview
         return LayoutBuilder(
           builder: (context, constraints) {
-            if (kIsWeb && constraints.maxWidth > 520) {
+            if (_showLocalPhoneFrame && constraints.maxWidth > 520) {
               return Scaffold(
                 backgroundColor: const Color(0xFF090D16),
                 body: Center(

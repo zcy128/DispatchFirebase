@@ -321,6 +321,9 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
 ## 安全与开源规范
 
 - **凭证安全**：请**切勿**将包含真实密钥的 `serviceAccountKey.json`、`firebase_options.dart`、`.env` 提交至代码仓库。所有此类文件已被 `.gitignore` 严格排除。
+- **全链路严密 API 鉴权（零后门设计）**：Go 后端微服务全面废除静态明文 Mock 令牌（`mock-token-*`、`mock-admin-token-*`），所有受保护接口强制校验服务端私钥签名的 HMAC-SHA256 MCP 令牌（`dsp_mcp_...`）或经过验证的 Firebase ID 令牌。已被停用的员工账号（`is_active = false`）在服务端全链路直接返回 `403 Forbidden`。废除通过请求头（如 `X-User-Role`）提升角色的逻辑，严格基于数据库鉴权。
+- **客户端安全会话与离线降级防护**：Flutter 司机端通过 `AuthenticatedHttpClient` 拦截器透明注入签名 Bearer 令牌并自动过滤遗留假令牌；离线演示降级严格仅在网络/传输中断（`transportFailed == true`）时启用，服务端主动返回错误（HTTP 401/403）时强制阻断登录并提示停用状态；离线会话完整保留本地已有的真实令牌（Firebase JWT 或 HMAC MCP），避免真实凭据被擦除；默认演示账号统一对齐种子工号 `EMP-2001`（David Miller），解决设备推送注册接口（`/api/public/devices/register`）的一致性鉴权校验。
+- **公共接口防护与防伪造限流**：路线班次详情、设备注册、交车出场、车辆点检上传均纳入受保护守卫；匿名公开接口仅限学校、场站等只读目录，且具备基于真实客户端 IP 的限流与防伪造机制。
 - **Firestore 生产级规则与行级防泄露**：内置完整的生产级 `firestore.rules`，通过内存动态裁决模块覆盖与行级所有权（零额外读计费）；客户端严格配合使用 `where('employeeId', '==', id)` 定向检索，彻底避免越权与数据泄露。
 - **对接密钥**：BusPlanner、Zonar、BambooHR 的凭据，以及 BusPlanner staging 集合，只允许 API 读取。Firestore 规则拒绝浏览器访问。
 - **MCP Token 安全**：MCP Token 存储于 Firestore 私有集合中并采用安全加盐哈希，客户端只在生成时可见一次，避免长效明文泄露。

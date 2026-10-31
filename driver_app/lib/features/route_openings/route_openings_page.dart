@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../../core/network/api_client.dart';
 import '../../core/theme.dart';
 import '../../core/widgets/google_route_map_card.dart';
 
@@ -617,29 +617,34 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
         final bases = kDebugMode
             ? [_localDevUrl, _defaultCloudRunUrl]
             : [_defaultCloudRunUrl];
+        final client = AuthenticatedHttpClient.instance;
         for (final base in bases) {
-          try {
-            final uri =
-                Uri.parse('$base/api/routes/${opening.routeId}/shifts');
-            final resp =
-                await http.get(uri).timeout(const Duration(seconds: 4));
-            if (resp.statusCode == 200) {
-              final decoded = json.decode(resp.body);
-              if (decoded is List && decoded.isNotEmpty) {
-                final shifts = decoded
-                    .whereType<Map>()
-                    .map((m) => SanitizedRouteShift.fromMap(
-                        Map<String, dynamic>.from(m), ''))
-                    .toList();
-                if (mounted) {
-                  setState(() {
-                    _shiftsByRouteId[opening.routeId] = shifts;
-                  });
+          final candidateUris = [
+            Uri.parse('$base/api/routes/${opening.routeId}/shifts'),
+            Uri.parse('$base/api/public/routes/${opening.routeId}/shifts'),
+          ];
+          for (final uri in candidateUris) {
+            try {
+              final resp =
+                  await client.get(uri).timeout(const Duration(seconds: 4));
+              if (resp.statusCode == 200) {
+                final decoded = json.decode(resp.body);
+                if (decoded is List && decoded.isNotEmpty) {
+                  final shifts = decoded
+                      .whereType<Map>()
+                      .map((m) => SanitizedRouteShift.fromMap(
+                          Map<String, dynamic>.from(m), ''))
+                      .toList();
+                  if (mounted) {
+                    setState(() {
+                      _shiftsByRouteId[opening.routeId] = shifts;
+                    });
+                  }
+                  return shifts;
                 }
-                return shifts;
               }
-            }
-          } catch (_) {}
+            } catch (_) {}
+          }
         }
       }
     } catch (e) {

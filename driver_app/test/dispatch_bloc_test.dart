@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'package:driver_app/features/dispatch/bloc/dispatch_bloc.dart';
 import 'package:driver_app/features/dispatch/bloc/dispatch_event.dart';
 import 'package:driver_app/features/dispatch/bloc/dispatch_state.dart';
@@ -14,7 +16,7 @@ void main() {
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('hive_dispatch_test_');
     Hive.init(tempDir.path);
-    repository = DispatchRepository();
+    repository = DispatchRepository(httpClient: _ScriptedClient(200));
     await repository.init();
   });
 
@@ -87,7 +89,18 @@ void main() {
       expect(record.isCheckedOut, isTrue);
       expect(record.checkOutTime, isNotNull);
 
-      // 4. Modifying attendance after checkout is rejected
+      // 4. A rejected server response leaves the shift scheduled
+      final rejected = DispatchRepository(httpClient: _ScriptedClient(500));
+      await rejected.init();
+      final pendingId = 'DISP-$todayStr-PM';
+      expect(rejected.getDispatchById(pendingId)!.status, 'scheduled');
+      expect(
+        () => rejected.checkInDriver(pendingId),
+        throwsA(isA<DispatchRejected>()),
+      );
+      expect(rejected.getDispatchById(pendingId)!.status, 'scheduled');
+
+      // 5. Modifying attendance after checkout is rejected
       expect(
         () => repository.updateStudentAttendance(
           dispatchId: dispatchId,
@@ -316,12 +329,13 @@ void main() {
       expect(RouteRepository.resolveEmployeeId('drv-21'), equals('EMP-021'));
       expect(RouteRepository.resolveEmployeeId('EMP-021'), equals('EMP-021'));
 
-      expect(RouteRepository.resolveEmployeeId('driver1d'), equals('EMP-001'));
-      expect(RouteRepository.resolveEmployeeId('driver1'), equals('EMP-001'));
-      expect(RouteRepository.resolveEmployeeId('drv-1021'), equals('EMP-001'));
-      expect(RouteRepository.resolveEmployeeId('EMP-001'), equals('EMP-001'));
+      expect(RouteRepository.resolveEmployeeId('driver1d'), equals('EMP-2001'));
+      expect(RouteRepository.resolveEmployeeId('driver1'), equals('EMP-2001'));
+      expect(RouteRepository.resolveEmployeeId('drv-1021'), equals('EMP-2001'));
+      expect(RouteRepository.resolveEmployeeId('EMP-2001'), equals('EMP-2001'));
 
       expect(RouteRepository.matchesDriver('driver21d', 'EMP-021'), isTrue);
+      expect(RouteRepository.matchesDriver('driver1d', 'EMP-2001'), isTrue);
       expect(RouteRepository.matchesDriver('driver1d', 'EMP-001'), isTrue);
       expect(RouteRepository.matchesDriver('driver1d', 'EMP-021'), isFalse);
     });
@@ -415,4 +429,18 @@ void main() {
       await bloc.close();
     });
   });
+}
+
+class _ScriptedClient extends http.BaseClient {
+  final int statusCode;
+
+  _ScriptedClient(this.statusCode);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    return http.StreamedResponse(
+      Stream<List<int>>.value(utf8.encode('{"ok":true}')),
+      statusCode,
+    );
+  }
 }
