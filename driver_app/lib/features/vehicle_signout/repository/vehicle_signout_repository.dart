@@ -11,7 +11,7 @@ import '../models/vehicle_signout_model.dart';
 
 class VehicleSignoutRepository {
   static const String _boxName = 'driver_vehicle_signouts_v1';
-  static String get _baseUrl => ApiConfig.dispatchApiUrl;
+  static String get _baseUrl => '${ApiConfig.baseUrl}/api/dispatch';
   static String get _uploadUrl => ApiConfig.uploadApiUrl;
 
   Box? _box;
@@ -59,7 +59,7 @@ class VehicleSignoutRepository {
   }) async {
     // 1. Try REST API
     try {
-      final params = <String>['role=fleet'];
+      final params = <String>[];
       if (unitNumber != null && unitNumber.isNotEmpty) {
         params.add('unitNumber=$unitNumber');
       }
@@ -69,7 +69,7 @@ class VehicleSignoutRepository {
       if (isSignIn != null) {
         params.add('isSignIn=$isSignIn');
       }
-      final query = '?${params.join('&')}';
+      final query = params.isEmpty ? '' : '?${params.join('&')}';
       final uri = Uri.parse('$_baseUrl/vehicle-signouts$query');
       final res = await _httpClient.get(uri).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
@@ -135,7 +135,7 @@ class VehicleSignoutRepository {
 
     // 1. Try REST API
     try {
-      final uri = Uri.parse('$_baseUrl/vehicle-signouts?role=fleet');
+      final uri = Uri.parse('$_baseUrl/vehicle-signouts');
       final res = await _httpClient
           .post(
             uri,
@@ -269,11 +269,13 @@ class VehicleSignoutRepository {
       request.files.add(
         http.MultipartFile.fromBytes('file', bytes, filename: filename),
       );
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 10));
+      final streamedResponse = await _httpClient.send(request).timeout(const Duration(seconds: 10));
       final response = await http.Response.fromStream(streamedResponse);
       if (response.statusCode == 200 || response.statusCode == 201) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
-        return json['url']?.toString();
+        final url = json['url']?.toString();
+        if (url == null || url.isEmpty) return null;
+        return ApiConfig.resolveUrl(url);
       }
     } catch (e) {
       debugPrint('[VehicleSignoutRepository] Photo upload failed: $e');

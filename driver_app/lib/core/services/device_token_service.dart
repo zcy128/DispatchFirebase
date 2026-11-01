@@ -210,7 +210,7 @@ class DeviceTokenService {
               ? 'Android Device'
               : 'iOS Device';
 
-      final uri = Uri.parse('$apiBaseUrl/api/public/devices/register');
+      final uri = Uri.parse('$apiBaseUrl/api/devices/register');
       final response = await _httpClient.post(
         uri,
         headers: {'Content-Type': 'application/json'},

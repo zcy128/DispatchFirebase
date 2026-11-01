@@ -3,10 +3,9 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -104,9 +103,9 @@ func (h *PayrollHandler) GetLookups(w http.ResponseWriter, r *http.Request) {
 		Shifts     []SimpleShift `json:"shifts"`
 	}
 	type SimpleEmp struct {
-		EmployeeID int    `json:"employeeId"`
-		FirstName  string `json:"firstName"`
-		LastName   string `json:"lastName"`
+		EmployeeID  int    `json:"employeeId"`
+		FirstName   string `json:"firstName"`
+		LastName    string `json:"lastName"`
 		JobPosition string `json:"jobPosition"`
 	}
 
@@ -138,11 +137,13 @@ func (h *PayrollHandler) GetLookups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var empList []SimpleEmp
+	usedEmpIDs := map[int]struct{}{}
 	for _, e := range employees {
-		empNum, _ := strconv.Atoi(strings.TrimPrefix(e.EmployeeNumber, "EMP-"))
-		if empNum == 0 {
-			empNum = 1000
+		empNum := models.PayrollAssigneeLookupID(e.EmployeeID, e.ID, e.EmployeeNumber)
+		if _, taken := usedEmpIDs[empNum]; empNum == 0 || taken {
+			empNum = uniquePayrollLookupID(e.ID+"|"+e.EmployeeNumber, usedEmpIDs)
 		}
+		usedEmpIDs[empNum] = struct{}{}
 		empList = append(empList, SimpleEmp{
 			EmployeeID:  empNum,
 			FirstName:   e.FirstName,
@@ -264,4 +265,19 @@ func (h *PayrollHandler) Calculate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(resp)
+}
+
+func uniquePayrollLookupID(key string, used map[int]struct{}) int {
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(key))
+	n := int(hasher.Sum32()%800000) + 100001
+	for {
+		if _, taken := used[n]; !taken {
+			return n
+		}
+		n++
+		if n > 999999 {
+			n = 100001
+		}
+	}
 }

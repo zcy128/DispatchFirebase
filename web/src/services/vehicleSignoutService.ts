@@ -6,9 +6,11 @@ import {
   setDoc,
   deleteDoc,
   onSnapshot,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { apiRequest } from './api';
+import { apiRequest, isClientHttpError } from './api';
 import {
   VehicleSignout,
   CreateVehicleSignoutPayload,
@@ -86,6 +88,22 @@ function normalizeRecord(raw: any, id: string): VehicleSignout {
   };
 }
 
+function listenerOwnEmployeeId(): string {
+  try {
+    const raw = localStorage.getItem('dispatch_auth_user');
+    if (!raw) return '';
+    const user = JSON.parse(raw);
+    const role = String(user?.role || '').toLowerCase();
+    const employeeId = String(user?.employeeId || '');
+    if ((role === 'driver' || role === 'helper') && employeeId) {
+      return employeeId;
+    }
+  } catch {
+    return '';
+  }
+  return '';
+}
+
 export const VehicleSignoutService = {
   list: async (filters?: {
     unitNumber?: string;
@@ -99,7 +117,6 @@ export const VehicleSignoutService = {
   }): Promise<VehicleSignout[]> => {
     try {
       const params = new URLSearchParams();
-      params.append('role', filters?.role || 'fleet');
       if (filters?.unitNumber) params.append('unitNumber', filters.unitNumber);
       if (filters?.employeeId) params.append('employeeId', filters.employeeId);
       if (filters?.isSignIn !== undefined) params.append('isSignIn', String(filters.isSignIn));
@@ -109,7 +126,7 @@ export const VehicleSignoutService = {
       if (filters?.endDate) params.append('endDate', filters.endDate);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await apiRequest<VehicleSignout[]>(`/api/public/dispatch/vehicle-signouts${qs}`);
+      const res = await apiRequest<VehicleSignout[]>(`/api/dispatch/vehicle-signouts${qs}`);
       if (Array.isArray(res)) {
         return res.map((r) => normalizeRecord(r, r.id));
       }
@@ -142,7 +159,7 @@ export const VehicleSignoutService = {
 
   getByID: async (id: string): Promise<VehicleSignout> => {
     try {
-      const res = await apiRequest<VehicleSignout>(`/api/public/dispatch/vehicle-signouts/${id}?role=fleet`);
+      const res = await apiRequest<VehicleSignout>(`/api/dispatch/vehicle-signouts/${id}`);
       return normalizeRecord(res, res.id);
     } catch {
       if (db) {
@@ -157,20 +174,13 @@ export const VehicleSignoutService = {
 
   create: async (payload: CreateVehicleSignoutPayload): Promise<VehicleSignout> => {
     try {
-      const res = await apiRequest<VehicleSignout>('/api/public/dispatch/vehicle-signouts?role=fleet', {
+      const res = await apiRequest<VehicleSignout>('/api/dispatch/vehicle-signouts', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      const record = normalizeRecord(res, res.id);
-      if (db) {
-        try {
-          await setDoc(doc(db, 'vehicle_signouts', record.id), record, { merge: true });
-        } catch (e) {
-          console.warn('Sync created vehicle signout to Firestore notice:', e);
-        }
-      }
-      return record;
-    } catch {
+      return normalizeRecord(res, res.id);
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
       // Direct Firestore creation fallback
       if (db) {
         const docRef = doc(collection(db, 'vehicle_signouts'));
@@ -190,20 +200,13 @@ export const VehicleSignoutService = {
 
   update: async (id: string, payload: Partial<VehicleSignout>): Promise<VehicleSignout> => {
     try {
-      const res = await apiRequest<VehicleSignout>(`/api/public/dispatch/vehicle-signouts/${id}?role=fleet`, {
+      const res = await apiRequest<VehicleSignout>(`/api/dispatch/vehicle-signouts/${id}`, {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
-      const updated = normalizeRecord(res, res.id);
-      if (db) {
-        try {
-          await setDoc(doc(db, 'vehicle_signouts', id), updated, { merge: true });
-        } catch (e) {
-          console.warn('Sync updated vehicle signout to Firestore notice:', e);
-        }
-      }
-      return updated;
-    } catch {
+      return normalizeRecord(res, res.id);
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
       if (db) {
         const now = new Date().toISOString();
         const docRef = doc(db, 'vehicle_signouts', id);
@@ -217,17 +220,13 @@ export const VehicleSignoutService = {
 
   delete: async (id: string): Promise<void> => {
     try {
-      await apiRequest(`/api/public/dispatch/vehicle-signouts/${id}?role=fleet`, {
+      await apiRequest(`/api/dispatch/vehicle-signouts/${id}`, {
         method: 'DELETE',
       });
-    } catch {
-      // ignore
-    }
-    if (db) {
-      try {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
+      if (db) {
         await deleteDoc(doc(db, 'vehicle_signouts', id));
-      } catch (e) {
-        console.warn('Sync delete vehicle signout to Firestore notice:', e);
       }
     }
   },
@@ -241,8 +240,13 @@ export const VehicleSignoutService = {
     cutoffDate.setDate(cutoffDate.getDate() - 365);
     const cutoffStr = cutoffDate.toISOString().slice(0, 10);
 
+    const constraints = [where('createdAt', '>=', cutoffStr)];
+    const driverId = listenerOwnEmployeeId();
+    if (driverId) {
+      constraints.push(where('employeeId', '==', driverId));
+    }
     return onSnapshot(
-      collection(db, 'vehicle_signouts'),
+      query(collection(db, 'vehicle_signouts'), ...constraints),
       (snapshot) => {
         const records: VehicleSignout[] = [];
         snapshot.forEach((d) => {

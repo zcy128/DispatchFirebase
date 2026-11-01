@@ -58,6 +58,16 @@ func (s *BambooHRStore) Load(ctx context.Context) (bambooSecret, error) {
 	if err := doc.DataTo(&secret); err != nil {
 		return bambooSecret{}, err
 	}
+	apiKey, err := openSecret(secret.APIKey)
+	if err != nil {
+		return bambooSecret{}, err
+	}
+	webhookKey, err := openSecret(secret.WebhookKey)
+	if err != nil {
+		return bambooSecret{}, err
+	}
+	secret.APIKey = apiKey
+	secret.WebhookKey = webhookKey
 	return secret, nil
 }
 
@@ -69,7 +79,17 @@ func (s *BambooHRStore) Save(ctx context.Context, secret bambooSecret) error {
 		s.hasMem = true
 		return nil
 	}
-	_, err := s.client.Collection(bambooSecretCollection).Doc(bambooSecretDocument).Set(ctx, secret)
+	apiKey, err := sealSecret(secret.APIKey)
+	if err != nil {
+		return err
+	}
+	webhookKey, err := sealSecret(secret.WebhookKey)
+	if err != nil {
+		return err
+	}
+	secret.APIKey = apiKey
+	secret.WebhookKey = webhookKey
+	_, err = s.client.Collection(bambooSecretCollection).Doc(bambooSecretDocument).Set(ctx, secret)
 	return err
 }
 

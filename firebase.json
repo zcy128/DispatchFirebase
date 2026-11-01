@@ -1,6 +1,7 @@
 {
   "firestore": {
-    "rules": "firestore.rules"
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   },
   "storage": {
     "rules": "storage.rules"
@@ -44,6 +45,13 @@
     "rewrites": [
       {
         "source": "/api/**",
+        "run": {
+          "serviceId": "dispatch-api",
+          "region": "northamerica-northeast1"
+        }
+      },
+      {
+        "source": "/uploads/**",
         "run": {
           "serviceId": "dispatch-api",
           "region": "northamerica-northeast1"

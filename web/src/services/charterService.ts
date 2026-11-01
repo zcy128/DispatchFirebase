@@ -10,6 +10,7 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { apiRequest } from './api';
 import {
   CharterClient,
   CharterTrip,
@@ -27,36 +28,73 @@ const TRIPS_COLL = 'charter_trips';
 const PAYROLL_COLL = 'dispatch_payrolls';
 const PAYROLL_LOG_COLL = 'payroll_logs';
 
+function isFirestoreDenied(err: unknown): boolean {
+  const code = String((err as { code?: string })?.code || '');
+  const message = String((err as { message?: string })?.message || err || '');
+  return (
+    code.includes('permission-denied') ||
+    message.includes('Missing or insufficient permissions') ||
+    message.includes('Firestore not initialized')
+  );
+}
+
+let tripsSubscriber: ((trips: CharterTrip[]) => void) | null = null;
+let clientsSubscriber: ((clients: CharterClient[]) => void) | null = null;
+
+async function publishTrips(list: CharterTrip[]) {
+  if (!tripsSubscriber) return;
+  const rows = Array.isArray(list) ? list : [];
+  rows.sort((a, b) => (b.departsAt || '').localeCompare(a.departsAt || ''));
+  tripsSubscriber(rows);
+}
+
+async function publishClients(list: CharterClient[]) {
+  if (!clientsSubscriber) return;
+  const rows = Array.isArray(list) ? list : [];
+  rows.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  clientsSubscriber(rows);
+}
+
 export const CharterService = {
   // ─── CHARTER CLIENTS ────────────────────────────────────────────────────────
 
   listClients: async (): Promise<CharterClient[]> => {
-    if (!db) return [];
-    try {
-      const q = query(collection(db, CLIENTS_COLL));
-      const snap = await getDocs(q);
-      const list: CharterClient[] = [];
-      snap.forEach((d) => {
-        list.push({ ...d.data(), id: d.id } as CharterClient);
-      });
-      list.sort((a, b) => a.name.localeCompare(b.name));
-      return list;
-    } catch (err) {
-      console.error('[CharterService] listClients error:', err);
-      return [];
+    if (db) {
+      try {
+        const q = query(collection(db, CLIENTS_COLL));
+        const snap = await getDocs(q);
+        const list: CharterClient[] = [];
+        snap.forEach((d) => {
+          list.push({ ...d.data(), id: d.id } as CharterClient);
+        });
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        return list;
+      } catch (err) {
+        if (!isFirestoreDenied(err)) {
+          console.warn('[CharterService] listClients error, falling back to API:', err);
+        }
+      }
     }
+    const list = await apiRequest<CharterClient[]>('/api/charter/clients');
+    const rows = Array.isArray(list) ? list : [];
+    rows.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    return rows;
   },
 
   subscribeToClients: (
     onUpdate: (clients: CharterClient[]) => void,
     onError?: (err: Error) => void
   ) => {
+    clientsSubscriber = onUpdate;
+    const stop = () => {
+      if (clientsSubscriber === onUpdate) clientsSubscriber = null;
+    };
     if (!db) {
       CharterService.listClients().then(onUpdate).catch(onError);
-      return () => {};
+      return stop;
     }
     const q = query(collection(db, CLIENTS_COLL));
-    return onSnapshot(
+    const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const list: CharterClient[] = [];
@@ -67,14 +105,20 @@ export const CharterService = {
         onUpdate(list);
       },
       (err) => {
-        console.error('[CharterService] subscribeToClients error:', err);
-        if (onError) onError(err);
+        console.warn('[CharterService] subscribeToClients error, falling back to API:', err);
+        CharterService.listClients().then(onUpdate).catch((apiErr) => {
+          console.error('[CharterService] charter client API fallback failed:', apiErr);
+          if (onError) onError(apiErr as Error);
+        });
       }
     );
+    return () => {
+      stop();
+      unsubscribe();
+    };
   },
 
   createClient: async (data: Omit<CharterClient, 'id' | 'createdAt' | 'updatedAt'>): Promise<CharterClient> => {
-    if (!db) throw new Error('Firestore not initialized');
     const id = `client-${Date.now()}`;
     const now = new Date().toISOString();
     const client: CharterClient = {
@@ -84,41 +128,79 @@ export const CharterService = {
       createdAt: now,
       updatedAt: now,
     };
-    await setDoc(doc(db, CLIENTS_COLL, id), client);
-    return client;
+    if (db) {
+      try {
+        await setDoc(doc(db, CLIENTS_COLL, id), client);
+        return client;
+      } catch (err) {
+        if (!isFirestoreDenied(err)) throw err;
+      }
+    }
+    const created = await apiRequest<CharterClient>('/api/charter/clients', {
+      method: 'POST',
+      body: JSON.stringify(client),
+    });
+    await publishClients(await CharterService.listClients());
+    return created;
   },
 
   updateClient: async (id: string, data: Partial<CharterClient>): Promise<void> => {
-    if (!db) throw new Error('Firestore not initialized');
     const now = new Date().toISOString();
-    await setDoc(doc(db, CLIENTS_COLL, id), { ...data, updatedAt: now }, { merge: true });
+    if (db) {
+      try {
+        await setDoc(doc(db, CLIENTS_COLL, id), { ...data, updatedAt: now }, { merge: true });
+        return;
+      } catch (err) {
+        if (!isFirestoreDenied(err)) throw err;
+      }
+    }
+    await apiRequest(`/api/charter/clients/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...data, updatedAt: now }),
+    });
+    await publishClients(await CharterService.listClients());
   },
 
   deleteClient: async (id: string): Promise<void> => {
-    if (!db) throw new Error('Firestore not initialized');
-    await deleteDoc(doc(db, CLIENTS_COLL, id));
+    if (db) {
+      try {
+        await deleteDoc(doc(db, CLIENTS_COLL, id));
+        return;
+      } catch (err) {
+        if (!isFirestoreDenied(err)) throw err;
+      }
+    }
+    await apiRequest(`/api/charter/clients/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await publishClients(await CharterService.listClients());
   },
 
   // ─── CHARTER TRIPS ──────────────────────────────────────────────────────────
 
   listTrips: async (date?: string): Promise<CharterTrip[]> => {
-    if (!db) return [];
-    try {
-      let q = query(collection(db, TRIPS_COLL));
-      if (date) {
-        q = query(collection(db, TRIPS_COLL), where('dispatchDate', '==', date));
+    if (db) {
+      try {
+        let q = query(collection(db, TRIPS_COLL));
+        if (date) {
+          q = query(collection(db, TRIPS_COLL), where('dispatchDate', '==', date));
+        }
+        const snap = await getDocs(q);
+        const list: CharterTrip[] = [];
+        snap.forEach((d) => {
+          list.push({ ...d.data(), id: d.id } as CharterTrip);
+        });
+        list.sort((a, b) => (b.departsAt || '').localeCompare(a.departsAt || ''));
+        return list;
+      } catch (err) {
+        if (!isFirestoreDenied(err)) {
+          console.warn('[CharterService] listTrips error, falling back to API:', err);
+        }
       }
-      const snap = await getDocs(q);
-      const list: CharterTrip[] = [];
-      snap.forEach((d) => {
-        list.push({ ...d.data(), id: d.id } as CharterTrip);
-      });
-      list.sort((a, b) => (b.departsAt || '').localeCompare(a.departsAt || ''));
-      return list;
-    } catch (err) {
-      console.error('[CharterService] listTrips error:', err);
-      return [];
     }
+    const q = date ? `?date=${encodeURIComponent(date)}` : '';
+    const list = await apiRequest<CharterTrip[]>(`/api/charter/trips${q}`);
+    const rows = Array.isArray(list) ? list : [];
+    rows.sort((a, b) => (b.departsAt || '').localeCompare(a.departsAt || ''));
+    return rows;
   },
 
   subscribeToTrips: (
@@ -126,15 +208,19 @@ export const CharterService = {
     onError?: (err: Error) => void,
     date?: string
   ) => {
+    tripsSubscriber = onUpdate;
+    const stop = () => {
+      if (tripsSubscriber === onUpdate) tripsSubscriber = null;
+    };
     if (!db) {
       CharterService.listTrips(date).then(onUpdate).catch(onError);
-      return () => {};
+      return stop;
     }
     const q = date
       ? query(collection(db, TRIPS_COLL), where('dispatchDate', '==', date))
       : query(collection(db, TRIPS_COLL));
 
-    return onSnapshot(
+    const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const list: CharterTrip[] = [];
@@ -148,21 +234,39 @@ export const CharterService = {
         onUpdate(list);
       },
       (err) => {
-        console.error('[CharterService] subscribeToTrips error:', err);
-        if (onError) onError(err);
+        console.warn('[CharterService] subscribeToTrips error, falling back to API:', err);
+        CharterService.listTrips(date).then(onUpdate).catch((apiErr) => {
+          console.error('[CharterService] charter trip API fallback failed:', apiErr);
+          if (onError) onError(apiErr as Error);
+        });
       }
     );
+    return () => {
+      stop();
+      unsubscribe();
+    };
   },
 
   getTripById: async (id: string): Promise<CharterTrip | null> => {
-    if (!db) return null;
-    const snap = await getDoc(doc(db, TRIPS_COLL, id));
-    if (!snap.exists()) return null;
-    return { ...snap.data(), id: snap.id } as CharterTrip;
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, TRIPS_COLL, id));
+        if (!snap.exists()) return null;
+        return { ...snap.data(), id: snap.id } as CharterTrip;
+      } catch (err) {
+        if (!isFirestoreDenied(err)) throw err;
+      }
+    }
+    try {
+      return await apiRequest<CharterTrip>(`/api/charter/trips/${encodeURIComponent(id)}`);
+    } catch (err) {
+      const message = String((err as { message?: string })?.message || '');
+      if (message.includes('not found')) return null;
+      throw err;
+    }
   },
 
   createTrip: async (tripData: Omit<CharterTrip, 'id' | 'createdAt' | 'updatedAt'>): Promise<CharterTrip> => {
-    if (!db) throw new Error('Firestore not initialized');
     const id = `trip-${Date.now()}`;
     const now = new Date().toISOString();
     const assignedEmployeeIds = extractAssignedEmployeeIds(tripData.assignments);
@@ -173,12 +277,39 @@ export const CharterService = {
       createdAt: now,
       updatedAt: now,
     };
-    await setDoc(doc(db, TRIPS_COLL, id), trip);
-    return trip;
+    if (db) {
+      try {
+        await setDoc(doc(db, TRIPS_COLL, id), trip);
+        return trip;
+      } catch (err) {
+        if (!isFirestoreDenied(err)) throw err;
+      }
+    }
+    const created = await apiRequest<CharterTrip>('/api/charter/trips', {
+      method: 'POST',
+      body: JSON.stringify(trip),
+    });
+    await publishTrips(await CharterService.listTrips());
+    return created;
   },
 
   updateTrip: async (id: string, data: Partial<CharterTrip>, actorName = 'Dispatcher'): Promise<void> => {
-    if (!db) throw new Error('Firestore not initialized');
+    const saveViaApi = async () => {
+      const payload: Partial<CharterTrip> = { ...data };
+      if (data.assignments) {
+        payload.assignedEmployeeIds = extractAssignedEmployeeIds(data.assignments);
+      }
+      await apiRequest(`/api/charter/trips/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      await publishTrips(await CharterService.listTrips());
+    };
+    if (!db) {
+      await saveViaApi();
+      return;
+    }
+    try {
     const now = new Date().toISOString();
     const tripRef = doc(db, TRIPS_COLL, id);
     const snap = await getDoc(tripRef);
@@ -202,21 +333,33 @@ export const CharterService = {
         await CharterService.syncAssignmentPayroll(updatedTrip, assignment, actorName);
       }
     }
+    } catch (err) {
+      if (!isFirestoreDenied(err)) throw err;
+      await saveViaApi();
+    }
   },
 
   deleteTrip: async (id: string): Promise<void> => {
-    if (!db) throw new Error('Firestore not initialized');
-    const snap = await getDoc(doc(db, TRIPS_COLL, id));
-    if (snap.exists()) {
-      const trip = snap.data() as CharterTrip;
-      if (trip.assignments) {
-        for (const a of trip.assignments) {
-          await CharterService.removeAssignmentPayroll(trip.id, a.id, 'driver');
-          await CharterService.removeAssignmentPayroll(trip.id, a.id, 'attendant');
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, TRIPS_COLL, id));
+        if (snap.exists()) {
+          const trip = snap.data() as CharterTrip;
+          if (trip.assignments) {
+            for (const a of trip.assignments) {
+              await CharterService.removeAssignmentPayroll(trip.id, a.id, 'driver');
+              await CharterService.removeAssignmentPayroll(trip.id, a.id, 'attendant');
+            }
+          }
         }
+        await deleteDoc(doc(db, TRIPS_COLL, id));
+        return;
+      } catch (err) {
+        if (!isFirestoreDenied(err)) throw err;
       }
     }
-    await deleteDoc(doc(db, TRIPS_COLL, id));
+    await apiRequest(`/api/charter/trips/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await publishTrips(await CharterService.listTrips());
   },
 
   // ─── ASSIGNMENTS & CREW CHECK-IN / CHECK-OUT ───────────────────────────────
@@ -232,42 +375,63 @@ export const CharterService = {
     crewUpdate: Partial<CharterAssignment>,
     actorName = 'Dispatcher'
   ): Promise<CharterTrip> => {
-    if (!db) throw new Error('Firestore not initialized');
-    const tripRef = doc(db, TRIPS_COLL, tripId);
-    const snap = await getDoc(tripRef);
-    if (!snap.exists()) throw new Error(`Trip ${tripId} not found`);
-
-    const trip = snap.data() as CharterTrip;
-    const assignments = trip.assignments || [];
-    const index = assignments.findIndex((a) => a.id === assignmentId);
-    if (index === -1) throw new Error(`Assignment ${assignmentId} not found`);
-
-    const oldAssignment = assignments[index];
-    const newAssignment: CharterAssignment = {
-      ...oldAssignment,
-      ...crewUpdate,
-      updatedAt: new Date().toISOString(),
+    const mergeCrew = (trip: CharterTrip): { trip: CharterTrip; oldAssignment: CharterAssignment; newAssignment: CharterAssignment } => {
+      const assignments = [...(trip.assignments || [])];
+      const index = assignments.findIndex((a) => a.id === assignmentId);
+      if (index === -1) throw new Error(`Assignment ${assignmentId} not found`);
+      const oldAssignment = assignments[index];
+      const newAssignment: CharterAssignment = {
+        ...oldAssignment,
+        ...crewUpdate,
+        updatedAt: new Date().toISOString(),
+      };
+      assignments[index] = newAssignment;
+      return {
+        oldAssignment,
+        newAssignment,
+        trip: {
+          ...trip,
+          assignments,
+          assignedEmployeeIds: extractAssignedEmployeeIds(assignments),
+          updatedAt: new Date().toISOString(),
+        },
+      };
     };
 
-    assignments[index] = newAssignment;
-    const updatedTrip: CharterTrip = {
-      ...trip,
-      assignments,
-      assignedEmployeeIds: extractAssignedEmployeeIds(assignments),
-      updatedAt: new Date().toISOString(),
+    const saveViaApi = async (updatedTrip: CharterTrip): Promise<CharterTrip> => {
+      await apiRequest(`/api/charter/trips/${encodeURIComponent(tripId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          assignments: updatedTrip.assignments,
+          assignedEmployeeIds: updatedTrip.assignedEmployeeIds,
+          updatedAt: updatedTrip.updatedAt,
+        }),
+      });
+      await publishTrips(await CharterService.listTrips());
+      return updatedTrip;
     };
 
-    await setDoc(tripRef, updatedTrip, { merge: true });
-
-    // If attendant was cleared/removed, delete any previous attendant payroll record
-    if (oldAssignment.attendantId && !newAssignment.attendantId) {
-      await CharterService.removeAssignmentPayroll(tripId, assignmentId, 'attendant');
+    if (db) {
+      try {
+        const tripRef = doc(db, TRIPS_COLL, tripId);
+        const snap = await getDoc(tripRef);
+        if (!snap.exists()) throw new Error(`Trip ${tripId} not found`);
+        const { trip: updatedTrip, oldAssignment, newAssignment } = mergeCrew({ ...snap.data(), id: snap.id } as CharterTrip);
+        await setDoc(tripRef, updatedTrip, { merge: true });
+        if (oldAssignment.attendantId && !newAssignment.attendantId) {
+          await CharterService.removeAssignmentPayroll(tripId, assignmentId, 'attendant');
+        }
+        await CharterService.syncAssignmentPayroll(updatedTrip, newAssignment, actorName);
+        return updatedTrip;
+      } catch (err) {
+        if (!isFirestoreDenied(err)) throw err;
+      }
     }
 
-    // Sync active payroll records for driver & attendant
-    await CharterService.syncAssignmentPayroll(updatedTrip, newAssignment, actorName);
-
-    return updatedTrip;
+    const current = await CharterService.getTripById(tripId);
+    if (!current) throw new Error(`Trip ${tripId} not found`);
+    const { trip: updatedTrip } = mergeCrew(current);
+    return saveViaApi(updatedTrip);
   },
 
   checkInCrew: async (
@@ -358,12 +522,8 @@ export const CharterService = {
     stopUpdate: { arrivedAt?: string; departedAt?: string },
     actorName = 'Dispatcher'
   ): Promise<CharterTrip> => {
-    if (!db) throw new Error('Firestore not initialized');
-    const tripRef = doc(db, TRIPS_COLL, tripId);
-    const snap = await getDoc(tripRef);
-    if (!snap.exists()) throw new Error(`Trip ${tripId} not found`);
-
-    const trip = snap.data() as CharterTrip;
+    const trip = await CharterService.getTripById(tripId);
+    if (!trip) throw new Error(`Trip ${tripId} not found`);
     const assignments = trip.assignments || [];
     const index = assignments.findIndex((a) => a.id === assignmentId);
     if (index === -1) throw new Error(`Assignment ${assignmentId} not found`);

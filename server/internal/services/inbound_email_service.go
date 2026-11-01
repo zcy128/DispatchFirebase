@@ -96,8 +96,29 @@ func NewInboundEmailService(
 		dispatchRepo: dispatchRepo,
 		empRepo:      empRepo,
 		emailService: emailService,
-		httpClient:   &http.Client{Timeout: 15 * time.Second},
+		httpClient: &http.Client{
+			Timeout: 15 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 2 || !snsHostAllowed(req.URL.String()) {
+					return ErrSNSRejected
+				}
+				return nil
+			},
+		},
 	}
+}
+
+func snsTopicAllowed(cfg *config.Config, topicArn string) bool {
+	topicArn = strings.TrimSpace(topicArn)
+	if cfg == nil || topicArn == "" {
+		return false
+	}
+	for _, allowed := range cfg.SNSTopicARNs {
+		if topicArn == strings.TrimSpace(allowed) {
+			return true
+		}
+	}
+	return false
 }
 
 // ProcessSNSWebhook processes incoming Amazon SNS webhook requests
@@ -106,17 +127,29 @@ func (s *InboundEmailService) ProcessSNSWebhook(ctx context.Context, body []byte
 	if err := json.Unmarshal(body, &sns); err != nil {
 		return "", fmt.Errorf("invalid SNS JSON: %w", err)
 	}
+	if err := verifySNSMessage(s.httpClient, &sns); err != nil {
+		return "", ErrSNSRejected
+	}
+	if !snsTopicAllowed(s.cfg, sns.TopicArn) {
+		log.Printf("[SNS-WEBHOOK] rejected notification for an unlisted topic")
+		return "", ErrSNSRejected
+	}
 
-	// 1. Auto-confirm SNS subscription
+	// 1. Auto-confirm SNS subscription only for an AWS SNS host.
 	if sns.Type == "SubscriptionConfirmation" {
 		log.Printf("[SNS-AUTO-SUBSCRIBE] Received SubscriptionConfirmation for topic: %s", sns.TopicArn)
 		if sns.SubscribeURL != "" {
-			resp, err := s.httpClient.Get(sns.SubscribeURL)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, sns.SubscribeURL, nil)
 			if err != nil {
-				log.Printf("[SNS-SUBSCRIBE-ERROR] Failed to confirm subscription URL: %v", err)
-				return "", err
+				return "", ErrSNSRejected
+			}
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				log.Printf("[SNS-SUBSCRIBE-ERROR] Failed to confirm subscription")
+				return "", ErrSNSRejected
 			}
 			defer resp.Body.Close()
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 			log.Printf("[SNS-AUTO-SUBSCRIBE-SUCCESS] Topic confirmed! Status: %d", resp.StatusCode)
 			return "subscription_confirmed", nil
 		}
@@ -440,7 +473,7 @@ DO NOT wrap in markdown code blocks.`, todayStr, subject, body)
 			},
 		},
 		"generationConfig": map[string]interface{}{
-			"temperature":     0.1,
+			"temperature":      0.1,
 			"responseMimeType": "application/json",
 		},
 	}

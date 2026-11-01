@@ -30,6 +30,7 @@ type StudentRepository interface {
 	List(ctx context.Context, filter StudentFilter) ([]*models.Student, error)
 	GetByID(ctx context.Context, id string) (*models.Student, error)
 	GetByStudentNo(ctx context.Context, sno string) (*models.Student, error)
+	FindByStudentID(ctx context.Context, studentID int) (*models.Student, error)
 	Create(ctx context.Context, s *models.Student) error
 	Update(ctx context.Context, s *models.Student) error
 	Delete(ctx context.Context, id string) error
@@ -124,6 +125,28 @@ func (r *FirestoreStudentRepository) GetByID(ctx context.Context, id string) (*m
 	return &s, nil
 }
 
+func (r *FirestoreStudentRepository) FindByStudentID(ctx context.Context, studentID int) (*models.Student, error) {
+	if studentID <= 0 {
+		return nil, ErrStudentNotFound
+	}
+	iter := r.client.Collection(r.coll).Where("studentId", "==", studentID).Limit(1).Documents(ctx)
+	defer iter.Stop()
+	doc, err := iter.Next()
+	if err == iterator.Done {
+		return nil, ErrStudentNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	var s models.Student
+	if err := doc.DataTo(&s); err != nil {
+		return nil, err
+	}
+	s.ID = doc.Ref.ID
+	s.ComputeComputedFields()
+	return &s, nil
+}
+
 func (r *FirestoreStudentRepository) GetByStudentNo(ctx context.Context, sno string) (*models.Student, error) {
 	iter := r.client.Collection(r.coll).Where("studentNo", "==", sno).Limit(1).Documents(ctx)
 	defer iter.Stop()
@@ -170,42 +193,7 @@ func (r *FirestoreStudentRepository) Update(ctx context.Context, s *models.Stude
 
 	existing, err := r.GetByID(ctx, s.ID)
 	if err == nil && existing != nil {
-		if s.StudentNo == "" {
-			s.StudentNo = existing.StudentNo
-		}
-		if s.FirstName == "" {
-			s.FirstName = existing.FirstName
-		}
-		if s.LastName == "" {
-			s.LastName = existing.LastName
-		}
-		if s.SchoolName == "" {
-			s.SchoolName = existing.SchoolName
-		}
-		if s.SchoolID == 0 {
-			s.SchoolID = existing.SchoolID
-		}
-		if s.Grade == "" {
-			s.Grade = existing.Grade
-		}
-		if s.Routes == "" {
-			s.Routes = existing.Routes
-		}
-		if s.StudentPhone == "" {
-			s.StudentPhone = existing.StudentPhone
-		}
-		if s.StudentAddress == "" {
-			s.StudentAddress = existing.StudentAddress
-		}
-		if len(s.Stops) == 0 && len(existing.Stops) > 0 {
-			s.Stops = existing.Stops
-		}
-		if len(s.Contacts) == 0 && len(existing.Contacts) > 0 {
-			s.Contacts = existing.Contacts
-		}
-		if s.CreatedAt == nil {
-			s.CreatedAt = existing.CreatedAt
-		}
+		mergePartialStudent(s, existing)
 	}
 
 	s.ComputeComputedFields()
@@ -272,6 +260,20 @@ func (m *MemoryStudentRepository) GetByID(ctx context.Context, id string) (*mode
 	return nil, ErrStudentNotFound
 }
 
+func (m *MemoryStudentRepository) FindByStudentID(ctx context.Context, studentID int) (*models.Student, error) {
+	if studentID <= 0 {
+		return nil, ErrStudentNotFound
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, s := range m.students {
+		if s != nil && s.StudentID == studentID {
+			return s, nil
+		}
+	}
+	return nil, ErrStudentNotFound
+}
+
 func (m *MemoryStudentRepository) GetByStudentNo(ctx context.Context, sno string) (*models.Student, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -293,8 +295,65 @@ func (m *MemoryStudentRepository) Create(ctx context.Context, s *models.Student)
 func (m *MemoryStudentRepository) Update(ctx context.Context, s *models.Student) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if existing, ok := m.students[s.ID]; ok {
+		mergePartialStudent(s, existing)
+	}
 	m.students[s.ID] = s
 	return nil
+}
+
+// mergePartialStudent copies stored values only for fields the caller left empty or nil.
+// A name or student number no longer skips the rest of the record.
+func mergePartialStudent(incoming, existing *models.Student) {
+	if incoming == nil || existing == nil {
+		return
+	}
+	sparse := strings.TrimSpace(incoming.FirstName) == "" &&
+		strings.TrimSpace(incoming.LastName) == "" &&
+		strings.TrimSpace(incoming.StudentNo) == ""
+	if incoming.CreatedAt == nil {
+		incoming.CreatedAt = existing.CreatedAt
+	}
+	if incoming.StudentID == 0 {
+		incoming.StudentID = existing.StudentID
+	}
+	incoming.StudentNo = keepStudentString(incoming.StudentNo, existing.StudentNo)
+	incoming.FirstName = keepStudentString(incoming.FirstName, existing.FirstName)
+	incoming.LastName = keepStudentString(incoming.LastName, existing.LastName)
+	incoming.Gender = keepStudentString(incoming.Gender, existing.Gender)
+	if incoming.BirthDate == nil {
+		incoming.BirthDate = existing.BirthDate
+	}
+	incoming.Grade = keepStudentString(incoming.Grade, existing.Grade)
+	if sparse {
+		incoming.Active = existing.Active
+		incoming.MetatBus = existing.MetatBus
+	}
+	incoming.StudentAddress = keepStudentString(incoming.StudentAddress, existing.StudentAddress)
+	incoming.StudentPhone = keepStudentString(incoming.StudentPhone, existing.StudentPhone)
+	incoming.StudentEmergencyAddress = keepStudentString(incoming.StudentEmergencyAddress, existing.StudentEmergencyAddress)
+	incoming.StudentEmergencyPhone = keepStudentString(incoming.StudentEmergencyPhone, existing.StudentEmergencyPhone)
+	incoming.StudentDispatchNotes = keepStudentString(incoming.StudentDispatchNotes, existing.StudentDispatchNotes)
+	incoming.StudentSchoolNotes = keepStudentString(incoming.StudentSchoolNotes, existing.StudentSchoolNotes)
+	incoming.Equipments = keepStudentString(incoming.Equipments, existing.Equipments)
+	if incoming.SchoolID == 0 {
+		incoming.SchoolID = existing.SchoolID
+	}
+	incoming.SchoolName = keepStudentString(incoming.SchoolName, existing.SchoolName)
+	incoming.Routes = keepStudentString(incoming.Routes, existing.Routes)
+	if incoming.Contacts == nil {
+		incoming.Contacts = existing.Contacts
+	}
+	if incoming.Stops == nil {
+		incoming.Stops = existing.Stops
+	}
+}
+
+func keepStudentString(incoming, existing string) string {
+	if strings.TrimSpace(incoming) == "" {
+		return existing
+	}
+	return incoming
 }
 
 func (m *MemoryStudentRepository) Delete(ctx context.Context, id string) error {

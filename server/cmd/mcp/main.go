@@ -30,7 +30,7 @@ func configFilePath() string {
 	return filepath.Join(home, ".dispatch-mcp.json")
 }
 
-const defaultServerURL = "https://dispatch-api-kv7qum3dca-nn.a.run.app"
+const defaultServerURL = "https://dispatch-api-337919645491.northamerica-northeast1.run.app"
 
 func loadLocalConfig() *LocalMCPConfig {
 	cfg := &LocalMCPConfig{

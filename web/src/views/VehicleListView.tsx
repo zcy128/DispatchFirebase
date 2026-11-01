@@ -43,6 +43,7 @@ interface VehicleListViewProps {
   onEditVehicle?: (vehicle: Vehicle) => void;
   onCreateVehicle?: () => void;
   onDeleteVehicle?: (vehicle: Vehicle) => void;
+  syncSource?: 'firestore' | 'api';
 }
 
 export const VehicleListView: React.FC<VehicleListViewProps> = ({
@@ -53,7 +54,8 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
   onSelectRoute,
   onEditVehicle,
   onCreateVehicle,
-  onDeleteVehicle
+  onDeleteVehicle,
+  syncSource = 'api'
 }) => {
   const { t, isFrench } = useI18n();
   const [searchTerm, setSearchTerm] = useState('');
@@ -388,7 +390,9 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
             Fleet Roster ({filteredVehicles.length} of {vehicles.length})
           </div>
           <div className="text-xs text-slate-400">
-            Real-time onSnapshot sync active
+            {syncSource === 'firestore'
+              ? 'Real-time onSnapshot sync active'
+              : 'Loaded from API'}
           </div>
         </div>
 
@@ -482,7 +486,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                           <span>{v.yardName}</span>
                         </div>
                         <div className="text-[10px] text-slate-500 mt-0.5">
-                          Insp: {v.licenseExpiry ? v.licenseExpiry.substring(0, 10) : '2028-08-31'}
+                          Insp: {v.nextInspectionDue ? v.nextInspectionDue.substring(0, 10) : 'Not set'}
                         </div>
                       </td>
 

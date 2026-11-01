@@ -280,7 +280,7 @@ export class AssignmentHistoryService {
       if (filter?.dateTo) params.append('endDate', filter.dateTo);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await apiRequest<AssignmentHistoryRecord[]>(`/api/public/dispatch/assignment-history${qs}`);
+      const res = await apiRequest<AssignmentHistoryRecord[]>(`/api/dispatch/assignment-history${qs}`);
       if (Array.isArray(res)) {
         return res;
       }

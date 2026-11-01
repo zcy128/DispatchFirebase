@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -42,6 +43,17 @@ func main() {
 	}
 	ctx := context.Background()
 
+	if strings.EqualFold(cfg.AppMode, "production") &&
+		strings.TrimSpace(os.Getenv("APP_BASE_URL")) == "" &&
+		strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")) == "" {
+		log.Printf("[WARN] APP_BASE_URL is not set. Uploaded file links are relative and depend on the hosting /uploads rewrite.")
+	}
+	if strings.EqualFold(cfg.AppMode, "production") && !services.IntegrationKeyConfigured() {
+		log.Fatalf("[INIT] production mode requires INTEGRATION_SECRET_KEY, MCP_TOKEN_SECRET, or APPROVAL_SECRET before integration passwords can be saved")
+	}
+	if strings.EqualFold(cfg.AppMode, "production") && len(cfg.SNSTopicARNs) == 0 {
+		log.Printf("[WARN] SNS_TOPIC_ARNS is not set. Inbound SNS email webhooks will be rejected.")
+	}
 	log.Printf("[INIT] Starting Dispatch API Server on port :%s", cfg.Port)
 	log.Printf("[INIT] Project ID: %s, AppMode: %s, DevMode: %v", cfg.ProjectID, cfg.AppMode, cfg.IsDevelopment)
 
@@ -60,6 +72,7 @@ func main() {
 	var yardRepo repository.YardRepository
 	var dispatchRepo repository.DispatchRepository
 	var parentRepo repository.ParentRepository
+	var charterRepo repository.CharterRepository
 
 	var app *firebase.App
 	var err error
@@ -96,6 +109,7 @@ func main() {
 			payrollRepo = repository.NewFirestorePayrollRepository(fsClient)
 			yardRepo = repository.NewFirestoreYardRepository(fsClient)
 			parentRepo = repository.NewFirestoreParentRepository(fsClient)
+			charterRepo = repository.NewFirestoreCharterRepository(fsClient)
 
 			if saPath != "" {
 				bqClient, _ = bigquery.NewClient(ctx, cfg.ProjectID, option.WithCredentialsFile(saPath))
@@ -138,7 +152,8 @@ func main() {
 		yardRepo = repository.NewMemoryYardRepository()
 		dispatchRepo = repository.NewMemoryDispatchRepository()
 		parentRepo = repository.NewMemoryParentRepository()
-		seedMemoryParentAndStudentData(ctx, studentRepo, parentRepo, dispatchRepo)
+		charterRepo = repository.NewMemoryCharterRepository()
+		seedMemoryParentAndStudentData(ctx, studentRepo, parentRepo, dispatchRepo, vehicleRepo, yardRepo)
 	}
 
 	// Router setup
@@ -152,12 +167,17 @@ func main() {
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	// CORS for frontend React app and Flutter driver app
+	origins := splitAllowedOrigins(cfg.AllowedOrigins)
+	allowCredentials := len(origins) > 0
+	if len(origins) == 1 && origins[0] == "*" {
+		allowCredentials = false
+	}
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   origins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-User-Role", "X-Admin-Secret", "X-User-Id", "X-Parent-Contact"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
+		AllowCredentials: allowCredentials,
 		MaxAge:           300,
 	}))
 
@@ -174,6 +194,7 @@ func main() {
 	calendarHandler := handlers.NewCalendarHandler(calendarRepo)
 	payrollHandler := handlers.NewPayrollHandler(payrollRepo, schoolBoardRepo, routeRepo, repo)
 	yardHandler := handlers.NewYardHandler(yardRepo)
+	charterHandler := handlers.NewCharterHandler(charterRepo)
 	dispatchHandler := handlers.NewDispatchHandler(dispatchRepo, cfg.AllowsDemo())
 	bambooSvc := services.NewBambooHRService(services.NewBambooHRStore(fsClient))
 	bambooHandler := handlers.NewBambooHRHandler(bambooSvc)
@@ -229,6 +250,8 @@ func main() {
 	twilioService := services.NewTwilioService(cfg)
 	etaService := services.NewETAService()
 	googleRoutesService := services.NewGoogleRoutesService(cfg)
+	dispatchHandler.UseParentNotifiers(twilioService, emailService)
+	dispatchHandler.UseStudentLookup(studentRepo)
 	parentHandler := handlers.NewParentHandler(cfg, studentRepo, parentRepo, dispatchRepo, routeRepo, twilioService, emailService, etaService, googleRoutesService)
 	twilioWebhookHandler := handlers.NewTwilioWebhookHandler(cfg, studentRepo, dispatchRepo, parentRepo, twilioService, etaService)
 
@@ -255,7 +278,7 @@ func main() {
 
 	// Static file serving with directory traversal & XSS defenses
 	_ = handlers.EnsureUploadDir()
-	r.Handle("/uploads/*", makeSecureUploadServer(handlers.UploadDir))
+	r.Handle("/uploads/*", makeSecureUploadServer(handlers.ActiveUploadDir()))
 
 	// Amazon SES & SNS Inbound Email Webhook & One-Click HR Actions
 	r.Post("/api/integrations/sns/inbound-email", snsWebhookHandler.HandleSNSInboundEmail)
@@ -372,12 +395,26 @@ func main() {
 		protected.Post("/api/yards/assign-school", yardHandler.AssignSchool)
 		protected.Post("/api/yards/unassign-school/{schoolId}", yardHandler.UnassignSchool)
 
+		// Charter trips and clients. The browser Firestore listener is denied for demo
+		// logins that have no Firebase session, so the web client falls back here.
+		protected.Get("/api/charter/clients", charterHandler.ListClients)
+		protected.Post("/api/charter/clients", charterHandler.CreateClient)
+		protected.Put("/api/charter/clients/{id}", charterHandler.UpdateClient)
+		protected.Delete("/api/charter/clients/{id}", charterHandler.DeleteClient)
+		protected.Get("/api/charter/trips", charterHandler.ListTrips)
+		protected.Get("/api/charter/trips/{id}", charterHandler.GetTrip)
+		protected.Post("/api/charter/trips", charterHandler.CreateTrip)
+		protected.Put("/api/charter/trips/{id}", charterHandler.UpdateTrip)
+		protected.Delete("/api/charter/trips/{id}", charterHandler.DeleteTrip)
+		protected.Get("/api/route-openings", charterHandler.ListRouteOpenings)
+
 		// Dispatch Workbench routes
 		protected.Post("/api/dispatch/create-day", dispatchHandler.CreateDay)
 		protected.Delete("/api/dispatch/delete-day", dispatchHandler.DeleteDay)
 		protected.Get("/api/dispatch/shifts", dispatchHandler.ListShifts)
 		protected.Get("/api/dispatch/shifts/{id}", dispatchHandler.GetShift)
 		protected.Put("/api/dispatch/shifts/{id}", dispatchHandler.UpdateShift)
+		protected.Post("/api/dispatch/shifts/{id}/notify-parents", dispatchHandler.NotifyParents)
 		protected.Post("/api/dispatch/shifts/{id}/split", dispatchHandler.SplitShift)
 		protected.Put("/api/dispatch/shifts/{id}/stops/{stopId}/arrive", dispatchHandler.RecordStopArrival)
 		protected.Put("/api/dispatch/shifts/{id}/stops/{stopId}/students/{studentId}", dispatchHandler.UpdateStudentStatus)
@@ -527,6 +564,7 @@ func main() {
 		protected.Get("/api/mcp", mcpHandler.HandleHTTP)
 		protected.Post("/api/devices/register", makeRegisterDeviceHandler(repo))
 		protected.Post("/api/upload", handlers.UploadFileHandler)
+		protected.Post("/api/bus-tracking/telemetry", parentHandler.UpdateVehicleTelemetry)
 		protected.Post("/api/mcp", mcpHandler.HandleHTTP)
 		protected.Get("/api/mcp/sse", mcpHandler.HandleSSE)
 		protected.Post("/api/mcp/message", mcpHandler.HandleSSEMessage)
@@ -616,6 +654,7 @@ func main() {
 		publicDev.Post("/api/public/dispatch/payrolls/generate", dispatchHandler.GenerateDispatchPayroll)
 		publicDev.Delete("/api/public/dispatch/payrolls/{shiftId}/{role}", dispatchHandler.DeleteDispatchPayroll)
 		publicDev.Post("/api/public/dispatch/shifts/{id}/check-out", dispatchHandler.CheckOutCrew)
+		publicDev.Post("/api/public/dispatch/shifts/{id}/notify-parents", dispatchHandler.NotifyParents)
 		publicDev.Post("/api/public/dispatch/payrolls/{id}/approve", dispatchHandler.ApproveDispatchPayroll)
 		publicDev.Post("/api/public/dispatch/payrolls/{id}/reject", dispatchHandler.RejectDispatchPayroll)
 		publicDev.Get("/api/public/dispatch/payroll-logs", dispatchHandler.ListPayrollDepartmentLogs)
@@ -727,7 +766,7 @@ func main() {
 		}()
 
 		r.Group(func(adminRoute chi.Router) {
-			adminRoute.Use(adminSecretMiddleware(cfg.AdminAPISecret))
+			adminRoute.Use(adminAccessMiddleware(cfg.AdminAPISecret, authenticator))
 
 			adminRoute.Post("/api/admin/archive/sync", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
@@ -1342,15 +1381,57 @@ func addMinutesToTime(tStr string, mins int) string {
 	return fmt.Sprintf("%02d:%02d", (total/60)%24, total%60)
 }
 
-// adminSecretMiddleware verifies X-Admin-Secret header or ?secret= query parameter.
+func splitAllowedOrigins(raw string) []string {
+	parts := strings.Split(raw, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			origins = append(origins, part)
+		}
+	}
+	if len(origins) == 0 {
+		return []string{
+			"http://localhost:5173",
+			"http://127.0.0.1:5173",
+			"http://localhost:3000",
+			"http://127.0.0.1:3000",
+			"http://localhost:5000",
+			"http://127.0.0.1:5000",
+		}
+	}
+	return origins
+}
+
+func adminAccessMiddleware(secret string, authenticator *auth.Authenticator) func(http.Handler) http.Handler {
+	secretOnly := adminSecretMiddleware(secret)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.TrimSpace(r.Header.Get("X-Admin-Secret")) != "" {
+				secretOnly(next).ServeHTTP(w, r)
+				return
+			}
+			authenticator.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				user := auth.GetUser(r.Context())
+				if user == nil || !strings.EqualFold(strings.TrimSpace(user.Role), "admin") {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					_, _ = w.Write([]byte(`{"error":"forbidden: admin role required"}`))
+					return
+				}
+				next.ServeHTTP(w, r)
+			})).ServeHTTP(w, r)
+		})
+	}
+}
+
+// adminSecretMiddleware verifies the X-Admin-Secret header.
 func adminSecretMiddleware(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			provided := r.Header.Get("X-Admin-Secret")
-			if provided == "" {
-				provided = r.URL.Query().Get("secret")
-			}
-			if secret != "" && (provided == "" || provided != secret) {
+			secret = strings.TrimSpace(secret)
+			if secret == "" || provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(secret)) != 1 {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				w.Write([]byte(`{"error":"unauthorized: invalid or missing X-Admin-Secret header"}`))
@@ -1510,6 +1591,8 @@ func seedMemoryParentAndStudentData(
 	studentRepo repository.StudentRepository,
 	parentRepo repository.ParentRepository,
 	dispatchRepo repository.DispatchRepository,
+	vehicleRepo repository.VehicleRepository,
+	yardRepo repository.YardRepository,
 ) {
 	latBaseline := 45.35125
 	lngBaseline := -75.76015
@@ -1809,6 +1892,47 @@ func seedMemoryParentAndStudentData(
 			},
 		})
 	}
+
+	// Seed in-memory demo vehicles and yards if using fallback
+	if inMemVeh, ok := vehicleRepo.(*repository.InMemoryVehicleRepository); ok {
+		_, _ = inMemVeh.CreateVehicle(ctx, &models.Vehicle{
+			ID:              "42",
+			VehicleID:       42,
+			UnitNumber:      "42",
+			PlateNumber:     "BUS-4242",
+			Active:          true,
+			UnitType:        "School Bus (72-passenger)",
+			FuelType:        "Diesel",
+			YardName:        "Ottawa Central",
+			Status:          "Active",
+			SeatCap:         72,
+			AssignedRouteNo: "OCDSB-001",
+		})
+		_, _ = inMemVeh.CreateVehicle(ctx, &models.Vehicle{
+			ID:          "1001",
+			VehicleID:   1001,
+			UnitNumber:  "1001",
+			PlateNumber: "BUS-1001",
+			Active:      true,
+			UnitType:    "Mini-Bus (24-passenger)",
+			FuelType:    "Gasoline",
+			YardName:    "Nepean Depot",
+			Status:      "Active",
+			SeatCap:     24,
+		})
+	}
+	if inMemYard, ok := yardRepo.(*repository.MemoryYardRepository); ok {
+		activeTrue := true
+		_, _ = inMemYard.CreateYard(ctx, &models.CreateYardRequest{
+			Name:     "Ottawa Central",
+			IsActive: &activeTrue,
+		})
+		_, _ = inMemYard.CreateYard(ctx, &models.CreateYardRequest{
+			Name:     "Nepean Depot",
+			IsActive: &activeTrue,
+		})
+	}
+
 	log.Println("[INIT] Seeded test students (Emma & Lucas Watson) and OCDSB-001 AM/PM dispatch shifts.")
 }
 
@@ -1834,9 +1958,11 @@ func parentCreateChatChannel(parentHandler *handlers.ParentHandler, chatHandler 
 
 func parentListChatMessages(parentHandler *handlers.ParentHandler, chatHandler *handlers.ChatHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		contact := parentHandler.VerifiedContact(r)
 		if !parentOwnsChatChannel(w, r, parentHandler) {
 			return
 		}
+		r = r.WithContext(handlers.WithChatActorID(r.Context(), handlers.ParentChannelID(contact)))
 		chatHandler.ListMessages(w, r)
 	}
 }
@@ -1847,7 +1973,7 @@ func parentSendChatMessage(parentHandler *handlers.ParentHandler, chatHandler *h
 		if !parentOwnsChatChannel(w, r, parentHandler) {
 			return
 		}
-		r.Header.Set("X-User-Id", handlers.ParentChannelID(contact))
+		r = r.WithContext(handlers.WithChatActorID(r.Context(), handlers.ParentChannelID(contact)))
 		chatHandler.SendMessage(w, r)
 	}
 }
@@ -1941,14 +2067,30 @@ func makeRegisterDeviceHandler(repo repository.EmployeeRepository) http.HandlerF
 func makeSecureUploadServer(uploadDir string) http.Handler {
 	fs := http.FileServer(http.Dir(uploadDir))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cleanPath := filepath.Clean(strings.TrimPrefix(r.URL.Path, "/uploads"))
-		if cleanPath == "" || cleanPath == "." || cleanPath == "/" || strings.HasSuffix(r.URL.Path, "/") {
+		cleanPath := filepath.ToSlash(filepath.Clean(strings.TrimPrefix(r.URL.Path, "/uploads")))
+		cleanPath = strings.TrimLeft(cleanPath, "/")
+		if cleanPath == "" || cleanPath == "." || strings.HasSuffix(r.URL.Path, "/") {
 			http.NotFound(w, r)
 			return
 		}
 
+		if strings.Contains(cleanPath, "..") {
+			http.NotFound(w, r)
+			return
+		}
 		fullPath := filepath.Join(uploadDir, filepath.FromSlash(cleanPath))
-		fi, err := os.Stat(fullPath)
+		absDir, absErr := filepath.Abs(uploadDir)
+		absFile, fileErr := filepath.Abs(fullPath)
+		if absErr != nil || fileErr != nil {
+			http.NotFound(w, r)
+			return
+		}
+		rel, relErr := filepath.Rel(absDir, absFile)
+		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || strings.Contains(rel, ":") {
+			http.NotFound(w, r)
+			return
+		}
+		fi, err := os.Stat(absFile)
 		if err != nil || fi.IsDir() {
 			http.NotFound(w, r)
 			return

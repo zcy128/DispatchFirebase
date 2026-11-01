@@ -302,48 +302,6 @@ export const RouteOpeningStopPreviewModal: React.FC<RouteOpeningStopPreviewModal
 
       const bounds = fallbackPolyline.getBounds();
       map.fitBounds(bounds, { padding: [40, 40] });
-
-      // Fetch OSRM road driving geometry for realistic street routing
-      const coordsStr = validCoords.map((pt) => `${pt[1]},${pt[0]}`).join(';');
-      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-      fetch(osrmUrl, { signal: controller.signal })
-        .then((res) => {
-          clearTimeout(timeoutId);
-          if (!res.ok) throw new Error('OSRM failed');
-          return res.json();
-        })
-        .then((data) => {
-          if (data?.routes?.[0]?.geometry?.coordinates && markersLayerRef.current === markersGroup) {
-            const roadCoords: [number, number][] = data.routes[0].geometry.coordinates.map(
-              (c: [number, number]) => [c[1], c[0]]
-            );
-            if (fallbackPolyline) {
-              markersGroup.removeLayer(fallbackPolyline);
-            }
-            const casing = L.polyline(roadCoords, {
-              color: '#1e3a8a',
-              weight: 7,
-              opacity: 0.7,
-              lineCap: 'round',
-              lineJoin: 'round'
-            });
-            const roadLine = L.polyline(roadCoords, {
-              color: '#3b82f6',
-              weight: 4.5,
-              opacity: 0.95,
-              lineCap: 'round',
-              lineJoin: 'round'
-            });
-            markersGroup.addLayer(casing);
-            markersGroup.addLayer(roadLine);
-          }
-        })
-        .catch(() => {
-          // Keep dashed fallbackPolyline
-        });
     } else if (validCoords.length === 1) {
       map.setView(validCoords[0], 14);
     }

@@ -3,7 +3,9 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useI18n } from '../contexts/I18nContext';
 import { useAuth } from '../contexts/AuthContext';
 import { VehicleSignout, CreateVehicleSignoutPayload, VehicleSignoutAttachment } from '../types/vehicleSignout';
+import { apiRequest } from '../services/api';
 import { VehicleSignoutService } from '../services/vehicleSignoutService';
+import { canEditPage } from '../utils/permissions';
 import { VehicleService } from '../services/vehicleService';
 import { EmployeeService } from '../services/employeeService';
 import { Vehicle } from '../types/vehicle';
@@ -37,11 +39,7 @@ export const VehicleSignoutView: React.FC = () => {
   const { currentUser } = useAuth();
 
   // Role validation: Strictly only fleet or admin
-  const isFleetRole = useMemo(() => {
-    if (!currentUser) return false;
-    const r = (currentUser.role || '').toLowerCase();
-    return r === 'fleet' || r === 'admin';
-  }, [currentUser]);
+  const isFleetRole = useMemo(() => canEditPage(currentUser, 'vehicle_signouts'), [currentUser]);
 
   // State
   const [records, setRecords] = useState<VehicleSignout[]>([]);
@@ -232,24 +230,22 @@ export const VehicleSignoutView: React.FC = () => {
     try {
       const uploadData = new FormData();
       uploadData.append('file', file);
-      const res = await fetch('/api/public/upload', {
+      const json = await apiRequest<{ url: string }>('/api/upload', {
         method: 'POST',
-        body: uploadData
+        body: uploadData,
       });
-      if (res.ok) {
-        const json = await res.json();
-        const newAtt: VehicleSignoutAttachment = {
-          url: json.url,
-          fileName: file.name,
-          uploadedTime: new Date().toISOString()
-        };
-        setFormData((prev) => ({
-          ...prev,
-          attachments: [...(prev.attachments || []), newAtt]
-        }));
-      }
+      const newAtt: VehicleSignoutAttachment = {
+        url: json.url,
+        fileName: file.name,
+        uploadedTime: new Date().toISOString()
+      };
+      setFormData((prev) => ({
+        ...prev,
+        attachments: [...(prev.attachments || []), newAtt]
+      }));
     } catch (err) {
       console.error('Failed to upload image:', err);
+      alert('Photo upload failed. Check that you are signed in and try again.');
     } finally {
       setUploadingPhoto(false);
     }

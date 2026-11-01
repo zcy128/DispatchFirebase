@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { useAuth } from './contexts/AuthContext';
 import { Header } from './components/common/Header';
 import { Sidebar, NavTab } from './components/common/Sidebar';
@@ -19,16 +19,17 @@ import { StudentModal } from './components/students/StudentModal';
 import { RouteDetailDrawer } from './components/routes/RouteDetailDrawer';
 import { VehicleDetailDrawer } from './components/vehicles/VehicleDetailDrawer';
 import { VehicleModal } from './components/vehicles/VehicleModal';
-import { SchoolListView } from './views/SchoolListView';
-import { SchoolCalendarView } from './views/SchoolCalendarView';
-import { PayrollRateView } from './views/PayrollRateView';
-import { BiweeklyPayrollView } from './views/BiweeklyPayrollView';
-import { PayrollDepartmentLogView } from './views/PayrollDepartmentLogView';
 import { DispatchDailyPayrollTab } from './components/payroll/DispatchDailyPayrollTab';
-import { RoleManagementView } from './views/RoleManagementView';
-import { CompanyContactsView } from './views/CompanyContactsView';
-import { LoginLogsView } from './views/LoginLogsView';
-import { AuditLogsView } from './views/AuditLogsView';
+
+const SchoolListView = React.lazy(() => import('./views/SchoolListView').then((m) => ({ default: m.SchoolListView })));
+const SchoolCalendarView = React.lazy(() => import('./views/SchoolCalendarView').then((m) => ({ default: m.SchoolCalendarView })));
+const PayrollRateView = React.lazy(() => import('./views/PayrollRateView').then((m) => ({ default: m.PayrollRateView })));
+const BiweeklyPayrollView = React.lazy(() => import('./views/BiweeklyPayrollView').then((m) => ({ default: m.BiweeklyPayrollView })));
+const PayrollDepartmentLogView = React.lazy(() => import('./views/PayrollDepartmentLogView').then((m) => ({ default: m.PayrollDepartmentLogView })));
+const RoleManagementView = React.lazy(() => import('./views/RoleManagementView').then((m) => ({ default: m.RoleManagementView })));
+const CompanyContactsView = React.lazy(() => import('./views/CompanyContactsView').then((m) => ({ default: m.CompanyContactsView })));
+const LoginLogsView = React.lazy(() => import('./views/LoginLogsView').then((m) => ({ default: m.LoginLogsView })));
+const AuditLogsView = React.lazy(() => import('./views/AuditLogsView').then((m) => ({ default: m.AuditLogsView })));
 import { SchoolDetailDrawer } from './components/schools/SchoolDetailDrawer';
 import { SchoolModal } from './components/schools/SchoolModal';
 import { SchoolBoardModal } from './components/schools/SchoolBoardModal';
@@ -42,7 +43,7 @@ import { RouteService, calculateRouteStats } from './services/routeService';
 import { VehicleService, calculateVehicleStats } from './services/vehicleService';
 import { Employee, DashboardStats } from './types/employee';
 import { Student, StudentStats } from './types/student';
-import { School, SchoolBoard, SchoolStats } from './types/school';
+import { School, SchoolBoard } from './types/school';
 import { BusRoute, RouteStats } from './types/route';
 import { Vehicle, VehicleStats } from './types/vehicle';
 import { Yard } from './types/yard';
@@ -82,7 +83,7 @@ import { MessageSquare, X, ArrowRight } from 'lucide-react';
 import { CreateParentChannelPayload } from './types/chat';
 
 export const AppContent: React.FC = () => {
-  const { currentUser, loading: authLoading } = useAuth();
+  const { currentUser, loading: authLoading, updateCurrentUser } = useAuth();
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const mainRef = useRef<HTMLElement>(null);
@@ -147,13 +148,7 @@ export const AppContent: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
   const [boards, setBoards] = useState<SchoolBoard[]>([]);
-  const [schoolStats, setSchoolStats] = useState<SchoolStats>({
-    totalSchools: 0,
-    activeSchools: 0,
-    totalBoards: 0,
-    totalStudents: 0,
-    boardDistribution: {}
-  });
+  const schoolStats = useMemo(() => calculateSchoolStats(schools, boards), [schools, boards]);
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const [isSchoolModalOpen, setIsSchoolModalOpen] = useState<boolean>(false);
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
@@ -197,6 +192,7 @@ export const AppContent: React.FC = () => {
     yardDistribution: {}
   });
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [vehicleSyncSource, setVehicleSyncSource] = useState<'firestore' | 'api'>('api');
 
   // Dynamic Single Source of Truth lookup map for Student Contacts
   const studentsMap = React.useMemo(() => {
@@ -291,8 +287,9 @@ export const AppContent: React.FC = () => {
   const handleVehicleRefresh = async () => {
     try {
       const vehList = await VehicleService.list();
-      setVehicles(vehList);
-      setVehicleStats(calculateVehicleStats(vehList));
+      const safeVehicles = Array.isArray(vehList) ? vehList : [];
+      setVehicles(safeVehicles);
+      setVehicleStats(calculateVehicleStats(safeVehicles));
     } catch (err) {
       console.error("Vehicle manual sync error:", err);
     }
@@ -323,8 +320,17 @@ export const AppContent: React.FC = () => {
       const unsubEmployees = EmployeeService.subscribeToEmployees(
         (realtimeList) => {
           isResolved = true;
-          setEmployees(realtimeList);
-          setStats(calculateStats(realtimeList));
+          const seen = new Set<string>();
+          const deduped: Employee[] = [];
+          for (const emp of realtimeList) {
+            const key = emp.id || emp.employeeNumber;
+            if (key && !seen.has(key)) {
+              seen.add(key);
+              deduped.push(emp);
+            }
+          }
+          setEmployees(deduped);
+          setStats(calculateStats(deduped));
           setDataLoading(false);
         },
         (error) => {
@@ -339,7 +345,6 @@ export const AppContent: React.FC = () => {
       const unsubSchools = SchoolService.subscribeToSchools(
         (schList) => {
           setSchools(schList);
-          setSchoolStats(calculateSchoolStats(schList, boards));
         },
         (error) => {
           console.warn("Realtime Firestore school notice:", error);
@@ -350,7 +355,6 @@ export const AppContent: React.FC = () => {
       const unsubBoards = SchoolService.subscribeToSchoolBoards(
         (brdList) => {
           setBoards(brdList);
-          setSchoolStats(calculateSchoolStats(schools, brdList));
         },
         (error) => {
           console.warn("Realtime Firestore school board notice:", error);
@@ -375,9 +379,20 @@ export const AppContent: React.FC = () => {
 
       // Real-time Firestore onSnapshot listener for Vehicles
       const unsubVehicles = VehicleService.subscribeToVehicles(
-        (vehList) => {
-          setVehicles(vehList);
-          setVehicleStats(calculateVehicleStats(vehList));
+        (vehList, source) => {
+          setVehicleSyncSource(source);
+          const safeVehicles = Array.isArray(vehList) ? vehList : [];
+          const seen = new Set<string>();
+          const deduped: Vehicle[] = [];
+          for (const v of safeVehicles) {
+            const key = v.id || v.unitNumber;
+            if (key && !seen.has(key)) {
+              seen.add(key);
+              deduped.push(v);
+            }
+          }
+          setVehicles(deduped);
+          setVehicleStats(calculateVehicleStats(deduped));
         },
         (error) => {
           console.warn("Realtime Firestore vehicle notice:", error);
@@ -461,48 +476,52 @@ export const AppContent: React.FC = () => {
         clearTimeout(failsafe);
       };
     }
-  }, [currentUser]);
+  }, [currentUser?.uid, currentUser?.employeeId]);
 
-  // RBAC Permission Guard: ensure user is directed to an authorized tab
   useEffect(() => {
-    if (currentUser) {
-      const matchedEmp = employees.find(
-        (e) =>
-          (e.id && e.id === currentUser.employeeId) ||
-          (e.employeeNumber && e.employeeNumber === currentUser.employeeId) ||
-          (e.workEmail && e.workEmail.toLowerCase() === currentUser.email?.toLowerCase()) ||
-          (e.username && `${e.username}@dispatch.pcy.ca` === currentUser.email?.toLowerCase())
-      );
-      if (matchedEmp) {
-        if (matchedEmp.role && matchedEmp.role !== currentUser.role) {
-          currentUser.role = matchedEmp.role;
-        }
-        if (matchedEmp.pagePermissions) {
-          currentUser.overrides = matchedEmp.pagePermissions;
-        }
-        if (matchedEmp.yardId) {
-          currentUser.yardId = matchedEmp.yardId;
-        }
-      }
-
-      if (!hasPageAccess(currentUser, currentTab)) {
-        const allTabs: NavTab[] = [
-          'dashboard', 'dispatch', 'routes', 'staging_routes', 'dispatch_payroll',
-          'employees', 'time_off', 'payroll', 'biweekly_payroll', 'payroll_dept_log',
-          'temporary_assignments', 'dispatch_log', 'assignment_history',
-          'vehicles', 'defects', 'vehicle_signouts', 'yards',
-          'compliance', 'training', 'students', 'student_incidents',
-          'hazards', 'route_assessments', 'schools', 'calendar',
-          'expenses', 'company_contacts', 'roles', 'login_logs',
-          'audit_logs', 'external_sync', 'settings'
-        ];
-        const allowedTab = allTabs.find((t) => hasPageAccess(currentUser, t));
-        if (allowedTab) {
-          setCurrentTab(allowedTab);
-        }
-      }
+    if (!currentUser) return;
+    const matchedEmp = employees.find(
+      (e) =>
+        (e.id && e.id === currentUser.employeeId) ||
+        (e.employeeNumber && e.employeeNumber === currentUser.employeeId) ||
+        (e.workEmail && e.workEmail.toLowerCase() === currentUser.email?.toLowerCase()) ||
+        (e.username && `${e.username}@dispatch.pcy.ca` === currentUser.email?.toLowerCase())
+    );
+    if (!matchedEmp) return;
+    const nextRole = matchedEmp.role || currentUser.role;
+    const nextOverrides = matchedEmp.pagePermissions || currentUser.overrides;
+    const nextYard = matchedEmp.yardId || currentUser.yardId;
+    if (
+      nextRole !== currentUser.role ||
+      JSON.stringify(nextOverrides || {}) !== JSON.stringify(currentUser.overrides || {}) ||
+      nextYard !== currentUser.yardId
+    ) {
+      updateCurrentUser({
+        role: nextRole,
+        overrides: nextOverrides,
+        yardId: nextYard,
+      });
     }
-  }, [currentUser, currentTab, employees]);
+  }, [currentUser, employees]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    if (hasPageAccess(currentUser, currentTab)) return;
+    const allTabs: NavTab[] = [
+      'dashboard', 'dispatch', 'routes', 'staging_routes', 'dispatch_payroll',
+      'employees', 'time_off', 'payroll', 'biweekly_payroll', 'payroll_dept_log',
+      'temporary_assignments', 'dispatch_log', 'assignment_history',
+      'vehicles', 'defects', 'vehicle_signouts', 'yards',
+      'compliance', 'training', 'students', 'student_incidents',
+      'hazards', 'route_assessments', 'schools', 'calendar',
+      'expenses', 'company_contacts', 'roles', 'login_logs',
+      'audit_logs', 'external_sync', 'settings'
+    ];
+    const allowedTab = allTabs.find((t) => hasPageAccess(currentUser, t));
+    if (allowedTab) {
+      setCurrentTab(allowedTab);
+    }
+  }, [currentUser, currentTab]);
 
   if (authLoading) {
     return (
@@ -552,10 +571,21 @@ export const AppContent: React.FC = () => {
   const handleSaveEmployee = async (data: Partial<Employee>) => {
     if (editingEmployee) {
       const updated = await EmployeeService.update(editingEmployee.id, data);
-      setEmployees(employees.map((e) => (e.id === updated.id ? updated : e)));
+      setEmployees((prev) =>
+        prev.map((e) =>
+          e.id === updated.id || (updated.employeeNumber && e.employeeNumber === updated.employeeNumber)
+            ? updated
+            : e
+        )
+      );
     } else {
       const created = await EmployeeService.create(data);
-      setEmployees([created, ...employees]);
+      setEmployees((prev) => {
+        const withoutNew = prev.filter(
+          (e) => e.id !== created.id && (!created.employeeNumber || e.employeeNumber !== created.employeeNumber)
+        );
+        return [created, ...withoutNew];
+      });
     }
     const newStats = await EmployeeService.getStats();
     setStats(newStats);
@@ -611,7 +641,12 @@ export const AppContent: React.FC = () => {
       }).catch((e) => console.warn('Vehicle update audit log failed:', e));
     } else {
       const created = await VehicleService.create(data);
-      setVehicles((prev) => [created, ...prev]);
+      setVehicles((prev) => {
+        const withoutNew = prev.filter(
+          (v) => v.id !== created.id && (!created.unitNumber || v.unitNumber !== created.unitNumber)
+        );
+        return [created, ...withoutNew];
+      });
 
       const diffs: EntityFieldDiff[] = [
         { field: 'unitNumber', fieldLabel: 'Unit Number', oldValue: undefined, newValue: created.unitNumber },
@@ -702,7 +737,6 @@ export const AppContent: React.FC = () => {
       ]);
       setSchools(schList);
       setBoards(brdList);
-      setSchoolStats(calculateSchoolStats(schList, brdList));
     } catch (err) {
       console.error("School manual sync error:", err);
     }
@@ -889,6 +923,7 @@ export const AppContent: React.FC = () => {
         />
 
         <main ref={mainRef} className="flex-1 min-h-0 overflow-y-auto bg-slate-950/80 pb-20 md:pb-6">
+          <Suspense fallback={<div className="p-8 text-sm text-slate-400">Loading...</div>}>
           {currentTab === 'dashboard' && (
             <DashboardView
               stats={stats}
@@ -1107,6 +1142,7 @@ export const AppContent: React.FC = () => {
               onEditVehicle={handleEditVehicle}
               onCreateVehicle={handleCreateVehicle}
               onDeleteVehicle={handleDeleteVehicle}
+              syncSource={vehicleSyncSource}
               onSelectRoute={(routeNo) => {
                 const rt = routes.find((r) => r.routeNo === routeNo);
                 if (rt) {
@@ -1194,6 +1230,7 @@ export const AppContent: React.FC = () => {
           {currentTab === 'external_sync' && <ExternalSyncView />}
 
           {currentTab === 'settings' && <SettingsView />}
+          </Suspense>
         </main>
       </div>
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"dispatch-server/internal/models"
@@ -38,9 +39,17 @@ func (h *RouteHandler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 			filter.BoardID = b
 		}
 	}
-	if actStr := q.Get("active"); actStr != "" {
-		b := actStr == "true"
-		filter.Active = &b
+	actStr := q.Get("active")
+	if actStr == "" {
+		actStr = q.Get("status")
+	}
+	switch strings.ToLower(strings.TrimSpace(actStr)) {
+	case "true", "active", "1":
+		active := true
+		filter.Active = &active
+	case "false", "inactive", "0":
+		active := false
+		filter.Active = &active
 	}
 
 	routes, err := h.repo.ListRoutes(r.Context(), filter)

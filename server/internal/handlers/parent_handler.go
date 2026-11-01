@@ -1,4 +1,4 @@
-﻿package handlers
+package handlers
 
 import (
 	"context"
@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/bcrypt"
 
+	"dispatch-server/internal/auth"
 	"dispatch-server/internal/config"
 	"dispatch-server/internal/models"
 	"dispatch-server/internal/repository"
@@ -433,6 +434,18 @@ func (h *ParentHandler) GetVehicleTracking(w http.ResponseWriter, r *http.Reques
 // UpdateVehicleTelemetry updates live GPS location for a bus (called by driver app or GPS tracker)
 func (h *ParentHandler) UpdateVehicleTelemetry(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	role := strings.ToLower(strings.TrimSpace(user.Role))
+	switch role {
+	case "admin", "dispatcher", "manager", "fleet", "driver", "helper":
+	default:
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
 
 	var loc models.VehicleLiveLocation
 	if err := json.NewDecoder(r.Body).Decode(&loc); err != nil {
@@ -440,9 +453,15 @@ func (h *ParentHandler) UpdateVehicleTelemetry(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if loc.UnitNumber == "" {
+	if strings.TrimSpace(loc.UnitNumber) == "" {
 		http.Error(w, `{"error":"unitNumber is required"}`, http.StatusBadRequest)
 		return
+	}
+	if role == "driver" || role == "helper" {
+		if !h.crewAssignedToUnit(r.Context(), user.EmployeeID, loc.UnitNumber) {
+			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+			return
+		}
 	}
 
 	if err := h.parentRepo.SaveVehicleLiveLocation(r.Context(), &loc); err != nil {
@@ -451,6 +470,59 @@ func (h *ParentHandler) UpdateVehicleTelemetry(w http.ResponseWriter, r *http.Re
 	}
 
 	w.Write([]byte(`{"success":true,"message":"location updated"}`))
+}
+
+func torontoToday() string {
+	loc, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		loc = time.FixedZone("EDT", -4*3600)
+	}
+	return time.Now().In(loc).Format("2006-01-02")
+}
+
+func normalizeUnitNumber(raw string) string {
+	return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(raw), "#")))
+}
+
+func employeeOnShift(shift *models.DispatchShift, employeeID string) bool {
+	employeeID = strings.TrimSpace(employeeID)
+	if employeeID == "" || shift == nil {
+		return false
+	}
+	if strings.EqualFold(shift.DriverID, employeeID) ||
+		strings.EqualFold(shift.AttendantID, employeeID) ||
+		strings.EqualFold(shift.NurseID, employeeID) {
+		return true
+	}
+	for _, id := range shift.AssignedEmployeeIds {
+		if strings.EqualFold(strings.TrimSpace(id), employeeID) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *ParentHandler) crewAssignedToUnit(ctx context.Context, employeeID, unitNumber string) bool {
+	if strings.TrimSpace(employeeID) == "" || h.dispatchRepo == nil {
+		return false
+	}
+	shifts, err := h.dispatchRepo.ListShifts(ctx, torontoToday(), repository.DispatchFilter{})
+	if err != nil {
+		return false
+	}
+	want := normalizeUnitNumber(unitNumber)
+	if want == "" {
+		return false
+	}
+	for _, shift := range shifts {
+		if shift == nil || normalizeUnitNumber(shift.UnitNumber) != want {
+			continue
+		}
+		if employeeOnShift(shift, employeeID) {
+			return true
+		}
+	}
+	return false
 }
 
 // GetPreferences returns parent alert configuration

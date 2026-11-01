@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -54,9 +55,10 @@ class ChatRepository {
   // ---------------------------------------------------------------------------
 
   Future<List<ChatChannel>> fetchChannels(String driverId) async {
+    if (driverId.trim().isEmpty) return [];
     for (final base in _endpointsToTry) {
       try {
-        final uri = Uri.parse('$base/api/public/chat/channels?userId=$driverId');
+        final uri = Uri.parse('$base/api/chat/channels');
         final resp = await _httpClient.get(uri).timeout(const Duration(seconds: 4));
         if (resp.statusCode == 200) {
           final decoded = json.decode(resp.body);
@@ -66,18 +68,6 @@ class ChatRepository {
         }
       } catch (e) {
         debugPrint('[ChatRepository] fetchChannels via $base notice: $e');
-      }
-    }
-
-    // Direct Firestore fallback
-    final fs = _firestore;
-    if (fs != null) {
-      try {
-        final snap = await fs.collection('chat_channels').get();
-        final list = snap.docs.map((d) => ChatChannel.fromFirestore(d)).toList();
-        return _filterChannelsForDriver(list, driverId);
-      } catch (e) {
-        debugPrint('[ChatRepository] Firestore fetchChannels notice: $e');
       }
     }
 
@@ -99,31 +89,9 @@ class ChatRepository {
     ];
   }
 
-  List<ChatChannel> _filterChannelsForDriver(List<ChatChannel> channels, String driverId) {
-    final cleanDriverId = driverId.replaceAll(RegExp(r'^EMP-?', caseSensitive: false), '').trim();
-    return channels.where((c) {
-      if (c.type == ChannelType.broadcast) return true;
-      if (c.type == ChannelType.direct) {
-        return c.memberIds.any((m) {
-          if (m.toLowerCase() == driverId.toLowerCase()) return true;
-          final cleanM = m.replaceAll(RegExp(r'^EMP-?', caseSensitive: false), '').trim();
-          return cleanDriverId.isNotEmpty && cleanDriverId == cleanM;
-        });
-      }
-      return true;
-    }).toList();
-  }
-
-  Stream<List<ChatChannel>> streamChannels(String driverId) {
-    final fs = _firestore;
-    if (fs != null) {
-      return fs.collection('chat_channels').snapshots().map((snap) {
-        final list = snap.docs.map((d) => ChatChannel.fromFirestore(d)).toList();
-        return _filterChannelsForDriver(list, driverId);
-      });
-    }
-
-    return Stream.periodic(const Duration(seconds: 3))
+  Stream<List<ChatChannel>> streamChannels(String driverId) async* {
+    yield await fetchChannels(driverId);
+    yield* Stream.periodic(const Duration(seconds: 8))
         .asyncMap((_) => fetchChannels(driverId));
   }
 
@@ -131,27 +99,45 @@ class ChatRepository {
   // Messages
   // ---------------------------------------------------------------------------
 
-  Stream<List<ChatMessage>> streamMessages(String channelId) {
+  Stream<List<ChatMessage>> streamMessages(String channelId, {String? memberId}) async* {
+    final listenerId = await resolveChatListenerId(memberId ?? '');
     final fs = _firestore;
     if (fs != null) {
-      return fs
-          .collection('chat_channels')
-          .doc(channelId)
-          .collection('messages')
-          .orderBy('createdAt', descending: false)
-          .limitToLast(100)
+      yield* _messageQuery(fs, channelId, memberId: listenerId, limit: 100)
           .snapshots()
           .map((snap) => snap.docs.map((d) => ChatMessage.fromFirestore(d)).toList());
+      return;
     }
 
-    return Stream.periodic(const Duration(seconds: 3))
-        .asyncMap((_) => fetchMessages(channelId));
+    yield* _pollMessages(channelId, memberId: listenerId);
   }
 
-  Future<List<ChatMessage>> fetchMessages(String channelId, {int limit = 50}) async {
+  Stream<List<ChatMessage>> _pollMessages(String channelId, {String? memberId}) async* {
+    yield await fetchMessages(channelId, memberId: memberId);
+    yield* Stream.periodic(const Duration(seconds: 3))
+        .asyncMap((_) => fetchMessages(channelId, memberId: memberId));
+  }
+
+  Query<Map<String, dynamic>> _messageQuery(
+    FirebaseFirestore fs,
+    String channelId, {
+    String? memberId,
+    required int limit,
+  }) {
+    Query<Map<String, dynamic>> query =
+        fs.collection('chat_channels').doc(channelId).collection('messages');
+    final listenerId = memberId?.trim() ?? '';
+    if (listenerId.isNotEmpty &&
+        (channelId.startsWith('dm-') || channelId.startsWith('parent-'))) {
+      query = query.where('memberIds', arrayContains: listenerId);
+    }
+    return query.orderBy('createdAt', descending: false).limitToLast(limit);
+  }
+
+  Future<List<ChatMessage>> fetchMessages(String channelId, {int limit = 50, String? memberId}) async {
     for (final base in _endpointsToTry) {
       try {
-        final uri = Uri.parse('$base/api/public/chat/channels/$channelId/messages?limit=$limit');
+        final uri = Uri.parse('$base/api/chat/channels/$channelId/messages?limit=$limit');
         final resp = await _httpClient.get(uri).timeout(const Duration(seconds: 4));
         if (resp.statusCode == 200) {
           final decoded = json.decode(resp.body);
@@ -167,13 +153,8 @@ class ChatRepository {
     final fs = _firestore;
     if (fs != null) {
       try {
-        final snap = await fs
-            .collection('chat_channels')
-            .doc(channelId)
-            .collection('messages')
-            .orderBy('createdAt', descending: false)
-            .limitToLast(limit)
-            .get();
+        final listenerId = await resolveChatListenerId(memberId ?? '');
+        final snap = await _messageQuery(fs, channelId, memberId: listenerId, limit: limit).get();
         return snap.docs.map((d) => ChatMessage.fromFirestore(d)).toList();
       } catch (e) {
         debugPrint('[ChatRepository] Firestore fetchMessages notice: $e');
@@ -191,7 +172,7 @@ class ChatRepository {
     // 1. Try sending via REST API (which automatically resolves dynamic name & sends FCM push)
     for (final base in _endpointsToTry) {
       try {
-        final uri = Uri.parse('$base/api/public/chat/channels/$channelId/messages?userId=$driverId');
+        final uri = Uri.parse('$base/api/chat/channels/$channelId/messages');
         final resp = await _httpClient
             .post(
               uri,
@@ -213,8 +194,26 @@ class ChatRepository {
     final fs = _firestore;
     final now = DateTime.now().toUtc();
     if (fs != null) {
-      final msgDoc = fs.collection('chat_channels').doc(channelId).collection('messages').doc();
-      final msgData = {
+      final listenerId = await resolveChatListenerId(driverId);
+      final channelRef = fs.collection('chat_channels').doc(channelId);
+      final channelSnap = await channelRef.get();
+      final memberIds = <String>[];
+      final rawMembers = channelSnap.data()?['memberIds'];
+      if (rawMembers is List) {
+        for (final item in rawMembers) {
+          final id = item.toString().trim();
+          if (id.isNotEmpty && !memberIds.contains(id)) {
+            memberIds.add(id);
+          }
+        }
+      }
+      if ((channelId.startsWith('dm-') || channelId.startsWith('parent-')) &&
+          listenerId.isNotEmpty &&
+          !memberIds.contains(listenerId)) {
+        memberIds.add(listenerId);
+      }
+      final msgDoc = channelRef.collection('messages').doc();
+      final msgData = <String, dynamic>{
         'id': msgDoc.id,
         'channelId': channelId,
         'senderId': driverId,
@@ -222,6 +221,9 @@ class ChatRepository {
         'text': text,
         'createdAt': Timestamp.fromDate(now),
       };
+      if (memberIds.isNotEmpty) {
+        msgData['memberIds'] = memberIds;
+      }
       await msgDoc.set(msgData);
 
       // Update lastMessage on channel
@@ -253,9 +255,10 @@ class ChatRepository {
   // ---------------------------------------------------------------------------
 
   Future<List<ChatContact>> fetchContacts(String driverId) async {
+    if (driverId.trim().isEmpty) return [];
     for (final base in _endpointsToTry) {
       try {
-        final uri = Uri.parse('$base/api/public/chat/contacts?userId=$driverId');
+        final uri = Uri.parse('$base/api/chat/contacts');
         final resp = await _httpClient.get(uri).timeout(const Duration(seconds: 5));
         if (resp.statusCode == 200) {
           final decoded = json.decode(resp.body);
@@ -277,7 +280,7 @@ class ChatRepository {
   }) async {
     for (final base in _endpointsToTry) {
       try {
-        final uri = Uri.parse('$base/api/public/chat/channels/direct?userId=$driverId');
+        final uri = Uri.parse('$base/api/chat/channels/direct');
         final resp = await _httpClient
             .post(
               uri,
@@ -308,4 +311,19 @@ class ChatRepository {
       updatedAt: DateTime.now(),
     );
   }
+}
+
+Future<String> resolveChatListenerId(String driverId) async {
+  final fallback = driverId.trim();
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return fallback;
+    final token = await user.getIdTokenResult();
+    final claim = token.claims?['employeeId'];
+    if (claim is String && claim.trim().isNotEmpty) {
+      return claim.trim();
+    }
+    if (user.uid.isNotEmpty) return user.uid;
+  } catch (_) {}
+  return fallback;
 }

@@ -22,10 +22,16 @@ export function useChatNotifications(
   const lastSeenMapRef = useRef<Record<string, string>>({});
   const isInitialSyncRef = useRef<boolean>(true);
   const alertTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isChatOpenRef = useRef(isChatOpen);
+  const activeChannelIdRef = useRef(activeChannelId);
+  const onSelectChannelRef = useRef(onSelectChannel);
+  isChatOpenRef.current = isChatOpen;
+  activeChannelIdRef.current = activeChannelId;
+  onSelectChannelRef.current = onSelectChannel;
 
   const checkChannelsForNewMessages = useCallback(async () => {
     try {
-      const channels = await chatService.getChannels(currentUserId);
+      const channels = await chatService.getChannels();
       if (!channels || channels.length === 0) return;
 
       if (isInitialSyncRef.current) {
@@ -57,7 +63,7 @@ export function useChatNotifications(
 
           if (!isFromMe) {
             // If user is currently looking at this exact chat in the open drawer, don't alert
-            if (isChatOpen && activeChannelId === ch.id) {
+            if (isChatOpenRef.current && activeChannelIdRef.current === ch.id) {
               return;
             }
 
@@ -71,7 +77,7 @@ export function useChatNotifications(
                 body: lastMsg.text,
                 tag: `chat-${ch.id}`,
                 onClick: () => {
-                  onSelectChannel(ch.id);
+                  onSelectChannelRef.current(ch.id);
                 },
               }
             );
@@ -97,17 +103,39 @@ export function useChatNotifications(
     } catch {
       // Ignore background check failure
     }
-  }, [currentUserId, isChatOpen, activeChannelId, onSelectChannel]);
+  }, [currentUserId]);
 
   useEffect(() => {
-    // Initial sync
-    checkChannelsForNewMessages();
-
-    // Check periodically every 3.5 seconds
-    const interval = setInterval(checkChannelsForNewMessages, 3500);
-
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      void checkChannelsForNewMessages();
+    };
+    const start = () => {
+      if (interval) clearInterval(interval);
+      interval = null;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      interval = setInterval(tick, 15000);
+    };
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (interval) clearInterval(interval);
+        interval = null;
+        return;
+      }
+      tick();
+      start();
+    };
+    tick();
+    start();
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
     return () => {
-      clearInterval(interval);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+      if (interval) clearInterval(interval);
       if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
     };
   }, [checkChannelsForNewMessages]);

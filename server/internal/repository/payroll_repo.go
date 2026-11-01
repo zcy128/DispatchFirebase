@@ -427,9 +427,15 @@ func EvaluateRateHierarchy(rates []*models.BusRoutePayrollRate, req *models.Rate
 						if r.EiHours != nil {
 							ei = *r.EiHours
 						}
+						routeLabel := 0
+						if req.RouteID != nil {
+							routeLabel = *req.RouteID
+						} else if req.ShiftID != nil {
+							routeLabel = *req.ShiftID
+						}
 						return &models.RateCalculationResponse{
 							MatchedTier:     1,
-							MatchedRuleDesc: fmt.Sprintf("Tier 1: Route/Shift #%v + Employee #%v Specific Override", *req.RouteID, *req.EmployeeID),
+							MatchedRuleDesc: fmt.Sprintf("Tier 1: Route/Shift #%v + Employee #%v Specific Override", routeLabel, *req.EmployeeID),
 							PayRate:         pay,
 							EiHours:         ei,
 							AppliedRate:     r,

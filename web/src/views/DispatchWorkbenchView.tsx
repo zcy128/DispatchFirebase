@@ -67,6 +67,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { logDispatchAction } from '../utils/dispatchLogger';
 
+const DISPATCH_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 interface DispatchWorkbenchViewProps {
   employees: Employee[];
   vehicles: Vehicle[];
@@ -106,6 +108,8 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
 
   const [shifts, setShifts] = useState<DispatchShift[]>([]);
   const [loading, setLoading] = useState(false);
+  // Ignore REST responses that started before a newer load, create, or delete.
+  const shiftLoadGen = useRef(0);
   const [generating, setGenerating] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -265,49 +269,53 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
 
   // Real-time Firestore subscription to dispatch_shifts for the selectedDate
   useEffect(() => {
+    if (!DISPATCH_DATE_RE.test(selectedDate)) {
+      shiftLoadGen.current += 1;
+      setShifts([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     let isMounted = true;
+    const gen = ++shiftLoadGen.current;
 
     // Failsafe timer: if real-time listener doesn't emit within 3.5s, fetch via REST API
     const fallbackTimer = setTimeout(() => {
-      if (isMounted) {
-        DispatchService.list(selectedDate)
-          .then((apiShifts) => {
-            if (isMounted) {
-              setShifts((prev) => (prev.length === 0 ? (Array.isArray(apiShifts) ? apiShifts : []) : prev));
-              setLoading(false);
-            }
-          })
-          .catch(() => {
-            if (isMounted) setLoading(false);
-          });
-      }
+      if (!isMounted || gen !== shiftLoadGen.current) return;
+      DispatchService.list(selectedDate)
+        .then((apiShifts) => {
+          if (!isMounted || gen !== shiftLoadGen.current) return;
+          setShifts((prev) => (prev.length === 0 ? (Array.isArray(apiShifts) ? apiShifts : []) : prev));
+          setLoading(false);
+        })
+        .catch(() => {
+          if (isMounted && gen === shiftLoadGen.current) setLoading(false);
+        });
     }, 3500);
 
     const unsubscribe = DispatchService.subscribeToDayShifts(
       selectedDate,
       (updatedShifts) => {
-        if (!isMounted) return;
+        if (!isMounted || gen !== shiftLoadGen.current) return;
         clearTimeout(fallbackTimer);
         setShifts(Array.isArray(updatedShifts) ? updatedShifts : []);
         setLoading(false);
       },
       (err) => {
-        if (!isMounted) return;
+        if (!isMounted || gen !== shiftLoadGen.current) return;
         clearTimeout(fallbackTimer);
         console.warn('[DispatchWorkbench] Realtime listener notice (falling back to REST API):', err);
         DispatchService.list(selectedDate)
           .then((apiShifts) => {
-            if (isMounted) {
-              setShifts(Array.isArray(apiShifts) ? apiShifts : []);
-              setLoading(false);
-            }
+            if (!isMounted || gen !== shiftLoadGen.current) return;
+            setShifts(Array.isArray(apiShifts) ? apiShifts : []);
+            setLoading(false);
           })
           .catch(() => {
-            if (isMounted) {
-              setShifts([]);
-              setLoading(false);
-            }
+            if (!isMounted || gen !== shiftLoadGen.current) return;
+            setShifts([]);
+            setLoading(false);
           });
       }
     );
@@ -365,15 +373,28 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
 
   // Actions
   const handleCreateDay = async () => {
+    if (!DISPATCH_DATE_RE.test(selectedDate)) {
+      alert('A dispatch date is required (YYYY-MM-DD).');
+      return;
+    }
+    const date = selectedDate;
     try {
       setGenerating(true);
-      const res = await DispatchService.createDay(selectedDate, false);
+      // Drop any in-flight list from the empty day so it cannot overwrite the new shifts.
+      shiftLoadGen.current += 1;
+      const res = await DispatchService.createDay(date, false);
       await logDispatchAction({
-        date: selectedDate,
+        date,
         type: 'Day Generated',
         detail: `Generated dispatch day with ${res.created} shifts (${res.skippedExisting} already existed)`,
         user: actorName,
       });
+      const gen = ++shiftLoadGen.current;
+      const list = await DispatchService.list(date);
+      if (gen === shiftLoadGen.current) {
+        setShifts(Array.isArray(list) ? list : []);
+        setLoading(false);
+      }
       alert(`Dispatch Generation Complete for ${res.date}:\nCreated ${res.created} shifts (${res.skippedExisting} already existed).`);
     } catch (err) {
       console.error('Failed to create day:', err);
@@ -384,18 +405,24 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
   };
 
   const handleDeleteDay = async () => {
+    if (!DISPATCH_DATE_RE.test(selectedDate)) {
+      alert('A dispatch date is required (YYYY-MM-DD).');
+      return;
+    }
     if (!window.confirm(`Are you sure you want to clear all dispatch shifts for ${selectedDate}? This will remove today's tracking data.`)) {
       return;
     }
+    const date = selectedDate;
     try {
       setDeleting(true);
-      await DispatchService.deleteDay(selectedDate);
+      await DispatchService.deleteDay(date);
       await logDispatchAction({
-        date: selectedDate,
+        date,
         type: 'Day Deleted',
-        detail: `Cleared all dispatch shifts for date ${selectedDate}`,
+        detail: `Cleared all dispatch shifts for date ${date}`,
         user: actorName,
       });
+      shiftLoadGen.current += 1;
       setShifts([]);
     } catch (err) {
       console.error('Failed to delete day:', err);
@@ -406,15 +433,25 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
   };
 
   const handleRefresh = async () => {
+    if (!DISPATCH_DATE_RE.test(selectedDate)) {
+      shiftLoadGen.current += 1;
+      setShifts([]);
+      setLoading(false);
+      return;
+    }
+    const date = selectedDate;
+    const gen = ++shiftLoadGen.current;
     try {
       setLoading(true);
-      const list = await DispatchService.list(selectedDate);
+      const list = await DispatchService.list(date);
+      if (gen !== shiftLoadGen.current) return;
       setShifts(Array.isArray(list) ? list : []);
     } catch (err) {
+      if (gen !== shiftLoadGen.current) return;
       console.error('Error refreshing dispatch shifts:', err);
       setShifts([]);
     } finally {
-      setLoading(false);
+      if (gen === shiftLoadGen.current) setLoading(false);
     }
   };
 
@@ -799,7 +836,7 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
           {/* Create Day Button */}
           <button
             onClick={handleCreateDay}
-            disabled={generating}
+            disabled={generating || !DISPATCH_DATE_RE.test(selectedDate)}
             className="px-3 py-1 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -1411,8 +1448,8 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
           </p>
           <button
             onClick={handleCreateDay}
-            disabled={generating}
-            className="mt-4 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow"
+            disabled={generating || !DISPATCH_DATE_RE.test(selectedDate)}
+            className="mt-4 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow disabled:opacity-50"
           >
             <Plus className="w-4 h-4" />
             <span>Generate Dispatch for {selectedDate}</span>

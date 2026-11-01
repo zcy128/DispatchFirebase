@@ -57,6 +57,94 @@ service cloud.firestore {
       );
     }
 
+    function isChatMember(data, channelId) {
+      return channelId is string
+        && data != null
+        && data.memberIds != null
+        && (
+          request.auth.uid in data.memberIds ||
+          myEmployeeId() in data.memberIds
+        );
+    }
+
+    function chatIdentityUnchanged() {
+      return ('type' in resource.data)
+        && request.resource.data.type == resource.data.type
+        && (
+          (!('memberIds' in resource.data) && !('memberIds' in request.resource.data))
+          || request.resource.data.get('memberIds', []) == resource.data.get('memberIds', [])
+        )
+        && (
+          !('id' in resource.data)
+          || request.resource.data.get('id', null) == resource.data.id
+        );
+    }
+
+    function sameField(before, after, field) {
+      return before.get(field, null) == after.get(field, null);
+    }
+
+    function isBlank(data, field) {
+      return !(field in data) || data[field] == null || data[field] == '';
+    }
+
+    function isBackOffice() {
+      return isAuthenticated() && (
+        isAdmin() ||
+        request.auth.token.role in [
+          'dispatcher', 'manager', 'supervisor', 'office staff',
+          'fleet', 'hr', 'payroll', 'studentcare', 'training'
+        ]
+      );
+    }
+
+    function canReadChat(data, channelId) {
+      return isAuthenticated() && data != null && (
+        isAdmin() ||
+        isChatMember(data, channelId) ||
+        (data.type == 'fleet' && request.auth.token.role in ['driver', 'helper', 'fleet', 'dispatcher', 'manager', 'admin']) ||
+        (data.type == 'broadcast' && isAuthenticated()) ||
+        (data.type == 'office' && request.auth.token.role in ['admin', 'dispatcher', 'manager', 'fleet', 'hr', 'supervisor', 'office staff']) ||
+        (data.type == 'parent' && request.auth.token.role in ['admin', 'dispatcher', 'manager', 'studentcare'])
+      );
+    }
+
+    function canWriteChat(data, channelId) {
+      return isAuthenticated() && data != null && (
+        isAdmin() ||
+        (data.type == 'direct' && isChatMember(data, channelId)) ||
+        (data.type == 'fleet' && request.auth.token.role in ['driver', 'helper', 'fleet', 'dispatcher', 'manager']) ||
+        (data.type == 'broadcast' && request.auth.token.role in ['dispatcher', 'manager']) ||
+        (data.type == 'office' && request.auth.token.role in ['dispatcher', 'manager', 'fleet', 'hr', 'supervisor', 'office staff']) ||
+        (data.type == 'parent' && (
+          isChatMember(data, channelId) ||
+          request.auth.token.role in ['dispatcher', 'manager', 'studentcare']
+        ))
+      );
+    }
+
+    function postedMemberIds() {
+      return request.resource.data.get('memberIds', []);
+    }
+
+    function channelMemberIds(channel) {
+      return channel.get('memberIds', []);
+    }
+
+    function canPostChatMessage(channelId) {
+      let channel = get(/databases/$(database)/documents/chat_channels/$(channelId)).data;
+      return canWriteChat(channel, channelId)
+        && postedMemberIds().hasAll(channelMemberIds(channel))
+        && postedMemberIds().hasOnly(channelMemberIds(channel).concat([request.auth.uid, myEmployeeId()]));
+    }
+
+    function canAccessChatMessages() {
+      return isAuthenticated() && (
+        isAdmin() ||
+        request.auth.token.role in ['dispatcher', 'manager', 'fleet', 'hr', 'supervisor', 'office staff', 'studentcare', 'driver', 'helper']
+      );
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     // 2. 员工主数据 (Employee Master Records)
     // ═════════════════════════════════════════════════════════════════════════
@@ -141,10 +229,16 @@ service cloud.firestore {
       allow read: if canRead('dispatch', ['dispatcher', 'manager', 'supervisor', 'office staff', 'fleet', 'payroll', 'studentcare']) ||
                      (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
                       resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
-      // 调度员可调配班次；司机仅可打卡/更新属于自己的班次状态
-      allow write: if canWrite('dispatch', ['dispatcher']) ||
-                      (isAuthenticated() && request.auth.token.role == 'driver' &&
-                       resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+      allow create, delete: if canWrite('dispatch', ['dispatcher']);
+      allow update: if canWrite('dispatch', ['dispatcher']) ||
+                      (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
+                       resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                         'isDriverCheckedIn', 'driverCheckedInAt', 'isDriverCheckedOut', 'driverCheckedOutAt',
+                         'driverCheckoutComments', 'isAttendantCheckedIn', 'attendantCheckedInAt',
+                         'isAttendantCheckedOut', 'attendantCheckedOutAt', 'attendantCheckoutComments',
+                         'updatedAt'
+                       ]));
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -196,10 +290,22 @@ service cloud.firestore {
       // 车辆钥匙领用与交接：车队管理；司机只能提交并查看自己名下的交接
       allow read: if canRead('vehicle_signouts', ['dispatcher', 'fleet', 'manager']) ||
                      (isAuthenticated() && isMyRecord(resource.data.employeeId));
-      allow create: if canWrite('vehicle_signouts', ['dispatcher', 'fleet']) ||
-                       (isAuthenticated() && request.auth.token.role == 'driver' &&
-                        isMyRecord(request.resource.data.employeeId));
-      allow update, delete: if canWrite('vehicle_signouts', ['dispatcher', 'fleet']);
+      allow create: if canWrite('vehicle_signouts', ['fleet']) ||
+                       (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
+                        isMyRecord(request.resource.data.employeeId) &&
+                        isBlank(request.resource.data, 'fleetDepartmentSignature') &&
+                        isBlank(request.resource.data, 'fleetDepartmentSignDate'));
+      allow update: if canWrite('vehicle_signouts', ['fleet']) ||
+                     (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
+                      isMyRecord(resource.data.employeeId) &&
+                      isMyRecord(request.resource.data.employeeId) &&
+                      sameField(resource.data, request.resource.data, 'employeeId') &&
+                      sameField(resource.data, request.resource.data, 'fleetDepartmentSignature') &&
+                      sameField(resource.data, request.resource.data, 'fleetDepartmentSignDate') &&
+                      sameField(resource.data, request.resource.data, 'createdAt') &&
+                      sameField(resource.data, request.resource.data, 'createdBy') &&
+                      sameField(resource.data, request.resource.data, 'id'));
+      allow delete: if canWrite('vehicle_signouts', ['fleet']);
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -276,19 +382,23 @@ service cloud.firestore {
     // ═════════════════════════════════════════════════════════════════════════
 
     match /payroll_rates/{rateId} {
-      allow read, write: if canRead('payroll', ['payroll', 'manager']);
+      allow read: if canRead('payroll', ['payroll', 'manager']);
+      allow write: if canWrite('payroll', ['payroll', 'manager']);
     }
 
     match /busroute_payroll_rates/{rateId} {
-      allow read, write: if canRead('payroll', ['payroll', 'manager']);
+      allow read: if canRead('payroll', ['payroll', 'manager']);
+      allow write: if canWrite('payroll', ['payroll', 'manager']);
     }
 
     match /payroll_base_rates/{rateId} {
-      allow read, write: if canRead('payroll', ['payroll']);
+      allow read: if canRead('payroll', ['payroll']);
+      allow write: if canWrite('payroll', ['payroll']);
     }
 
     match /payroll_custom_rates/{rateId} {
-      allow read, write: if canRead('payroll', ['payroll']);
+      allow read: if canRead('payroll', ['payroll']);
+      allow write: if canWrite('payroll', ['payroll']);
     }
 
     match /dispatch_payrolls/{id} {
@@ -328,12 +438,45 @@ service cloud.firestore {
     // ═════════════════════════════════════════════════════════════════════════
 
     match /chat_channels/{channelId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read: if canReadChat(resource.data, channelId);
+      allow create: if canWriteChat(request.resource.data, channelId);
+      allow update: if isAdmin() || (
+        canWriteChat(resource.data, channelId) &&
+        chatIdentityUnchanged() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'lastMessage', 'updatedAt', 'name'
+        ])
+      );
+      allow delete: if isAdmin();
 
       match /messages/{messageId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated();
+        // Reads use the channel id prefix so a listener does not call get() on every message.
+        // Direct chats require membership. Broadcast is readable by any signed-in user. Office stays with staff.
+        // Yard fleet channels stay readable by drivers. Missing memberIds does not open every chat.
+        allow read: if isAuthenticated() && (
+          isAdmin() ||
+          (channelId.matches('^dm-.*') &&
+            ('memberIds' in resource.data) &&
+            resource.data.memberIds != null &&
+            (request.auth.uid in resource.data.memberIds || myEmployeeId() in resource.data.memberIds)) ||
+          (channelId.matches('^parent-.*') && (
+            (('memberIds' in resource.data) && resource.data.memberIds != null &&
+              (request.auth.uid in resource.data.memberIds || myEmployeeId() in resource.data.memberIds)) ||
+            request.auth.token.role in ['dispatcher', 'manager', 'studentcare']
+          )) ||
+          (channelId.matches('^channel-broadcast.*$')) ||
+          (channelId.matches('^channel-office.*$') &&
+            request.auth.token.role in ['dispatcher', 'manager', 'fleet', 'hr', 'supervisor', 'office staff']) ||
+          (channelId.matches('^channel-yard-.*') &&
+            request.auth.token.role in ['driver', 'helper', 'fleet', 'dispatcher', 'manager'])
+        );
+
+        // 单文档写入 (create) 仅消耗 1 次 get() 配额 (<= 10)，严格执行父频道的写入成员校验
+        allow create: if isAuthenticated() && (
+          isAdmin() ||
+          canPostChatMessage(channelId)
+        );
+        allow update, delete: if isAdmin();
       }
     }
 
@@ -343,10 +486,10 @@ service cloud.firestore {
       allow write: if isAuthenticated() && request.auth.token.role in ['driver', 'dispatcher', 'admin'];
     }
 
-    // 家长端只读车辆追踪位置
+    // Staff may read live positions here. Parent accounts use the authenticated tracking API.
     match /gps_current/{unitNumber} {
-      allow read: if true;
-      allow write: if false; // 仅由 Go 后端或云函数写入
+      allow read: if isAuthenticated() && request.auth.token.role in ['driver', 'helper', 'dispatcher', 'manager', 'admin', 'fleet'];
+      allow write: if false;
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -355,22 +498,26 @@ service cloud.firestore {
 
     match /dispatch_change_logs/{logId} {
       allow read: if canRead('dispatch_log', ['dispatcher', 'manager', 'supervisor']);
-      allow write: if isAuthenticated();
+      allow create: if isBackOffice();
+      allow update, delete: if false;
     }
 
     match /route_change_logs/{id} {
       allow read: if canRead('dispatch_log', ['dispatcher', 'manager']);
-      allow write: if isAuthenticated();
+      allow create: if isBackOffice();
+      allow update, delete: if false;
     }
 
     match /entity_operation_logs/{id} {
       allow read: if canRead('audit_logs', ['admin']);
-      allow write: if isAuthenticated();
+      allow create: if isBackOffice();
+      allow update, delete: if false;
     }
 
     match /operational_safety_logs/{id} {
       allow read: if canRead('audit_logs', ['admin', 'manager']);
-      allow write: if isAuthenticated();
+      allow create: if isBackOffice();
+      allow update, delete: if false;
     }
 
     match /login_logs/{id} {

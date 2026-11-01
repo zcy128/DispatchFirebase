@@ -43,32 +43,39 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
   const [activeOnly, setActiveOnly] = useState(false);
   const [filterLicenseDue, setFilterLicenseDue] = useState(false);
 
-  // Filtered employees
-  const filtered = employees.filter((emp) => {
-    if (activeOnly && !emp.isActive) return false;
-    if (selectedYard !== 'ALL' && emp.yardId !== selectedYard) return false;
-    if (selectedPosition !== 'ALL' && emp.jobPosition !== selectedPosition) return false;
+  // Filtered and deduplicated employees
+  const filtered = React.useMemo(() => {
+    const seen = new Set<string>();
+    return employees.filter((emp) => {
+      const key = emp.id || emp.employeeNumber;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
 
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      const matchName = emp.fullName.toLowerCase().includes(term);
-      const matchNum = emp.employeeNumber.toLowerCase().includes(term);
-      const matchPos = emp.jobPosition.toLowerCase().includes(term);
-      const matchPhone =
-        (emp.mobilePhone && emp.mobilePhone.includes(term)) ||
-        (emp.workPhonePhone && emp.workPhonePhone.includes(term));
-      if (!matchName && !matchNum && !matchPos && !matchPhone) return false;
-    }
+      if (activeOnly && !emp.isActive) return false;
+      if (selectedYard !== 'ALL' && emp.yardId !== selectedYard) return false;
+      if (selectedPosition !== 'ALL' && emp.jobPosition !== selectedPosition) return false;
 
-    if (filterLicenseDue) {
-      if (!emp.driverLicense?.expirationDate) return false;
-      const diff =
-        (new Date(emp.driverLicense.expirationDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-      if (diff > 30 || diff < 0) return false;
-    }
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        const matchName = (emp.fullName || '').toLowerCase().includes(term);
+        const matchNum = (emp.employeeNumber || '').toLowerCase().includes(term);
+        const matchPos = (emp.jobPosition || '').toLowerCase().includes(term);
+        const matchPhone =
+          (emp.mobilePhone && emp.mobilePhone.includes(term)) ||
+          (emp.workPhonePhone && emp.workPhonePhone.includes(term));
+        if (!matchName && !matchNum && !matchPos && !matchPhone) return false;
+      }
 
-    return true;
-  });
+      if (filterLicenseDue) {
+        if (!emp.driverLicense?.expirationDate) return false;
+        const diff =
+          (new Date(emp.driverLicense.expirationDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+        if (diff > 30 || diff < 0) return false;
+      }
+
+      return true;
+    });
+  }, [employees, activeOnly, selectedYard, selectedPosition, searchTerm, filterLicenseDue]);
 
   const uniquePositions = Array.from(new Set(employees.map((e) => e.jobPosition).filter(Boolean)));
 

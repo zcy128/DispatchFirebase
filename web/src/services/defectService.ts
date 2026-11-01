@@ -9,7 +9,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { apiRequest } from './api';
+import { apiRequest, isClientHttpError } from './api';
+import { listenerOwnEmployeeId } from '../utils/listenerScope';
 import {
   VehicleDefectReport,
   UpdateDefectAssessmentPayload,
@@ -69,13 +70,7 @@ export const DefectService = {
     try {
       const res = await apiRequest<VehicleDefectReport[]>(`/api/dispatch/vehicle-defects?${qStr}`);
       return Array.isArray(res) ? res.map((r) => normalizeDefectRecord(r, r.id)) : [];
-    } catch {
-      try {
-        const res = await apiRequest<VehicleDefectReport[]>(
-          `/api/public/dispatch/vehicle-defects?${qStr}`
-        );
-        return Array.isArray(res) ? res.map((r) => normalizeDefectRecord(r, r.id)) : [];
-      } catch (err) {
+    } catch (err) {
         if (db) {
           const qRef = collection(db, 'vehicle_defects');
           const snap = await getDocs(qRef);
@@ -87,7 +82,6 @@ export const DefectService = {
           return list;
         }
         return [];
-      }
     }
   },
 
@@ -95,21 +89,14 @@ export const DefectService = {
     try {
       const res = await apiRequest<VehicleDefectReport>(`/api/dispatch/vehicle-defects/${id}`);
       return normalizeDefectRecord(res, res.id || id);
-    } catch {
-      try {
-        const res = await apiRequest<VehicleDefectReport>(
-          `/api/public/dispatch/vehicle-defects/${id}`
-        );
-        return normalizeDefectRecord(res, res.id || id);
-      } catch (err) {
-        if (db) {
-          const dSnap = await getDoc(doc(db, 'vehicle_defects', id));
-          if (dSnap.exists()) {
-            return normalizeDefectRecord(dSnap.data(), dSnap.id);
-          }
+    } catch (err) {
+      if (db) {
+        const dSnap = await getDoc(doc(db, 'vehicle_defects', id));
+        if (dSnap.exists()) {
+          return normalizeDefectRecord(dSnap.data(), dSnap.id);
         }
-        throw new Error(`Defect report not found: ${id}`);
       }
+      throw new Error(`Defect report not found: ${id}`);
     }
   },
 
@@ -126,44 +113,32 @@ export const DefectService = {
         }
       );
       return normalizeDefectRecord(res, res.id || id);
-    } catch {
-      try {
-        const res = await apiRequest<VehicleDefectReport>(
-          `/api/public/dispatch/vehicle-defects/${id}/assessment`,
-          {
-            method: 'PATCH',
-            body: JSON.stringify(payload),
-          }
-        );
-        return normalizeDefectRecord(res, res.id || id);
-      } catch (err) {
+    } catch (err) {
+        if (isClientHttpError(err)) throw err;
         if (db) {
           const dRef = doc(db, 'vehicle_defects', id);
           const now = new Date().toISOString();
-          const patchData: any = {
-            status: payload.status,
-            updatedAt: now,
-            'assessment.assessedBy': payload.assessedBy,
-            'assessment.assessedAt': now,
-            'assessment.assessmentNotes': payload.assessmentNotes || '',
-            'assessment.repairLocation': payload.repairLocation || '',
-            'assessment.estimatedRepairDays': payload.estimatedRepairDays || 0,
-            'assessment.estimatedStartDate': payload.estimatedStartDate || '',
-            'assessment.estimatedCompletionDate': payload.estimatedCompletionDate || '',
-            'assessment.actualCompletionDate': payload.actualCompletionDate || '',
-            'assessment.repairCost': payload.repairCost || 0,
-            'assessment.mechanicNotes': payload.mechanicNotes || '',
+          const assessment: Record<string, unknown> = {
+            assessedBy: payload.assessedBy,
+            assessedAt: now,
+            assessmentNotes: payload.assessmentNotes || '',
+            repairLocation: payload.repairLocation || '',
+            estimatedRepairDays: payload.estimatedRepairDays || 0,
+            estimatedStartDate: payload.estimatedStartDate || '',
+            estimatedCompletionDate: payload.estimatedCompletionDate || '',
+            actualCompletionDate: payload.actualCompletionDate || '',
+            repairCost: payload.repairCost || 0,
+            mechanicNotes: payload.mechanicNotes || '',
           };
           if (payload.resolvedBy) {
-            patchData['assessment.resolvedBy'] = payload.resolvedBy;
-            patchData['assessment.resolvedAt'] = now;
+            assessment.resolvedBy = payload.resolvedBy;
+            assessment.resolvedAt = now;
           }
-          await setDoc(dRef, patchData, { merge: true });
+          await setDoc(dRef, { status: payload.status, updatedAt: now, assessment }, { merge: true });
           const snap = await getDoc(dRef);
           return normalizeDefectRecord(snap.data(), id);
         }
         throw err;
-      }
     }
   },
 
@@ -177,17 +152,8 @@ export const DefectService = {
         }
       );
       return normalizeDefectRecord(res, res.id || id);
-    } catch {
-      try {
-        const res = await apiRequest<VehicleDefectReport>(
-          `/api/public/dispatch/vehicle-defects/${id}/status`,
-          {
-            method: 'PATCH',
-            body: JSON.stringify({ status }),
-          }
-        );
-        return normalizeDefectRecord(res, res.id || id);
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const dRef = doc(db, 'vehicle_defects', id);
           const now = new Date().toISOString();
@@ -196,7 +162,6 @@ export const DefectService = {
           return normalizeDefectRecord(snap.data(), id);
         }
         throw err;
-      }
     }
   },
 
@@ -222,7 +187,10 @@ export const DefectService = {
     const cutoffDateStr = cutoffDate.toISOString().slice(0, 10);
 
     const colRef = collection(db, 'vehicle_defects');
-    const q = query(colRef, where('reportDate', '>=', cutoffDateStr));
+    const ownId = listenerOwnEmployeeId();
+    const q = ownId
+      ? query(colRef, where('reportedByUserId', '==', ownId), where('reportDate', '>=', cutoffDateStr))
+      : query(colRef, where('reportDate', '>=', cutoffDateStr));
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {

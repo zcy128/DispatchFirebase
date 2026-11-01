@@ -1,0 +1,69 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "memberIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "memberIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vehicle_defects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "reportedByUserId", "order": "ASCENDING" },
+        { "fieldPath": "reportDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "student_incidents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "driverId", "order": "ASCENDING" },
+        { "fieldPath": "incidentDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dispatch_shifts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dispatchDate", "order": "ASCENDING" },
+        { "fieldPath": "assignedEmployeeIds", "arrayConfig": "CONTAINS" }
+      ]
+    },
+    {
+      "collectionGroup": "vehicle_signouts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "employeeId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "route_assessments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "conductedByEmployeeId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "hazard_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "reportedByEmployeeId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

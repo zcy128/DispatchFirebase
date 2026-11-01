@@ -8,7 +8,7 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { apiRequest } from './api';
+import { apiRequest, isClientHttpError } from './api';
 import {
   TrainingCourse,
   TrainingType,
@@ -67,11 +67,7 @@ export const TrainingService = {
     try {
       const res = await apiRequest<TrainingCourse[]>(`/api/dispatch/training/courses?${qStr}`);
       return Array.isArray(res) ? res.map((c) => normalizeCourse(c, c.id)) : [];
-    } catch {
-      try {
-        const res = await apiRequest<TrainingCourse[]>(`/api/public/dispatch/training/courses?${qStr}`);
-        return Array.isArray(res) ? res.map((c) => normalizeCourse(c, c.id)) : [];
-      } catch (err) {
+    } catch (err) {
         if (db) {
           const qRef = collection(db, 'training_courses');
           const snap = await getDocs(qRef);
@@ -83,7 +79,6 @@ export const TrainingService = {
           return list;
         }
         throw err;
-      }
     }
   },
 
@@ -91,19 +86,14 @@ export const TrainingService = {
     try {
       const res = await apiRequest<TrainingCourse>(`/api/dispatch/training/courses/${encodeURIComponent(id)}`);
       return normalizeCourse(res, res.id);
-    } catch {
-      try {
-        const res = await apiRequest<TrainingCourse>(`/api/public/dispatch/training/courses/${encodeURIComponent(id)}`);
-        return normalizeCourse(res, res.id);
-      } catch (err) {
-        if (db) {
-          const snap = await getDoc(doc(db, 'training_courses', id));
-          if (snap.exists()) {
-            return normalizeCourse(snap.data(), snap.id);
-          }
+    } catch (err) {
+      if (db) {
+        const snap = await getDoc(doc(db, 'training_courses', id));
+        if (snap.exists()) {
+          return normalizeCourse(snap.data(), snap.id);
         }
-        throw err;
       }
+      throw err;
     }
   },
 
@@ -113,13 +103,8 @@ export const TrainingService = {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        return await apiRequest<TrainingCourse>('/api/public/dispatch/training/courses', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const id = `TC-${Date.now()}`;
           const nowStr = new Date().toISOString();
@@ -136,7 +121,6 @@ export const TrainingService = {
           return rec;
         }
         throw err;
-      }
     }
   },
 
@@ -149,13 +133,8 @@ export const TrainingService = {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        return await apiRequest<TrainingCourse>(`/api/public/dispatch/training/courses/${encodeURIComponent(id)}`, {
-          method: 'PUT',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const docRef = doc(db, 'training_courses', id);
           await setDoc(docRef, { ...payload, updatedAt: new Date().toISOString() }, { merge: true });
@@ -163,7 +142,6 @@ export const TrainingService = {
           return normalizeCourse(snap.data(), docRef.id);
         }
         throw err;
-      }
     }
   },
 
@@ -202,18 +180,13 @@ export const TrainingService = {
       await apiRequest(`/api/dispatch/training/courses/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
-    } catch {
-      try {
-        await apiRequest(`/api/public/dispatch/training/courses/${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-        });
-      } catch (err) {
-        if (db) {
-          await deleteDoc(doc(db, 'training_courses', id));
-          return;
-        }
-        throw err;
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
+      if (db) {
+        await deleteDoc(doc(db, 'training_courses', id));
+        return;
       }
+      throw err;
     }
   },
 
@@ -229,16 +202,7 @@ export const TrainingService = {
           body: JSON.stringify(payload),
         }
       );
-    } catch {
-      try {
-        return await apiRequest<TrainingCourse>(
-          `/api/public/dispatch/training/courses/${encodeURIComponent(courseId)}/attendees`,
-          {
-            method: 'POST',
-            body: JSON.stringify(payload),
-          }
-        );
-      } catch (err) {
+    } catch (err) {
         if (db) {
           const docRef = doc(db, 'training_courses', courseId);
           const snap = await getDoc(docRef);
@@ -288,7 +252,6 @@ export const TrainingService = {
           return normalizeCourse(updatedSnap.data(), docRef.id);
         }
         throw err;
-      }
     }
   },
 
@@ -305,16 +268,7 @@ export const TrainingService = {
           body: JSON.stringify(payload),
         }
       );
-    } catch {
-      try {
-        return await apiRequest<TrainingCourse>(
-          `/api/public/dispatch/training/courses/${encodeURIComponent(courseId)}/attendees/${encodeURIComponent(registrationId)}`,
-          {
-            method: 'PUT',
-            body: JSON.stringify(payload),
-          }
-        );
-      } catch (err) {
+    } catch (err) {
         if (db) {
           const docRef = doc(db, 'training_courses', courseId);
           const snap = await getDoc(docRef);
@@ -355,7 +309,6 @@ export const TrainingService = {
           return normalizeCourse(updatedSnap.data(), docRef.id);
         }
         throw err;
-      }
     }
   },
 
@@ -372,11 +325,7 @@ export const TrainingService = {
     try {
       const res = await apiRequest<TrainingType[]>('/api/dispatch/training/types');
       return Array.isArray(res) ? res : [];
-    } catch {
-      try {
-        const res = await apiRequest<TrainingType[]>('/api/public/dispatch/training/types');
-        return Array.isArray(res) ? res : [];
-      } catch (err) {
+    } catch (err) {
         if (db) {
           const snap = await getDocs(collection(db, 'training_types'));
           const list: TrainingType[] = [];
@@ -386,7 +335,6 @@ export const TrainingService = {
           return list;
         }
         throw err;
-      }
     }
   },
 

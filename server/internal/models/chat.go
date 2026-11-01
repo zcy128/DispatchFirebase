@@ -1,6 +1,8 @@
 package models
 
 import (
+	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -67,6 +69,7 @@ type ChatMessage struct {
 	Text       string    `json:"text" firestore:"text"`
 	MediaURL   string    `json:"mediaUrl,omitempty" firestore:"mediaUrl,omitempty"`
 	MediaType  string    `json:"mediaType,omitempty" firestore:"mediaType,omitempty"` // "image", "file"
+	MemberIDs  []string  `json:"memberIds,omitempty" firestore:"memberIds,omitempty"` // Denormalized channel members for subcollection rules
 	CreatedAt  time.Time `json:"createdAt" firestore:"createdAt"`
 }
 
@@ -83,7 +86,8 @@ type CreateDirectChannelPayload struct {
 	TargetUserID string `json:"targetUserId"`
 }
 
-// CreateParentChannelPayload is the HTTP request body for starting or finding a parent conversation
+// CreateParentChannelPayload is the HTTP request body for starting or finding a parent conversation.
+// StudentID accepts a number or a numeric string such as "1001" or "STU-1001".
 type CreateParentChannelPayload struct {
 	ParentContact string `json:"parentContact"`
 	ParentName    string `json:"parentName,omitempty"`
@@ -93,6 +97,66 @@ type CreateParentChannelPayload struct {
 	RouteNo       string `json:"routeNo,omitempty"`
 	SchoolName    string `json:"schoolName,omitempty"`
 	Grade         string `json:"grade,omitempty"`
+}
+
+func (p *CreateParentChannelPayload) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		ParentContact string          `json:"parentContact"`
+		ParentName    string          `json:"parentName"`
+		StudentID     json.RawMessage `json:"studentId"`
+		StudentName   string          `json:"studentName"`
+		BusUnitNumber string          `json:"busUnitNumber"`
+		RouteNo       string          `json:"routeNo"`
+		SchoolName    string          `json:"schoolName"`
+		Grade         string          `json:"grade"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	p.ParentContact = raw.ParentContact
+	p.ParentName = raw.ParentName
+	p.StudentID = flexibleStudentID(raw.StudentID)
+	p.StudentName = raw.StudentName
+	p.BusUnitNumber = raw.BusUnitNumber
+	p.RouteNo = raw.RouteNo
+	p.SchoolName = raw.SchoolName
+	p.Grade = raw.Grade
+	return nil
+}
+
+func flexibleStudentID(raw json.RawMessage) int {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0
+	}
+	var number int
+	if err := json.Unmarshal(raw, &number); err == nil {
+		return number
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return 0
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return 0
+	}
+	if number, err := strconv.Atoi(text); err == nil {
+		return number
+	}
+	digits := make([]byte, 0, len(text))
+	for i := 0; i < len(text); i++ {
+		if text[i] >= '0' && text[i] <= '9' {
+			digits = append(digits, text[i])
+		}
+	}
+	if len(digits) == 0 {
+		return 0
+	}
+	number, err := strconv.Atoi(string(digits))
+	if err != nil {
+		return 0
+	}
+	return number
 }
 
 // CleanParentContact normalizes a phone number or email into a stable channel key.

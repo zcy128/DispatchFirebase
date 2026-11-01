@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -14,6 +15,18 @@ import (
 	"dispatch-server/internal/repository"
 )
 
+type chatActorContextKey struct{}
+
+// WithChatActorID marks an identity that this server already verified.
+// Client-supplied X-User-Id headers are not accepted.
+func WithChatActorID(ctx context.Context, actorID string) context.Context {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, chatActorContextKey{}, actorID)
+}
+
 type ChatHandler struct {
 	chatRepo repository.ChatRepository
 	empRepo  repository.EmployeeRepository
@@ -26,7 +39,8 @@ func NewChatHandler(chatRepo repository.ChatRepository, empRepo repository.Emplo
 	}
 }
 
-// resolveCurrentUserID extracts user ID from auth context, or falls back to X-User-Id header / query
+// resolveCurrentUserID uses the authenticated account, or a parent identity
+// placed in the request context by the parent session wrapper.
 func (h *ChatHandler) resolveCurrentUserID(r *http.Request) string {
 	user := auth.GetUser(r.Context())
 	if user != nil {
@@ -40,11 +54,65 @@ func (h *ChatHandler) resolveCurrentUserID(r *http.Request) string {
 			return user.UID
 		}
 	}
-	// Fallback to explicit header or query param
-	if val := r.Header.Get("X-User-Id"); val != "" {
-		return val
+	if actorID, ok := r.Context().Value(chatActorContextKey{}).(string); ok {
+		if id := strings.TrimSpace(actorID); id != "" {
+			return id
+		}
 	}
-	return r.URL.Query().Get("userId")
+	// Demo driver chat calls /api/public/chat with userId. Those routes are not
+	// mounted in production. The raw X-User-Id header is never trusted.
+	if strings.Contains(r.URL.Path, "/api/public/") {
+		if id := strings.TrimSpace(r.URL.Query().Get("userId")); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+func (h *ChatHandler) callerCanAccessChannel(r *http.Request, channel *models.ChatChannel) bool {
+	if channel == nil {
+		return false
+	}
+	userID := h.resolveCurrentUserID(r)
+	if userID == "" {
+		return false
+	}
+	for _, memberID := range channel.MemberIDs {
+		if memberID == userID {
+			return true
+		}
+	}
+	role := ""
+	if user := auth.GetUser(r.Context()); user != nil {
+		role = strings.ToLower(strings.TrimSpace(user.Role))
+	}
+	switch channel.Type {
+	case models.ChannelTypeDirect:
+		return false
+	case models.ChannelTypeParent:
+		switch role {
+		case "admin", "dispatcher", "manager", "studentcare":
+			return true
+		default:
+			return false
+		}
+	case models.ChannelTypeFleet:
+		switch role {
+		case "admin", "dispatcher", "manager", "fleet", "driver", "helper":
+			return true
+		default:
+			return false
+		}
+	case models.ChannelTypeBroadcast:
+		return true
+	default:
+		switch role {
+		case "admin", "dispatcher", "manager", "fleet", "hr", "office staff", "supervisor":
+			return true
+		default:
+			return false
+		}
+	}
 }
 
 // ListChannels returns all channels accessible to the user
@@ -82,6 +150,10 @@ func (h *ChatHandler) GetChannel(w http.ResponseWriter, r *http.Request) {
 	channel, err := h.chatRepo.GetChannelByID(r.Context(), channelID)
 	if err != nil {
 		http.Error(w, `{"error":"failed to get channel: `+err.Error()+`"}`, http.StatusNotFound)
+		return
+	}
+	if !h.callerCanAccessChannel(r, channel) {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
 
@@ -158,6 +230,15 @@ func (h *ChatHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 			limit = l
 		}
 	}
+	channel, err := h.chatRepo.GetChannelByID(r.Context(), channelID)
+	if err != nil {
+		http.Error(w, `{"error":"channel not found"}`, http.StatusNotFound)
+		return
+	}
+	if !h.callerCanAccessChannel(r, channel) {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
 
 	messages, err := h.chatRepo.ListMessages(r.Context(), channelID, limit)
 	if err != nil {
@@ -191,6 +272,15 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	if strings.TrimSpace(req.Text) == "" && req.MediaURL == "" {
 		http.Error(w, `{"error":"message text or media is required"}`, http.StatusBadRequest)
+		return
+	}
+	channel, err := h.chatRepo.GetChannelByID(r.Context(), channelID)
+	if err != nil {
+		http.Error(w, `{"error":"channel not found"}`, http.StatusNotFound)
+		return
+	}
+	if !h.callerCanAccessChannel(r, channel) {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
 
@@ -248,9 +338,14 @@ func (h *ChatHandler) GetMyDisplayName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	role := ""
+	if user := auth.GetUser(r.Context()); user != nil {
+		role = user.Role
+	}
 	json.NewEncoder(w).Encode(map[string]string{
 		"userId":      userID,
 		"displayName": displayName,
+		"role":        role,
 		"date":        date,
 	})
 }

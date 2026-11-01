@@ -105,6 +105,7 @@ export interface DispatchShift {
   health: DispatchHealth;
   isDryRun?: boolean;
   notes?: string;
+  dispatchComments?: string;
   driverPayOption?: string;
   driverPayAmount?: number;
   driverEiHours?: number;
@@ -144,6 +145,8 @@ export function extractDispatchAssignedEmployeeIds(shift: {
   driverName?: string;
   attendantId?: string;
   attendantName?: string;
+  nurseId?: string;
+  nurseName?: string;
 }): string[] {
   const set = new Set<string>();
   if (shift.driverId) {
@@ -172,6 +175,20 @@ export function extractDispatchAssignedEmployeeIds(shift: {
     if (aName && aName.toLowerCase() !== 'tbd' && aName.toLowerCase() !== 'unassigned' && aName.toLowerCase() !== 'non assigné') {
       set.add(aName);
       set.add(aName.toLowerCase());
+    }
+  }
+  if (shift.nurseId) {
+    const nId = shift.nurseId.trim();
+    if (nId && nId !== '0' && nId.toLowerCase() !== 'tbd' && nId.toLowerCase() !== 'unassigned') {
+      set.add(nId);
+      set.add(nId.toLowerCase());
+    }
+  }
+  if (shift.nurseName) {
+    const nName = shift.nurseName.trim();
+    if (nName && nName.toLowerCase() !== 'tbd' && nName.toLowerCase() !== 'unassigned' && nName.toLowerCase() !== 'non assigné') {
+      set.add(nName);
+      set.add(nName.toLowerCase());
     }
   }
   return Array.from(set);

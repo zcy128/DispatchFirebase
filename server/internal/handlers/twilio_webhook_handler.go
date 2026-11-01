@@ -2,9 +2,14 @@ package handlers
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"crypto/subtle"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +54,10 @@ func (h *TwilioWebhookHandler) HandleTwilioInboundSMS(w http.ResponseWriter, r *
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
+	if !h.validTwilioSignature(r) {
+		http.Error(w, "invalid twilio signature", http.StatusForbidden)
+		return
+	}
 
 	fromPhone := strings.TrimSpace(r.FormValue("From"))
 	smsBody := strings.TrimSpace(r.FormValue("Body"))
@@ -62,6 +71,35 @@ func (h *TwilioWebhookHandler) HandleTwilioInboundSMS(w http.ResponseWriter, r *
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(twimlXML))
+}
+
+func (h *TwilioWebhookHandler) validTwilioSignature(r *http.Request) bool {
+	if h.cfg == nil {
+		return false
+	}
+	token := strings.TrimSpace(h.cfg.TwilioAuthToken)
+	signature := strings.TrimSpace(r.Header.Get("X-Twilio-Signature"))
+	if token == "" || signature == "" {
+		return false
+	}
+	base := strings.TrimRight(strings.TrimSpace(h.cfg.AppBaseURL), "/")
+	if base == "" {
+		log.Printf("[TWILIO-WEBHOOK] APP_BASE_URL is not configured; rejecting inbound SMS")
+		return false
+	}
+	payload := base + r.URL.RequestURI()
+	keys := make([]string, 0, len(r.PostForm))
+	for key := range r.PostForm {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		payload += key + r.PostForm.Get(key)
+	}
+	mac := hmac.New(sha1.New, []byte(token))
+	_, _ = mac.Write([]byte(payload))
+	expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	return subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) == 1
 }
 
 func (h *TwilioWebhookHandler) generateReplyForParent(ctx context.Context, fromPhone, rawBody string) string {

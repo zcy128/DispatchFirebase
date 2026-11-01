@@ -244,18 +244,10 @@ export const PayrollService = {
         PayrollService.setCachedBoardRates(res);
       }
       return res;
-    } catch {
-      try {
-        const res = await apiRequest<SchoolBoardBaseRatesDTO[]>('/api/public/payroll-rates/school-boards');
-        if (res && res.length > 0) {
-          PayrollService.setCachedBoardRates(res);
-        }
-        return res;
-      } catch (fallbackErr) {
-        const cached = PayrollService.getCachedBoardRates();
-        if (cached && cached.length > 0) return cached;
-        throw fallbackErr;
-      }
+    } catch (fallbackErr) {
+      const cached = PayrollService.getCachedBoardRates();
+      if (cached && cached.length > 0) return cached;
+      throw fallbackErr;
     }
   },
 
@@ -269,18 +261,10 @@ export const PayrollService = {
         PayrollService.setCachedCustomRates(res);
       }
       return res;
-    } catch {
-      try {
-        const res = await apiRequest<BusRoutePayrollRate[]>('/api/public/payroll-rates/custom');
-        if (res && res.length > 0) {
-          PayrollService.setCachedCustomRates(res);
-        }
-        return res;
-      } catch (fallbackErr) {
-        const cached = PayrollService.getCachedCustomRates();
-        if (cached && cached.length > 0) return cached;
-        throw fallbackErr;
-      }
+    } catch (fallbackErr) {
+      const cached = PayrollService.getCachedCustomRates();
+      if (cached && cached.length > 0) return cached;
+      throw fallbackErr;
     }
   },
 
@@ -294,18 +278,10 @@ export const PayrollService = {
         PayrollService.setCachedLookups(res);
       }
       return res;
-    } catch {
-      try {
-        const res = await apiRequest<PayrollLookups>('/api/public/payroll-rates/lookups');
-        if (res) {
-          PayrollService.setCachedLookups(res);
-        }
-        return res;
-      } catch (fallbackErr) {
-        const cached = PayrollService.getCachedLookups();
-        if (cached) return cached;
-        throw fallbackErr;
-      }
+    } catch (fallbackErr) {
+      const cached = PayrollService.getCachedLookups();
+      if (cached) return cached;
+      throw fallbackErr;
     }
   },
 
@@ -387,11 +363,8 @@ export const PayrollService = {
         method: 'POST',
         body: JSON.stringify(req),
       });
-    } catch {
-      return await apiRequest<RateCalculationResponse>('/api/public/payroll-rates/calculate', {
-        method: 'POST',
-        body: JSON.stringify(req),
-      });
+    } catch (err) {
+      throw err;
     }
   },
 };

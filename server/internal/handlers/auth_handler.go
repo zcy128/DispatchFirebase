@@ -23,6 +23,8 @@ type AuthHandler struct {
 	cfg        *config.Config
 }
 
+var firebaseAuthHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
 func NewAuthHandler(repo repository.EmployeeRepository, authClient *firebaseAuth.Client, cfg *config.Config) *AuthHandler {
 	return &AuthHandler{
 		repo:       repo,
@@ -153,33 +155,9 @@ func (h *AuthHandler) SetupAdmin(w http.ResponseWriter, r *http.Request) {
 	// Check if admin already exists
 	adminEmp, _ := h.repo.GetByEmployeeNumber(ctx, "EMP-ADMIN-001")
 	if adminEmp != nil {
-		if h.authClient != nil {
-			existingUser, err := h.authClient.GetUserByEmail(ctx, req.Email)
-			if err != nil || existingUser == nil {
-				params := (&firebaseAuth.UserToCreate{}).
-					Email(req.Email).
-					Password(req.Password).
-					DisplayName(adminEmp.FullName).
-					EmailVerified(true)
-				u, createErr := h.authClient.CreateUser(ctx, params)
-				if createErr == nil && u != nil {
-					_ = h.authClient.SetCustomUserClaims(ctx, u.UID, map[string]interface{}{
-						"role":       "admin",
-						"employeeId": "EMP-ADMIN-001",
-					})
-					adminEmp.FirebaseUID = u.UID
-					_ = h.repo.Update(ctx, adminEmp)
-				}
-			}
-		}
-
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(SetupAdminResponse{
-			Message:    "Admin account verified in master database",
-			UID:        adminEmp.FirebaseUID,
-			Email:      adminEmp.WorkEmail,
-			EmployeeID: adminEmp.ID,
-			Employee:   adminEmp,
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Admin account already exists",
 		})
 		return
 	}
@@ -190,6 +168,10 @@ func (h *AuthHandler) SetupAdmin(w http.ResponseWriter, r *http.Request) {
 		// Create or fetch Firebase Auth user
 		existingUser, err := h.authClient.GetUserByEmail(ctx, req.Email)
 		if err == nil && existingUser != nil {
+			if h.cfg == nil || !strings.EqualFold(existingUser.Email, h.cfg.AdminEmail) {
+				http.Error(w, `{"error":"an account with this email already exists"}`, http.StatusConflict)
+				return
+			}
 			uid = existingUser.UID
 		} else {
 			params := (&firebaseAuth.UserToCreate{}).
@@ -416,12 +398,9 @@ func (h *AuthHandler) ResolveUsername(w http.ResponseWriter, r *http.Request) {
 	emp, err := h.repo.GetByUsername(r.Context(), username)
 	if err == nil && emp != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"found":          true,
-			"username":       emp.Username,
-			"authEmail":      authEmail,
-			"fullName":       emp.FullName,
-			"role":           emp.Role,
-			"employeeNumber": emp.EmployeeNumber,
+			"found":     true,
+			"username":  emp.Username,
+			"authEmail": authEmail,
 		})
 		return
 	}
@@ -560,7 +539,7 @@ func (h *AuthHandler) sendPasswordResetEmail(ctx context.Context, email string) 
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := firebaseAuthHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -630,9 +609,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// 1. If Firebase Web API Key is configured, verify password against Firebase Identity Toolkit
 	if h.cfg != nil && h.cfg.FirebaseWebAPIKey != "" {
-		fbUser, err := h.verifyPasswordWithFirebaseREST(ctx, loginEmail, password)
+		fbUser, firebaseIDToken, err := h.verifyPasswordWithFirebaseREST(ctx, loginEmail, password)
 		if err == nil && fbUser != nil {
 			verifiedUser = fbUser
+			idToken = firebaseIDToken
 		} else if !h.cfg.AllowsDemo() {
 			http.Error(w, `{"error":"invalid username or password"}`, http.StatusUnauthorized)
 			return
@@ -779,7 +759,7 @@ func (h *AuthHandler) LoginMCP(w http.ResponseWriter, r *http.Request) {
 
 	// 1. If Firebase Web API Key is configured, verify password against Firebase Identity Toolkit
 	if h.cfg != nil && h.cfg.FirebaseWebAPIKey != "" {
-		fbUser, err := h.verifyPasswordWithFirebaseREST(ctx, loginEmail, password)
+		fbUser, _, err := h.verifyPasswordWithFirebaseREST(ctx, loginEmail, password)
 		if err == nil && fbUser != nil {
 			verifiedUser = fbUser
 		} else if !h.cfg.AllowsDemo() {
@@ -879,7 +859,7 @@ func (h *AuthHandler) LoginMCP(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-const DefaultCloudRunAPIURL = "https://dispatch-api-kv7qum3dca-nn.a.run.app"
+const DefaultCloudRunAPIURL = "https://dispatch-api-337919645491.northamerica-northeast1.run.app"
 
 // resolveRequestBaseURL determines the public API server URL from Config or defaults to the Cloud Run API URL.
 func resolveRequestBaseURL(_ *http.Request, cfg *config.Config) string {
@@ -889,7 +869,7 @@ func resolveRequestBaseURL(_ *http.Request, cfg *config.Config) string {
 	return DefaultCloudRunAPIURL
 }
 
-func (h *AuthHandler) verifyPasswordWithFirebaseREST(ctx context.Context, email, password string) (*auth.AuthUser, error) {
+func (h *AuthHandler) verifyPasswordWithFirebaseREST(ctx context.Context, email, password string) (*auth.AuthUser, string, error) {
 	url := fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=%s", h.cfg.FirebaseWebAPIKey)
 	payload, _ := json.Marshal(map[string]interface{}{
 		"email":             email,
@@ -899,19 +879,19 @@ func (h *AuthHandler) verifyPasswordWithFirebaseREST(ctx context.Context, email,
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := firebaseAuthHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("firebase sign-in rejected credentials")
+		return nil, "", errors.New("firebase sign-in rejected credentials")
 	}
 
 	var result struct {
@@ -921,7 +901,7 @@ func (h *AuthHandler) verifyPasswordWithFirebaseREST(ctx context.Context, email,
 		IDToken     string `json:"idToken"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	user := &auth.AuthUser{
@@ -946,5 +926,5 @@ func (h *AuthHandler) verifyPasswordWithFirebaseREST(ctx context.Context, email,
 		}
 	}
 
-	return user, nil
+	return user, result.IDToken, nil
 }

@@ -1,6 +1,6 @@
 import { collection, onSnapshot, query, orderBy, where, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
-import { apiRequest } from './api';
+import { apiRequest, isClientHttpError } from './api';
 import { BusRoute, BusRouteShift, RouteStats, extractRouteAssignedEmployeeIds } from '../types/route';
 
 export const calculateRouteStats = (routes: BusRoute[]): RouteStats => {
@@ -87,11 +87,7 @@ export const RouteService = {
       const str = searchParams.toString();
       if (str) queryStr = `?${str}`;
     }
-    try {
-      return await apiRequest<BusRoute[]>(`/api/routes${queryStr}`);
-    } catch {
-      return await apiRequest<BusRoute[]>(`/api/public/routes${queryStr}`);
-    }
+    return await apiRequest<BusRoute[]>(`/api/routes${queryStr}`);
   },
 
   getById: async (id: string): Promise<BusRoute> => {
@@ -180,27 +176,22 @@ export const RouteService = {
 
     const cleanPayload = sanitizeForFirestore(payload);
 
-    // 1. Direct Firestore update for real-time instantaneous sync
-    if (db) {
-      try {
-        const { doc, updateDoc } = await import('firebase/firestore');
-        const shiftRef = doc(db, 'route_shifts', shiftId);
-        await updateDoc(shiftRef, {
-          ...cleanPayload,
-          updatedAt: new Date().toISOString()
-        });
-      } catch (err) {
-        console.warn('[RouteService] Firestore updateShift fallback to API:', err);
-      }
-    }
-
-    // 2. Call backend API endpoint if needed
     try {
       return await apiRequest<BusRouteShift>(`/api/shifts/${shiftId}`, {
         method: 'PUT',
         body: JSON.stringify(cleanPayload)
       });
-    } catch {
+    } catch (apiErr) {
+      if (isClientHttpError(apiErr)) throw apiErr;
+      if (!db) {
+        throw apiErr;
+      }
+      const { doc, updateDoc } = await import('firebase/firestore');
+      const shiftRef = doc(db, 'route_shifts', shiftId);
+      await updateDoc(shiftRef, {
+        ...cleanPayload,
+        updatedAt: new Date().toISOString()
+      });
       return cleanPayload as BusRouteShift;
     }
   },

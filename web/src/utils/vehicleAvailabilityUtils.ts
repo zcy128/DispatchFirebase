@@ -40,6 +40,11 @@ export function getUnavailableVehiclesForDate(
   const targetDate = date.slice(0, 10);
   const todayStr = getLocalTodayString();
 
+  const safeVehicles = Array.isArray(vehicles) ? vehicles : [];
+  const safePmRecords = Array.isArray(pmRecords) ? pmRecords : [];
+  const safeInspections = Array.isArray(inspections) ? inspections : [];
+  const safeDefects = Array.isArray(defects) ? defects : [];
+
   const registerUnavailable = (info: UnavailableVehicleInfo) => {
     const unitKey = normalizeUnitKey(info.unitNumber);
     if (unitKey) {
@@ -51,7 +56,7 @@ export function getUnavailableVehiclesForDate(
   };
 
   // 1. Check Vehicle Status from master fleet list
-  for (const v of vehicles) {
+  for (const v of safeVehicles) {
     const statusLower = (v.status || '').toLowerCase().trim();
     const isOutOfServiceStatus =
       (v as any).inService === false ||
@@ -77,7 +82,7 @@ export function getUnavailableVehiclesForDate(
   }
 
   // 2. Check Preventive Maintenance Records (PM & Oil Changes / Fiche d'entretien)
-  for (const pm of pmRecords) {
+  for (const pm of safePmRecords) {
     if (pm.isArchivedToBigQuery) continue;
     const srvDate = (pm.serviceDate || '').slice(0, 10);
     const schedDate = (pm.scheduledServiceDate || '').slice(0, 10);
@@ -98,7 +103,7 @@ export function getUnavailableVehiclesForDate(
   }
 
   // 3. Check Periodic Semi-Annual Inspections (PMVI / VMP)
-  for (const insp of inspections) {
+  for (const insp of safeInspections) {
     if (insp.isArchivedToBigQuery) continue;
     const inspDate = (insp.inspectionDate || '').slice(0, 10);
     const schedDate = (insp.scheduledInspectionDate || '').slice(0, 10);
@@ -122,7 +127,7 @@ export function getUnavailableVehiclesForDate(
   }
 
   // 4. Check Vehicle Defect Reports (Highest visibility priority)
-  for (const defect of defects) {
+  for (const defect of safeDefects) {
     if (defect.noDefectsFound) continue;
 
     const repDate = (defect.reportDate || '').slice(0, 10);
@@ -223,8 +228,9 @@ export function filterAvailableVehicles(
   vehicles: Vehicle[],
   unavailableMap?: Map<string, UnavailableVehicleInfo>
 ): Vehicle[] {
-  if (!unavailableMap || unavailableMap.size === 0) return vehicles;
-  return vehicles.filter((v) => {
+  const safeVehicles = Array.isArray(vehicles) ? vehicles : [];
+  if (!unavailableMap || unavailableMap.size === 0) return safeVehicles;
+  return safeVehicles.filter((v) => {
     const vid = v.vehicleId || (typeof v.id === 'number' ? v.id : Number(v.id) || undefined);
     const reason = getVehicleUnavailabilityReason(v.unitNumber, vid, unavailableMap);
     return !reason;

@@ -225,7 +225,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"dashboard": "none", "dispatch": "readwrite", "charter": "readwrite",
 		"dispatch_payroll": "none", "dispatch_log": "none", "temporary_assignments": "readonly",
 		"assignment_history": "none", "routes": "readonly", "staging_routes": "none",
-		"route_assessments": "readwrite", "defects": "readwrite", "vehicle_signouts": "readwrite",
+		"route_assessments": "readwrite", "defects": "readwrite", "vehicle_signouts": "readonly",
 		"student_incidents": "readwrite", "hazards": "readwrite", "employees": "none",
 		"students": "readonly", "student_absences": "readonly", "schools": "readonly",
 		"calendar": "readonly", "vehicles": "readonly", "vehicle_inspections": "readonly",
@@ -335,4 +335,75 @@ func ComputeEffectivePermissions(role string, overrides map[string]string) (
 	}
 
 	return effective, allowed, readWrite, readOnly, diffOverrides
+}
+
+// HasModulePermission returns whether the user has at least the required access level for the given module.
+// If writeRequired is true, the user must have "readwrite" access.
+// If writeRequired is false, the user must have either "readonly" or "readwrite" access.
+func (u *AuthUser) HasModulePermission(module string, writeRequired bool) bool {
+	if u == nil {
+		return false
+	}
+	if strings.EqualFold(u.Role, "admin") {
+		return true
+	}
+
+	normRole := NormalizeRoleName(u.Role)
+	perm := ""
+
+	// Check custom overrides first
+	if u.Overrides != nil {
+		if val, ok := u.Overrides[module]; ok && val != "" {
+			perm = strings.ToLower(strings.TrimSpace(val))
+		}
+	}
+
+	// If no override, check PagePermissions
+	if perm == "" && u.PagePermissions != nil {
+		if val, ok := u.PagePermissions[module]; ok && val != "" {
+			perm = strings.ToLower(strings.TrimSpace(val))
+		}
+	}
+
+	// Fallback to FactoryRolePermissions
+	if perm == "" {
+		if defaults, ok := FactoryRolePermissions[normRole]; ok {
+			perm = defaults[module]
+		}
+	}
+
+	if writeRequired {
+		return perm == "readwrite"
+	}
+	return perm == "readwrite" || perm == "readonly"
+}
+
+// CanManageDailyDispatch returns true if user is admin, dispatcher, or manager with dispatch write permission
+func (u *AuthUser) CanManageDailyDispatch() bool {
+	if u == nil {
+		return false
+	}
+	normRole := NormalizeRoleName(u.Role)
+	if normRole == "admin" || normRole == "dispatcher" {
+		return true
+	}
+	if normRole == "manager" && u.HasModulePermission("dispatch", true) {
+		return true
+	}
+	return false
+}
+
+// CanReviewExpenses returns true if user is admin, payroll, or manager/HR with expense write permission
+func (u *AuthUser) CanReviewExpenses() bool {
+	if u == nil {
+		return false
+	}
+	normRole := NormalizeRoleName(u.Role)
+	if normRole == "admin" || normRole == "payroll" {
+		return true
+	}
+	if (normRole == "manager" || normRole == "HR") && u.HasModulePermission("expenses", true) {
+		return true
+	}
+	return false
 }

@@ -58,6 +58,8 @@
 - **空缺线路发布与司机竞价（Route Bidding）**：调度员可一键发布空缺线路或临时增援班次，在线查看司机提交的接单申请与资历，快速择优定岗。
 - **安全隐患、车辆缺陷与违规事件闭环**：车辆机械故障（Defects）、道路隐患（Hazards）及学生乘车违规行为（Student Incidents）快速立案、上传现场照片并跟踪维保维修闭环。
 - **BusPlanner 线路导入与同步**：支持从 BusPlanner 同步 Staging 线路与站点数据，可视化比对线路差异，支持一键将预排线路无缝更新至正式运行班次中。
+- **调度日常薪资审核工作台（Dispatch Daily Payroll）**：连接一线考勤打卡与财务薪资审计的每日结算控制台。支持按日期切换导航、大盘 KPI 指标汇总（总应发工资、EI 可保工时、待审核项、已同步财务项）、全生命周期状态过滤 (`Approved`、`Pending Approval`、`Pending Checkout`、`Rejected`)、角色与计费选项多维交集筛选、带留言原因审核/驳回，以及一键跳转财务部薪资台账。
+- **全栈自动化 QA E2E 测试套件（`.agents/agents/qa-tester.md`）**：内置基于 Chrome DevTools 的自动化 QA 智能体，全面覆盖包车管理（Charter Trips）、路线网络（Route Network）、暂存路线（Staging Routes）及调度日常薪资（Dispatch Payroll）四大模块的完整 CRUD 交互、控制台 0 异常监控与后端 API 状态核验。
 - **外部数据系统联动**：集中配置与管理 BambooHR 员工人事同步、Zonar GPS 历史行驶轨迹与怠速停靠点地图回放。
 - **精细化 RBAC 权限管理体系**：基于角色的严密权限隔离，灵活配置调度员、主管、安全员、财务会计等不同岗位的菜单与读写权限。
 - **Model Context Protocol (MCP) Token 安全管理**：在后台安全生成并管理带有效期的 MCP 访问密钥（SHA-256 哈希加密存储），授权外部 AI Agent 接入。

@@ -25,13 +25,13 @@ var (
 )
 
 type DispatchFilter struct {
-	Search        string
-	RouteFilter   string
-	DriverFilter  string
-	StopFilter    string
-	VehicleFilter string
-	ShiftType     string
-	Health        string
+	Search         string
+	RouteFilter    string
+	DriverFilter   string
+	StopFilter     string
+	VehicleFilter  string
+	ShiftType      string
+	Health         string
 	NeedsAttention *bool
 }
 
@@ -122,16 +122,16 @@ type ExpenseClaimFilter struct {
 
 // AssignmentHistoryFilter contains criteria for querying assignment history with 1-year live data and BigQuery cold storage
 type AssignmentHistoryFilter struct {
-	Type       string `json:"type"`       // "driver_route", "driver_vehicle", "all"
-	Action     string `json:"action"`     // "assign", "unassign", "reassign", "all"
+	Type       string `json:"type"`   // "driver_route", "driver_vehicle", "all"
+	Action     string `json:"action"` // "assign", "unassign", "reassign", "all"
 	DriverID   string `json:"driverId"`
 	DriverName string `json:"driverName"`
 	RouteNo    string `json:"routeNo"`
 	UnitNumber string `json:"unitNumber"`
-	Query      string `json:"query"`      // Driver name, driver ID, route, vehicle, reason, assigned by, notes
-	TimeRange  string `json:"timeRange"`  // "1year" (default live data <= 1 year), "all" (archive)
-	StartDate  string `json:"startDate"`  // YYYY-MM-DD
-	EndDate    string `json:"endDate"`    // YYYY-MM-DD
+	Query      string `json:"query"`     // Driver name, driver ID, route, vehicle, reason, assigned by, notes
+	TimeRange  string `json:"timeRange"` // "1year" (default live data <= 1 year), "all" (archive)
+	StartDate  string `json:"startDate"` // YYYY-MM-DD
+	EndDate    string `json:"endDate"`   // YYYY-MM-DD
 }
 
 type DispatchRepository interface {
@@ -264,33 +264,33 @@ type DispatchRepository interface {
 }
 
 type FirestoreDispatchRepository struct {
-	client                  *firestore.Client
-	bqClient                *bigquery.Client
-	projectID               string
-	bqDataset               string
-	coldDays                int
-	dispatchColl            string
-	routeColl               string
-	shiftColl               string
-	calendarColl            string
-	payrollSettingsColl     string
-	logColl                 string
-	dispatchPayrollColl     string
-	payrollLogColl          string
-	temporaryAssignmentColl string
-	timeOffColl             string
-	trainingCoursesColl     string
-	trainingTypesColl       string
-	pretripColl             string
-	defectColl              string
-	studentIncidentColl     string
+	client                   *firestore.Client
+	bqClient                 *bigquery.Client
+	projectID                string
+	bqDataset                string
+	coldDays                 int
+	dispatchColl             string
+	routeColl                string
+	shiftColl                string
+	calendarColl             string
+	payrollSettingsColl      string
+	logColl                  string
+	dispatchPayrollColl      string
+	payrollLogColl           string
+	temporaryAssignmentColl  string
+	timeOffColl              string
+	trainingCoursesColl      string
+	trainingTypesColl        string
+	pretripColl              string
+	defectColl               string
+	studentIncidentColl      string
 	expenseReimbursementColl string
 	expenseCategoryColl      string
-	hazardReportColl        string
-	routeAssessmentColl     string
-	vehicleSignoutColl      string
-	vehicleColl             string
-	assignmentHistoryColl   string
+	hazardReportColl         string
+	routeAssessmentColl      string
+	vehicleSignoutColl       string
+	vehicleColl              string
+	assignmentHistoryColl    string
 }
 
 func NewFirestoreDispatchRepository(client *firestore.Client) *FirestoreDispatchRepository {
@@ -319,7 +319,7 @@ func NewFirestoreDispatchRepository(client *firestore.Client) *FirestoreDispatch
 		routeAssessmentColl:      "route_assessments",
 		vehicleSignoutColl:       "vehicle_signouts",
 		vehicleColl:              "vehicles",
-		assignmentHistoryColl:   "assignment_history",
+		assignmentHistoryColl:    "assignment_history",
 	}
 }
 
@@ -575,6 +575,32 @@ func (r *FirestoreDispatchRepository) CreateDay(ctx context.Context, date string
 	}
 	calIter.Stop()
 
+	closedSchoolNames := map[string]bool{}
+	if len(closedSchools) > 0 {
+		schoolIter := r.client.Collection("schools").Documents(ctx)
+		for {
+			doc, err := schoolIter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				break
+			}
+			var school models.School
+			if err := doc.DataTo(&school); err != nil {
+				continue
+			}
+			if !closedSchools[school.SchoolID] {
+				continue
+			}
+			name := strings.ToLower(strings.TrimSpace(school.SchoolName))
+			if name != "" {
+				closedSchoolNames[name] = true
+			}
+		}
+		schoolIter.Stop()
+	}
+
 	// 2. Pre-check existing dispatch shifts for target date
 	existingIter := r.client.Collection(r.dispatchColl).Where("dispatchDate", "==", date).Documents(ctx)
 	existingIDs := make(map[string]bool)
@@ -743,7 +769,14 @@ func (r *FirestoreDispatchRepository) CreateDay(ctx context.Context, date string
 				// Filter students whose school is closed
 				var activeStudents []models.StopStudent
 				for _, stu := range st.AssignedStudents {
+					name := strings.ToLower(strings.TrimSpace(stu.SchoolName))
+					if name != "" && closedSchoolNames[name] {
+						continue
+					}
 					activeStudents = append(activeStudents, stu)
+				}
+				if len(st.AssignedStudents) > 0 && len(activeStudents) == 0 {
+					continue
 				}
 				st.AssignedStudents = activeStudents
 
@@ -934,22 +967,22 @@ func (r *FirestoreDispatchRepository) CreateDay(ctx context.Context, date string
 					IsTemporaryAttendant:  isTempAttendant,
 					IsTemporaryVehicle:    isTempVehicle,
 					TemporaryAssignmentID: tempAssignmentID,
-					YardID:          rt.YardID,
-					YardName:        rt.YardName,
-					SchoolBoardID:   rt.SchoolBoardID,
-					SchoolBoardCode: rt.SchoolBoardCode,
-					FirstStopTime:   firstTime,
-					LastStopTime:    lastTime,
-					TotalStops:      len(allStops),
-					CompletedStops:  0,
-					LateMinutes:     0,
-					Health:               health,
-					IsDryRun:             false,
-					ScheduledCheckInTime: subtractMinutesFromTime(firstTime, 60),
-					IsDriverCheckedIn:    false,
-					Stops:                allStops,
-					CreatedAt:            now,
-					UpdatedAt:            now,
+					YardID:                rt.YardID,
+					YardName:              rt.YardName,
+					SchoolBoardID:         rt.SchoolBoardID,
+					SchoolBoardCode:       rt.SchoolBoardCode,
+					FirstStopTime:         firstTime,
+					LastStopTime:          lastTime,
+					TotalStops:            len(allStops),
+					CompletedStops:        0,
+					LateMinutes:           0,
+					Health:                health,
+					IsDryRun:              false,
+					ScheduledCheckInTime:  subtractMinutesFromTime(firstTime, 60),
+					IsDriverCheckedIn:     false,
+					Stops:                 allStops,
+					CreatedAt:             now,
+					UpdatedAt:             now,
 				}
 				ds.AssignedEmployeeIds = ds.ComputeAssignedEmployeeIds()
 
@@ -1106,22 +1139,22 @@ func (r *FirestoreDispatchRepository) CreateDay(ctx context.Context, date string
 					IsTemporaryAttendant:  isTempAttendant,
 					IsTemporaryVehicle:    isTempVehicle,
 					TemporaryAssignmentID: tempAssignmentID,
-					YardID:          rt.YardID,
-					YardName:        rt.YardName,
-					SchoolBoardID:   rt.SchoolBoardID,
-					SchoolBoardCode: rt.SchoolBoardCode,
-					FirstStopTime:   firstTime,
-					LastStopTime:    lastTime,
-					TotalStops:      len(allStops),
-					CompletedStops:  0,
-					LateMinutes:     0,
-					Health:               health,
-					IsDryRun:             false,
-					ScheduledCheckInTime: subtractMinutesFromTime(firstTime, 60),
-					IsDriverCheckedIn:    false,
-					Stops:                allStops,
-					CreatedAt:            now,
-					UpdatedAt:            now,
+					YardID:                rt.YardID,
+					YardName:              rt.YardName,
+					SchoolBoardID:         rt.SchoolBoardID,
+					SchoolBoardCode:       rt.SchoolBoardCode,
+					FirstStopTime:         firstTime,
+					LastStopTime:          lastTime,
+					TotalStops:            len(allStops),
+					CompletedStops:        0,
+					LateMinutes:           0,
+					Health:                health,
+					IsDryRun:              false,
+					ScheduledCheckInTime:  subtractMinutesFromTime(firstTime, 60),
+					IsDriverCheckedIn:     false,
+					Stops:                 allStops,
+					CreatedAt:             now,
+					UpdatedAt:             now,
 				}
 				ds.AssignedEmployeeIds = ds.ComputeAssignedEmployeeIds()
 
@@ -1854,9 +1887,13 @@ func (r *FirestoreDispatchRepository) UpdateShift(ctx context.Context, id string
 		updates = append(updates, firestore.Update{Path: "attendantPhone", Value: *req.AttendantPhone})
 		ds.AttendantPhone = *req.AttendantPhone
 	}
-	if req.DispatchComments != nil {
-		updates = append(updates, firestore.Update{Path: "dispatchComments", Value: *req.DispatchComments})
+	if req.DispatchComments != nil && req.Notes == nil {
+		updates = append(updates,
+			firestore.Update{Path: "dispatchComments", Value: *req.DispatchComments},
+			firestore.Update{Path: "notes", Value: *req.DispatchComments},
+		)
 		ds.DispatchComments = *req.DispatchComments
+		ds.Notes = *req.DispatchComments
 	}
 	if req.IsDryRun != nil {
 		updates = append(updates, firestore.Update{Path: "isDryRun", Value: *req.IsDryRun})
@@ -1999,7 +2036,11 @@ func (r *FirestoreDispatchRepository) UpdateShift(ctx context.Context, id string
 		ds.ParentNotifications = *req.ParentNotifications
 	}
 	if req.Notes != nil {
-		updates = append(updates, firestore.Update{Path: "notes", Value: *req.Notes})
+		updates = append(updates,
+			firestore.Update{Path: "notes", Value: *req.Notes},
+			firestore.Update{Path: "dispatchComments", Value: *req.Notes},
+		)
+		ds.Notes = *req.Notes
 		ds.DispatchComments = *req.Notes
 	}
 
@@ -2530,12 +2571,12 @@ func (r *FirestoreDispatchRepository) RecordStudentAbsence(ctx context.Context, 
 	_, _ = r.client.Collection("student_absences").Doc(absenceID).Set(ctx, rec)
 
 	return &models.RecordStudentAbsenceResponse{
-		Date:          req.Date,
-		StudentID:     req.StudentID,
-		StudentName:   studentName,
-		Reason:        req.Reason,
+		Date:           req.Date,
+		StudentID:      req.StudentID,
+		StudentName:    studentName,
+		Reason:         req.Reason,
 		AffectedShifts: affectedShifts,
-		Count:         len(affectedShifts),
+		Count:          len(affectedShifts),
 	}, nil
 }
 
@@ -3555,6 +3596,36 @@ func (r *FirestoreDispatchRepository) listSystemAuditLogsFromBigQuery(ctx contex
 	return list, nil
 }
 
+func (r *FirestoreDispatchRepository) payrollIDForAssignee(ctx context.Context, raw string) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || r.client == nil {
+		return 0
+	}
+	var emp models.Employee
+	if doc, err := r.client.Collection("employees").Doc(raw).Get(ctx); err == nil && doc.Exists() {
+		if err := doc.DataTo(&emp); err == nil {
+			if emp.ID == "" {
+				emp.ID = doc.Ref.ID
+			}
+			return models.PayrollAssigneeLookupID(emp.EmployeeID, emp.ID, emp.EmployeeNumber)
+		}
+	}
+	iter := r.client.Collection("employees").Where("employeeNumber", "==", raw).Limit(1).Documents(ctx)
+	defer iter.Stop()
+	snap, err := iter.Next()
+	if err != nil {
+		return 0
+	}
+	emp = models.Employee{}
+	if err := snap.DataTo(&emp); err != nil {
+		return 0
+	}
+	if emp.ID == "" {
+		emp.ID = snap.Ref.ID
+	}
+	return models.PayrollAssigneeLookupID(emp.EmployeeID, emp.ID, emp.EmployeeNumber)
+}
+
 func (r *FirestoreDispatchRepository) resolveRateForRole(ctx context.Context, ds *models.DispatchShift, role string) (payOption string, payRate float64, eiHours float64, rateSource string, desc string) {
 	settings, _ := r.GetPayrollSettings(ctx)
 	if settings == nil {
@@ -3615,21 +3686,50 @@ func (r *FirestoreDispatchRepository) resolveRateForRole(ctx context.Context, ds
 		defer iter.Stop()
 
 		var bestMatch *models.BusRoutePayrollRate
+		var employeeMatch *models.BusRoutePayrollRate
+		assignedRaw := ""
+		switch role {
+		case "driver":
+			assignedRaw = ds.DriverID
+		case "attendant":
+			assignedRaw = ds.AttendantID
+		default:
+			assignedRaw = ds.NurseID
+		}
+		assignedNum := models.NumericPayrollToken(assignedRaw)
+		if assignedNum == 0 {
+			assignedNum = r.payrollIDForAssignee(ctx, assignedRaw)
+		}
 		for {
 			doc, err := iter.Next()
 			if err != nil {
 				break
 			}
 			var pr models.BusRoutePayrollRate
-			if err := doc.DataTo(&pr); err == nil {
-				if strings.EqualFold(pr.ShiftType, ds.ShiftType) {
-					bestMatch = &pr
-					break
-				}
-				if pr.ShiftType == "All" || pr.ShiftType == "" {
-					bestMatch = &pr
-				}
+			if err := doc.DataTo(&pr); err != nil {
+				continue
 			}
+			shiftOK := strings.EqualFold(pr.ShiftType, ds.ShiftType) || pr.ShiftType == "All" || pr.ShiftType == ""
+			if !shiftOK {
+				continue
+			}
+			if pr.EmployeeID != nil {
+				if assignedNum > 0 && *pr.EmployeeID == assignedNum {
+					copied := pr
+					employeeMatch = &copied
+					if strings.EqualFold(pr.ShiftType, ds.ShiftType) {
+						break
+					}
+				}
+				continue
+			}
+			if bestMatch == nil || strings.EqualFold(pr.ShiftType, ds.ShiftType) {
+				copied := pr
+				bestMatch = &copied
+			}
+		}
+		if employeeMatch != nil {
+			bestMatch = employeeMatch
 		}
 
 		if bestMatch != nil && bestMatch.PayRate != nil {
@@ -5855,25 +5955,25 @@ func (r *FirestoreDispatchRepository) UpdateTrainingType(ctx context.Context, id
 
 // Memory fallback implementation
 type MemoryDispatchRepository struct {
-	mu                   sync.RWMutex
-	shifts               map[string]*models.DispatchShift
-	changeLogs           []*models.DispatchChangeLog
-	payrollSettings      *models.DispatchPayrollSettings
-	payrolls             map[string]*models.DispatchPayrollRecord
-	payrollLogs          map[string]*models.PayrollDepartmentLogRecord
-	temporaryAssignments map[string]*models.TemporaryAssignment
-	timeOffRequests      map[string]*models.TimeOffRequest
-	trainingCourses      map[string]*models.TrainingCourse
-	trainingTypes        map[string]*models.TrainingType
-	pretripInspections   map[string]*models.PreTripInspection
-	defectReports        map[string]*models.VehicleDefectReport
-	studentIncidents     map[string]*models.StudentIncident
-	expenseCategories    map[string]*models.ExpenseCategory
-	expenseClaims        map[string]*models.ExpenseReimbursement
-	hazardReports        map[string]*models.HazardReport
-	routeAssessments     map[string]*models.RouteAssessment
-	vehicleSignouts      map[string]*models.VehicleSignout
-	assignmentHistory    map[string]*models.AssignmentHistoryRecord
+	mu                      sync.RWMutex
+	shifts                  map[string]*models.DispatchShift
+	changeLogs              []*models.DispatchChangeLog
+	payrollSettings         *models.DispatchPayrollSettings
+	payrolls                map[string]*models.DispatchPayrollRecord
+	payrollLogs             map[string]*models.PayrollDepartmentLogRecord
+	temporaryAssignments    map[string]*models.TemporaryAssignment
+	timeOffRequests         map[string]*models.TimeOffRequest
+	trainingCourses         map[string]*models.TrainingCourse
+	trainingTypes           map[string]*models.TrainingType
+	pretripInspections      map[string]*models.PreTripInspection
+	defectReports           map[string]*models.VehicleDefectReport
+	studentIncidents        map[string]*models.StudentIncident
+	expenseCategories       map[string]*models.ExpenseCategory
+	expenseClaims           map[string]*models.ExpenseReimbursement
+	hazardReports           map[string]*models.HazardReport
+	routeAssessments        map[string]*models.RouteAssessment
+	vehicleSignouts         map[string]*models.VehicleSignout
+	assignmentHistory       map[string]*models.AssignmentHistoryRecord
 	vehicleOdometers        map[string]int
 	checkInReminderSettings *models.CheckInReminderSettings
 	simulationSettings      *models.SimulationSettings
@@ -6061,8 +6161,9 @@ func (m *MemoryDispatchRepository) UpdateShift(ctx context.Context, id string, r
 	if req.AttendantPhone != nil {
 		s.AttendantPhone = *req.AttendantPhone
 	}
-	if req.DispatchComments != nil {
+	if req.DispatchComments != nil && req.Notes == nil {
 		s.DispatchComments = *req.DispatchComments
+		s.Notes = *req.DispatchComments
 	}
 	if req.IsDryRun != nil {
 		s.IsDryRun = *req.IsDryRun
@@ -6125,6 +6226,7 @@ func (m *MemoryDispatchRepository) UpdateShift(ctx context.Context, id string, r
 		s.ParentNotifications = *req.ParentNotifications
 	}
 	if req.Notes != nil {
+		s.Notes = *req.Notes
 		s.DispatchComments = *req.Notes
 	}
 	return s, nil
@@ -6432,12 +6534,12 @@ func (m *MemoryDispatchRepository) RecordStudentAbsence(ctx context.Context, req
 	m.absences[absenceID] = rec
 
 	return &models.RecordStudentAbsenceResponse{
-		Date:          req.Date,
-		StudentID:     req.StudentID,
-		StudentName:   studentName,
-		Reason:        req.Reason,
+		Date:           req.Date,
+		StudentID:      req.StudentID,
+		StudentName:    studentName,
+		Reason:         req.Reason,
 		AffectedShifts: affectedShifts,
-		Count:         len(affectedShifts),
+		Count:          len(affectedShifts),
 	}, nil
 }
 
@@ -7993,9 +8095,6 @@ func (m *MemoryDispatchRepository) UpdateTrainingType(ctx context.Context, id st
 	return existing, nil
 }
 
-
-
-
 // ─── Firestore: Pre-Trip Inspections ───────────────────────────────────────
 
 func (r *FirestoreDispatchRepository) CreatePreTripInspection(ctx context.Context, req *models.CreatePreTripInspectionPayload) (*models.PreTripInspection, error) {
@@ -8910,35 +9009,35 @@ func (r *FirestoreDispatchRepository) CreateStudentIncident(ctx context.Context,
 
 	status := "submitted"
 	record := &models.StudentIncident{
-		ID:                         docRef.ID,
-		IncidentDate:               req.IncidentDate,
-		IncidentTime:               req.IncidentTime,
-		StudentID:                  req.StudentID,
-		StudentNo:                  req.StudentNo,
-		StudentName:                req.StudentName,
-		Grade:                      req.Grade,
-		SchoolID:                   req.SchoolID,
-		SchoolName:                 req.SchoolName,
-		RouteID:                    req.RouteID,
-		RouteNo:                    req.RouteNo,
-		RouteName:                  req.RouteName,
-		ShiftType:                  req.ShiftType,
-		DriverID:                   req.DriverID,
-		DriverName:                 req.DriverName,
-		Location:                   req.Location,
-		IncidentTypes:              req.IncidentTypes,
-		TypeOther:                  req.TypeOther,
-		Description:                req.Description,
-		OtherStudentsInvolved:      req.OtherStudentsInvolved,
-		Witnesses:                  req.Witnesses,
-		ImmediateActionTaken:       req.ImmediateActionTaken,
-		StudentRemovedFromBus:      req.StudentRemovedFromBus,
-		FirstAidRequired:           req.FirstAidRequired,
-		ParentsNotified:            req.ParentsNotified,
+		ID:                        docRef.ID,
+		IncidentDate:              req.IncidentDate,
+		IncidentTime:              req.IncidentTime,
+		StudentID:                 req.StudentID,
+		StudentNo:                 req.StudentNo,
+		StudentName:               req.StudentName,
+		Grade:                     req.Grade,
+		SchoolID:                  req.SchoolID,
+		SchoolName:                req.SchoolName,
+		RouteID:                   req.RouteID,
+		RouteNo:                   req.RouteNo,
+		RouteName:                 req.RouteName,
+		ShiftType:                 req.ShiftType,
+		DriverID:                  req.DriverID,
+		DriverName:                req.DriverName,
+		Location:                  req.Location,
+		IncidentTypes:             req.IncidentTypes,
+		TypeOther:                 req.TypeOther,
+		Description:               req.Description,
+		OtherStudentsInvolved:     req.OtherStudentsInvolved,
+		Witnesses:                 req.Witnesses,
+		ImmediateActionTaken:      req.ImmediateActionTaken,
+		StudentRemovedFromBus:     req.StudentRemovedFromBus,
+		FirstAidRequired:          req.FirstAidRequired,
+		ParentsNotified:           req.ParentsNotified,
 		ParentsNotificationDetail: req.ParentsNotificationDetail,
-		Status:                     status,
-		CreatedAt:                  now,
-		UpdatedAt:                  now,
+		Status:                    status,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
 	}
 
 	if _, err := docRef.Set(ctx, record); err != nil {
@@ -9718,6 +9817,18 @@ func (r *FirestoreDispatchRepository) ReviewExpenseClaim(ctx context.Context, id
 	return r.GetExpenseClaimByID(ctx, id)
 }
 
+func expenseClaimOwnerMatches(employeeID, recordID string) bool {
+	left := strings.TrimSpace(employeeID)
+	right := strings.TrimSpace(recordID)
+	if left == "" || right == "" {
+		return false
+	}
+	if strings.EqualFold(left, right) {
+		return true
+	}
+	return strings.EqualFold(strings.TrimPrefix(strings.ToUpper(left), "EMP-"), strings.TrimPrefix(strings.ToUpper(right), "EMP-"))
+}
+
 func (r *FirestoreDispatchRepository) CancelExpenseClaim(ctx context.Context, id string, employeeID string) (*models.ExpenseReimbursement, error) {
 	docRef := r.client.Collection(r.expenseReimbursementColl).Doc(id)
 	doc, err := docRef.Get(ctx)
@@ -9728,7 +9839,7 @@ func (r *FirestoreDispatchRepository) CancelExpenseClaim(ctx context.Context, id
 	if err := doc.DataTo(&rec); err != nil {
 		return nil, err
 	}
-	if employeeID != "" && rec.EmployeeID != "" && rec.EmployeeID != employeeID {
+	if !expenseClaimOwnerMatches(employeeID, rec.EmployeeID) {
 		return nil, errors.New("unauthorized: cannot cancel claim belonging to another driver")
 	}
 	if rec.Status != "pending" {
@@ -11490,35 +11601,35 @@ func (m *MemoryDispatchRepository) CreateStudentIncident(ctx context.Context, re
 
 	status := "submitted"
 	record := &models.StudentIncident{
-		ID:                         id,
-		IncidentDate:               req.IncidentDate,
-		IncidentTime:               req.IncidentTime,
-		StudentID:                  req.StudentID,
-		StudentNo:                  req.StudentNo,
-		StudentName:                req.StudentName,
-		Grade:                      req.Grade,
-		SchoolID:                   req.SchoolID,
-		SchoolName:                 req.SchoolName,
-		RouteID:                    req.RouteID,
-		RouteNo:                    req.RouteNo,
-		RouteName:                  req.RouteName,
-		ShiftType:                  req.ShiftType,
-		DriverID:                   req.DriverID,
-		DriverName:                 req.DriverName,
-		Location:                   req.Location,
-		IncidentTypes:              req.IncidentTypes,
-		TypeOther:                  req.TypeOther,
-		Description:                req.Description,
-		OtherStudentsInvolved:      req.OtherStudentsInvolved,
-		Witnesses:                  req.Witnesses,
-		ImmediateActionTaken:       req.ImmediateActionTaken,
-		StudentRemovedFromBus:      req.StudentRemovedFromBus,
-		FirstAidRequired:           req.FirstAidRequired,
-		ParentsNotified:            req.ParentsNotified,
+		ID:                        id,
+		IncidentDate:              req.IncidentDate,
+		IncidentTime:              req.IncidentTime,
+		StudentID:                 req.StudentID,
+		StudentNo:                 req.StudentNo,
+		StudentName:               req.StudentName,
+		Grade:                     req.Grade,
+		SchoolID:                  req.SchoolID,
+		SchoolName:                req.SchoolName,
+		RouteID:                   req.RouteID,
+		RouteNo:                   req.RouteNo,
+		RouteName:                 req.RouteName,
+		ShiftType:                 req.ShiftType,
+		DriverID:                  req.DriverID,
+		DriverName:                req.DriverName,
+		Location:                  req.Location,
+		IncidentTypes:             req.IncidentTypes,
+		TypeOther:                 req.TypeOther,
+		Description:               req.Description,
+		OtherStudentsInvolved:     req.OtherStudentsInvolved,
+		Witnesses:                 req.Witnesses,
+		ImmediateActionTaken:      req.ImmediateActionTaken,
+		StudentRemovedFromBus:     req.StudentRemovedFromBus,
+		FirstAidRequired:          req.FirstAidRequired,
+		ParentsNotified:           req.ParentsNotified,
 		ParentsNotificationDetail: req.ParentsNotificationDetail,
-		Status:                     status,
-		CreatedAt:                  now,
-		UpdatedAt:                  now,
+		Status:                    status,
+		CreatedAt:                 now,
+		UpdatedAt:                 now,
 	}
 
 	m.studentIncidents[id] = record
@@ -11866,7 +11977,7 @@ func (m *MemoryDispatchRepository) CancelExpenseClaim(ctx context.Context, id st
 		return nil, fmt.Errorf("expense claim not found: %s", id)
 	}
 
-	if employeeID != "" && rec.EmployeeID != "" && rec.EmployeeID != employeeID {
+	if !expenseClaimOwnerMatches(employeeID, rec.EmployeeID) {
 		return nil, errors.New("unauthorized: cannot cancel claim belonging to another driver")
 	}
 	if rec.Status != "pending" {
@@ -12380,111 +12491,111 @@ func seedDefaultVehicleSignouts(m *MemoryDispatchRepository) {
 	yesterday := now.AddDate(0, 0, -1)
 
 	demo1 := &models.VehicleSignout{
-		ID:                            "vso-1001",
-		IsSignIn:                      false, // Sign Out
-		SignDate:                      yesterday.Format("2006-01-02"),
-		VehicleType:                   0, // Bus
-		EmployeeID:                    "EMP-1002",
-		EmployeeName:                  "John Smith",
-		RouteID:                       "101",
-		RouteName:                     "Route 101 - North Valley",
-		CellPhone:                     "4035550192",
-		DriverLicenseClass:            "Class 2-S",
-		DriverLicenseCondition:        "None",
-		UnitID:                        101,
-		UnitNumber:                    "101",
-		Odometer:                      45230.5,
-		LicensePlate:                  "BUS-101",
-		CVIPDate:                      "2026-11-30",
-		UnitYear:                      2022,
-		UnitMaker:                     "Thomas Built",
-		UnitModel:                     "Saf-T-Liner C2",
-		UnitColor:                     "Yellow",
-		FuelLevelID:                   4,
-		FuelLevelDescription:          "Full",
-		FuelTypeID:                    1,
-		FuelTypeDescription:           "Diesel",
-		DocRegistrationSignIn:         true,
-		DocInsuranceSignIn:            true,
-		DocSafetyFitnessSignIn:        true,
-		DocCollisionReportSignIn:      true,
-		DocScheduleMaintenanceSignIn:  true,
-		DocSDSSignIn:                  true,
-		CheckFireExtinguisher:         true,
-		CheckFirstAidKit:              true,
-		CheckTriangles:                true,
-		CheckQstraints:                true,
-		CheckSeatBeltCutter:           true,
-		CheckBroom:                    true,
-		CheckSnowbrush:                true,
-		CheckCleankit:                 true,
-		AcknowledgeCheck:              true,
-		ConditionKey:                  "",
-		ConditionComments:             "Vehicle in pristine condition, ready for route.",
-		ParkingAddress:                "45 Valleyview Cres NW, Calgary AB",
-		FireHallLocation:              "Fire Station 17 - 3700 32 Ave NW",
-		DriverSignature:               "John Smith",
-		DriverSignDate:                yesterday.Format("2006-01-02"),
-		FleetDepartmentSignature:      "Fleet Lead Marcus",
-		FleetDepartmentSignDate:       yesterday.Format("2006-01-02"),
-		Attachments:                   []models.VehicleSignoutAttachment{},
-		CreatedBy:                     "Fleet Lead Marcus",
-		CreatedAt:                     yesterday,
-		UpdatedAt:                     yesterday,
+		ID:                           "vso-1001",
+		IsSignIn:                     false, // Sign Out
+		SignDate:                     yesterday.Format("2006-01-02"),
+		VehicleType:                  0, // Bus
+		EmployeeID:                   "EMP-1002",
+		EmployeeName:                 "John Smith",
+		RouteID:                      "101",
+		RouteName:                    "Route 101 - North Valley",
+		CellPhone:                    "4035550192",
+		DriverLicenseClass:           "Class 2-S",
+		DriverLicenseCondition:       "None",
+		UnitID:                       101,
+		UnitNumber:                   "101",
+		Odometer:                     45230.5,
+		LicensePlate:                 "BUS-101",
+		CVIPDate:                     "2026-11-30",
+		UnitYear:                     2022,
+		UnitMaker:                    "Thomas Built",
+		UnitModel:                    "Saf-T-Liner C2",
+		UnitColor:                    "Yellow",
+		FuelLevelID:                  4,
+		FuelLevelDescription:         "Full",
+		FuelTypeID:                   1,
+		FuelTypeDescription:          "Diesel",
+		DocRegistrationSignIn:        true,
+		DocInsuranceSignIn:           true,
+		DocSafetyFitnessSignIn:       true,
+		DocCollisionReportSignIn:     true,
+		DocScheduleMaintenanceSignIn: true,
+		DocSDSSignIn:                 true,
+		CheckFireExtinguisher:        true,
+		CheckFirstAidKit:             true,
+		CheckTriangles:               true,
+		CheckQstraints:               true,
+		CheckSeatBeltCutter:          true,
+		CheckBroom:                   true,
+		CheckSnowbrush:               true,
+		CheckCleankit:                true,
+		AcknowledgeCheck:             true,
+		ConditionKey:                 "",
+		ConditionComments:            "Vehicle in pristine condition, ready for route.",
+		ParkingAddress:               "45 Valleyview Cres NW, Calgary AB",
+		FireHallLocation:             "Fire Station 17 - 3700 32 Ave NW",
+		DriverSignature:              "John Smith",
+		DriverSignDate:               yesterday.Format("2006-01-02"),
+		FleetDepartmentSignature:     "Fleet Lead Marcus",
+		FleetDepartmentSignDate:      yesterday.Format("2006-01-02"),
+		Attachments:                  []models.VehicleSignoutAttachment{},
+		CreatedBy:                    "Fleet Lead Marcus",
+		CreatedAt:                    yesterday,
+		UpdatedAt:                    yesterday,
 	}
 
 	demo2 := &models.VehicleSignout{
-		ID:                            "vso-1002",
-		IsSignIn:                      true, // Sign In (returned)
-		SignDate:                      now.Format("2006-01-02"),
-		VehicleType:                   1, // Van
-		EmployeeID:                    "EMP-1003",
-		EmployeeName:                  "Sarah Jenkins",
-		RouteID:                       "VAN-04",
-		RouteName:                     "Special Needs Special Run",
-		CellPhone:                     "4035558831",
-		DriverLicenseClass:            "Class 4",
-		DriverLicenseCondition:        "Corrective Lenses",
-		UnitID:                        202,
-		UnitNumber:                    "202",
-		Odometer:                      32890.0,
-		LicensePlate:                  "VAN-202",
-		CVIPDate:                      "2026-10-15",
-		UnitYear:                      2023,
-		UnitMaker:                     "Ford",
-		UnitModel:                     "Transit 350",
-		UnitColor:                     "White",
-		FuelLevelID:                   3,
-		FuelLevelDescription:          "3/4 Full",
-		FuelTypeID:                    2,
-		FuelTypeDescription:           "Gasoline",
-		DocRegistrationSignIn:         true,
-		DocInsuranceSignIn:            true,
-		DocSafetyFitnessSignIn:        true,
-		DocCollisionReportSignIn:      true,
-		DocScheduleMaintenanceSignIn:  true,
-		DocSDSSignIn:                  true,
-		CheckFireExtinguisher:         true,
-		CheckFirstAidKit:              true,
-		CheckTriangles:                true,
-		CheckQstraints:                true,
-		CheckSeatBeltCutter:           true,
-		CheckBroom:                    true,
-		CheckSnowbrush:                true,
-		CheckCleankit:                 true,
-		AcknowledgeCheck:              true,
-		ConditionKey:                  "S",
-		ConditionComments:             "Minor cosmetic scrape on lower right passenger bumper during parking.",
-		ParkingAddress:                "East Yard - Bay 14",
-		FireHallLocation:              "Station 4 - 1990 McKnight Blvd",
-		DriverSignature:               "Sarah Jenkins",
-		DriverSignDate:                now.Format("2006-01-02"),
-		FleetDepartmentSignature:      "Fleet Inspector David",
-		FleetDepartmentSignDate:       now.Format("2006-01-02"),
-		Attachments:                   []models.VehicleSignoutAttachment{},
-		CreatedBy:                     "Fleet Inspector David",
-		CreatedAt:                     now,
-		UpdatedAt:                     now,
+		ID:                           "vso-1002",
+		IsSignIn:                     true, // Sign In (returned)
+		SignDate:                     now.Format("2006-01-02"),
+		VehicleType:                  1, // Van
+		EmployeeID:                   "EMP-1003",
+		EmployeeName:                 "Sarah Jenkins",
+		RouteID:                      "VAN-04",
+		RouteName:                    "Special Needs Special Run",
+		CellPhone:                    "4035558831",
+		DriverLicenseClass:           "Class 4",
+		DriverLicenseCondition:       "Corrective Lenses",
+		UnitID:                       202,
+		UnitNumber:                   "202",
+		Odometer:                     32890.0,
+		LicensePlate:                 "VAN-202",
+		CVIPDate:                     "2026-10-15",
+		UnitYear:                     2023,
+		UnitMaker:                    "Ford",
+		UnitModel:                    "Transit 350",
+		UnitColor:                    "White",
+		FuelLevelID:                  3,
+		FuelLevelDescription:         "3/4 Full",
+		FuelTypeID:                   2,
+		FuelTypeDescription:          "Gasoline",
+		DocRegistrationSignIn:        true,
+		DocInsuranceSignIn:           true,
+		DocSafetyFitnessSignIn:       true,
+		DocCollisionReportSignIn:     true,
+		DocScheduleMaintenanceSignIn: true,
+		DocSDSSignIn:                 true,
+		CheckFireExtinguisher:        true,
+		CheckFirstAidKit:             true,
+		CheckTriangles:               true,
+		CheckQstraints:               true,
+		CheckSeatBeltCutter:          true,
+		CheckBroom:                   true,
+		CheckSnowbrush:               true,
+		CheckCleankit:                true,
+		AcknowledgeCheck:             true,
+		ConditionKey:                 "S",
+		ConditionComments:            "Minor cosmetic scrape on lower right passenger bumper during parking.",
+		ParkingAddress:               "East Yard - Bay 14",
+		FireHallLocation:             "Station 4 - 1990 McKnight Blvd",
+		DriverSignature:              "Sarah Jenkins",
+		DriverSignDate:               now.Format("2006-01-02"),
+		FleetDepartmentSignature:     "Fleet Inspector David",
+		FleetDepartmentSignDate:      now.Format("2006-01-02"),
+		Attachments:                  []models.VehicleSignoutAttachment{},
+		CreatedBy:                    "Fleet Inspector David",
+		CreatedAt:                    now,
+		UpdatedAt:                    now,
 	}
 
 	m.vehicleSignouts[demo1.ID] = demo1
@@ -12509,57 +12620,57 @@ func (m *MemoryDispatchRepository) CreateVehicleSignout(ctx context.Context, req
 	}
 
 	rec := &models.VehicleSignout{
-		ID:                            id,
-		IsSignIn:                      req.IsSignIn,
-		SignDate:                      signDate,
-		VehicleType:                   req.VehicleType,
-		EmployeeID:                    req.EmployeeID,
-		EmployeeName:                  req.EmployeeName,
-		RouteID:                       req.RouteID,
-		RouteName:                     req.RouteName,
-		CellPhone:                     req.CellPhone,
-		DriverLicenseClass:            req.DriverLicenseClass,
-		DriverLicenseCondition:        req.DriverLicenseCondition,
-		UnitID:                        req.UnitID,
-		UnitNumber:                    req.UnitNumber,
-		Odometer:                      req.Odometer,
-		LicensePlate:                  req.LicensePlate,
-		CVIPDate:                      req.CVIPDate,
-		UnitYear:                      req.UnitYear,
-		UnitMaker:                     req.UnitMaker,
-		UnitModel:                     req.UnitModel,
-		UnitColor:                     req.UnitColor,
-		FuelLevelID:                   req.FuelLevelID,
-		FuelLevelDescription:          req.FuelLevelDescription,
-		FuelTypeID:                    req.FuelTypeID,
-		FuelTypeDescription:           req.FuelTypeDescription,
-		DocRegistrationSignIn:         req.DocRegistrationSignIn,
-		DocInsuranceSignIn:            req.DocInsuranceSignIn,
-		DocSafetyFitnessSignIn:        req.DocSafetyFitnessSignIn,
-		DocCollisionReportSignIn:      req.DocCollisionReportSignIn,
-		DocScheduleMaintenanceSignIn:  req.DocScheduleMaintenanceSignIn,
-		DocSDSSignIn:                  req.DocSDSSignIn,
-		CheckFireExtinguisher:         req.CheckFireExtinguisher,
-		CheckFirstAidKit:              req.CheckFirstAidKit,
-		CheckTriangles:                req.CheckTriangles,
-		CheckQstraints:                req.CheckQstraints,
-		CheckSeatBeltCutter:           req.CheckSeatBeltCutter,
-		CheckBroom:                    req.CheckBroom,
-		CheckSnowbrush:                req.CheckSnowbrush,
-		CheckCleankit:                 req.CheckCleankit,
-		AcknowledgeCheck:              req.AcknowledgeCheck,
-		ConditionKey:                  req.ConditionKey,
-		ConditionComments:             req.ConditionComments,
-		ParkingAddress:                req.ParkingAddress,
-		FireHallLocation:              req.FireHallLocation,
-		DriverSignature:               req.DriverSignature,
-		DriverSignDate:                req.DriverSignDate,
-		FleetDepartmentSignature:      req.FleetDepartmentSignature,
-		FleetDepartmentSignDate:       req.FleetDepartmentSignDate,
-		Attachments:                   attachments,
-		CreatedBy:                     req.CreatedBy,
-		CreatedAt:                     now,
-		UpdatedAt:                     now,
+		ID:                           id,
+		IsSignIn:                     req.IsSignIn,
+		SignDate:                     signDate,
+		VehicleType:                  req.VehicleType,
+		EmployeeID:                   req.EmployeeID,
+		EmployeeName:                 req.EmployeeName,
+		RouteID:                      req.RouteID,
+		RouteName:                    req.RouteName,
+		CellPhone:                    req.CellPhone,
+		DriverLicenseClass:           req.DriverLicenseClass,
+		DriverLicenseCondition:       req.DriverLicenseCondition,
+		UnitID:                       req.UnitID,
+		UnitNumber:                   req.UnitNumber,
+		Odometer:                     req.Odometer,
+		LicensePlate:                 req.LicensePlate,
+		CVIPDate:                     req.CVIPDate,
+		UnitYear:                     req.UnitYear,
+		UnitMaker:                    req.UnitMaker,
+		UnitModel:                    req.UnitModel,
+		UnitColor:                    req.UnitColor,
+		FuelLevelID:                  req.FuelLevelID,
+		FuelLevelDescription:         req.FuelLevelDescription,
+		FuelTypeID:                   req.FuelTypeID,
+		FuelTypeDescription:          req.FuelTypeDescription,
+		DocRegistrationSignIn:        req.DocRegistrationSignIn,
+		DocInsuranceSignIn:           req.DocInsuranceSignIn,
+		DocSafetyFitnessSignIn:       req.DocSafetyFitnessSignIn,
+		DocCollisionReportSignIn:     req.DocCollisionReportSignIn,
+		DocScheduleMaintenanceSignIn: req.DocScheduleMaintenanceSignIn,
+		DocSDSSignIn:                 req.DocSDSSignIn,
+		CheckFireExtinguisher:        req.CheckFireExtinguisher,
+		CheckFirstAidKit:             req.CheckFirstAidKit,
+		CheckTriangles:               req.CheckTriangles,
+		CheckQstraints:               req.CheckQstraints,
+		CheckSeatBeltCutter:          req.CheckSeatBeltCutter,
+		CheckBroom:                   req.CheckBroom,
+		CheckSnowbrush:               req.CheckSnowbrush,
+		CheckCleankit:                req.CheckCleankit,
+		AcknowledgeCheck:             req.AcknowledgeCheck,
+		ConditionKey:                 req.ConditionKey,
+		ConditionComments:            req.ConditionComments,
+		ParkingAddress:               req.ParkingAddress,
+		FireHallLocation:             req.FireHallLocation,
+		DriverSignature:              req.DriverSignature,
+		DriverSignDate:               req.DriverSignDate,
+		FleetDepartmentSignature:     req.FleetDepartmentSignature,
+		FleetDepartmentSignDate:      req.FleetDepartmentSignDate,
+		Attachments:                  attachments,
+		CreatedBy:                    req.CreatedBy,
+		CreatedAt:                    now,
+		UpdatedAt:                    now,
 	}
 
 	m.vehicleSignouts[id] = rec
@@ -14101,4 +14212,3 @@ func executeSimulationForDate(
 		Message:                 fmt.Sprintf("Simulation completed for %s: %d shifts, %d drivers & %d attendants checked in, %d/%d students absent (%.1f%%), %d pre-trips, %d time-off (%d approved), %d defects (%d resolved), %d incidents (%d closed), %d assessments, %d hazards, %d expenses (%d approved), %d handovers.", date, len(shifts), driversCheckedIn, attendantsCheckedIn, absentCountActual, totalEvalStudents, absentRatePct, pretripsCreated, timeOffCreated, timeOffApproved, defectsCreated, defectsResolved, incidentsCreated, incidentsResolved, routeAssessmentsCreated, hazardReportsCreated, expensesCreated, expensesApproved, vehicleSignoutsCreated),
 	}, nil
 }
-

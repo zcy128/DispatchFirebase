@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"dispatch-server/internal/auth"
@@ -15,22 +16,30 @@ func TestFleetRoleSecurity(t *testing.T) {
 	memDispatch := repository.NewMemoryDispatchRepository()
 	handler := NewDispatchHandler(memDispatch, true)
 
-	t.Run("Driver with X-User-Role fleet is rejected with 403 Forbidden", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/public/dispatch/vehicle-signouts?role=fleet", nil)
-		req.Header.Set("X-User-Role", "fleet")
-		// Authenticated as driver
+	t.Run("Driver can read signouts and a spoofed fleet header cannot grant writes", func(t *testing.T) {
 		driverUser := &auth.AuthUser{
 			UID:      "mock-driver-1",
 			Username: "driver1d",
 			Role:     "driver",
 		}
-		req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, driverUser))
-		rec := httptest.NewRecorder()
 
-		handler.ListVehicleSignouts(rec, req)
+		readReq := httptest.NewRequest("GET", "/api/public/dispatch/vehicle-signouts?role=fleet", nil)
+		readReq.Header.Set("X-User-Role", "fleet")
+		readReq = readReq.WithContext(context.WithValue(readReq.Context(), auth.UserContextKey, driverUser))
+		readRec := httptest.NewRecorder()
+		handler.ListVehicleSignouts(readRec, readReq)
+		if readRec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for driver read of vehicle signouts, got %d", readRec.Code)
+		}
 
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("expected 403 Forbidden for driver attempting to spoof fleet role, got %d", rec.Code)
+		writeReq := httptest.NewRequest("POST", "/api/public/dispatch/vehicle-signouts?role=fleet", strings.NewReader(`{"unitNumber":"100"}`))
+		writeReq.Header.Set("X-User-Role", "fleet")
+		writeReq.Header.Set("Content-Type", "application/json")
+		writeReq = writeReq.WithContext(context.WithValue(writeReq.Context(), auth.UserContextKey, driverUser))
+		writeRec := httptest.NewRecorder()
+		handler.CreateVehicleSignout(writeRec, writeReq)
+		if writeRec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden for driver write with spoofed fleet header, got %d", writeRec.Code)
 		}
 	})
 
@@ -84,6 +93,7 @@ func TestUploadFileSecurity(t *testing.T) {
 	})
 
 	t.Run("Accepts safe image extension", func(t *testing.T) {
+		t.Setenv("UPLOAD_DIR", t.TempDir())
 		body := bytes.NewBufferString(`{"filename":"receipt.jpg","data":"SGVsbG8gV29ybGQ="}`)
 		req := httptest.NewRequest("POST", "/api/public/upload", body)
 		req.Header.Set("Content-Type", "application/json")
@@ -92,7 +102,7 @@ func TestUploadFileSecurity(t *testing.T) {
 		UploadFileHandler(rec, req)
 
 		if rec.Code != http.StatusCreated {
-			t.Fatalf("expected 201 Created for .jpg upload, got %d", rec.Code)
+			t.Fatalf("expected 201 Created for .jpg upload, got %d; body: %s", rec.Code, rec.Body.String())
 		}
 	})
 }

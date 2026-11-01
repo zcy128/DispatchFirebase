@@ -9,7 +9,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { apiRequest } from './api';
+import { apiRequest, isClientHttpError } from './api';
+import { listenerOwnEmployeeId } from '../utils/listenerScope';
 import {
   StudentIncident,
   UpdateIncidentOfficeFollowUpPayload,
@@ -80,13 +81,7 @@ export const StudentIncidentService = {
     try {
       const res = await apiRequest<StudentIncident[]>(`/api/dispatch/student-incidents?${qStr}`);
       return Array.isArray(res) ? res.map((r) => normalizeIncidentRecord(r, r.id)) : [];
-    } catch {
-      try {
-        const res = await apiRequest<StudentIncident[]>(
-          `/api/public/dispatch/student-incidents?${qStr}`
-        );
-        return Array.isArray(res) ? res.map((r) => normalizeIncidentRecord(r, r.id)) : [];
-      } catch (err) {
+    } catch (err) {
         if (db) {
           const qRef = collection(db, 'student_incidents');
           const snap = await getDocs(qRef);
@@ -98,7 +93,6 @@ export const StudentIncidentService = {
           return list;
         }
         return [];
-      }
     }
   },
 
@@ -106,21 +100,14 @@ export const StudentIncidentService = {
     try {
       const res = await apiRequest<StudentIncident>(`/api/dispatch/student-incidents/${id}`);
       return normalizeIncidentRecord(res, res.id || id);
-    } catch {
-      try {
-        const res = await apiRequest<StudentIncident>(
-          `/api/public/dispatch/student-incidents/${id}`
-        );
-        return normalizeIncidentRecord(res, res.id || id);
-      } catch (err) {
-        if (db) {
-          const dSnap = await getDoc(doc(db, 'student_incidents', id));
-          if (dSnap.exists()) {
-            return normalizeIncidentRecord(dSnap.data(), dSnap.id);
-          }
+    } catch (err) {
+      if (db) {
+        const dSnap = await getDoc(doc(db, 'student_incidents', id));
+        if (dSnap.exists()) {
+          return normalizeIncidentRecord(dSnap.data(), dSnap.id);
         }
-        throw new Error(`Student incident report not found: ${id}`);
       }
+      throw new Error(`Student incident report not found: ${id}`);
     }
   },
 
@@ -137,17 +124,8 @@ export const StudentIncidentService = {
         }
       );
       return normalizeIncidentRecord(res, res.id || id);
-    } catch {
-      try {
-        const res = await apiRequest<StudentIncident>(
-          `/api/public/dispatch/student-incidents/${id}/office-review`,
-          {
-            method: 'PATCH',
-            body: JSON.stringify(payload),
-          }
-        );
-        return normalizeIncidentRecord(res, res.id || id);
-      } catch (err) {
+    } catch (err) {
+        if (isClientHttpError(err)) throw err;
         if (db) {
           const docRef = doc(db, 'student_incidents', id);
           const dSnap = await getDoc(docRef);
@@ -173,8 +151,7 @@ export const StudentIncidentService = {
             return normalizeIncidentRecord(updated, id);
           }
         }
-        throw err;
-      }
+      throw err;
     }
   },
 
@@ -191,17 +168,8 @@ export const StudentIncidentService = {
         }
       );
       return normalizeIncidentRecord(res, res.id || id);
-    } catch {
-      try {
-        const res = await apiRequest<StudentIncident>(
-          `/api/public/dispatch/student-incidents/${id}/status`,
-          {
-            method: 'PATCH',
-            body: JSON.stringify({ status }),
-          }
-        );
-        return normalizeIncidentRecord(res, res.id || id);
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const docRef = doc(db, 'student_incidents', id);
           const now = new Date().toISOString();
@@ -210,7 +178,6 @@ export const StudentIncidentService = {
           return normalizeIncidentRecord(snap.data(), id);
         }
         throw err;
-      }
     }
   },
 
@@ -234,7 +201,10 @@ export const StudentIncidentService = {
     const cutoffDateStr = cutoffDate.toISOString().slice(0, 10);
 
     const colRef = collection(db, 'student_incidents');
-    const q = query(colRef, where('incidentDate', '>=', cutoffDateStr));
+    const ownId = listenerOwnEmployeeId();
+    const q = ownId
+      ? query(colRef, where('driverId', '==', ownId), where('incidentDate', '>=', cutoffDateStr))
+      : query(colRef, where('incidentDate', '>=', cutoffDateStr));
     return onSnapshot(
       q,
       (snapshot) => {

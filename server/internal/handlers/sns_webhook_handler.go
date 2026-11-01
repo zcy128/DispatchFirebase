@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -50,7 +52,11 @@ func (h *SNSWebhookHandler) HandleSNSInboundEmail(w http.ResponseWriter, r *http
 	res, err := h.inboundEmailService.ProcessSNSWebhook(r.Context(), body)
 	if err != nil {
 		log.Printf("[SNS-WEBHOOK-ERROR] Error processing webhook: %v", err)
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		status := http.StatusBadRequest
+		if errors.Is(err, services.ErrSNSRejected) {
+			status = http.StatusForbidden
+		}
+		http.Error(w, `{"error":"sns webhook rejected"}`, status)
 		return
 	}
 
@@ -113,7 +119,7 @@ func (h *SNSWebhookHandler) HandleQuickAction(w http.ResponseWriter, r *http.Req
 	_ = h.emailService.SendLeaveDecisionToDriver(updated, driver, action, "HR Department", "Processed via email 1-click quick action")
 
 	msg := fmt.Sprintf("Request <strong>%s</strong> has been marked as <strong>%s</strong>.<br/>The system has updated the database and notified <strong>%s</strong> via email.",
-		reqID, actionText, updated.EmployeeName)
+		html.EscapeString(reqID), html.EscapeString(actionText), html.EscapeString(updated.EmployeeName))
 	h.renderHTMLResult(w, true, "Review Action Completed", msg)
 }
 
@@ -125,7 +131,12 @@ func (h *SNSWebhookHandler) renderHTMLResult(w http.ResponseWriter, success bool
 		icon = "❌"
 	}
 
-	html := fmt.Sprintf(`<!DOCTYPE html>
+	safeTitle := html.EscapeString(title)
+	safeMessage := message
+	if !success {
+		safeMessage = html.EscapeString(message)
+	}
+	page := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -148,7 +159,7 @@ func (h *SNSWebhookHandler) renderHTMLResult(w http.ResponseWriter, success bool
     <div><a href="/" class="btn">Return to Dispatch Portal</a></div>
   </div>
 </body>
-</html>`, title, bgColor, icon, title, message)
+</html>`, safeTitle, bgColor, icon, safeTitle, safeMessage)
 
-	fmt.Fprint(w, html)
+	fmt.Fprint(w, page)
 }

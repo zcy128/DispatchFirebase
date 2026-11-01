@@ -5,9 +5,12 @@ import {
   getDocs,
   setDoc,
   onSnapshot,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { apiRequest } from './api';
+import { apiRequest, isClientHttpError } from './api';
+import { listenerOwnEmployeeId } from '../utils/listenerScope';
 import {
   HazardReport,
   CreateHazardReportPayload,
@@ -113,7 +116,7 @@ export const HazardReportService = {
       if (filters?.endDate) params.append('endDate', filters.endDate);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await apiRequest<HazardReport[]>(`/api/public/dispatch/hazard-reports${qs}`);
+      const res = await apiRequest<HazardReport[]>(`/api/dispatch/hazard-reports${qs}`);
       if (Array.isArray(res)) {
         return res.map((r) => normalizeHazardRecord(r, r.id));
       }
@@ -146,7 +149,7 @@ export const HazardReportService = {
 
   getReport: async (id: string): Promise<HazardReport> => {
     try {
-      const res = await apiRequest<HazardReport>(`/api/public/dispatch/hazard-reports/${id}`);
+      const res = await apiRequest<HazardReport>(`/api/dispatch/hazard-reports/${id}`);
       return normalizeHazardRecord(res, res.id);
     } catch {
       if (db) {
@@ -161,19 +164,13 @@ export const HazardReportService = {
 
   createReport: async (payload: CreateHazardReportPayload): Promise<HazardReport> => {
     try {
-      const res = await apiRequest<HazardReport>('/api/public/dispatch/hazard-reports', {
+      const res = await apiRequest<HazardReport>('/api/dispatch/hazard-reports', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      const record = normalizeHazardRecord(res, res.id);
-      if (db) {
-        try {
-          const ref = doc(db, 'hazard_reports', record.id);
-          await setDoc(ref, record);
-        } catch (_) {}
-      }
-      return record;
-    } catch {
+      return normalizeHazardRecord(res, res.id);
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
       if (db) {
         const ref = doc(collection(db, 'hazard_reports'));
         const now = new Date().toISOString();
@@ -198,21 +195,15 @@ export const HazardReportService = {
   ): Promise<HazardReport> => {
     try {
       const res = await apiRequest<HazardReport>(
-        `/api/public/dispatch/hazard-reports/${id}/office-evaluation`,
+        `/api/dispatch/hazard-reports/${id}/office-evaluation`,
         {
           method: 'PATCH',
           body: JSON.stringify(payload),
         }
       );
-      const record = normalizeHazardRecord(res, res.id);
-      if (db) {
-        try {
-          const ref = doc(db, 'hazard_reports', id);
-          await setDoc(ref, { ...payload, updatedAt: new Date().toISOString() }, { merge: true });
-        } catch (_) {}
-      }
-      return record;
-    } catch {
+      return normalizeHazardRecord(res, res.id);
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
       if (db) {
         const ref = doc(db, 'hazard_reports', id);
         const snap = await getDoc(ref);
@@ -279,18 +270,23 @@ export const HazardReportService = {
       }
     };
 
-    // 1. Initial immediate REST fetch
     fetchLatestRest();
 
-    // 2. Poll every 5s to guarantee fresh updates even if submitted via REST
-    pollTimer = setInterval(fetchLatestRest, pollingIntervalMs);
+    const startPolling = () => {
+      if (pollTimer || !isSubscribed) return;
+      pollTimer = setInterval(fetchLatestRest, pollingIntervalMs);
+    };
 
-    // 3. Real-time Firestore onSnapshot listener for instant 0-second push (live data <= 1 year)
+    // Real-time Firestore listener. REST polling starts only if the listener fails.
     if (db) {
       try {
-        const collRef = collection(db, 'hazard_reports');
+        const ownId = listenerOwnEmployeeId();
+        const hazardRef = collection(db, 'hazard_reports');
+        const qRef = ownId
+          ? query(hazardRef, where('reportedByEmployeeId', '==', ownId), where('createdAt', '>=', cutoffStr))
+          : query(hazardRef, where('createdAt', '>=', cutoffStr));
         unsubscribeSnapshot = onSnapshot(
-          collRef,
+          qRef,
           (snapshot) => {
             if (!isSubscribed) return;
             const items: HazardReport[] = [];
@@ -305,12 +301,16 @@ export const HazardReportService = {
             emitMerged();
           },
           (error) => {
-            console.warn('[HazardReportService] Firestore subscription error, polling remains active:', error);
+            console.warn('[HazardReportService] Firestore subscription error, falling back to polling:', error);
+            startPolling();
           }
         );
       } catch (err) {
-        console.warn('[HazardReportService] Failed to establish onSnapshot, polling remains active:', err);
+        console.warn('[HazardReportService] Failed to establish onSnapshot, falling back to polling:', err);
+        startPolling();
       }
+    } else {
+      startPolling();
     }
 
     // 4. Auto-sync on window focus / tab visibility change
