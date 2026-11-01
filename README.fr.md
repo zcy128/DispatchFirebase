@@ -334,10 +334,11 @@ flutter build web --dart-define=API_BASE_URL=https://votre-domaine-api.com
 
 ## 🛠️ Guides d'Exploitation & de Cycle de Vie des Données
 
-- 📘 **[Guide d'Archivage Firestore TTL & Cloud Scheduler](docs/firestore-ttl-cloud-scheduler-instructions.md#français)** (Disponible en **English**, **Français**, **简体中文**) :
+- 📘 **[Guide d'Archivage Firestore TTL & Cloud Scheduler](docs/firestore-ttl-cloud-scheduler-instructions.md#français)** ([English](docs/firestore-ttl-cloud-scheduler-instructions.md#english) | [简体中文](docs/firestore-ttl-cloud-scheduler-instructions.md#简体中文)) :
   - Configuration du Time-to-Live (TTL) Firestore dans Google Cloud Console.
   - Mise en place de la tâche planifiée Cloud Scheduler unique (`/api/admin/archive/sync-all`) pour archiver les services, journaux d'audit et congés vers BigQuery au coût le plus bas.
   - Basculement transparent (Dual-Engine) entre le stockage chaud Firestore et l'archivage froid BigQuery.
+- 📄 **[Manuel d'Exploitation du Parc (PDF)](docs/operations-manual-fr.pdf)** ([Word](docs/operations-manual-fr.docx) | [English PDF](docs/operations-manual-en.pdf) | [中文 PDF](docs/operations-manual-zh.pdf)) : Guide complet des opérations quotidiennes pour régulateurs, responsables de la sécurité et superviseurs de flotte.
 
 ---
 
