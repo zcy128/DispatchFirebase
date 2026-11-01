@@ -60,7 +60,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   onClearInitialParentMetadata,
 }) => {
   const { currentUser } = useAuth();
-  const currentUserId = currentUser?.employeeId || currentUser?.uid || 'EMP-ADMIN-001';
+  const currentUserId = currentUser?.employeeId || currentUser?.uid || '';
 
   const [channels, setChannels] = useState<ChatChannel[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<ChatChannel | null>(null);
@@ -101,7 +101,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const loadChannels = async (selectChannelId?: string) => {
     try {
       setLoadingChannels(true);
-      const list = await chatService.getChannels(currentUserId);
+      const list = await chatService.getChannels();
       setChannels(list || []);
       if (selectChannelId) {
         const found = list.find((c) => c.id === selectChannelId);
@@ -120,10 +120,10 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     if (isOpen) {
       loadChannels();
       const channelTimer = setInterval(() => {
-        chatService.getChannels(currentUserId).then((list) => {
+        chatService.getChannels().then((list) => {
           if (list) setChannels(list);
         }).catch(() => {});
-      }, 4000);
+      }, 15000);
       return () => clearInterval(channelTimer);
     }
   }, [isOpen, currentUserId]);
@@ -193,24 +193,26 @@ const dedupeMessages = (list: ChatMessage[]): ChatMessage[] => {
       .catch((e) => console.error('Failed to load messages:', e))
       .finally(() => setLoadingMessages(false));
 
-    // Realtime Firestore subscription
+    const startFallbackPoll = () => {
+      if (pollIntervalRef.current) return;
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const fresh = await chatService.getMessages(selectedChannel.id);
+          if (fresh && fresh.length > 0) {
+            setMessages(dedupeMessages(fresh));
+          }
+        } catch {
+          // ignore background poll error
+        }
+      }, 30000);
+    };
+
     const unsubscribe = chatService.subscribeToMessages(selectedChannel.id, (realtimeMsgs) => {
       if (realtimeMsgs) {
         setMessages(dedupeMessages(realtimeMsgs));
       }
-    });
-
-    // Guaranteed background sync every 2.5 seconds (never requires manual refresh)
-    pollIntervalRef.current = setInterval(async () => {
-      try {
-        const fresh = await chatService.getMessages(selectedChannel.id);
-        if (fresh && fresh.length > 0) {
-          setMessages(dedupeMessages(fresh));
-        }
-      } catch {
-        // ignore background poll error
-      }
-    }, 2500);
+    }, 50, startFallbackPoll);
+    if (!unsubscribe) startFallbackPoll();
 
     return () => {
       if (unsubscribe) unsubscribe();

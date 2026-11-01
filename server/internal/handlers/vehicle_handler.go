@@ -39,6 +39,9 @@ func (h *VehicleHandler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"failed to retrieve vehicles"}`, http.StatusInternalServerError)
 		return
 	}
+	if vehicles == nil {
+		vehicles = make([]*models.Vehicle, 0)
+	}
 	json.NewEncoder(w).Encode(vehicles)
 }
 

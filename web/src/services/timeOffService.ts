@@ -5,10 +5,13 @@ import {
   getDocs,
   setDoc,
   deleteDoc,
-  onSnapshot
+  onSnapshot,
+  query,
+  where
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { apiRequest } from './api';
+import { apiRequest, isClientHttpError } from './api';
+import { listenerOwnEmployeeId } from '../utils/listenerScope';
 import {
   TimeOffRequest,
   CreateTimeOffRequestPayload,
@@ -52,11 +55,7 @@ export const TimeOffService = {
     try {
       const res = await apiRequest<TimeOffRequest[]>(`/api/dispatch/time-off-requests?${qStr}`);
       return Array.isArray(res) ? res.map((r) => normalizeTimeOffRecord(r, r.id)) : [];
-    } catch {
-      try {
-        const res = await apiRequest<TimeOffRequest[]>(`/api/public/dispatch/time-off-requests?${qStr}`);
-        return Array.isArray(res) ? res.map((r) => normalizeTimeOffRecord(r, r.id)) : [];
-      } catch (err) {
+    } catch (err) {
         if (db) {
           const qRef = collection(db, 'time_off_requests');
           const snap = await getDocs(qRef);
@@ -68,7 +67,6 @@ export const TimeOffService = {
           return list;
         }
         throw err;
-      }
     }
   },
 
@@ -90,19 +88,14 @@ export const TimeOffService = {
     try {
       const res = await apiRequest<TimeOffRequest>(`/api/dispatch/time-off-requests/${encodeURIComponent(id)}`);
       return normalizeTimeOffRecord(res, res.id);
-    } catch {
-      try {
-        const res = await apiRequest<TimeOffRequest>(`/api/public/dispatch/time-off-requests/${encodeURIComponent(id)}`);
-        return normalizeTimeOffRecord(res, res.id);
-      } catch (err) {
-        if (db) {
-          const snap = await getDoc(doc(db, 'time_off_requests', id));
-          if (snap.exists()) {
-            return normalizeTimeOffRecord(snap.data(), snap.id);
-          }
+    } catch (err) {
+      if (db) {
+        const snap = await getDoc(doc(db, 'time_off_requests', id));
+        if (snap.exists()) {
+          return normalizeTimeOffRecord(snap.data(), snap.id);
         }
-        throw err;
       }
+      throw err;
     }
   },
 
@@ -112,13 +105,8 @@ export const TimeOffService = {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        return await apiRequest<TimeOffRequest>('/api/public/dispatch/time-off-requests', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const id = `TOR-${Date.now()}`;
           const nowStr = new Date().toISOString();
@@ -133,7 +121,6 @@ export const TimeOffService = {
           return rec;
         }
         throw err;
-      }
     }
   },
 
@@ -146,13 +133,8 @@ export const TimeOffService = {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        return await apiRequest<TimeOffRequest>(`/api/public/dispatch/time-off-requests/${encodeURIComponent(id)}`, {
-          method: 'PUT',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const docRef = doc(db, 'time_off_requests', id);
           await setDoc(docRef, { ...payload, updatedAt: new Date().toISOString() }, { merge: true });
@@ -160,7 +142,6 @@ export const TimeOffService = {
           return { ...snap.data(), id: docRef.id } as TimeOffRequest;
         }
         throw err;
-      }
     }
   },
 
@@ -173,13 +154,8 @@ export const TimeOffService = {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        return await apiRequest<TimeOffRequest>(`/api/public/dispatch/time-off-requests/${encodeURIComponent(id)}/approve`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
+        if (isClientHttpError(err)) throw err;
         if (db) {
           const docRef = doc(db, 'time_off_requests', id);
           const nowStr = new Date().toISOString();
@@ -201,7 +177,6 @@ export const TimeOffService = {
           return normalizeTimeOffRecord(snap.data(), docRef.id);
         }
         throw err;
-      }
     }
   },
 
@@ -214,13 +189,8 @@ export const TimeOffService = {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        return await apiRequest<TimeOffRequest>(`/api/public/dispatch/time-off-requests/${encodeURIComponent(id)}/reject`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
+        if (isClientHttpError(err)) throw err;
         if (db) {
           const docRef = doc(db, 'time_off_requests', id);
           const nowStr = new Date().toISOString();
@@ -242,7 +212,6 @@ export const TimeOffService = {
           return normalizeTimeOffRecord(snap.data(), docRef.id);
         }
         throw err;
-      }
     }
   },
 
@@ -252,13 +221,8 @@ export const TimeOffService = {
         method: 'POST',
         body: JSON.stringify({ userId }),
       });
-    } catch {
-      try {
-        return await apiRequest<TimeOffRequest>(`/api/public/dispatch/time-off-requests/${encodeURIComponent(id)}/cancel`, {
-          method: 'POST',
-          body: JSON.stringify({ userId }),
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const docRef = doc(db, 'time_off_requests', id);
           const nowStr = new Date().toISOString();
@@ -267,7 +231,6 @@ export const TimeOffService = {
           return { ...snap.data(), id: docRef.id } as TimeOffRequest;
         }
         throw err;
-      }
     }
   },
 
@@ -276,18 +239,13 @@ export const TimeOffService = {
       await apiRequest(`/api/dispatch/time-off-requests/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
-    } catch {
-      try {
-        await apiRequest(`/api/public/dispatch/time-off-requests/${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           await deleteDoc(doc(db, 'time_off_requests', id));
           return;
         }
         throw err;
-      }
     }
   },
 
@@ -303,7 +261,10 @@ export const TimeOffService = {
     }
 
     try {
-      const q = collection(db, 'time_off_requests');
+      const ownId = listenerOwnEmployeeId();
+      const q = ownId
+        ? query(collection(db, 'time_off_requests'), where('employeeId', '==', ownId))
+        : collection(db, 'time_off_requests');
       const unsubscribe = onSnapshot(
         q,
         (snapshot) => {

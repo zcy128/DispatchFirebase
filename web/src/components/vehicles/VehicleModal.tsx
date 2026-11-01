@@ -171,7 +171,7 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
       setNotes(initialData.notes || '');
 
       setLastInspectionDate(initialData.lastInspectionDate ? initialData.lastInspectionDate.substring(0, 10) : '');
-      setNextInspectionDue(initialData.nextInspectionDue ? initialData.nextInspectionDue.substring(0, 10) : (initialData.licenseExpiry ? initialData.licenseExpiry.substring(0, 10) : ''));
+      setNextInspectionDue(initialData.nextInspectionDue ? initialData.nextInspectionDue.substring(0, 10) : '');
       setInspectionCertificateNumber(initialData.inspectionCertificateNumber || '');
       setInspectionStickerNumber(initialData.inspectionStickerNumber || '');
       setHasInVehicleCertificate(initialData.hasInVehicleCertificate !== false);

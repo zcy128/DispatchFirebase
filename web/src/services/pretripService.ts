@@ -49,7 +49,7 @@ export const PreTripService = {
       if (vehicleUnit) params.append('vehicleUnit', vehicleUnit);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await apiRequest<PreTripInspection[]>(`/api/public/dispatch/pretrip-inspections${qs}`);
+      const res = await apiRequest<PreTripInspection[]>(`/api/dispatch/pretrip-inspections${qs}`);
       if (Array.isArray(res)) {
         return res.map((r) => normalizePreTrip(r, r.id));
       }
@@ -86,7 +86,7 @@ export const PreTripService = {
   getTodayInspection: async (vehicleUnit: string, date: string): Promise<PreTripInspection | null> => {
     try {
       const res = await apiRequest<{ found: boolean; inspection: PreTripInspection | null }>(
-        `/api/public/dispatch/pretrip-inspections/today/${encodeURIComponent(vehicleUnit)}?date=${date}`
+        `/api/dispatch/pretrip-inspections/today/${encodeURIComponent(vehicleUnit)}?date=${date}`
       );
       if (res && res.found && res.inspection) {
         return normalizePreTrip(res.inspection, res.inspection.id);

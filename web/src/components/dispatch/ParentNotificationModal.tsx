@@ -18,10 +18,9 @@ import {
   DispatchShiftStop,
   DelayReasonCategory,
   ParentNotificationRecipient,
-  SentParentNotificationRecord,
 } from '../../types/dispatch';
 import { Student } from '../../types/student';
-import { DispatchService } from '../../services/dispatchService';
+import { apiRequest } from '../../services/api';
 import { getCurrentHHmm } from '../../utils/dispatchDelayUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { logDispatchAction } from '../../utils/dispatchLogger';
@@ -157,6 +156,11 @@ export const ParentNotificationModal: React.FC<ParentNotificationModalProps> = (
       return;
     }
 
+    if (!channels.sms && !channels.email) {
+      alert('Please select at least one delivery channel (SMS or Email).');
+      return;
+    }
+
     try {
       setSending(true);
 
@@ -172,71 +176,76 @@ export const ParentNotificationModal: React.FC<ParentNotificationModalProps> = (
 
       // Log an operational dispatch audit note onto the shift
       const notificationAudit = `[${nowTime} Parent Alert] Dispatched +${delayMinutes}m delay notification (${reasonLabel}) to ${chosenRecipients.length} parent(s).`;
-      const updatedNotes = shift.notes
-        ? `${shift.notes}\n${notificationAudit}`
-        : notificationAudit;
 
       const activeChannels = (['sms', 'email'] as ('sms' | 'email')[]).filter((c) => channels[c]);
       const selectedStop = stops.find((s) => s.stopId === selectedStopId);
 
-      const newRecord: SentParentNotificationRecord = {
-        id: `notif_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        timeStr: nowTime,
-        reasonCategory,
-        reasonLabel,
-        delayMinutes,
-        messageText: customMessage,
-        channels: activeChannels,
-        recipientsCount: chosenRecipients.length,
-        recipientsSummary: chosenRecipients
-          .map((r) => `${r.studentName} (${r.contactName})`)
-          .slice(0, 4)
-          .join(', ') + (chosenRecipients.length > 4 ? ` +${chosenRecipients.length - 4} more` : ''),
-        scope,
-        stopId: selectedStop?.stopId,
-        stopSequence: selectedStop?.sequence,
-        stopLocation: selectedStop?.stopLocation,
-        recipients: chosenRecipients.map((r) => ({
-          studentId: r.studentId,
-          studentName: r.studentName,
-          contactName: r.contactName,
-          relationship: r.relationship,
-          phone: r.phone,
-          email: r.email,
-        })),
+      const result = await apiRequest<{ shift: DispatchShift; sentSms: number; sentEmail: number; failed: number }>(
+        `/api/dispatch/shifts/${shift.id}/notify-parents`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            delayMinutes,
+            reasonLabel,
+            messageText: customMessage,
+            channels: activeChannels,
+            scope,
+            stopId: selectedStop?.stopId,
+            stopSequence: selectedStop?.sequence,
+            stopLocation: selectedStop?.stopLocation,
+            notes: notificationAudit,
+            recipients: chosenRecipients.map((r) => ({
+              studentId: r.studentId,
+              studentName: r.studentName,
+              contactName: r.contactName,
+              phone: r.phone,
+              email: r.email,
+            })),
+          }),
+        }
+      );
+      const updatedShift: DispatchShift = {
+        ...result.shift,
+        notes: result.shift?.notes || result.shift?.dispatchComments || notificationAudit,
+        dispatchComments: result.shift?.dispatchComments || result.shift?.notes || notificationAudit,
       };
-
-      const existingNotifications = Array.isArray(shift.parentNotifications)
-        ? shift.parentNotifications
-        : [];
-      const updatedNotifications = [...existingNotifications, newRecord];
-
-      const updatedShift = await DispatchService.updateShift(shift.id, {
-        parentNotifications: updatedNotifications,
-        notes: updatedNotes,
-      });
 
       const channelsList: string[] = [];
       if (channels.sms) channelsList.push('SMS');
       if (channels.email) channelsList.push('Email');
+      const failedCount = result.failed || 0;
+      const deliveredCount = (result.sentSms || 0) + (result.sentEmail || 0);
+      if (deliveredCount === 0) {
+        alert(failedCount > 0
+          ? `The delay note was saved, but none of the ${failedCount} message(s) could be delivered.`
+          : 'The delay note was saved, but no messages were dispatched because no recipients had valid contact info.');
+      } else if (failedCount > 0) {
+        alert(`${deliveredCount} message(s) were sent. ${failedCount} failed.`);
+      }
       await logDispatchAction({
         date: shift.dispatchDate,
         type: 'Parent Notification',
-        detail: `Sent delay alert (${delayMinutes} min delay, ${reasonLabel}) to ${chosenRecipients.length} parents via ${channelsList.join('/')}`,
+        detail: deliveredCount === 0
+          ? `Attempted delay alert (${delayMinutes} min, ${reasonLabel}) for ${chosenRecipients.length} parents, but no messages were delivered (failed: ${failedCount})`
+          : failedCount > 0
+          ? `Recorded delay alert (${delayMinutes} min, ${reasonLabel}) for ${chosenRecipients.length} parents via ${channelsList.join('/')}; ${deliveredCount} delivered, ${failedCount} delivery failure(s)`
+          : `Sent delay alert (${delayMinutes} min delay, ${reasonLabel}) to ${chosenRecipients.length} parents via ${channelsList.join('/')}`,
         shift,
         user: actorName,
       });
 
-      setSendSuccess(true);
       if (onNotificationSent) {
         onNotificationSent(updatedShift);
       }
-
-      setTimeout(() => {
-        setSendSuccess(false);
+      if (deliveredCount > 0 && failedCount === 0) {
+        setSendSuccess(true);
+        setTimeout(() => {
+          setSendSuccess(false);
+          onClose();
+        }, 1400);
+      } else if (deliveredCount > 0) {
         onClose();
-      }, 1400);
+      }
     } catch (err) {
       console.error('Failed to send parent delay notification:', err);
       alert('Failed to send notification: ' + (err as Error).message);

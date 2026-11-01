@@ -369,7 +369,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                               onMessageParent({
                                 parentContact: c.mobilePhone || c.email || '',
                                 parentName: c.contactName,
-                                studentId: student.id,
+                                studentId: student.studentId,
                                 studentName: student.fullName,
                                 busUnitNumber: student.routes ? student.routes.split(',')[0].trim() : '',
                                 routeNo: student.routes || '',

@@ -1,6 +1,6 @@
 import { collection, onSnapshot, query, where, addDoc, doc, deleteDoc, getDoc, setDoc, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
-import { apiRequest } from './api';
+import { apiRequest, isClientHttpError } from './api';
 import {
   DispatchShift,
   CreateDispatchDayResult,
@@ -31,12 +31,32 @@ import {
   getVehicleUnavailabilityReason,
 } from '../utils/vehicleAvailabilityUtils';
 
+function listenerOwnEmployeeId(): string {
+  try {
+    const raw = localStorage.getItem('dispatch_auth_user');
+    if (!raw) return '';
+    const user = JSON.parse(raw);
+    const role = String(user?.role || '').toLowerCase();
+    const employeeId = String(user?.employeeId || '');
+    if ((role === 'driver' || role === 'helper') && employeeId) {
+      return employeeId;
+    }
+  } catch {
+    return '';
+  }
+  return '';
+}
+
 export const DispatchService = {
   subscribeToDayShifts: (
     date: string,
     onUpdate: (shifts: DispatchShift[]) => void,
     onError?: (err: Error) => void
   ) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      onUpdate([]);
+      return () => {};
+    }
     if (!db) {
       DispatchService.list(date)
         .then((shifts) => onUpdate(Array.isArray(shifts) ? shifts : []))
@@ -45,10 +65,12 @@ export const DispatchService = {
     }
 
     try {
-      const q = query(
-        collection(db, 'dispatch_shifts'),
-        where('dispatchDate', '==', date)
-      );
+      const constraints = [where('dispatchDate', '==', date)];
+      const driverId = listenerOwnEmployeeId();
+      if (driverId) {
+        constraints.push(where('assignedEmployeeIds', 'array-contains', driverId));
+      }
+      const q = query(collection(db, 'dispatch_shifts'), ...constraints);
       const unsubscribe = onSnapshot(
         q,
         (snapshot) => {
@@ -72,11 +94,15 @@ export const DispatchService = {
           onUpdate(list || []);
         },
         (error) => {
-          console.error('[DispatchService] onSnapshot error:', error);
+          // Listener can fail when the browser has no Firebase session (demo login).
+          // Callers fall back to the REST list, so this is a warning rather than a page error.
+          console.warn('[DispatchService] onSnapshot error, falling back to API:', error);
           if (onError) onError(error);
           DispatchService.list(date)
             .then((shifts) => onUpdate(Array.isArray(shifts) ? shifts : []))
-            .catch(console.error);
+            .catch((listErr) => {
+              console.error('[DispatchService] shift list fallback failed:', listErr);
+            });
         }
       );
       return unsubscribe;
@@ -90,6 +116,7 @@ export const DispatchService = {
   },
 
   list: async (date: string, params?: Record<string, string>): Promise<DispatchShift[]> => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
     const q = new URLSearchParams({ date, ...(params || {}) }).toString();
     const res = await apiRequest<DispatchShift[]>(`/api/dispatch/shifts?${q}`);
     return Array.isArray(res) ? res : [];
@@ -100,8 +127,9 @@ export const DispatchService = {
   },
 
   createDay: async (date: string, dryRun: boolean = false): Promise<CreateDispatchDayResult> => {
-    const res = await apiRequest<CreateDispatchDayResult>(`/api/dispatch/create-day?date=${encodeURIComponent(date)}&dryRun=${dryRun}`, {
+    const res = await apiRequest<CreateDispatchDayResult>('/api/dispatch/create-day', {
       method: 'POST',
+      body: JSON.stringify({ date, dryRun }),
     });
     if (!dryRun) {
       await DispatchService.syncDayDispatchesWithCoversAndOpenings(date).catch((err) =>
@@ -162,33 +190,19 @@ export const DispatchService = {
       reportedBy,
       isPresent: status === 'picked_up' ? true : (status === 'absent' || status === 'no_show' ? false : undefined),
     };
-    try {
-      return await apiRequest<DispatchShift>(`/api/dispatch/shifts/${shiftId}/stops/${stopId}/students/${studentId}`, {
+          return await apiRequest<DispatchShift>(`/api/dispatch/shifts/${shiftId}/stops/${stopId}/students/${studentId}`, {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
-    } catch {
-      return await apiRequest<DispatchShift>(`/api/public/dispatch/shifts/${shiftId}/stops/${stopId}/students/${studentId}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      });
-    }
   },
 
   recordStudentAbsence: async (
     payload: RecordStudentAbsencePayload
   ): Promise<RecordStudentAbsenceResponse> => {
-    try {
-      return await apiRequest<RecordStudentAbsenceResponse>('/api/dispatch/students/absence', {
+          return await apiRequest<RecordStudentAbsenceResponse>('/api/dispatch/students/absence', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-    } catch {
-      return await apiRequest<RecordStudentAbsenceResponse>('/api/public/dispatch/students/absence', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-    }
   },
 
   listStudentAbsences: async (
@@ -208,11 +222,7 @@ export const DispatchService = {
     if (query) params.append('query', query);
 
     const qs = params.toString() ? `?${params.toString()}` : '';
-    try {
-      return await apiRequest<StudentAbsenceRecord[]>(`/api/dispatch/students/absences${qs}`);
-    } catch {
-      return await apiRequest<StudentAbsenceRecord[]>(`/api/public/dispatch/students/absences${qs}`);
-    }
+          return await apiRequest<StudentAbsenceRecord[]>(`/api/dispatch/students/absences${qs}`);
   },
 
   isColdAbsence: (dateStr?: string): boolean => {
@@ -224,15 +234,9 @@ export const DispatchService = {
   },
 
   cancelStudentAbsence: async (id: string): Promise<void> => {
-    try {
-      await apiRequest<{ success: boolean }>(`/api/dispatch/students/absences/${encodeURIComponent(id)}`, {
+          await apiRequest<{ success: boolean }>(`/api/dispatch/students/absences/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
-    } catch {
-      await apiRequest<{ success: boolean }>(`/api/public/dispatch/students/absences/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      });
-    }
   },
 
   splitShift: async (shiftId: string, parts: SplitShiftPart[]): Promise<DispatchShift[]> => {
@@ -243,84 +247,44 @@ export const DispatchService = {
   },
 
   getPayrollSettings: async (): Promise<DispatchPayrollSettings> => {
-    try {
-      return await apiRequest<DispatchPayrollSettings>('/api/dispatch/payroll-settings');
-    } catch {
-      return await apiRequest<DispatchPayrollSettings>('/api/public/dispatch/payroll-settings');
-    }
+          return await apiRequest<DispatchPayrollSettings>('/api/dispatch/payroll-settings');
   },
 
   savePayrollSettings: async (settings: DispatchPayrollSettings): Promise<DispatchPayrollSettings> => {
-    try {
-      return await apiRequest<DispatchPayrollSettings>('/api/dispatch/payroll-settings', {
+          return await apiRequest<DispatchPayrollSettings>('/api/dispatch/payroll-settings', {
         method: 'PUT',
         body: JSON.stringify(settings),
       });
-    } catch {
-      return await apiRequest<DispatchPayrollSettings>('/api/public/dispatch/payroll-settings', {
-        method: 'PUT',
-        body: JSON.stringify(settings),
-      });
-    }
   },
 
   getCheckInReminderSettings: async (): Promise<CheckInReminderSettings> => {
-    try {
-      return await apiRequest<CheckInReminderSettings>('/api/dispatch/check-in-reminder-settings');
-    } catch {
-      return await apiRequest<CheckInReminderSettings>('/api/public/dispatch/check-in-reminder-settings');
-    }
+          return await apiRequest<CheckInReminderSettings>('/api/dispatch/check-in-reminder-settings');
   },
 
   saveCheckInReminderSettings: async (settings: CheckInReminderSettings): Promise<CheckInReminderSettings> => {
-    try {
-      return await apiRequest<CheckInReminderSettings>('/api/dispatch/check-in-reminder-settings', {
+          return await apiRequest<CheckInReminderSettings>('/api/dispatch/check-in-reminder-settings', {
         method: 'PUT',
         body: JSON.stringify(settings),
       });
-    } catch {
-      return await apiRequest<CheckInReminderSettings>('/api/public/dispatch/check-in-reminder-settings', {
-        method: 'PUT',
-        body: JSON.stringify(settings),
-      });
-    }
   },
 
   getSimulationSettings: async (): Promise<SimulationSettings> => {
-    try {
-      return await apiRequest<SimulationSettings>('/api/dispatch/simulation-settings');
-    } catch {
-      return await apiRequest<SimulationSettings>('/api/public/dispatch/simulation-settings');
-    }
+          return await apiRequest<SimulationSettings>('/api/dispatch/simulation-settings');
   },
 
   saveSimulationSettings: async (settings: SimulationSettings): Promise<SimulationSettings> => {
-    try {
-      return await apiRequest<SimulationSettings>('/api/dispatch/simulation-settings', {
+          return await apiRequest<SimulationSettings>('/api/dispatch/simulation-settings', {
         method: 'PUT',
         body: JSON.stringify(settings),
       });
-    } catch {
-      return await apiRequest<SimulationSettings>('/api/public/dispatch/simulation-settings', {
-        method: 'PUT',
-        body: JSON.stringify(settings),
-      });
-    }
   },
 
   runSimulation: async (date?: string, forceOverwrite: boolean = true): Promise<SimulationRunResult> => {
     const payload = { date: date || '', forceOverwrite };
-    try {
-      return await apiRequest<SimulationRunResult>('/api/dispatch/simulation/run', {
+          return await apiRequest<SimulationRunResult>('/api/dispatch/simulation/run', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-    } catch {
-      return await apiRequest<SimulationRunResult>('/api/public/dispatch/simulation/run', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-    }
   },
 
   subscribeToChangeLogs: (
@@ -417,13 +381,8 @@ export const DispatchService = {
     if (params?.scope) q.set('scope', params.scope);
     const qStr = q.toString();
 
-    try {
-      const res = await apiRequest<DispatchChangeLog[]>(`/api/dispatch/change-logs?${qStr}`);
+          const res = await apiRequest<DispatchChangeLog[]>(`/api/dispatch/change-logs?${qStr}`);
       return Array.isArray(res) ? res : [];
-    } catch {
-      const res = await apiRequest<DispatchChangeLog[]>(`/api/public/dispatch/change-logs?${qStr}`);
-      return Array.isArray(res) ? res : [];
-    }
   },
 
   createChangeLog: async (log: Omit<DispatchChangeLog, 'id' | 'timestamp'> & { timestamp?: number }): Promise<DispatchChangeLog> => {
@@ -436,20 +395,13 @@ export const DispatchService = {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        return await apiRequest<DispatchChangeLog>('/api/public/dispatch/change-logs', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
         if (db) {
           const col = collection(db, 'dispatch_change_logs');
           const docRef = await addDoc(col, payload);
           return { ...payload, id: docRef.id } as DispatchChangeLog;
         }
         throw err;
-      }
     }
   },
 
@@ -458,12 +410,7 @@ export const DispatchService = {
       const res = await apiRequest<DispatchPayrollRecord[]>(`/api/dispatch/payrolls?date=${encodeURIComponent(date)}`);
       return Array.isArray(res) ? res : [];
     } catch {
-      try {
-        const res = await apiRequest<DispatchPayrollRecord[]>(`/api/public/dispatch/payrolls?date=${encodeURIComponent(date)}`);
-        return Array.isArray(res) ? res : [];
-      } catch {
-        return [];
-      }
+      return [];
     }
   },
 
@@ -525,17 +472,10 @@ export const DispatchService = {
     checkInTime?: string
   ): Promise<DispatchPayrollRecord> => {
     const payload = { shiftId, role, checkInTime };
-    try {
-      return await apiRequest<DispatchPayrollRecord>('/api/dispatch/payrolls/generate', {
+          return await apiRequest<DispatchPayrollRecord>('/api/dispatch/payrolls/generate', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-    } catch {
-      return await apiRequest<DispatchPayrollRecord>('/api/public/dispatch/payrolls/generate', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-    }
   },
 
   deleteDispatchPayroll: async (shiftId: string, role: 'driver' | 'attendant'): Promise<void> => {
@@ -543,17 +483,14 @@ export const DispatchService = {
       await apiRequest(`/api/dispatch/payrolls/${encodeURIComponent(shiftId)}/${encodeURIComponent(role)}`, {
         method: 'DELETE',
       });
-    } catch {
-      try {
-        await apiRequest(`/api/public/dispatch/payrolls/${encodeURIComponent(shiftId)}/${encodeURIComponent(role)}`, {
-          method: 'DELETE',
-        });
-      } catch (err) {
-        if (db) {
-          const docRef = doc(db, 'dispatch_payrolls', `DP-${shiftId}-${role}`);
-          await deleteDoc(docRef);
-        }
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
+      if (db) {
+        const docRef = doc(db, 'dispatch_payrolls', `DP-${shiftId}-${role}`);
+        await deleteDoc(docRef);
+        return;
       }
+      throw err;
     }
   },
 
@@ -567,13 +504,8 @@ export const DispatchService = {
         method: 'POST',
         body: JSON.stringify(bodyPayload),
       });
-    } catch {
-      try {
-        return await apiRequest<DispatchShift>(`/api/public/dispatch/shifts/${encodeURIComponent(shiftId)}/check-out`, {
-          method: 'POST',
-          body: JSON.stringify(bodyPayload),
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const shiftRef = doc(db, 'dispatch_shifts', shiftId);
           const shiftSnap = await getDoc(shiftRef);
@@ -652,9 +584,8 @@ export const DispatchService = {
             }
             return { ...s, ...shiftUpdate } as DispatchShift;
           }
-        }
-        throw err;
       }
+      throw err;
     }
   },
 
@@ -664,13 +595,8 @@ export const DispatchService = {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        return await apiRequest<DispatchPayrollRecord>(`/api/public/dispatch/payrolls/${encodeURIComponent(payrollId)}/approve`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const pRef = doc(db, 'dispatch_payrolls', payrollId);
           const pSnap = await getDoc(pRef);
@@ -764,8 +690,7 @@ export const DispatchService = {
             return updatedRec;
           }
         }
-        throw err;
-      }
+      throw err;
     }
   },
 
@@ -775,13 +700,8 @@ export const DispatchService = {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        return await apiRequest<DispatchPayrollRecord>(`/api/public/dispatch/payrolls/${encodeURIComponent(payrollId)}/reject`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const pRef = doc(db, 'dispatch_payrolls', payrollId);
           const pSnap = await getDoc(pRef);
@@ -808,8 +728,7 @@ export const DispatchService = {
             return updatedRec;
           }
         }
-        throw err;
-      }
+      throw err;
     }
   },
 
@@ -817,10 +736,7 @@ export const DispatchService = {
     const qStr = new URLSearchParams(params || {}).toString();
     try {
       return await apiRequest<PayrollDepartmentLogRecord[]>(`/api/dispatch/payroll-logs?${qStr}`);
-    } catch {
-      try {
-        return await apiRequest<PayrollDepartmentLogRecord[]>(`/api/public/dispatch/payroll-logs?${qStr}`);
-      } catch (err) {
+    } catch (err) {
         if (db) {
           const date = params?.date;
           const qRef = date
@@ -834,7 +750,6 @@ export const DispatchService = {
           return list;
         }
         throw err;
-      }
     }
   },
 
@@ -896,19 +811,11 @@ export const DispatchService = {
   },
 
   syncCleanPayrollsForDate: async (date: string): Promise<{ success: boolean; date: string; synced: number }> => {
-    try {
-      return await apiRequest<{ success: boolean; date: string; synced: number }>(`/api/dispatch/payroll-logs/sync-day`, {
+          return await apiRequest<{ success: boolean; date: string; synced: number }>(`/api/dispatch/payroll-logs/sync-day`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date }),
       });
-    } catch {
-      return await apiRequest<{ success: boolean; date: string; synced: number }>(`/api/public/dispatch/payroll-logs/sync-day`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date }),
-      });
-    }
   },
 
   updatePayrollDepartmentLog: async (
@@ -920,13 +827,8 @@ export const DispatchService = {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        return await apiRequest<PayrollDepartmentLogRecord>(`/api/public/dispatch/payroll-logs/${encodeURIComponent(logId)}`, {
-          method: 'PUT',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const docRef = doc(db, 'payroll_logs', logId);
           await setDoc(docRef, { ...payload, updatedAt: new Date().toISOString() }, { merge: true });
@@ -934,7 +836,6 @@ export const DispatchService = {
           return { ...snap.data(), id: docRef.id } as PayrollDepartmentLogRecord;
         }
         throw err;
-      }
     }
   },
 
@@ -943,11 +844,7 @@ export const DispatchService = {
     try {
       const res = await apiRequest<TemporaryAssignment[]>(`/api/dispatch/temporary-assignments?${qStr}`);
       return Array.isArray(res) ? res : [];
-    } catch {
-      try {
-        const res = await apiRequest<TemporaryAssignment[]>(`/api/public/dispatch/temporary-assignments?${qStr}`);
-        return Array.isArray(res) ? res : [];
-      } catch (err) {
+    } catch (err) {
         if (db) {
           const qRef = collection(db, 'temporary_assignments');
           const snap = await getDocs(qRef);
@@ -959,25 +856,20 @@ export const DispatchService = {
           return list;
         }
         throw err;
-      }
     }
   },
 
   getTemporaryAssignment: async (id: string): Promise<TemporaryAssignment> => {
     try {
       return await apiRequest<TemporaryAssignment>(`/api/dispatch/temporary-assignments/${encodeURIComponent(id)}`);
-    } catch {
-      try {
-        return await apiRequest<TemporaryAssignment>(`/api/public/dispatch/temporary-assignments/${encodeURIComponent(id)}`);
-      } catch (err) {
-        if (db) {
-          const snap = await getDoc(doc(db, 'temporary_assignments', id));
-          if (snap.exists()) {
-            return { ...snap.data(), id: snap.id } as TemporaryAssignment;
-          }
+    } catch (err) {
+      if (db) {
+        const snap = await getDoc(doc(db, 'temporary_assignments', id));
+        if (snap.exists()) {
+          return { ...snap.data(), id: snap.id } as TemporaryAssignment;
         }
-        throw err;
       }
+      throw err;
     }
   },
 
@@ -996,13 +888,8 @@ export const DispatchService = {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        created = await apiRequest<TemporaryAssignment>('/api/public/dispatch/temporary-assignments', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const nowStr = new Date().toISOString();
           const id = `TA-${Date.now()}`;
@@ -1019,8 +906,7 @@ export const DispatchService = {
           created = rec;
         } else {
           throw err;
-        }
-      }
+    }
     }
 
     await DispatchService.applyTemporaryAssignmentToExistingDispatches(created).catch((e) =>
@@ -1123,13 +1009,8 @@ export const DispatchService = {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
-    } catch {
-      try {
-        updated = await apiRequest<TemporaryAssignment>(`/api/public/dispatch/temporary-assignments/${encodeURIComponent(id)}`, {
-          method: 'PUT',
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           const docRef = doc(db, 'temporary_assignments', id);
           await setDoc(docRef, cleanObj({ ...payload, updatedAt: new Date().toISOString() }), { merge: true });
@@ -1138,7 +1019,6 @@ export const DispatchService = {
         } else {
           throw err;
         }
-      }
     }
 
     // Sync any linked route_openings document
@@ -1465,6 +1345,7 @@ export const DispatchService = {
         }
       }
     } catch (err) {
+      if (isClientHttpError(err)) throw err;
       console.warn('[DispatchService] removeUnavailableVehicleFromDispatches error:', err);
     }
     return removedCount;
@@ -1475,12 +1356,8 @@ export const DispatchService = {
       await apiRequest(`/api/dispatch/temporary-assignments/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
-    } catch {
-      try {
-        await apiRequest(`/api/public/dispatch/temporary-assignments/${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-        });
-      } catch (err) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
         if (db) {
           await deleteDoc(doc(db, 'temporary_assignments', id));
           try {
@@ -1496,7 +1373,6 @@ export const DispatchService = {
           return;
         }
         throw err;
-      }
     }
   },
 

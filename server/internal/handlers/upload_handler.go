@@ -26,10 +26,79 @@ type Base64UploadRequest struct {
 	Folder   string `json:"folder,omitempty"`
 }
 
-const (
-	UploadDir     = "./uploads"
-	MaxUploadSize = 32 << 20 // 32 MB max
+var (
+	UploadDir           = resolveUploadDir()
+	MaxUploadSize int64 = 32 << 20 // 32 MB max
 )
+
+func resolveUploadDir() string {
+	if dir := uploadDirFromEnv(); dir != "" {
+		return dir
+	}
+	if root := findServerModuleRoot(); root != "" {
+		return filepath.Join(root, "uploads")
+	}
+	abs, err := filepath.Abs("uploads")
+	if err != nil {
+		return "uploads"
+	}
+	return abs
+}
+
+// ActiveUploadDir returns the directory used for the current request.
+// UPLOAD_DIR and UPLOADS_DIR override the directory chosen at startup.
+func ActiveUploadDir() string {
+	if dir := uploadDirFromEnv(); dir != "" {
+		return dir
+	}
+	return UploadDir
+}
+
+func uploadDirFromEnv() string {
+	dir := strings.TrimSpace(os.Getenv("UPLOAD_DIR"))
+	if dir == "" {
+		dir = strings.TrimSpace(os.Getenv("UPLOADS_DIR"))
+	}
+	if dir == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return dir
+	}
+	return abs
+}
+
+func findServerModuleRoot() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	for i := 0; i < 8; i++ {
+		if isServerModule(dir) {
+			return dir
+		}
+		nested := filepath.Join(dir, "server")
+		if isServerModule(nested) {
+			return nested
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+	return ""
+}
+
+func isServerModule(dir string) bool {
+	return fileExists(filepath.Join(dir, "go.mod")) && fileExists(filepath.Join(dir, "cmd", "server", "main.go"))
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
 
 var allowedUploadExts = map[string]bool{
 	".jpg":  true,
@@ -46,7 +115,7 @@ var allowedUploadExts = map[string]bool{
 
 // EnsureUploadDir ensures the upload destination directory exists.
 func EnsureUploadDir() error {
-	return os.MkdirAll(UploadDir, 0755)
+	return os.MkdirAll(ActiveUploadDir(), 0755)
 }
 
 // UploadFileHandler handles multipart/form-data and base64 JSON file uploads.
@@ -97,7 +166,11 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	randBytes := make([]byte, 6)
 	_, _ = rand.Read(randBytes)
 	safeFilename := fmt.Sprintf("att_%d_%s%s", time.Now().UnixMilli(), hex.EncodeToString(randBytes), ext)
-	destPath := filepath.Join(UploadDir, safeFilename)
+	if err := EnsureUploadDir(); err != nil {
+		http.Error(w, `{"error":"upload directory is unavailable"}`, http.StatusInternalServerError)
+		return
+	}
+	destPath := filepath.Join(ActiveUploadDir(), safeFilename)
 
 	destFile, err := os.Create(destPath)
 	if err != nil {
@@ -113,7 +186,10 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	baseURL := determineBaseURL(r)
-	fileURL := fmt.Sprintf("%s/uploads/%s", baseURL, safeFilename)
+	fileURL := "/uploads/" + safeFilename
+	if baseURL != "" {
+		fileURL = baseURL + fileURL
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -125,6 +201,7 @@ func UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleBase64Upload(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadSize)
 	var req Base64UploadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
@@ -154,7 +231,11 @@ func handleBase64Upload(w http.ResponseWriter, r *http.Request) {
 	randBytes := make([]byte, 6)
 	_, _ = rand.Read(randBytes)
 	safeFilename := fmt.Sprintf("att_%d_%s%s", time.Now().UnixMilli(), hex.EncodeToString(randBytes), ext)
-	destPath := filepath.Join(UploadDir, safeFilename)
+	if err := EnsureUploadDir(); err != nil {
+		http.Error(w, `{"error":"upload directory is unavailable"}`, http.StatusInternalServerError)
+		return
+	}
+	destPath := filepath.Join(ActiveUploadDir(), safeFilename)
 
 	if err := os.WriteFile(destPath, decoded, 0644); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to write file: %v", err), http.StatusInternalServerError)
@@ -162,7 +243,10 @@ func handleBase64Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	baseURL := determineBaseURL(r)
-	fileURL := fmt.Sprintf("%s/uploads/%s", baseURL, safeFilename)
+	fileURL := "/uploads/" + safeFilename
+	if baseURL != "" {
+		fileURL = baseURL + fileURL
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -174,13 +258,23 @@ func handleBase64Upload(w http.ResponseWriter, r *http.Request) {
 }
 
 func determineBaseURL(r *http.Request) string {
-	proto := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		proto = "https"
+	if base := strings.TrimRight(strings.TrimSpace(os.Getenv("APP_BASE_URL")), "/"); base != "" {
+		return base
 	}
-	host := r.Host
-	if host == "" {
+	if base := strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/"); base != "" {
+		return base
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("APP_MODE")), "production") {
+		return ""
+	}
+	host := strings.TrimSpace(r.Host)
+	if !safeDevHost(host) {
 		host = "localhost:8080"
 	}
-	return fmt.Sprintf("%s://%s", proto, host)
+	return "http://" + host
+}
+
+func safeDevHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	return host == "localhost:8080" || host == "127.0.0.1:8080" || host == "localhost" || host == "127.0.0.1"
 }

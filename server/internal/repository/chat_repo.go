@@ -425,8 +425,39 @@ func (r *FirestoreChatRepository) ListMessages(ctx context.Context, channelID st
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
 	}
+	r.backfillDirectMessageMembers(ctx, channelID, messages)
 
 	return messages, nil
+}
+
+func (r *FirestoreChatRepository) backfillDirectMessageMembers(ctx context.Context, channelID string, messages []*models.ChatMessage) {
+	if !strings.HasPrefix(channelID, "dm-") && !strings.HasPrefix(channelID, "parent-") {
+		return
+	}
+	missing := false
+	for _, msg := range messages {
+		if msg != nil && len(msg.MemberIDs) == 0 && msg.ID != "" {
+			missing = true
+			break
+		}
+	}
+	if !missing {
+		return
+	}
+	channel, err := r.GetChannelByID(ctx, channelID)
+	if err != nil || channel == nil || len(channel.MemberIDs) == 0 {
+		return
+	}
+	col := r.client.Collection(r.channelColl).Doc(channelID).Collection("messages")
+	for _, msg := range messages {
+		if msg == nil || msg.ID == "" || len(msg.MemberIDs) > 0 {
+			continue
+		}
+		msg.MemberIDs = append([]string(nil), channel.MemberIDs...)
+		_, _ = col.Doc(msg.ID).Update(ctx, []firestore.Update{
+			{Path: "memberIds", Value: msg.MemberIDs},
+		})
+	}
 }
 
 // SendMessage writes message to subcollection and triggers push notification
@@ -442,6 +473,15 @@ func (r *FirestoreChatRepository) SendMessage(ctx context.Context, channelID str
 	now := time.Now().UTC()
 	msgID := fmt.Sprintf("msg-%d", now.UnixNano())
 
+	channelRef := r.client.Collection(r.channelColl).Doc(channelID)
+	var memberIDs []string
+	if chSnap, err := channelRef.Get(ctx); err == nil && chSnap.Exists() {
+		var ch models.ChatChannel
+		if err := chSnap.DataTo(&ch); err == nil {
+			memberIDs = ch.MemberIDs
+		}
+	}
+
 	msg := &models.ChatMessage{
 		ID:         msgID,
 		ChannelID:  channelID,
@@ -450,10 +490,10 @@ func (r *FirestoreChatRepository) SendMessage(ctx context.Context, channelID str
 		Text:       payload.Text,
 		MediaURL:   payload.MediaURL,
 		MediaType:  payload.MediaType,
+		MemberIDs:  memberIDs,
 		CreatedAt:  now,
 	}
 
-	channelRef := r.client.Collection(r.channelColl).Doc(channelID)
 	msgRef := channelRef.Collection("messages").Doc(msgID)
 
 	if _, err := msgRef.Set(ctx, msg); err != nil {
@@ -881,6 +921,10 @@ func (m *MemoryChatRepository) SendMessage(ctx context.Context, channelID string
 		senderName = ch.ParentName
 	}
 	now := time.Now().UTC()
+	var memberIDs []string
+	if ch, ok := m.channels[channelID]; ok {
+		memberIDs = ch.MemberIDs
+	}
 	msg := &models.ChatMessage{
 		ID:         fmt.Sprintf("msg-%d", now.UnixNano()),
 		ChannelID:  channelID,
@@ -889,6 +933,7 @@ func (m *MemoryChatRepository) SendMessage(ctx context.Context, channelID string
 		Text:       payload.Text,
 		MediaURL:   payload.MediaURL,
 		MediaType:  payload.MediaType,
+		MemberIDs:  memberIDs,
 		CreatedAt:  now,
 	}
 

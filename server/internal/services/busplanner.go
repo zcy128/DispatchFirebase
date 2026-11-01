@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -138,7 +140,7 @@ type BusPlannerService struct {
 func NewBusPlannerService(store busplannerStore) *BusPlannerService {
 	return &BusPlannerService{
 		store:  store,
-		client: &http.Client{Timeout: 45 * time.Second},
+		client: newBusPlannerHTTPClient(),
 		now:    time.Now,
 	}
 }
@@ -847,14 +849,96 @@ func normalizeBusPlannerBase(raw string) (string, error) {
 	if base == "" {
 		return busplannerDefaultBase, nil
 	}
-	if !strings.HasPrefix(strings.ToLower(base), "https://") && !strings.HasPrefix(strings.ToLower(base), "http://") {
+	lower := strings.ToLower(base)
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
 		return "", fmt.Errorf("base URL must start with https://")
 	}
 	u, err := url.Parse(base)
 	if err != nil || u.Host == "" {
 		return "", fmt.Errorf("base URL is not valid")
 	}
+	host := u.Hostname()
+	production := strings.EqualFold(strings.TrimSpace(os.Getenv("APP_MODE")), "production")
+	loopback := busPlannerLoopback(host)
+	if strings.HasPrefix(lower, "http://") && (production || !loopback) {
+		if production {
+			return "", fmt.Errorf("production base URL must start with https://")
+		}
+		return "", fmt.Errorf("base URL must start with https://")
+	}
+	if busPlannerHostBlocked(host) && !(!production && loopback) {
+		return "", fmt.Errorf("base URL host is not allowed")
+	}
 	return strings.TrimRight(base, "/"), nil
+}
+
+func busPlannerLoopback(host string) bool {
+	name := strings.ToLower(strings.TrimSpace(host))
+	if name == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(name)
+	return ip != nil && ip.IsLoopback()
+}
+
+func newBusPlannerHTTPClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			if ip := net.ParseIP(host); ip != nil {
+				if busPlannerIPBlocked(ip) {
+					return nil, fmt.Errorf("busplanner address is not allowed")
+				}
+				return dialer.DialContext(ctx, network, addr)
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil || len(ips) == 0 {
+				return nil, fmt.Errorf("busplanner address lookup failed")
+			}
+			for _, ip := range ips {
+				if busPlannerIPBlocked(ip.IP) {
+					return nil, fmt.Errorf("busplanner address is not allowed")
+				}
+			}
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+		},
+	}
+	return &http.Client{Timeout: 45 * time.Second, Transport: transport}
+}
+
+func busPlannerIPBlocked(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	production := strings.EqualFold(strings.TrimSpace(os.Getenv("APP_MODE")), "production")
+	if ip.IsLoopback() {
+		return production
+	}
+	return ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+}
+
+func busPlannerHostBlocked(host string) bool {
+	name := strings.ToLower(strings.TrimSpace(host))
+	if name == "" || name == "localhost" || strings.HasSuffix(name, ".local") {
+		return true
+	}
+	if ip := net.ParseIP(name); ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+	}
+	ips, err := net.LookupIP(name)
+	if err != nil {
+		return true
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeBusPlannerTimes(in []string) ([]string, error) {

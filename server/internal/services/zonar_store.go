@@ -58,6 +58,11 @@ func (s *ZonarStore) Load(ctx context.Context) (zonarSecret, error) {
 	if err := doc.DataTo(&secret); err != nil {
 		return zonarSecret{}, err
 	}
+	plain, err := openSecret(secret.Password)
+	if err != nil {
+		return zonarSecret{}, err
+	}
+	secret.Password = plain
 	return secret, nil
 }
 
@@ -69,7 +74,12 @@ func (s *ZonarStore) Save(ctx context.Context, secret zonarSecret) error {
 		s.hasMem = true
 		return nil
 	}
-	_, err := s.client.Collection(zonarSecretCollection).Doc(zonarSecretDocument).Set(ctx, secret)
+	sealed, err := sealSecret(secret.Password)
+	if err != nil {
+		return err
+	}
+	secret.Password = sealed
+	_, err = s.client.Collection(zonarSecretCollection).Doc(zonarSecretDocument).Set(ctx, secret)
 	return err
 }
 

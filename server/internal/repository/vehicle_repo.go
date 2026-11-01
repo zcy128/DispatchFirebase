@@ -63,7 +63,7 @@ func (r *FirestoreVehicleRepository) ListVehicles(ctx context.Context, filter Ve
 	iter := query.Documents(ctx)
 	defer iter.Stop()
 
-	var vehicles []*models.Vehicle
+	vehicles := make([]*models.Vehicle, 0)
 	searchTerm := strings.ToLower(strings.TrimSpace(filter.Search))
 
 	for {
@@ -263,7 +263,7 @@ func (r *InMemoryVehicleRepository) ListVehicles(_ context.Context, filter Vehic
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var result []*models.Vehicle
+	result := make([]*models.Vehicle, 0)
 	searchTerm := strings.ToLower(strings.TrimSpace(filter.Search))
 
 	for _, v := range r.vehicles {
@@ -414,6 +414,30 @@ func (r *InMemoryVehicleRepository) UpdateVehicle(_ context.Context, id string, 
 	}
 	if val, ok := updates["notes"].(string); ok {
 		v.Notes = val
+	}
+	if val, ok := updates["lastInspectionDate"].(string); ok {
+		v.LastInspectionDate = val
+	}
+	if val, ok := updates["nextInspectionDue"].(string); ok {
+		v.NextInspectionDue = val
+	}
+	if val, ok := updates["inspectionCertificateNumber"].(string); ok {
+		v.InspectionCertificateNumber = val
+	}
+	if val, ok := updates["inspectionStickerNumber"].(string); ok {
+		v.InspectionStickerNumber = val
+	}
+	if val, ok := updates["inspectionFacility"].(string); ok {
+		v.InspectionFacility = val
+	}
+	if val, ok := updates["hasInVehicleCertificate"].(bool); ok {
+		v.HasInVehicleCertificate = val
+	}
+	if val, ok := updates["hasDetailedMeasurementsArchived"].(bool); ok {
+		v.HasDetailedMeasurementsArchived = val
+	}
+	if val, ok := updates["hasProofOfRepairsAttached"].(bool); ok {
+		v.HasProofOfRepairsAttached = val
 	}
 	if val, ok := updates["zonarFleet"].(string); ok {
 		v.ZonarFleet = val

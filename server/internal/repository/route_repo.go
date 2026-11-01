@@ -55,8 +55,8 @@ func NewFirestoreRouteRepository(client *firestore.Client) *FirestoreRouteReposi
 func (r *FirestoreRouteRepository) ListRoutes(ctx context.Context, filter RouteFilter) ([]*models.BusRoute, error) {
 	query := r.client.Collection(r.routeColl).Query
 
-	if filter.Active != nil && *filter.Active {
-		query = query.Where("active", "==", true)
+	if filter.Active != nil {
+		query = query.Where("active", "==", *filter.Active)
 	}
 	if filter.YardID > 0 {
 		query = query.Where("yardId", "==", filter.YardID)

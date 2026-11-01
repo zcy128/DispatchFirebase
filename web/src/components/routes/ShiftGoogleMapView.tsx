@@ -1127,44 +1127,40 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
     });
   };
 
-  // Initialize Leaflet Map
+  // Initialize Leaflet once. Stop changes only refit the view.
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    if (!mapContainerRef.current || mapInstanceRef.current) return;
 
-    // Default Ottawa center
-    const defaultCenter: [number, number] =
-      stopsWithCoords.length > 0
-        ? [stopsWithCoords[0].resolvedLat, stopsWithCoords[0].resolvedLng]
-        : [45.368, -75.758];
+    const map = L.map(mapContainerRef.current, {
+      center: [45.368, -75.758],
+      zoom: 13,
+      zoomControl: false // custom position
+    });
 
-    // Create Map instance if not exists
-    let map = mapInstanceRef.current;
-    if (!map) {
-      map = L.map(mapContainerRef.current, {
-        center: defaultCenter,
-        zoom: 13,
-        zoomControl: false // custom position
-      });
+    L.control.zoom({ position: 'topright' }).addTo(map);
 
-      // Zoom control on top right
-      L.control.zoom({ position: 'topright' }).addTo(map);
+    const tileLayer = L.tileLayer(getTileUrl(mapLayer), {
+      subdomains: ['0', '1', '2', '3'],
+      maxZoom: 20,
+      attribution: getTileAttribution(mapLayer)
+    });
+    tileLayer.addTo(map);
+    tileLayerRef.current = tileLayer;
 
-      // Add Tile Layer
-      const tileLayer = L.tileLayer(getTileUrl(mapLayer), {
-        subdomains: ['0', '1', '2', '3'],
-        maxZoom: 20,
-        attribution: getTileAttribution(mapLayer)
-      });
-      tileLayer.addTo(map);
-      tileLayerRef.current = tileLayer;
+    mapInstanceRef.current = map;
+    map.on('zoomend', () => spreadOverlappingStopsRef.current());
 
-      mapInstanceRef.current = map;
-      map.on('zoomend', () => spreadOverlappingStopsRef.current());
-    }
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+      tileLayerRef.current = null;
+      delete (window as any).__resetStopToHome;
+    };
+  }, []);
 
-    // Invalidate size on initial mount
+  useEffect(() => {
     const timer = setTimeout(() => {
-      map?.invalidateSize();
+      mapInstanceRef.current?.invalidateSize();
       if (hasFittedBoundsForShiftRef.current !== shift?.id && stopsWithCoords.length > 0) {
         handleFitBounds();
         hasFittedBoundsForShiftRef.current = shift?.id || 'init';
@@ -1314,114 +1310,43 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
     const unitTitle = route.unitNumber ? `Bus ${route.unitNumber}` : 'Bus 1001';
     const driverTitle = route.driverName || 'Assigned Driver';
 
-    // 2. Compute Road Driving Route via OSRM or straight polyline fallback
+    // Draw the stop path locally. Stop coordinates stay in the browser.
     if (stopsWithCoords.length >= 2) {
-      setIsRouting(true);
+      const stopCoords: [number, number][] = stopsWithCoords.map((s) => [s.resolvedLat, s.resolvedLng]);
 
-      const coordsStr = stopsWithCoords.map((s) => `${s.resolvedLng},${s.resolvedLat}`).join(';');
-      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
+      const borderPolyline = L.polyline(stopCoords, {
+        color: '#1E3A8A',
+        weight: 7,
+        opacity: 0.7,
+        dashArray: '8, 8'
+      }).addTo(map);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const mainPolyline = L.polyline(stopCoords, {
+        color: '#3B82F6',
+        weight: 4,
+        opacity: 0.9,
+        dashArray: '6, 6'
+      }).addTo(map);
 
-      fetch(osrmUrl, { signal: controller.signal })
-        .then((res) => {
-          clearTimeout(timeoutId);
-          if (!res.ok) throw new Error(`OSRM HTTP ${res.status}`);
-          return res.json();
-        })
-        .then((data) => {
-          if (data?.routes?.[0]?.geometry?.coordinates) {
-            const rawCoords: [number, number][] = data.routes[0].geometry.coordinates.map(
-              (pt: [number, number]) => [pt[1], pt[0]] // GeoJSON is [lng, lat], Leaflet is [lat, lng]
-            );
+      polylineBorderRef.current = borderPolyline;
+      polylineRef.current = mainPolyline;
+      setRouteInfo(null);
+      setIsRouting(false);
 
-            // Border casing line
-            const borderPolyline = L.polyline(rawCoords, {
-              color: '#1E3A8A',
-              weight: 8,
-              opacity: 0.7,
-              lineCap: 'round',
-              lineJoin: 'round'
-            }).addTo(map);
+      if (showBus) {
+        const simulator = new GpsSimulator(stopCoords, stopHints, unitTitle, driverTitle);
+        simulator.setSpeedMultiplier(simSpeedMultiplier);
+        gpsSimulatorRef.current = simulator;
+        setVehicleState(simulator.getState());
+      } else {
+        gpsSimulatorRef.current = null;
+        setVehicleState(null);
+      }
 
-            // Main vibrant blue road line
-            const mainPolyline = L.polyline(rawCoords, {
-              color: '#3B82F6',
-              weight: 5,
-              opacity: 0.95,
-              lineCap: 'round',
-              lineJoin: 'round'
-            }).addTo(map);
-
-            polylineBorderRef.current = borderPolyline;
-            polylineRef.current = mainPolyline;
-
-            const distKm = Math.round((data.routes[0].distance / 1000) * 10) / 10;
-            const durMin = Math.round(data.routes[0].duration / 60);
-            setRouteInfo({ distanceKm: distKm, durationMin: durMin });
-
-            if (showBus) {
-              const simulator = new GpsSimulator(rawCoords, stopHints, unitTitle, driverTitle);
-              simulator.setSpeedMultiplier(simSpeedMultiplier);
-              gpsSimulatorRef.current = simulator;
-              setVehicleState(simulator.getState());
-            } else {
-              gpsSimulatorRef.current = null;
-              setVehicleState(null);
-              if (vehicleMarkerRef.current) {
-                vehicleMarkerRef.current.remove();
-                vehicleMarkerRef.current = null;
-              }
-            }
-          } else {
-            throw new Error('No OSRM geometry found');
-          }
-        })
-        .catch(() => {
-          // Fallback to straight stop-to-stop corridor
-          const stopCoords: [number, number][] = stopsWithCoords.map((s) => [s.resolvedLat, s.resolvedLng]);
-
-          const borderPolyline = L.polyline(stopCoords, {
-            color: '#1E3A8A',
-            weight: 7,
-            opacity: 0.7,
-            dashArray: '8, 8'
-          }).addTo(map);
-
-          const mainPolyline = L.polyline(stopCoords, {
-            color: '#3B82F6',
-            weight: 4,
-            opacity: 0.9,
-            dashArray: '6, 6'
-          }).addTo(map);
-
-          polylineBorderRef.current = borderPolyline;
-          polylineRef.current = mainPolyline;
-          setRouteInfo(null);
-
-          if (showBus) {
-            const simulator = new GpsSimulator(stopCoords, stopHints, unitTitle, driverTitle);
-            simulator.setSpeedMultiplier(simSpeedMultiplier);
-            gpsSimulatorRef.current = simulator;
-            setVehicleState(simulator.getState());
-          } else {
-            gpsSimulatorRef.current = null;
-            setVehicleState(null);
-            if (vehicleMarkerRef.current) {
-              vehicleMarkerRef.current.remove();
-              vehicleMarkerRef.current = null;
-            }
-          }
-        })
-        .finally(() => {
-          setIsRouting(false);
-          // Only automatically fit bounds when first loading this shift; do not reset zoom when dragging
-          if (hasFittedBoundsForShiftRef.current !== shift?.id && stopsWithCoords.length > 0) {
-            handleFitBounds();
-            hasFittedBoundsForShiftRef.current = shift?.id || 'init';
-          }
-        });
+      if (hasFittedBoundsForShiftRef.current !== shift?.id && stopsWithCoords.length > 0) {
+        handleFitBounds();
+        hasFittedBoundsForShiftRef.current = shift?.id || 'init';
+      }
     } else {
       if (hasFittedBoundsForShiftRef.current !== shift?.id && stopsWithCoords.length > 0) {
         handleFitBounds();

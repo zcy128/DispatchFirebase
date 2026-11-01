@@ -6,9 +6,12 @@ import {
   setDoc,
   deleteDoc,
   onSnapshot,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { apiRequest } from './api';
+import { apiRequest, isClientHttpError } from './api';
+import { listenerOwnEmployeeId } from '../utils/listenerScope';
 import {
   RouteAssessment,
   CreateRouteAssessmentPayload,
@@ -121,7 +124,7 @@ export const RouteAssessmentService = {
       if (filters?.endDate) params.append('endDate', filters.endDate);
 
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await apiRequest<RouteAssessment[]>(`/api/public/dispatch/route-assessments${qs}`);
+      const res = await apiRequest<RouteAssessment[]>(`/api/dispatch/route-assessments${qs}`);
       if (Array.isArray(res)) {
         return res.map((r) => normalizeAssessmentRecord(r, r.id));
       }
@@ -154,7 +157,7 @@ export const RouteAssessmentService = {
 
   getAssessment: async (id: string): Promise<RouteAssessment> => {
     try {
-      const res = await apiRequest<RouteAssessment>(`/api/public/dispatch/route-assessments/${id}`);
+      const res = await apiRequest<RouteAssessment>(`/api/dispatch/route-assessments/${id}`);
       return normalizeAssessmentRecord(res, res.id);
     } catch {
       if (db) {
@@ -169,19 +172,13 @@ export const RouteAssessmentService = {
 
   createAssessment: async (payload: CreateRouteAssessmentPayload): Promise<RouteAssessment> => {
     try {
-      const res = await apiRequest<RouteAssessment>('/api/public/dispatch/route-assessments', {
+      const res = await apiRequest<RouteAssessment>('/api/dispatch/route-assessments', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      const record = normalizeAssessmentRecord(res, res.id);
-      if (db) {
-        try {
-          const ref = doc(db, 'route_assessments', record.id);
-          await setDoc(ref, record);
-        } catch (_) {}
-      }
-      return record;
-    } catch {
+      return normalizeAssessmentRecord(res, res.id);
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
       if (db) {
         const ref = doc(collection(db, 'route_assessments'));
         const now = new Date().toISOString();
@@ -206,21 +203,15 @@ export const RouteAssessmentService = {
   ): Promise<RouteAssessment> => {
     try {
       const res = await apiRequest<RouteAssessment>(
-        `/api/public/dispatch/route-assessments/${id}/office`,
+        `/api/dispatch/route-assessments/${id}/office`,
         {
           method: 'PATCH',
           body: JSON.stringify(payload),
         }
       );
-      const record = normalizeAssessmentRecord(res, res.id);
-      if (db) {
-        try {
-          const ref = doc(db, 'route_assessments', id);
-          await setDoc(ref, { ...payload, updatedAt: new Date().toISOString() }, { merge: true });
-        } catch (_) {}
-      }
-      return record;
-    } catch {
+      return normalizeAssessmentRecord(res, res.id);
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
       if (db) {
         const ref = doc(db, 'route_assessments', id);
         const snap = await getDoc(ref);
@@ -248,21 +239,15 @@ export const RouteAssessmentService = {
   ): Promise<RouteAssessment> => {
     try {
       const res = await apiRequest<RouteAssessment>(
-        `/api/public/dispatch/route-assessments/${id}`,
+        `/api/dispatch/route-assessments/${id}`,
         {
           method: 'PUT',
           body: JSON.stringify(payload),
         }
       );
-      const record = normalizeAssessmentRecord(res, res.id);
-      if (db) {
-        try {
-          const ref = doc(db, 'route_assessments', id);
-          await setDoc(ref, { ...payload, updatedAt: new Date().toISOString() }, { merge: true });
-        } catch (_) {}
-      }
-      return record;
-    } catch {
+      return normalizeAssessmentRecord(res, res.id);
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
       if (db) {
         const ref = doc(db, 'route_assessments', id);
         const snap = await getDoc(ref);
@@ -282,15 +267,11 @@ export const RouteAssessmentService = {
 
   deleteAssessment: async (id: string): Promise<void> => {
     try {
-      await apiRequest(`/api/public/dispatch/route-assessments/${id}`, {
+      await apiRequest(`/api/dispatch/route-assessments/${id}`, {
         method: 'DELETE',
       });
-      if (db) {
-        try {
-          await deleteDoc(doc(db, 'route_assessments', id));
-        } catch (_) {}
-      }
-    } catch {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
       if (db) {
         await deleteDoc(doc(db, 'route_assessments', id));
       }
@@ -346,16 +327,22 @@ export const RouteAssessmentService = {
       }
     };
 
-    // 1. Initial fetch
+    // 1. Initial fetch. Polling starts only when the realtime listener is unavailable.
     fetchLatestRest();
 
-    // 2. Poll every 5s for background sync
-    pollTimer = setInterval(fetchLatestRest, pollingIntervalMs);
+    const startPolling = () => {
+      if (pollTimer) return;
+      pollTimer = setInterval(fetchLatestRest, pollingIntervalMs);
+    };
 
-    // 3. Real-time Firestore onSnapshot (live data <= 1 year)
+    // 2. Real-time Firestore onSnapshot (live data <= 1 year)
     if (db) {
       try {
-        const collRef = collection(db, 'route_assessments');
+        const ownId = listenerOwnEmployeeId();
+        const assessmentRef = collection(db, 'route_assessments');
+        const collRef = ownId
+          ? query(assessmentRef, where('conductedByEmployeeId', '==', ownId), where('createdAt', '>=', cutoffStr))
+          : query(assessmentRef, where('createdAt', '>=', cutoffStr));
         unsubscribeSnapshot = onSnapshot(
           collRef,
           (snapshot) => {
@@ -372,12 +359,16 @@ export const RouteAssessmentService = {
             emitMerged();
           },
           (error) => {
-            console.warn('[RouteAssessmentService] Firestore onSnapshot error, polling remains active:', error);
+            console.warn('[RouteAssessmentService] Firestore onSnapshot error, starting polling:', error);
+            startPolling();
           }
         );
       } catch (err) {
         console.warn('[RouteAssessmentService] Failed to establish onSnapshot:', err);
+        startPolling();
       }
+    } else {
+      startPolling();
     }
 
     // 4. Tab focus auto-sync

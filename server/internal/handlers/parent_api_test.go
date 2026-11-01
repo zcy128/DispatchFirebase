@@ -1,12 +1,16 @@
-﻿package handlers_test
+package handlers_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +27,8 @@ func setupTestEnvironment() (*handlers.ParentHandler, *handlers.TwilioWebhookHan
 		IsDevelopment:       true,
 		ApprovalSecret:      "test-secret",
 		ParentJWTSigningKey: "test-jwt-secret",
+		TwilioAuthToken:     "test-twilio-token",
+		AppBaseURL:          "http://localhost:8080",
 	}
 
 	studentRepo := repository.NewMemoryStudentRepository()
@@ -252,6 +258,7 @@ func TestTwilioInboundSMS(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/integrations/twilio/sms-inbound", strings.NewReader(formData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Twilio-Signature", signTwilioTest("test-twilio-token", "http://localhost:8080/api/integrations/twilio/sms-inbound", formData))
 	rec := httptest.NewRecorder()
 
 	twilioWebhookHandler.HandleTwilioInboundSMS(rec, req)
@@ -271,4 +278,19 @@ func TestTwilioInboundSMS(t *testing.T) {
 	if !strings.Contains(respBody, "Bus: #42") {
 		t.Errorf("expected Bus: #42 in SMS reply, got: %s", respBody)
 	}
+}
+
+func signTwilioTest(token, fullURL string, form url.Values) string {
+	keys := make([]string, 0, len(form))
+	for key := range form {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	payload := fullURL
+	for _, key := range keys {
+		payload += key + form.Get(key)
+	}
+	mac := hmac.New(sha1.New, []byte(token))
+	_, _ = mac.Write([]byte(payload))
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }

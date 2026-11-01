@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"dispatch-server/internal/auth"
 	"dispatch-server/internal/models"
 	"dispatch-server/internal/repository"
 	firebaseAuth "firebase.google.com/go/v4/auth"
@@ -17,6 +18,29 @@ type EmployeeHandler struct {
 	repo       repository.EmployeeRepository
 	authClient *firebaseAuth.Client
 	allowDemo  bool
+}
+
+func callerCanManageEmployees(r *http.Request) bool {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		return false
+	}
+	effective, _, _, _, _ := auth.ComputeEffectivePermissions(user.Role, user.PagePermissions)
+	return effective["employees"] == "readwrite"
+}
+
+func callerMayChangeAdminAccount(r *http.Request, existing *models.Employee) bool {
+	if existing == nil {
+		return false
+	}
+	protected := strings.EqualFold(existing.Role, "admin") ||
+		existing.EmployeeNumber == "EMP-ADMIN-001" ||
+		existing.ID == "EMP-ADMIN-001"
+	if !protected {
+		return true
+	}
+	caller := auth.GetUser(r.Context())
+	return caller != nil && strings.EqualFold(caller.Role, "admin")
 }
 
 func NewEmployeeHandler(repo repository.EmployeeRepository, authClient *firebaseAuth.Client, allowDemo bool) *EmployeeHandler {
@@ -81,6 +105,10 @@ func (h *EmployeeHandler) Get(w http.ResponseWriter, r *http.Request) {
 // Create inserts a new employee into the master database
 func (h *EmployeeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !callerCanManageEmployees(r) {
+		http.Error(w, `{"error":"forbidden: employee write permission required"}`, http.StatusForbidden)
+		return
+	}
 
 	var emp models.Employee
 	if err := json.NewDecoder(r.Body).Decode(&emp); err != nil {
@@ -91,6 +119,13 @@ func (h *EmployeeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(emp.FirstName) == "" || strings.TrimSpace(emp.LastName) == "" {
 		http.Error(w, `{"error":"firstName and lastName are required"}`, http.StatusBadRequest)
 		return
+	}
+	if strings.EqualFold(strings.TrimSpace(emp.Role), "admin") {
+		caller := auth.GetUser(r.Context())
+		if caller == nil || !strings.EqualFold(caller.Role, "admin") {
+			http.Error(w, `{"error":"forbidden: only an admin can create an admin account"}`, http.StatusForbidden)
+			return
+		}
 	}
 
 	// Auto-generate employeeNumber if blank
@@ -150,6 +185,10 @@ func (h *EmployeeHandler) Create(w http.ResponseWriter, r *http.Request) {
 // Update modifies an existing employee
 func (h *EmployeeHandler) Update(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !callerCanManageEmployees(r) {
+		http.Error(w, `{"error":"forbidden: employee write permission required"}`, http.StatusForbidden)
+		return
+	}
 	id := chi.URLParam(r, "id")
 
 	existing, err := h.repo.GetByID(r.Context(), id)
@@ -160,66 +199,110 @@ func (h *EmployeeHandler) Update(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if !callerMayChangeAdminAccount(r, existing) {
+		http.Error(w, `{"error":"forbidden: only an admin can modify an administrator account"}`, http.StatusForbidden)
+		return
+	}
 
-	var req models.Employee
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
 		return
 	}
 
-	// Update fields
-	if req.FirstName != "" {
-		existing.FirstName = strings.TrimSpace(req.FirstName)
+	setString := func(key string, dest *string) {
+		value, ok := raw[key]
+		if !ok {
+			return
+		}
+		var text string
+		if json.Unmarshal(value, &text) == nil {
+			*dest = strings.TrimSpace(text)
+		}
 	}
-	if req.LastName != "" {
-		existing.LastName = strings.TrimSpace(req.LastName)
+	setString("firstName", &existing.FirstName)
+	setString("lastName", &existing.LastName)
+	setString("middleName", &existing.MiddleName)
+	if _, ok := raw["username"]; ok {
+		setString("username", &existing.Username)
+		existing.Username = strings.ToLower(existing.Username)
 	}
-	// MiddleName can be updated or cleared
-	existing.MiddleName = strings.TrimSpace(req.MiddleName)
-
-	if req.Username != "" {
-		existing.Username = strings.ToLower(strings.TrimSpace(req.Username))
+	setString("employeeNumber", &existing.EmployeeNumber)
+	setString("mobilePhone", &existing.MobilePhone)
+	setString("workPhonePhone", &existing.WorkPhonePhone)
+	if _, ok := raw["workPhone"]; ok {
+		setString("workPhone", &existing.WorkPhonePhone)
 	}
-
-	if req.EmployeeNumber != "" {
-		existing.EmployeeNumber = strings.TrimSpace(req.EmployeeNumber)
+	setString("homePhone", &existing.HomePhone)
+	setString("personalEmail", &existing.PersonalEmail)
+	setString("workEmail", &existing.WorkEmail)
+	setString("jobPosition", &existing.JobPosition)
+	setString("personalAddress", &existing.PersonalAddress)
+	setString("yardId", &existing.YardID)
+	if value, ok := raw["dateHired"]; ok && string(value) != "null" {
+		var hired time.Time
+		if json.Unmarshal(value, &hired) == nil {
+			existing.DateHired = &hired
+		}
 	}
-	existing.MobilePhone = strings.TrimSpace(req.MobilePhone)
-	existing.WorkPhonePhone = strings.TrimSpace(req.WorkPhonePhone)
-	existing.HomePhone = strings.TrimSpace(req.HomePhone)
-	existing.PersonalEmail = strings.TrimSpace(req.PersonalEmail)
-	existing.WorkEmail = strings.TrimSpace(req.WorkEmail)
-	if req.JobPosition != "" {
-		existing.JobPosition = strings.TrimSpace(req.JobPosition)
+	if value, ok := raw["isActive"]; ok {
+		var active bool
+		if json.Unmarshal(value, &active) == nil {
+			existing.IsActive = active
+		}
 	}
-	if req.DateHired != nil {
-		existing.DateHired = req.DateHired
+	if value, ok := raw["lat"]; ok && string(value) != "null" {
+		var lat float64
+		if json.Unmarshal(value, &lat) == nil {
+			existing.Lat = &lat
+		}
 	}
-	existing.IsActive = req.IsActive
-	existing.PersonalAddress = strings.TrimSpace(req.PersonalAddress)
-	if req.Lat != nil {
-		existing.Lat = req.Lat
+	if value, ok := raw["lng"]; ok && string(value) != "null" {
+		var lng float64
+		if json.Unmarshal(value, &lng) == nil {
+			existing.Lng = &lng
+		}
 	}
-	if req.Lng != nil {
-		existing.Lng = req.Lng
+	if value, ok := raw["driverLicense"]; ok && string(value) != "null" {
+		var license models.DriverLicense
+		if json.Unmarshal(value, &license) == nil {
+			existing.DriverLicense = &license
+		}
 	}
-	if req.YardID != "" {
-		existing.YardID = req.YardID
+	if value, ok := raw["employeeContacts"]; ok {
+		var contacts []models.EmployeeContact
+		if json.Unmarshal(value, &contacts) == nil {
+			existing.EmployeeContacts = contacts
+		}
 	}
-	if req.DriverLicense != nil {
-		existing.DriverLicense = req.DriverLicense
+	if value, ok := raw["employeePhoto"]; ok && string(value) != "null" {
+		var photo models.EmployeePhoto
+		if json.Unmarshal(value, &photo) == nil {
+			existing.EmployeePhoto = &photo
+		}
 	}
-	if req.EmployeeContacts != nil {
-		existing.EmployeeContacts = req.EmployeeContacts
+	if value, ok := raw["role"]; ok {
+		var role string
+		if json.Unmarshal(value, &role) == nil && strings.TrimSpace(role) != "" && !strings.EqualFold(role, existing.Role) {
+			role = strings.TrimSpace(role)
+			caller := auth.GetUser(r.Context())
+			if strings.EqualFold(role, "admin") && (caller == nil || !strings.EqualFold(caller.Role, "admin")) {
+				http.Error(w, `{"error":"forbidden: only an admin can grant the admin role"}`, http.StatusForbidden)
+				return
+			}
+			existing.Role = role
+		}
 	}
-	if req.EmployeePhoto != nil {
-		existing.EmployeePhoto = req.EmployeePhoto
-	}
-	if req.Role != "" {
-		existing.Role = req.Role
-	}
-	if req.PagePermissions != nil {
-		existing.PagePermissions = req.PagePermissions
+	if value, ok := raw["pagePermissions"]; ok {
+		caller := auth.GetUser(r.Context())
+		if caller == nil || !strings.EqualFold(caller.Role, "admin") {
+			http.Error(w, `{"error":"forbidden: only an admin can change page permissions"}`, http.StatusForbidden)
+			return
+		}
+		var permissions map[string]string
+		if json.Unmarshal(value, &permissions) == nil {
+			existing.PagePermissions = permissions
+		}
 	}
 
 	existing.ComputeComputedFields()
@@ -246,6 +329,10 @@ func (h *EmployeeHandler) Update(w http.ResponseWriter, r *http.Request) {
 // Delete removes an employee record
 func (h *EmployeeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !callerCanManageEmployees(r) {
+		http.Error(w, `{"error":"forbidden: employee write permission required"}`, http.StatusForbidden)
+		return
+	}
 	id := chi.URLParam(r, "id")
 
 	existing, err := h.repo.GetByID(r.Context(), id)
@@ -255,6 +342,10 @@ func (h *EmployeeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"employee not found"}`, http.StatusNotFound)
 			return
 		}
+	}
+	if !callerMayChangeAdminAccount(r, existing) {
+		http.Error(w, `{"error":"forbidden: only an admin can delete an administrator account"}`, http.StatusForbidden)
+		return
 	}
 
 	if err := h.repo.Delete(r.Context(), existing.ID); err != nil {

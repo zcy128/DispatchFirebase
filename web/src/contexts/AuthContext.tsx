@@ -12,7 +12,8 @@ interface AuthContextType {
   loginAsMockAdmin: (customUser?: { username?: string; role?: string; displayName?: string; overrides?: Record<string, PermissionLevel> }) => Promise<void>;
   loginWithFirebase: (email: string, pass: string) => Promise<void>;
   logout: () => Promise<void>;
-  setupFirstAdmin: (email?: string, password?: string) => Promise<void>;
+  setupFirstAdmin: (email?: string, password?: string, adminSecret?: string) => Promise<void>;
+  updateCurrentUser: (patch: Partial<AuthUser>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -39,7 +40,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentUser(JSON.parse(storedAuthUser));
         setIsMockMode(false);
         setLoading(false);
-        return;
       } catch {
         localStorage.removeItem('dispatch_auth_user');
         localStorage.removeItem('dispatch_auth_token');
@@ -178,7 +178,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           uid: user.uid,
           email: user.email || loginEmail,
           role,
-          employeeId: employeeId || 'EMP-1002',
+          employeeId,
           displayName,
           overrides,
         };
@@ -192,7 +192,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           status: 'success',
           username: loginEmail,
           employeeName: displayName,
-          employeeId: employeeId || 'EMP-1002',
+          employeeId,
           role,
           app: 'Dispatch Web Hub',
           appVersion: 'v1.0.0',
@@ -227,12 +227,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const setupFirstAdmin = async (email = 'admin@dispatch.local', password = 'Admin@Dispatch2026!') => {
+  const updateCurrentUser = (patch: Partial<AuthUser>) => {
+    setCurrentUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      try {
+        localStorage.setItem('dispatch_auth_user', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  const setupFirstAdmin = async (email = 'admin@dispatch.local', password = 'Admin@Dispatch2026!', adminSecret?: string) => {
     try {
-      await fetch('http://localhost:8080/api/auth/setup-admin', {
+      const headers: Record<string, string> = {};
+      if (adminSecret) {
+        headers['X-Admin-Secret'] = adminSecret;
+      }
+      await apiRequest('/api/auth/setup-admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        headers,
+        body: JSON.stringify({ email, password }),
       });
     } catch {
       // ignore
@@ -248,7 +265,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginAsMockAdmin,
         loginWithFirebase,
         logout,
-        setupFirstAdmin
+        setupFirstAdmin,
+        updateCurrentUser,
       }}
     >
       {children}

@@ -13,6 +13,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { apiRequest } from './api';
 import {
   RouteOpening,
   CreateRouteOpeningPayload,
@@ -59,22 +60,28 @@ export const RouteOpeningService = {
    * List all route openings
    */
   listOpenings: async (): Promise<RouteOpening[]> => {
-    if (!db) return [];
-    try {
-      const q = query(collection(db, COLLECTION_NAME), orderBy('createdAt', 'desc'));
-      const snap = await getDocs(q);
-      const list: RouteOpening[] = [];
-      snap.forEach((d) => {
-        list.push({ ...(d.data() as RouteOpening), id: d.id });
-      });
-      RouteOpeningService.syncEffectivePermanentOpenings(list).catch((e) =>
-        console.warn('[RouteOpeningService] Auto-sync permanent openings notice:', e)
-      );
-      return list;
-    } catch (err) {
-      console.error('[RouteOpeningService] Error listing openings:', err);
-      return [];
+    if (db) {
+      try {
+        const q = query(collection(db, COLLECTION_NAME), orderBy('createdAt', 'desc'));
+        const snap = await getDocs(q);
+        const list: RouteOpening[] = [];
+        snap.forEach((d) => {
+          list.push({ ...(d.data() as RouteOpening), id: d.id });
+        });
+        RouteOpeningService.syncEffectivePermanentOpenings(list).catch((e) =>
+          console.warn('[RouteOpeningService] Auto-sync permanent openings notice:', e)
+        );
+        return list;
+      } catch (err) {
+        const message = String((err as { message?: string })?.message || err || '');
+        const code = String((err as { code?: string })?.code || '');
+        if (!code.includes('permission-denied') && !message.includes('Missing or insufficient permissions')) {
+          console.warn('[RouteOpeningService] Error listing openings, falling back to API:', err);
+        }
+      }
     }
+    const list = await apiRequest<RouteOpening[]>('/api/route-openings');
+    return Array.isArray(list) ? list : [];
   },
 
   /**
@@ -104,9 +111,11 @@ export const RouteOpeningService = {
           );
         },
         (error) => {
-          console.error('[RouteOpeningService] onSnapshot listener error:', error);
-          if (onError) onError(error);
-          RouteOpeningService.listOpenings().then(onUpdate).catch(console.error);
+          console.warn('[RouteOpeningService] onSnapshot listener error, falling back to API:', error);
+          RouteOpeningService.listOpenings().then(onUpdate).catch((err) => {
+            console.error('[RouteOpeningService] route opening API fallback failed:', err);
+            if (onError) onError(err as Error);
+          });
         }
       );
       return unsubscribe;

@@ -28,30 +28,28 @@ func (h *AIHandler) ProcessChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Enrich operator information and role from authenticated user context if not explicitly provided
+	// Enrich operator information and role from authenticated user context.
+	// For unauthenticated requests, strictly enforce guest role and discard any client-supplied userRole or permissions.
 	user := auth.GetUser(r.Context())
 	if user != nil {
-		if req.OperatorName == "" {
+		if user.Email != "" {
 			req.OperatorName = user.Email
 		}
-		if req.OperatorID == "" {
+		if user.UID != "" {
 			req.OperatorID = user.UID
 		}
-		if req.UserRole == "" && user.Role != "" {
+		if user.EmployeeID != "" {
+			req.OperatorID = user.EmployeeID
+		}
+		if user.Role != "" {
 			req.UserRole = user.Role
 		}
-		if req.PagePermissions == nil && user.PagePermissions != nil {
-			req.PagePermissions = user.PagePermissions
-		}
-	}
-
-	if req.UserRole == "" {
-		if headerRole := r.Header.Get("X-User-Role"); headerRole != "" {
-			req.UserRole = headerRole
-		}
-	}
-	if req.UserRole == "" {
-		req.UserRole = "dispatcher"
+		req.PagePermissions = user.PagePermissions
+	} else {
+		req.UserRole = "guest"
+		req.OperatorName = "Guest"
+		req.OperatorID = ""
+		req.PagePermissions = nil
 	}
 	if req.OperatorName == "" {
 		req.OperatorName = "Dispatcher"
@@ -59,7 +57,7 @@ func (h *AIHandler) ProcessChat(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.aiService.ProcessChat(r.Context(), &req)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"ai request failed"}`, http.StatusInternalServerError)
 		return
 	}
 

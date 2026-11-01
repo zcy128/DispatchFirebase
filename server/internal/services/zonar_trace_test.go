@@ -51,7 +51,7 @@ func TestVehicleTraceAndIdlesUseVehicleIDAndAreNotStored(t *testing.T) {
 	if trace.Persisted || trace.VehicleID != 1003 || trace.AssetID != 40 || len(trace.Points) != 1 || trace.Points[0].Lat != 45.4 {
 		t.Fatalf("trace = %+v", trace)
 	}
-	if trace.Points[0].Heading != 360 {
+	if trace.Points[0].Heading != 0 {
 		t.Fatalf("heading = %d", trace.Points[0].Heading)
 	}
 	idles, err := svc.VehicleIdles(ctx, "1003", "2026-10-21T10:00:00Z", "2026-10-21T12:00:00Z")

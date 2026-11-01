@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"dispatch-server/internal/auth"
@@ -18,10 +20,34 @@ import (
 type DispatchHandler struct {
 	repo      repository.DispatchRepository
 	allowDemo bool
+	sms       parentSMSSender
+	email     parentEmailSender
+	students  studentContactSource
+}
+
+type studentContactSource interface {
+	FindByStudentID(ctx context.Context, studentID int) (*models.Student, error)
+}
+
+type parentSMSSender interface {
+	SendSMS(toPhone, messageBody string) error
+}
+
+type parentEmailSender interface {
+	SendEmail(to []string, subject, htmlBody, textBody string) error
 }
 
 func NewDispatchHandler(repo repository.DispatchRepository, allowDemo bool) *DispatchHandler {
 	return &DispatchHandler{repo: repo, allowDemo: allowDemo}
+}
+
+func (h *DispatchHandler) UseStudentLookup(students studentContactSource) {
+	h.students = students
+}
+
+func (h *DispatchHandler) UseParentNotifiers(sms parentSMSSender, email parentEmailSender) {
+	h.sms = sms
+	h.email = email
 }
 
 func (h *DispatchHandler) rejectSimulation(w http.ResponseWriter) bool {
@@ -37,6 +63,12 @@ func (h *DispatchHandler) rejectSimulation(w http.ResponseWriter) bool {
 // CreateDay creates daily dispatch shifts for target date
 func (h *DispatchHandler) CreateDay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || !authUser.CanManageDailyDispatch() {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to generate daily dispatch"}`, http.StatusForbidden)
+		return
+	}
 
 	var req models.CreateDispatchDayRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -54,6 +86,17 @@ func (h *DispatchHandler) CreateDay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"date is required (YYYY-MM-DD)"}`, http.StatusBadRequest)
 		return
 	}
+	if strings.EqualFold(r.URL.Query().Get("dryRun"), "true") {
+		req.DryRun = true
+	}
+	if req.DryRun {
+		json.NewEncoder(w).Encode(models.CreateDispatchDayResult{
+			Date:    req.Date,
+			Created: 0,
+			Message: "Dry run only. No dispatch shifts were written.",
+		})
+		return
+	}
 
 	result, err := h.repo.CreateDay(r.Context(), req.Date, req.RouteNoFilter)
 	if err != nil {
@@ -68,6 +111,12 @@ func (h *DispatchHandler) CreateDay(w http.ResponseWriter, r *http.Request) {
 func (h *DispatchHandler) DeleteDay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || !authUser.CanManageDailyDispatch() {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to clear daily dispatch"}`, http.StatusForbidden)
+		return
+	}
+
 	date := r.URL.Query().Get("date")
 	if date == "" {
 		http.Error(w, `{"error":"date parameter is required"}`, http.StatusBadRequest)
@@ -81,6 +130,7 @@ func (h *DispatchHandler) DeleteDay(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
+		"date":    date,
 		"message": "Dispatch day cleared successfully for " + date,
 	})
 }
@@ -198,6 +248,9 @@ func (h *DispatchHandler) RecordStopArrival(w http.ResponseWriter, r *http.Reque
 		http.Error(w, `{"error":"invalid stopId"}`, http.StatusBadRequest)
 		return
 	}
+	if !h.callerAssignedToShift(w, r, shiftID) {
+		return
+	}
 
 	var req models.RecordArrivalRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -238,6 +291,9 @@ func (h *DispatchHandler) UpdateStudentStatus(w http.ResponseWriter, r *http.Req
 	studentID, err := strconv.Atoi(studentIDStr)
 	if err != nil {
 		http.Error(w, `{"error":"invalid studentId"}`, http.StatusBadRequest)
+		return
+	}
+	if !h.callerAssignedToShift(w, r, shiftID) {
 		return
 	}
 
@@ -349,18 +405,33 @@ func (h *DispatchHandler) CancelStudentAbsence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	user := r.Header.Get("X-User-Id")
-	if user == "" {
-		user = "Dispatcher"
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	if !authUser.CanManageDailyDispatch() {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+	actor := strings.TrimSpace(authUser.FullName)
+	if actor == "" {
+		actor = strings.TrimSpace(authUser.Email)
+	}
+	if actor == "" {
+		actor = strings.TrimSpace(authUser.EmployeeID)
+	}
+	if actor == "" {
+		actor = "Dispatcher"
 	}
 
-	err := h.repo.CancelStudentAbsence(r.Context(), id, user)
+	err := h.repo.CancelStudentAbsence(r.Context(), id, actor)
 	if err != nil {
 		http.Error(w, `{"error":"failed to cancel student absence: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
 
-	w.Write([]byte(`{"success":true,"id":"` + id + `"}`))
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "id": id})
 }
 
 // SplitShift partitions a dispatch shift into two or more separate shifts
@@ -395,6 +466,13 @@ func (h *DispatchHandler) SplitShift(w http.ResponseWriter, r *http.Request) {
 // GetPayrollSettings returns global dispatch payroll defaults
 func (h *DispatchHandler) GetPayrollSettings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || (!authUser.HasModulePermission("dispatch_payroll", false) && !authUser.HasModulePermission("payroll", false)) {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to view payroll settings"}`, http.StatusForbidden)
+		return
+	}
+
 	settings, err := h.repo.GetPayrollSettings(r.Context())
 	if err != nil {
 		http.Error(w, `{"error":"failed to get dispatch payroll settings: `+err.Error()+`"}`, http.StatusInternalServerError)
@@ -406,6 +484,13 @@ func (h *DispatchHandler) GetPayrollSettings(w http.ResponseWriter, r *http.Requ
 // SavePayrollSettings updates global dispatch payroll defaults
 func (h *DispatchHandler) SavePayrollSettings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || (!authUser.HasModulePermission("dispatch_payroll", true) && !authUser.HasModulePermission("payroll", true)) {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to update payroll settings"}`, http.StatusForbidden)
+		return
+	}
+
 	var settings models.DispatchPayrollSettings
 	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
@@ -553,6 +638,28 @@ func (h *DispatchHandler) CheckInDriver(w http.ResponseWriter, r *http.Request) 
 	if shiftID == "" {
 		http.Error(w, `{"error":"shift id is required"}`, http.StatusBadRequest)
 		return
+	}
+
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	if authUser != nil {
+		canManage := authUser.CanManageDailyDispatch()
+		if !canManage {
+			shift, err := h.repo.GetShiftByID(r.Context(), shiftID)
+			if err != nil || shift == nil {
+				http.Error(w, `{"error":"dispatch shift not found"}`, http.StatusNotFound)
+				return
+			}
+			isAssignedDriver := sameSignoutEmployee(authUser.EmployeeID, shift.DriverID) ||
+				(authUser.UID != "" && authUser.UID == shift.DriverID)
+			if !isAssignedDriver {
+				http.Error(w, `{"error":"forbidden: cannot perform driver check-in for another employee"}`, http.StatusForbidden)
+				return
+			}
+		}
 	}
 
 	var req models.DriverCheckInRequest
@@ -736,6 +843,34 @@ func (h *DispatchHandler) CheckOutCrew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	if authUser != nil {
+		canManage := authUser.CanManageDailyDispatch()
+		if !canManage {
+			shift, err := h.repo.GetShiftByID(r.Context(), shiftID)
+			if err != nil || shift == nil {
+				http.Error(w, `{"error":"dispatch shift not found"}`, http.StatusNotFound)
+				return
+			}
+			isSelf := false
+			if strings.EqualFold(req.Role, "attendant") {
+				isSelf = sameSignoutEmployee(authUser.EmployeeID, shift.AttendantID) ||
+					(authUser.UID != "" && authUser.UID == shift.AttendantID)
+			} else {
+				isSelf = sameSignoutEmployee(authUser.EmployeeID, shift.DriverID) ||
+					(authUser.UID != "" && authUser.UID == shift.DriverID)
+			}
+			if !isSelf {
+				http.Error(w, `{"error":"forbidden: cannot perform checkout for another employee"}`, http.StatusForbidden)
+				return
+			}
+		}
+	}
+
 	updated, err := h.repo.CheckOutCrew(r.Context(), shiftID, &req)
 	if err != nil {
 		if err == repository.ErrDispatchShiftNotFound {
@@ -758,6 +893,12 @@ func (h *DispatchHandler) ApproveDispatchPayroll(w http.ResponseWriter, r *http.
 		return
 	}
 
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || (!authUser.HasModulePermission("dispatch_payroll", true) && !authUser.HasModulePermission("payroll", true)) {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to approve dispatch payroll"}`, http.StatusForbidden)
+		return
+	}
+
 	var req models.ApproveDispatchPayrollRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
@@ -776,6 +917,12 @@ func (h *DispatchHandler) RejectDispatchPayroll(w http.ResponseWriter, r *http.R
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, `{"error":"payroll id is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || (!authUser.HasModulePermission("dispatch_payroll", true) && !authUser.HasModulePermission("payroll", true)) {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to reject dispatch payroll"}`, http.StatusForbidden)
 		return
 	}
 
@@ -878,6 +1025,9 @@ func (h *DispatchHandler) GetTemporaryAssignmentByID(w http.ResponseWriter, r *h
 // CreateTemporaryAssignment creates a new temporary assignment for a route/shift
 func (h *DispatchHandler) CreateTemporaryAssignment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "temporary_assignments") {
+		return
+	}
 	var req models.CreateTemporaryAssignmentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
@@ -906,6 +1056,9 @@ func (h *DispatchHandler) CreateTemporaryAssignment(w http.ResponseWriter, r *ht
 // UpdateTemporaryAssignment modifies an existing temporary assignment
 func (h *DispatchHandler) UpdateTemporaryAssignment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "temporary_assignments") {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, `{"error":"assignment id is required"}`, http.StatusBadRequest)
@@ -930,6 +1083,9 @@ func (h *DispatchHandler) UpdateTemporaryAssignment(w http.ResponseWriter, r *ht
 // DeleteTemporaryAssignment removes a temporary assignment
 func (h *DispatchHandler) DeleteTemporaryAssignment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "temporary_assignments") {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, `{"error":"assignment id is required"}`, http.StatusBadRequest)
@@ -950,6 +1106,12 @@ func (h *DispatchHandler) DeleteTemporaryAssignment(w http.ResponseWriter, r *ht
 func (h *DispatchHandler) ListTimeOffRequests(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	employeeID := r.URL.Query().Get("employeeId")
+	if ownID, limited, ok := ownRecordEmployeeID(r); !ok {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	} else if limited {
+		employeeID = ownID
+	}
 	status := r.URL.Query().Get("status")
 	date := r.URL.Query().Get("date")
 
@@ -1028,6 +1190,23 @@ func (h *DispatchHandler) UpdateTimeOffRequest(w http.ResponseWriter, r *http.Re
 		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
 		return
 	}
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	existing, getErr := h.repo.GetTimeOffRequestByID(r.Context(), id)
+	if getErr != nil || existing == nil {
+		http.Error(w, `{"error":"time off request not found"}`, http.StatusNotFound)
+		return
+	}
+	owns := sameSignoutEmployee(user.EmployeeID, existing.EmployeeID) ||
+		sameSignoutEmployee(user.EmployeeID, existing.EmployeeNumber) ||
+		(strings.TrimSpace(user.UID) != "" && user.UID == existing.RequestedByUserID)
+	if !owns && !user.HasModulePermission("time_off", true) {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
 
 	var req models.UpdateTimeOffRequestPayload
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1053,6 +1232,12 @@ func (h *DispatchHandler) ApproveTimeOffRequest(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || !authUser.HasModulePermission("time_off", true) {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to approve time off requests"}`, http.StatusForbidden)
+		return
+	}
+
 	var req models.ReviewTimeOffRequestPayload
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
@@ -1074,6 +1259,12 @@ func (h *DispatchHandler) RejectTimeOffRequest(w http.ResponseWriter, r *http.Re
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || !authUser.HasModulePermission("time_off", true) {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to reject time off requests"}`, http.StatusForbidden)
 		return
 	}
 
@@ -1118,6 +1309,9 @@ func (h *DispatchHandler) CancelTimeOffRequest(w http.ResponseWriter, r *http.Re
 // DeleteTimeOffRequest removes a time off request (HR/Admin only)
 func (h *DispatchHandler) DeleteTimeOffRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "time_off") {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
@@ -1167,6 +1361,9 @@ func (h *DispatchHandler) GetTrainingCourseByID(w http.ResponseWriter, r *http.R
 // CreateTrainingCourse creates a new training course session
 func (h *DispatchHandler) CreateTrainingCourse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "training") {
+		return
+	}
 	var req models.CreateTrainingCoursePayload
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
@@ -1185,6 +1382,9 @@ func (h *DispatchHandler) CreateTrainingCourse(w http.ResponseWriter, r *http.Re
 // UpdateTrainingCourse updates a training course
 func (h *DispatchHandler) UpdateTrainingCourse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "training") {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
@@ -1208,6 +1408,9 @@ func (h *DispatchHandler) UpdateTrainingCourse(w http.ResponseWriter, r *http.Re
 // PublishTrainingCourse changes status to published
 func (h *DispatchHandler) PublishTrainingCourse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "training") {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
@@ -1225,6 +1428,9 @@ func (h *DispatchHandler) PublishTrainingCourse(w http.ResponseWriter, r *http.R
 // CancelTrainingCourse changes status to cancelled
 func (h *DispatchHandler) CancelTrainingCourse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "training") {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
@@ -1242,6 +1448,9 @@ func (h *DispatchHandler) CancelTrainingCourse(w http.ResponseWriter, r *http.Re
 // CompleteTrainingCourse changes status to completed
 func (h *DispatchHandler) CompleteTrainingCourse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "training") {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
@@ -1259,6 +1468,9 @@ func (h *DispatchHandler) CompleteTrainingCourse(w http.ResponseWriter, r *http.
 // DeleteTrainingCourse permanently deletes a course
 func (h *DispatchHandler) DeleteTrainingCourse(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "training") {
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
@@ -1553,6 +1765,9 @@ func (h *DispatchHandler) ListDefectReports(w http.ResponseWriter, r *http.Reque
 // UpdateDefectAssessment saves the fleet assessment, repair schedule, or resolution details.
 func (h *DispatchHandler) UpdateDefectAssessment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "defects") {
+		return
+	}
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -1577,6 +1792,9 @@ func (h *DispatchHandler) UpdateDefectAssessment(w http.ResponseWriter, r *http.
 // UpdateDefectStatus updates the status lifecycle of a defect report.
 func (h *DispatchHandler) UpdateDefectStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "defects") {
+		return
+	}
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -1662,6 +1880,12 @@ func (h *DispatchHandler) ListStudentIncidents(w http.ResponseWriter, r *http.Re
 
 	routeNo := r.URL.Query().Get("routeNo")
 	driverID := r.URL.Query().Get("driverId")
+	if ownID, limited, ok := ownRecordEmployeeID(r); !ok {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	} else if limited {
+		driverID = ownID
+	}
 	status := r.URL.Query().Get("status")
 	needsFollowUp := r.URL.Query().Get("needsFollowUp") == "true"
 	timeRange := r.URL.Query().Get("timeRange")
@@ -1700,6 +1924,9 @@ func (h *DispatchHandler) ListStudentIncidents(w http.ResponseWriter, r *http.Re
 // UpdateStudentIncidentOfficeFollowUp updates office review notes, disciplinary actions, and status.
 func (h *DispatchHandler) UpdateStudentIncidentOfficeFollowUp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "student_incidents") {
+		return
+	}
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -1724,6 +1951,9 @@ func (h *DispatchHandler) UpdateStudentIncidentOfficeFollowUp(w http.ResponseWri
 // UpdateStudentIncidentStatus updates the status of a student incident report.
 func (h *DispatchHandler) UpdateStudentIncidentStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "student_incidents") {
+		return
+	}
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -1816,6 +2046,12 @@ func (h *DispatchHandler) ListExpenseClaims(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 
 	employeeID := r.URL.Query().Get("employeeId")
+	if ownID, limited, ok := ownRecordEmployeeID(r); !ok {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	} else if limited {
+		employeeID = ownID
+	}
 	status := r.URL.Query().Get("status")
 	routeNo := r.URL.Query().Get("routeNo")
 	timeRange := r.URL.Query().Get("timeRange")
@@ -1855,6 +2091,12 @@ func (h *DispatchHandler) ReviewExpenseClaim(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || !authUser.CanReviewExpenses() {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to review expense claims"}`, http.StatusForbidden)
+		return
+	}
+
 	var req models.ReviewExpenseClaimPayload
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
@@ -1886,6 +2128,26 @@ func (h *DispatchHandler) CancelExpenseClaim(w http.ResponseWriter, r *http.Requ
 	var req models.CancelExpenseClaimPayload
 	// req body is optional
 	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	if !authUser.CanReviewExpenses() {
+		if strings.TrimSpace(authUser.EmployeeID) == "" {
+			http.Error(w, `{"error":"forbidden: employee id is required to cancel your own claim"}`, http.StatusForbidden)
+			return
+		}
+		req.EmployeeID = authUser.EmployeeID
+	} else if strings.TrimSpace(req.EmployeeID) == "" {
+		existing, err := h.repo.GetExpenseClaimByID(r.Context(), id)
+		if err != nil || existing == nil {
+			http.Error(w, `{"error":"expense claim not found"}`, http.StatusNotFound)
+			return
+		}
+		req.EmployeeID = existing.EmployeeID
+	}
 
 	record, err := h.repo.CancelExpenseClaim(r.Context(), id, req.EmployeeID)
 	if err != nil {
@@ -2002,6 +2264,9 @@ func (h *DispatchHandler) ListHazardReports(w http.ResponseWriter, r *http.Reque
 // UpdateHazardReportOffice handles office / safety risk potential evaluation updates.
 func (h *DispatchHandler) UpdateHazardReportOffice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "hazards") {
+		return
+	}
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -2127,6 +2392,9 @@ func (h *DispatchHandler) ListRouteAssessments(w http.ResponseWriter, r *http.Re
 // UpdateRouteAssessmentOffice updates only the Office section (Assigned To, Completed, Submitted).
 func (h *DispatchHandler) UpdateRouteAssessmentOffice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "route_assessments") {
+		return
+	}
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -2175,6 +2443,9 @@ func (h *DispatchHandler) UpdateRouteAssessment(w http.ResponseWriter, r *http.R
 // DeleteRouteAssessment deletes a route assessment.
 func (h *DispatchHandler) DeleteRouteAssessment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !h.requireModuleWrite(w, r, "route_assessments") {
+		return
+	}
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -2189,16 +2460,412 @@ func (h *DispatchHandler) DeleteRouteAssessment(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *DispatchHandler) checkFleetRole(w http.ResponseWriter, r *http.Request) bool {
+type notifyParentRecipient struct {
+	StudentID   int    `json:"studentId"`
+	StudentName string `json:"studentName"`
+	ContactName string `json:"contactName"`
+	Phone       string `json:"phone"`
+	Email       string `json:"email"`
+}
+
+type notifyParentsRequest struct {
+	DelayMinutes int                     `json:"delayMinutes"`
+	ReasonLabel  string                  `json:"reasonLabel"`
+	MessageText  string                  `json:"messageText"`
+	Channels     []string                `json:"channels"`
+	Recipients   []notifyParentRecipient `json:"recipients"`
+	Scope        string                  `json:"scope"`
+	StopID       *int                    `json:"stopId"`
+	StopSequence *int                    `json:"stopSequence"`
+	StopLocation string                  `json:"stopLocation"`
+	Notes        string                  `json:"notes"`
+}
+
+func phoneKey(raw string) string {
+	var b strings.Builder
+	for _, r := range raw {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	digits := b.String()
+	if len(digits) > 10 {
+		digits = digits[len(digits)-10:]
+	}
+	if len(digits) < 10 {
+		return ""
+	}
+	return digits
+}
+
+func emailKey(raw string) string {
+	email := strings.ToLower(strings.TrimSpace(raw))
+	if email == "" || email == "no email" || !strings.Contains(email, "@") {
+		return ""
+	}
+	return email
+}
+
+func matchingParentContact(student *models.Student, requestedPhone, requestedEmail string) (string, string) {
+	phones := map[string]string{}
+	emails := map[string]string{}
+	addPhone := func(raw string) {
+		key := phoneKey(raw)
+		if key == "" {
+			return
+		}
+		if _, exists := phones[key]; !exists {
+			phones[key] = strings.TrimSpace(raw)
+		}
+	}
+	addEmail := func(raw string) {
+		key := emailKey(raw)
+		if key == "" {
+			return
+		}
+		emails[key] = key
+	}
+	if student != nil {
+		addPhone(student.StudentPhone)
+		addPhone(student.StudentEmergencyPhone)
+		for _, contact := range student.Contacts {
+			addPhone(contact.MobilePhone)
+			addPhone(contact.HomePhone)
+			addPhone(contact.WorkPhone)
+			addEmail(contact.Email)
+		}
+	}
+	phone := ""
+	if key := phoneKey(requestedPhone); key != "" {
+		phone = phones[key]
+	}
+	email := ""
+	if key := emailKey(requestedEmail); key != "" {
+		email = emails[key]
+	}
+	return phone, email
+}
+
+func (h *DispatchHandler) verifiedParentRecipients(ctx context.Context, shift *models.DispatchShift, requested []notifyParentRecipient) ([]notifyParentRecipient, error) {
+	if h.students == nil {
+		return nil, fmt.Errorf("student directory is not configured")
+	}
+	onShift := map[int]struct{}{}
+	if shift != nil {
+		for _, stop := range shift.Stops {
+			for _, stu := range stop.AssignedStudents {
+				if stu.StudentID > 0 {
+					onShift[stu.StudentID] = struct{}{}
+				}
+			}
+		}
+	}
+	var out []notifyParentRecipient
+	for _, rec := range requested {
+		if _, ok := onShift[rec.StudentID]; !ok {
+			continue
+		}
+		student, err := h.students.FindByStudentID(ctx, rec.StudentID)
+		if err != nil || student == nil {
+			continue
+		}
+		phone, email := matchingParentContact(student, rec.Phone, rec.Email)
+		if phone == "" && email == "" {
+			continue
+		}
+		out = append(out, notifyParentRecipient{
+			StudentID:   rec.StudentID,
+			StudentName: strings.TrimSpace(rec.StudentName),
+			ContactName: strings.TrimSpace(rec.ContactName),
+			Phone:       phone,
+			Email:       email,
+		})
+	}
+	return out, nil
+}
+
+func (h *DispatchHandler) NotifyParents(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		http.Error(w, `{"error":"shift id is required"}`, http.StatusBadRequest)
+		return
+	}
 	user := auth.GetUser(r.Context())
-	if user != nil {
-		if strings.EqualFold(user.Role, "fleet") || strings.EqualFold(user.Role, "admin") || strings.EqualFold(user.Role, "manager") || strings.EqualFold(user.Role, "dispatcher") {
-			return true
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	role := strings.ToLower(strings.TrimSpace(user.Role))
+	if role == "driver" || role == "helper" {
+		http.Error(w, `{"error":"forbidden: dispatch write permission required"}`, http.StatusForbidden)
+		return
+	}
+	effective, _, _, _, _ := auth.ComputeEffectivePermissions(user.Role, user.PagePermissions)
+	if effective["dispatch"] != "readwrite" && role != "admin" && role != "dispatcher" && role != "manager" {
+		http.Error(w, `{"error":"forbidden: dispatch write permission required"}`, http.StatusForbidden)
+		return
+	}
+	var req notifyParentsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request payload"}`, http.StatusBadRequest)
+		return
+	}
+	if len(req.Recipients) == 0 {
+		http.Error(w, `{"error":"at least one recipient is required"}`, http.StatusBadRequest)
+		return
+	}
+	if len(req.Recipients) > 100 {
+		http.Error(w, `{"error":"too many recipients"}`, http.StatusBadRequest)
+		return
+	}
+	shift, err := h.repo.GetShiftByID(r.Context(), id)
+	if err != nil || shift == nil {
+		http.Error(w, `{"error":"dispatch shift not found"}`, http.StatusNotFound)
+		return
+	}
+
+	message := strings.TrimSpace(req.MessageText)
+	if message == "" {
+		message = fmt.Sprintf("Bus delay notice: %s. About %d minutes late.", strings.TrimSpace(req.ReasonLabel), req.DelayMinutes)
+	}
+	if len([]rune(message)) > 2000 {
+		http.Error(w, `{"error":"message is too long"}`, http.StatusBadRequest)
+		return
+	}
+	wantSMS := false
+	wantEmail := false
+	for _, channel := range req.Channels {
+		switch strings.ToLower(strings.TrimSpace(channel)) {
+		case "sms":
+			wantSMS = true
+		case "email":
+			wantEmail = true
 		}
 	}
 
-	http.Error(w, `{"error":"forbidden: only authorized fleet or dispatch staff can manage vehicle handover records"}`, http.StatusForbidden)
+	if !wantSMS && !wantEmail {
+		http.Error(w, `{"error":"at least one delivery channel (SMS or Email) is required"}`, http.StatusBadRequest)
+		return
+	}
+	verified, verifyErr := h.verifiedParentRecipients(r.Context(), shift, req.Recipients)
+	if verifyErr != nil {
+		http.Error(w, `{"error":"student directory unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+	if len(verified) == 0 {
+		http.Error(w, `{"error":"no recipients match students on this shift"}`, http.StatusBadRequest)
+		return
+	}
+	req.Recipients = verified
+
+	sentSMS := 0
+	sentEmail := 0
+	failed := 0
+	var sendMu sync.Mutex
+	jobs := make(chan notifyParentRecipient)
+	var wg sync.WaitGroup
+	workerCount := 4
+	if len(req.Recipients) < workerCount {
+		workerCount = len(req.Recipients)
+	}
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for recipient := range jobs {
+				localSMS := 0
+				localEmail := 0
+				localFailed := 0
+				phone := strings.TrimSpace(recipient.Phone)
+				emailAddr := strings.TrimSpace(recipient.Email)
+				if wantSMS && phone != "" && h.sms != nil {
+					if err := h.sms.SendSMS(phone, message); err != nil {
+						// Counted below when this recipient received nothing.
+					} else {
+						localSMS++
+					}
+				}
+				if wantEmail && emailAddr != "" && h.email != nil {
+					if err := h.email.SendEmail([]string{emailAddr}, "School bus delay notice", "<p>"+html.EscapeString(message)+"</p>", message); err != nil {
+						// Counted below when this recipient received nothing.
+					} else {
+						localEmail++
+					}
+				}
+				if localSMS == 0 && localEmail == 0 {
+					localFailed++
+				}
+				sendMu.Lock()
+				sentSMS += localSMS
+				sentEmail += localEmail
+				failed += localFailed
+				sendMu.Unlock()
+			}
+		}()
+	}
+	for _, recipient := range req.Recipients {
+		jobs <- recipient
+	}
+	close(jobs)
+	wg.Wait()
+
+	now := time.Now()
+	record := models.SentParentNotificationRecord{
+		ID:              fmt.Sprintf("notif_%d", now.UnixNano()),
+		Timestamp:       now.UTC().Format(time.RFC3339),
+		TimeStr:         now.Format("15:04"),
+		ReasonLabel:     req.ReasonLabel,
+		DelayMinutes:    req.DelayMinutes,
+		MessageText:     message,
+		Channels:        req.Channels,
+		RecipientsCount: len(req.Recipients),
+		Scope:           req.Scope,
+		StopID:          req.StopID,
+		StopSequence:    req.StopSequence,
+		StopLocation:    req.StopLocation,
+	}
+	notes := shift.DispatchComments
+	if strings.TrimSpace(notes) == "" {
+		notes = shift.Notes
+	}
+	addition := strings.TrimSpace(req.Notes)
+	if addition != "" && !strings.Contains(notes, addition) {
+		if notes != "" {
+			notes += "\n"
+		}
+		notes += addition
+	}
+	notifications := append(shift.ParentNotifications, record)
+	updated, err := h.repo.UpdateShift(r.Context(), id, &models.UpdateDispatchShiftRequest{
+		ParentNotifications: &notifications,
+		DispatchComments:    &notes,
+		Notes:               &notes,
+	})
+	if err != nil {
+		http.Error(w, `{"error":"failed to record parent notification"}`, http.StatusInternalServerError)
+		return
+	}
+	if updated != nil {
+		updated.Notes = updated.DispatchComments
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"shift":     updated,
+		"sentSms":   sentSMS,
+		"sentEmail": sentEmail,
+		"failed":    failed,
+	})
+}
+
+func (h *DispatchHandler) requireModuleWrite(w http.ResponseWriter, r *http.Request, module string) bool {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return false
+	}
+	if user.HasModulePermission(module, true) {
+		return true
+	}
+	http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 	return false
+}
+
+func ownRecordEmployeeID(r *http.Request) (string, bool, bool) {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		return "", false, false
+	}
+	role := strings.ToLower(strings.TrimSpace(user.Role))
+	if role != "driver" && role != "helper" {
+		return "", false, true
+	}
+	employeeID := strings.TrimSpace(user.EmployeeID)
+	if employeeID == "" {
+		return "__missing_employee__", true, true
+	}
+	return employeeID, true, true
+}
+
+func (h *DispatchHandler) checkFleetRole(w http.ResponseWriter, r *http.Request) bool {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return false
+	}
+	role := strings.ToLower(strings.TrimSpace(user.Role))
+	write := r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch || r.Method == http.MethodDelete
+	switch role {
+	case "fleet", "admin":
+		return true
+	case "manager", "dispatcher":
+		if !write {
+			return true
+		}
+	case "driver", "helper":
+		if !write {
+			return true
+		}
+		http.Error(w, `{"error":"forbidden: vehicle handover modification is limited to fleet staff"}`, http.StatusForbidden)
+		return false
+	}
+	effective, _, _, _, _ := auth.ComputeEffectivePermissions(user.Role, user.PagePermissions)
+	perm := effective["vehicle_signouts"]
+	if write && perm == "readwrite" {
+		return true
+	}
+	if !write && (perm == "readwrite" || perm == "readonly") {
+		return true
+	}
+	http.Error(w, `{"error":"forbidden: vehicle handover permission required"}`, http.StatusForbidden)
+	return false
+}
+
+func (h *DispatchHandler) callerAssignedToShift(w http.ResponseWriter, r *http.Request, shiftID string) bool {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return false
+	}
+	if user.CanManageDailyDispatch() {
+		return true
+	}
+	shift, err := h.repo.GetShiftByID(r.Context(), shiftID)
+	if err != nil || shift == nil {
+		http.Error(w, `{"error":"dispatch shift not found"}`, http.StatusNotFound)
+		return false
+	}
+	if sameSignoutEmployee(user.EmployeeID, shift.DriverID) ||
+		sameSignoutEmployee(user.EmployeeID, shift.AttendantID) ||
+		(user.UID != "" && (user.UID == shift.DriverID || user.UID == shift.AttendantID)) {
+		return true
+	}
+	http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+	return false
+}
+
+func sameSignoutEmployee(userID, recordID string) bool {
+	left := strings.TrimSpace(userID)
+	right := strings.TrimSpace(recordID)
+	if left == "" || right == "" {
+		return false
+	}
+	if strings.EqualFold(left, right) {
+		return true
+	}
+	return strings.EqualFold(strings.TrimPrefix(strings.ToUpper(left), "EMP-"), strings.TrimPrefix(strings.ToUpper(right), "EMP-"))
+}
+
+func (h *DispatchHandler) allowOwnOrFleetSignout(w http.ResponseWriter, r *http.Request, employeeID string) bool {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return false
+	}
+	role := strings.ToLower(strings.TrimSpace(user.Role))
+	if (role == "driver" || role == "helper") && sameSignoutEmployee(user.EmployeeID, employeeID) {
+		return true
+	}
+	return h.checkFleetRole(w, r)
 }
 
 // ─── Vehicle Sign-Out / Handover Handlers ────────────────────────────────────
@@ -2206,13 +2873,12 @@ func (h *DispatchHandler) checkFleetRole(w http.ResponseWriter, r *http.Request)
 // CreateVehicleSignout creates a new vehicle handover / signout record.
 func (h *DispatchHandler) CreateVehicleSignout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if !h.checkFleetRole(w, r) {
-		return
-	}
-
 	var req models.CreateVehicleSignoutPayload
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+	if !h.allowOwnOrFleetSignout(w, r, req.EmployeeID) {
 		return
 	}
 	if strings.TrimSpace(req.UnitNumber) == "" {
@@ -2268,6 +2934,12 @@ func (h *DispatchHandler) ListVehicleSignouts(w http.ResponseWriter, r *http.Req
 
 	unitNumber := r.URL.Query().Get("unitNumber")
 	employeeID := r.URL.Query().Get("employeeId")
+	if ownID, limited, ok := ownRecordEmployeeID(r); !ok {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	} else if limited {
+		employeeID = ownID
+	}
 	isSignInStr := r.URL.Query().Get("isSignIn")
 	startDate := r.URL.Query().Get("startDate")
 	endDate := r.URL.Query().Get("endDate")
@@ -2310,6 +2982,12 @@ func (h *DispatchHandler) ListAssignmentHistory(w http.ResponseWriter, r *http.R
 	asgType := r.URL.Query().Get("type")
 	action := r.URL.Query().Get("action")
 	driverID := r.URL.Query().Get("driverId")
+	if ownID, limited, ok := ownRecordEmployeeID(r); !ok {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	} else if limited {
+		driverID = ownID
+	}
 	driverName := r.URL.Query().Get("driverName")
 	routeNo := r.URL.Query().Get("routeNo")
 	unitNumber := r.URL.Query().Get("unitNumber")
@@ -2346,13 +3024,18 @@ func (h *DispatchHandler) ListAssignmentHistory(w http.ResponseWriter, r *http.R
 // UpdateVehicleSignout updates an existing vehicle handover record.
 func (h *DispatchHandler) UpdateVehicleSignout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if !h.checkFleetRole(w, r) {
-		return
-	}
 
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
+		return
+	}
+	existing, getErr := h.repo.GetVehicleSignoutByID(r.Context(), id)
+	if getErr != nil || existing == nil {
+		http.Error(w, `{"error":"vehicle signout not found"}`, http.StatusNotFound)
+		return
+	}
+	if !h.allowOwnOrFleetSignout(w, r, existing.EmployeeID) {
 		return
 	}
 

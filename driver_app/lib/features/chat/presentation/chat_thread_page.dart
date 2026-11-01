@@ -58,7 +58,7 @@ class _ChatThreadPageState extends State<ChatThreadPage> {
     // 2. Realtime Stream subscription
     try {
       _streamSubscription = widget.repository
-          .streamMessages(widget.channel.id)
+          .streamMessages(widget.channel.id, memberId: widget.driverId)
           .listen((incoming) {
         if (mounted && incoming.isNotEmpty) {
           _mergeMessages(incoming);
@@ -78,7 +78,10 @@ class _ChatThreadPageState extends State<ChatThreadPage> {
 
   Future<void> _fetchLatestMessages({bool silent = false}) async {
     try {
-      final list = await widget.repository.fetchMessages(widget.channel.id);
+      final list = await widget.repository.fetchMessages(
+        widget.channel.id,
+        memberId: widget.driverId,
+      );
       if (mounted) {
         _mergeMessages(list);
         if (_isLoading) {

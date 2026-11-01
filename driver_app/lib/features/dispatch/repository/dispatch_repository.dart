@@ -369,7 +369,7 @@ class DispatchRepository {
   }) async {
     try {
       final dateStr = formatDate(date);
-      var urlStr = '$apiBaseUrl/api/public/dispatch/shifts?date=$dateStr';
+      var urlStr = '$apiBaseUrl/api/dispatch/shifts?date=$dateStr';
       if (driverId != null && driverId.trim().isNotEmpty) {
         urlStr += '&driver=${Uri.encodeComponent(driverId.trim())}';
       }
@@ -463,7 +463,7 @@ class DispatchRepository {
 
     await _sendAccepted(
       'PUT',
-      Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/check-in'),
+      Uri.parse('$apiBaseUrl/api/dispatch/shifts/$dispatchId/check-in'),
       {'checkInTime': timeStr},
       'Check-in was not saved on the server. Try again.',
     );
@@ -503,34 +503,11 @@ class DispatchRepository {
         };
         if (hasComments) {
           shiftUpdates['driverCheckoutComments'] = comments;
-          shiftUpdates['payrollComments'] = comments;
         }
         await FirebaseFirestore.instance
             .collection('dispatch_shifts')
             .doc(dispatchId)
             .update(shiftUpdates);
-
-        final payrollId = 'DP-$dispatchId-driver';
-        final payrollUpdates = <String, dynamic>{
-          'checkOutTime': timeStr,
-          'updatedAt': nowIso,
-        };
-        if (hasComments) {
-          payrollUpdates['hasComments'] = true;
-          payrollUpdates['payrollComments'] = comments;
-          payrollUpdates['status'] = 'pending_approval';
-          payrollUpdates['syncedToFinance'] = false;
-        } else {
-          payrollUpdates['hasComments'] = false;
-          payrollUpdates['status'] = 'approved';
-          if (record.payrollRate > 0) {
-            payrollUpdates['syncedToFinance'] = true;
-          }
-        }
-        await FirebaseFirestore.instance
-            .collection('dispatch_payrolls')
-            .doc(payrollId)
-            .set(payrollUpdates, SetOptions(merge: true));
       } catch (_) {
         // Fallback to REST API / local persistence on error
       }
@@ -538,7 +515,7 @@ class DispatchRepository {
 
     await _sendAccepted(
       'POST',
-      Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/check-out'),
+      Uri.parse('$apiBaseUrl/api/dispatch/shifts/$dispatchId/check-out'),
       {
         'role': 'driver',
         'checkOutTime': timeStr,
@@ -568,7 +545,7 @@ class DispatchRepository {
 
     await _sendAccepted(
       'PUT',
-      Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/arrive'),
+      Uri.parse('$apiBaseUrl/api/dispatch/shifts/$dispatchId/stops/$stopId/arrive'),
       {'actualArrivalTime': timeStr},
       'Stop arrival was not saved on the server. Try again.',
     );
@@ -626,7 +603,7 @@ class DispatchRepository {
     final formattedTime = formatTime(currentTime);
 
     try {
-      final uri = Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/students/$studentId');
+      final uri = Uri.parse('$apiBaseUrl/api/dispatch/shifts/$dispatchId/stops/$stopId/students/$studentId');
       final bool? isPresent;
       final String? status;
       final String? dropoffStatus;
@@ -776,7 +753,7 @@ class DispatchRepository {
     const attendanceFailure = 'Attendance was not saved on the server. Try again.';
     await _sendAccepted(
       'PUT',
-      Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/arrive'),
+      Uri.parse('$apiBaseUrl/api/dispatch/shifts/$dispatchId/stops/$stopId/arrive'),
       {'actualArrivalTime': formattedTime},
       attendanceFailure,
     );
@@ -787,7 +764,7 @@ class DispatchRepository {
         affectedStudentIds.add(student.studentId);
         await _sendAccepted(
           'PUT',
-          Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/students/${student.studentId}'),
+          Uri.parse('$apiBaseUrl/api/dispatch/shifts/$dispatchId/stops/$stopId/students/${student.studentId}'),
           {
             'isPresent': true,
             'pickupTime': formattedTime,
@@ -801,7 +778,7 @@ class DispatchRepository {
         affectedStudentIds.add(student.studentId);
         await _sendAccepted(
           'PUT',
-          Uri.parse('$apiBaseUrl/api/public/dispatch/shifts/$dispatchId/stops/$stopId/students/${student.studentId}'),
+          Uri.parse('$apiBaseUrl/api/dispatch/shifts/$dispatchId/stops/$stopId/students/${student.studentId}'),
           {
             'isPresent': true,
             'status': 'dropped_off',

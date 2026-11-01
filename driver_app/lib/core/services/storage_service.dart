@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../network/api_client.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api_config.dart';
@@ -87,7 +89,7 @@ class StorageService {
   }
 
   /// Uploads binary data and returns an accessible URL.
-  /// 1. Primary: uploads to backend server (/api/public/upload) with zero CORS issues.
+  /// 1. Primary: uploads to the authenticated backend route (/api/upload).
   /// 2. Secondary: attempts Firebase Storage with strict timeout.
   /// 3. Fallback: returns data URI for zero user blockage.
   Future<String> uploadBytes({
@@ -96,7 +98,7 @@ class StorageService {
     String folder = 'attachments',
     String mimeType = 'image/jpeg',
   }) async {
-    // 1. Primary: Direct backend server upload (Zero CORS/auth issues)
+    // 1. Primary: authenticated backend upload. AuthenticatedHttpClient adds the bearer token.
     try {
       final uri = Uri.parse(_defaultUploadUrl);
       final request = http.MultipartRequest('POST', uri);
@@ -113,19 +115,24 @@ class StorageService {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final url = data['url']?.toString();
         if (url != null && url.isNotEmpty) {
-          return url;
+          return ApiConfig.resolveUrl(url);
         }
       }
     } catch (err) {
       debugPrint('[StorageService] Server upload skipped or failed: $err');
     }
 
-    // 2. Secondary: Firebase Storage with timeout guard
+    // 2. Secondary: Firebase Storage with timeout guard. Writes are create-only under the signed-in owner.
     final storage = _storage;
-    if (storage != null) {
+    final ownerId = await _storageOwnerId();
+    if (storage != null && ownerId != null) {
       try {
         final cleanFolder = folder.replaceAll(RegExp(r'^/|/$'), '');
-        final fullPath = '$cleanFolder/$fileName';
+        final safeName = _safePathSegment(fileName);
+        if (safeName.isEmpty) {
+          throw StateError('file name is empty');
+        }
+        final fullPath = '$cleanFolder/$ownerId/$safeName';
         final ref = storage.ref().child(fullPath);
 
         final metadata = SettableMetadata(
@@ -172,5 +179,34 @@ class StorageService {
       folder: folder,
       mimeType: mimeType,
     );
+  }
+
+  Future<String?> _storageOwnerId() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final token = await user.getIdTokenResult();
+        final claim = token.claims?['employeeId'];
+        if (claim is String && claim.trim().isNotEmpty) {
+          final safeClaim = _safePathSegment(claim);
+          if (safeClaim.isNotEmpty) return safeClaim;
+        }
+        final safeUid = _safePathSegment(user.uid);
+        if (safeUid.isNotEmpty) return safeUid;
+      }
+    } catch (_) {}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString('driver_saved_employee_id') ?? '';
+      final safe = _safePathSegment(saved);
+      if (safe.isNotEmpty) return safe;
+    } catch (_) {}
+    return null;
+  }
+
+  String _safePathSegment(String raw) {
+    final cleaned = raw.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    if (cleaned.isEmpty) return '';
+    return cleaned.length > 80 ? cleaned.substring(0, 80) : cleaned;
   }
 }

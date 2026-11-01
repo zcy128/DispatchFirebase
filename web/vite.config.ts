@@ -66,6 +66,24 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true
+      },
+      '/uploads': {
+        target: 'http://localhost:8080',
+        changeOrigin: true
+      }
+    }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return;
+          if (id.includes('firebase')) return 'firebase';
+          if (id.includes('leaflet')) return 'leaflet';
+          if (id.includes('jspdf') || id.includes('html2canvas')) return 'pdf';
+          if (id.includes('exceljs') || id.includes('xlsx')) return 'excel';
+          return 'vendor';
+        }
       }
     }
   }

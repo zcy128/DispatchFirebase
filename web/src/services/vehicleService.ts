@@ -3,8 +3,9 @@ import { db } from './firebase';
 import { apiRequest } from './api';
 import { Vehicle, VehicleStats } from '../types/vehicle';
 
-export const calculateVehicleStats = (vehicles: Vehicle[]): VehicleStats => {
-  const total = vehicles.length;
+export const calculateVehicleStats = (vehicles: Vehicle[] = []): VehicleStats => {
+  const safeVehicles = Array.isArray(vehicles) ? vehicles : [];
+  const total = safeVehicles.length;
   let active = 0;
   let assigned = 0;
   let spare = 0;
@@ -13,7 +14,7 @@ export const calculateVehicleStats = (vehicles: Vehicle[]): VehicleStats => {
   const fuelMap: Record<string, number> = {};
   const yardMap: Record<string, number> = {};
 
-  vehicles.forEach((v) => {
+  safeVehicles.forEach((v) => {
     if (v.active) active++;
     if (v.assignedRouteId) {
       assigned++;
@@ -42,12 +43,19 @@ export const calculateVehicleStats = (vehicles: Vehicle[]): VehicleStats => {
 export const VehicleService = {
   // Pure real-time onSnapshot listener (Zero API server traffic)
   subscribeToVehicles: (
-    onUpdate: (vehicles: Vehicle[]) => void,
+    onUpdate: (vehicles: Vehicle[], source: 'firestore' | 'api') => void,
     onError?: (err: Error) => void
   ) => {
+    const loadFromApi = () => {
+      VehicleService.list().then((vehicles) => onUpdate(vehicles, 'api')).catch((err) => {
+        if (onError) onError(err);
+        else console.error(err);
+      });
+    };
+
     if (!db) {
       console.warn('[VehicleService] Firestore SDK not initialized, falling back to REST');
-      VehicleService.list().then(onUpdate).catch(onError);
+      loadFromApi();
       return () => {};
     }
 
@@ -64,18 +72,18 @@ export const VehicleService = {
               id: doc.id
             });
           });
-          onUpdate(list);
+          onUpdate(list, 'firestore');
         },
         (error) => {
           console.error('[VehicleService] onSnapshot listener error:', error);
           if (onError) onError(error);
-          VehicleService.list().then(onUpdate).catch(console.error);
+          loadFromApi();
         }
       );
       return unsubscribe;
     } catch (e) {
       console.error('[VehicleService] Exception creating onSnapshot listener:', e);
-      VehicleService.list().then(onUpdate).catch(onError);
+      loadFromApi();
       return () => {};
     }
   },
@@ -91,7 +99,8 @@ export const VehicleService = {
       const str = searchParams.toString();
       if (str) queryStr = `?${str}`;
     }
-    return apiRequest<Vehicle[]>(`/api/vehicles${queryStr}`);
+    const data = await apiRequest<Vehicle[]>(`/api/vehicles${queryStr}`);
+    return Array.isArray(data) ? data : [];
   },
 
   getById: async (id: string): Promise<Vehicle> => {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -186,7 +187,7 @@ func (s *ZonarService) getZonar(ctx context.Context, secret zonarSecret, query u
 	req.Header.Set("User-Agent", "Zonar Systems API-Test 8.2.1")
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("zonar request failed")
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
@@ -323,40 +324,40 @@ func parseZonarIdles(data []byte, loc *time.Location) []ZonarIdleStop {
 }
 
 func zonarHeadingDegrees(heading string) int {
-	dRet := 0
 	switch strings.ToUpper(strings.TrimSpace(heading)) {
-	case "E":
-		dRet = 0
-	case "NEE":
-		dRet = 22
-	case "NE":
-		dRet = 45
-	case "NNE":
-		dRet = 67
 	case "N":
-		dRet = 90
-	case "NNW":
-		dRet = 112
-	case "NW":
-		dRet = 135
-	case "NWW":
-		dRet = 157
-	case "W":
-		dRet = 180
-	case "SWW":
-		dRet = 202
-	case "SW":
-		dRet = 225
-	case "SSW":
-		dRet = 247
-	case "S":
-		dRet = 270
-	case "SSE":
-		dRet = 292
+		return 0
+	case "NNE":
+		return 22
+	case "NE":
+		return 45
+	case "ENE":
+		return 67
+	case "E":
+		return 90
+	case "ESE":
+		return 112
 	case "SE":
-		dRet = 315
-	case "SEE":
-		dRet = 337
+		return 135
+	case "SSE":
+		return 157
+	case "S":
+		return 180
+	case "SSW":
+		return 202
+	case "SW":
+		return 225
+	case "WSW":
+		return 247
+	case "W":
+		return 270
+	case "WNW":
+		return 292
+	case "NW":
+		return 315
+	case "NNW":
+		return 337
+	default:
+		return 0
 	}
-	return 360 - (dRet - 90)
 }

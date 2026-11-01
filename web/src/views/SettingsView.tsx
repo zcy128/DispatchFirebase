@@ -2182,7 +2182,7 @@ export const SettingsView: React.FC = () => {
                       {
                         mcpServers: {
                           dispatch: {
-                            url: mcpTokenInfo?.mcpHttpUrl || 'https://dispatch-api-kv7qum3dca-nn.a.run.app/api/mcp',
+                            url: mcpTokenInfo?.mcpHttpUrl || 'https://dispatch-api-337919645491.northamerica-northeast1.run.app/api/mcp',
                             headers: {
                               Authorization: `Bearer ${mcpTokenInfo?.token || '<YOUR_MCP_TOKEN>'}`,
                             },
@@ -2204,7 +2204,7 @@ export const SettingsView: React.FC = () => {
   {
     mcpServers: {
       dispatch: {
-        url: mcpTokenInfo?.mcpHttpUrl || 'https://dispatch-api-kv7qum3dca-nn.a.run.app/api/mcp',
+        url: mcpTokenInfo?.mcpHttpUrl || 'https://dispatch-api-337919645491.northamerica-northeast1.run.app/api/mcp',
         headers: {
           Authorization: `Bearer ${mcpTokenInfo?.token ? mcpTokenInfo.token.slice(0, 24) + '...' : 'dsp_mcp_<GENERATE_ABOVE>'}`,
         },
@@ -2233,7 +2233,7 @@ export const SettingsView: React.FC = () => {
                           dispatch: {
                             command: 'dispatch-mcp',
                             env: {
-                              DISPATCH_SERVER_URL: mcpTokenInfo?.serverUrl || 'https://dispatch-api-kv7qum3dca-nn.a.run.app',
+                              DISPATCH_SERVER_URL: mcpTokenInfo?.serverUrl || 'https://dispatch-api-337919645491.northamerica-northeast1.run.app',
                               DISPATCH_MCP_TOKEN: mcpTokenInfo?.token || '<YOUR_MCP_TOKEN>',
                             },
                           },
@@ -2256,7 +2256,7 @@ export const SettingsView: React.FC = () => {
       dispatch: {
         command: 'dispatch-mcp',
         env: {
-          DISPATCH_SERVER_URL: mcpTokenInfo?.serverUrl || 'https://dispatch-api-kv7qum3dca-nn.a.run.app',
+          DISPATCH_SERVER_URL: mcpTokenInfo?.serverUrl || 'https://dispatch-api-337919645491.northamerica-northeast1.run.app',
           DISPATCH_MCP_TOKEN: mcpTokenInfo?.token ? mcpTokenInfo.token.slice(0, 24) + '...' : 'dsp_mcp_<GENERATE_ABOVE>',
         },
       },

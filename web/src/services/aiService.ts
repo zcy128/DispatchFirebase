@@ -7,16 +7,12 @@ export const aiService = {
    */
   async chat(payload: AIChatRequest): Promise<AIChatResponse> {
     try {
-      return await apiRequest<AIChatResponse>('/ai/chat', {
+      return await apiRequest<AIChatResponse>('/api/ai/chat', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
     } catch (err) {
-      // Fallback to public endpoint if protected fails during development
-      return await apiRequest<AIChatResponse>('/public/ai/chat', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      throw err;
     }
   },
 
@@ -25,7 +21,7 @@ export const aiService = {
    */
   async getStatus(): Promise<AICopilotStatus> {
     try {
-      return await apiRequest<AICopilotStatus>('/public/ai/status');
+      return await apiRequest<AICopilotStatus>('/api/ai/status');
     } catch (err) {
       return {
         status: 'offline',
@@ -42,7 +38,7 @@ export const aiService = {
    * Issue a signed Personal Access Token (dsp_mcp_...) for external MCP clients (Cursor, Gemini, Codex)
    */
   async generateMCPToken(ttlDays = 30): Promise<MCPTokenResponse> {
-    return await apiRequest<MCPTokenResponse>('/auth/mcp-token', {
+    return await apiRequest<MCPTokenResponse>('/api/auth/mcp-token', {
       method: 'POST',
       body: JSON.stringify({ ttlDays }),
     });

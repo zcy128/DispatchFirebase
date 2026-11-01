@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -14,8 +15,18 @@ import (
 const (
 	MCPTokenPrefix     = "dsp_mcp_"
 	DefaultMCPTokenTTL = 30 * 24 * time.Hour
-	defaultFallbackKey = "dispatch-default-mcp-signing-key-2026"
 )
+
+var processFallbackKey = newProcessSigningKey()
+
+func newProcessSigningKey() []byte {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		sum := sha256.Sum256([]byte(fmt.Sprintf("dispatch-process-key-%d", time.Now().UnixNano())))
+		return sum[:]
+	}
+	return buf
+}
 
 var (
 	ErrInvalidMCPToken = errors.New("invalid MCP access token")
@@ -36,7 +47,7 @@ type MCPTokenClaims struct {
 func resolveSigningSecret(secret string) []byte {
 	clean := strings.TrimSpace(secret)
 	if clean == "" {
-		clean = defaultFallbackKey
+		return processFallbackKey
 	}
 	return []byte(clean)
 }
@@ -112,7 +123,7 @@ func VerifyMCPToken(secret string, tokenStr string) (*AuthUser, error) {
 		return nil, ErrInvalidMCPToken
 	}
 
-	if claims.ExpiresAt > 0 && time.Now().UTC().Unix() > claims.ExpiresAt {
+	if claims.ExpiresAt <= 0 || time.Now().UTC().Unix() > claims.ExpiresAt {
 		return nil, ErrExpiredMCPToken
 	}
 

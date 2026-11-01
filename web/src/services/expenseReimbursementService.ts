@@ -5,9 +5,12 @@ import {
   getDocs,
   setDoc,
   onSnapshot,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { apiRequest } from './api';
+import { apiRequest, isClientHttpError } from './api';
+import { listenerOwnEmployeeId } from '../utils/listenerScope';
 import {
   ExpenseReimbursement,
   ExpenseReimbursementLine,
@@ -69,7 +72,7 @@ function normalizeExpenseRecord(raw: any, id: string): ExpenseReimbursement {
 export const ExpenseReimbursementService = {
   listCategories: async (): Promise<ExpenseCategory[]> => {
     try {
-      const res = await apiRequest<ExpenseCategory[]>('/api/public/dispatch/expense-categories');
+      const res = await apiRequest<ExpenseCategory[]>('/api/dispatch/expense-categories');
       if (Array.isArray(res) && res.length > 0) return res;
     } catch {
       if (db) {
@@ -126,23 +129,8 @@ export const ExpenseReimbursementService = {
             return (b.createdAt || '').localeCompare(a.createdAt || '');
           });
       }
-    } catch {
-      try {
-        const res = await apiRequest<ExpenseReimbursement[]>(
-          `/api/public/dispatch/expense-reimbursements?${qStr}`
-        );
-        if (Array.isArray(res)) {
-          return res
-            .map((r) => normalizeExpenseRecord(r, r.id))
-            .sort((a, b) => {
-              const dateA = a.claimDate || a.createdAt || '';
-              const dateB = b.claimDate || b.createdAt || '';
-              if (dateA !== dateB) return dateB.localeCompare(dateA);
-              return (b.createdAt || '').localeCompare(a.createdAt || '');
-            });
-        }
-      } catch (err) {
-        if (db) {
+    } catch (err) {
+      if (db) {
           const qRef = collection(db, 'expense_reimbursements');
           const snap = await getDocs(qRef);
           const cutoff = new Date();
@@ -164,9 +152,8 @@ export const ExpenseReimbursementService = {
             return (b.createdAt || '').localeCompare(a.createdAt || '');
           });
           return list;
-        }
-        return [];
       }
+      return [];
     }
     return [];
   },
@@ -178,20 +165,13 @@ export const ExpenseReimbursementService = {
       );
       return normalizeExpenseRecord(res, res.id || id);
     } catch {
-      try {
-        const res = await apiRequest<ExpenseReimbursement>(
-          `/api/public/dispatch/expense-reimbursements/${id}`
-        );
-        return normalizeExpenseRecord(res, res.id || id);
-      } catch {
-        if (db) {
-          const snap = await getDoc(doc(db, 'expense_reimbursements', id));
-          if (snap.exists()) {
-            return normalizeExpenseRecord(snap.data(), snap.id);
-          }
+      if (db) {
+        const snap = await getDoc(doc(db, 'expense_reimbursements', id));
+        if (snap.exists()) {
+          return normalizeExpenseRecord(snap.data(), snap.id);
         }
-        return null;
       }
+      return null;
     }
   },
 
@@ -208,18 +188,9 @@ export const ExpenseReimbursementService = {
         }
       );
       return normalizeExpenseRecord(res, res.id || id);
-    } catch {
-      try {
-        const res = await apiRequest<ExpenseReimbursement>(
-          `/api/public/dispatch/expense-reimbursements/${id}/review`,
-          {
-            method: 'POST',
-            body: JSON.stringify(payload),
-          }
-        );
-        return normalizeExpenseRecord(res, res.id || id);
-      } catch (err) {
-        if (db) {
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
+      if (db) {
           const docRef = doc(db, 'expense_reimbursements', id);
           const snap = await getDoc(docRef);
           const now = new Date().toISOString();
@@ -234,15 +205,13 @@ export const ExpenseReimbursementService = {
           };
           await setDoc(docRef, updated, { merge: true });
           return normalizeExpenseRecord(updated, id);
-        }
-        throw err;
       }
+      throw err;
     }
   },
 
   cancelClaim: async (id: string, employeeId?: string): Promise<ExpenseReimbursement> => {
-    try {
-      const res = await apiRequest<ExpenseReimbursement>(
+          const res = await apiRequest<ExpenseReimbursement>(
         `/api/dispatch/expense-reimbursements/${id}/cancel`,
         {
           method: 'POST',
@@ -250,16 +219,6 @@ export const ExpenseReimbursementService = {
         }
       );
       return normalizeExpenseRecord(res, res.id || id);
-    } catch {
-      const res = await apiRequest<ExpenseReimbursement>(
-        `/api/public/dispatch/expense-reimbursements/${id}/cancel`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ employeeId }),
-        }
-      );
-      return normalizeExpenseRecord(res, res.id || id);
-    }
   },
 
   subscribeClaims: (
@@ -331,7 +290,10 @@ export const ExpenseReimbursementService = {
     // 2. Real-time Firestore onSnapshot listener
     if (db) {
       try {
-        const qRef = collection(db, 'expense_reimbursements');
+        const ownId = listenerOwnEmployeeId();
+        const qRef = ownId
+          ? query(collection(db, 'expense_reimbursements'), where('employeeId', '==', ownId))
+          : collection(db, 'expense_reimbursements');
         unsubscribeSnapshot = onSnapshot(
           qRef,
           (snapshot) => {
@@ -371,18 +333,10 @@ export const ExpenseReimbursementService = {
     window.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('focus', handleVisibility);
 
-    // 4. Background heartbeat sync every 15s to guarantee consistency
-    const heartbeatTimer = setInterval(() => {
-      if (isSubscribed) {
-        fetchLatestRest();
-      }
-    }, 15000);
-
     return () => {
       isSubscribed = false;
       if (unsubscribeSnapshot) unsubscribeSnapshot();
       if (pollTimer) clearInterval(pollTimer);
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
       window.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleVisibility);
     };

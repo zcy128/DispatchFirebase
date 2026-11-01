@@ -132,7 +132,8 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
 
   // Active vehicles sorted by unit number
   const activeVehicles = React.useMemo(() => {
-    return [...vehicles].sort((a, b) => a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true }));
+    const list = Array.isArray(vehicles) ? vehicles : [];
+    return [...list].sort((a, b) => a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true }));
   }, [vehicles]);
 
   // Helper to determine route assignments for any employee across all routes

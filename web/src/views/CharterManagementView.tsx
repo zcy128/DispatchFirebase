@@ -175,7 +175,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
       },
       (err) => {
         if (!isMounted) return;
-        console.error('Trips subscription error:', err);
+        console.warn('Trips subscription error:', err);
         setLoading(false);
       }
     );
@@ -187,7 +187,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
       },
       (err) => {
         if (!isMounted) return;
-        console.error('Clients subscription error:', err);
+        console.warn('Clients subscription error:', err);
       }
     );
 
@@ -198,7 +198,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
       },
       (err) => {
         if (!isMounted) return;
-        console.error('Charter openings subscription error:', err);
+        console.warn('Charter openings subscription error:', err);
       }
     );
 
@@ -576,7 +576,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
   // Open Create Trip Modal
   const handleOpenCreateTrip = () => {
     setEditingTripId(null);
-    setFormClientId(clients[0]?.id || '');
+    setFormClientId(clients[0]?.id || '__general__');
     setFormTitle('');
     setFormTripType(0);
     const today = getLocalTodayString();
@@ -2851,6 +2851,9 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
                     onChange={(e) => setFormClientId(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
                   >
+                    {clients.length === 0 && (
+                      <option value="__general__">General Charter Client</option>
+                    )}
                     {clients.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}

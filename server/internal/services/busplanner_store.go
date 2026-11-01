@@ -71,6 +71,11 @@ func (s *BusPlannerStore) Load(ctx context.Context) (busplannerSecret, error) {
 	if err := doc.DataTo(&secret); err != nil {
 		return busplannerSecret{}, err
 	}
+	plain, err := openSecret(secret.Password)
+	if err != nil {
+		return busplannerSecret{}, err
+	}
+	secret.Password = plain
 	return secret, nil
 }
 
@@ -82,7 +87,12 @@ func (s *BusPlannerStore) Save(ctx context.Context, secret busplannerSecret) err
 		s.hasMem = true
 		return nil
 	}
-	_, err := s.client.Collection(busplannerSecretCollection).Doc(busplannerSecretDocument).Set(ctx, secret)
+	sealed, err := sealSecret(secret.Password)
+	if err != nil {
+		return err
+	}
+	secret.Password = sealed
+	_, err = s.client.Collection(busplannerSecretCollection).Doc(busplannerSecretDocument).Set(ctx, secret)
 	return err
 }
 

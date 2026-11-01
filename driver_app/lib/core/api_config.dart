@@ -18,6 +18,14 @@ class ApiConfig {
     return 'http://localhost:8080';
   }
 
-  static String get dispatchApiUrl => '$baseUrl/api/public/dispatch';
-  static String get uploadApiUrl => '$baseUrl/api/public/upload';
+  static String get dispatchApiUrl => '$baseUrl/api/dispatch';
+  static String get uploadApiUrl => '$baseUrl/api/upload';
+
+  static String resolveUrl(String url) {
+    final trimmed = url.trim();
+    if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+      return '$baseUrl$trimmed';
+    }
+    return trimmed;
+  }
 }

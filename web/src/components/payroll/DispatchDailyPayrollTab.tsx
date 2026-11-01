@@ -78,6 +78,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
 
   const [roleFilter, setRoleFilter] = useState<'all' | 'driver' | 'attendant'>('all');
   const [payOptionFilter, setPayOptionFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'approved' | 'pending_approval' | 'pending_checkout' | 'rejected'>('all');
 
   // Review & Edit Modal State
   const [editingPayroll, setEditingPayroll] = useState<DispatchPayrollRecord | null>(null);
@@ -291,7 +292,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
   const filteredPayrolls = useMemo(() => {
     return payrolls.filter((item) => {
       const isCharterItem = Boolean(item.isCharter || item.shiftType === 'CHARTER');
-      const isNeedsReviewItem = item.status === 'pending_approval' || Boolean(item.hasComments || (item.payrollComments && item.payrollComments.trim() !== ''));
+      const isNeedsReviewItem = item.status === 'pending_approval' || (item.status !== 'approved' && item.status !== 'rejected' && Boolean(item.hasComments || (item.payrollComments && item.payrollComments.trim() !== '')));
 
       // Category filter (All vs Needs Review vs Clean vs Charter)
       if (category === 'charter') {
@@ -310,6 +311,10 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
       if (payOptionFilter !== 'all' && (item.payOption || 'STANDARD') !== payOptionFilter) {
         return false;
       }
+      // Status filter
+      if (statusFilter !== 'all' && (item.status || 'pending_checkout').toLowerCase() !== statusFilter) {
+        return false;
+      }
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -326,7 +331,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
       }
       return true;
     });
-  }, [payrolls, category, roleFilter, payOptionFilter, searchQuery]);
+  }, [payrolls, category, roleFilter, payOptionFilter, statusFilter, searchQuery]);
 
   // Virtual scrolling for 1,000+ daily dispatch payroll items
   const payrollTableContainerRef = useRef<HTMLDivElement>(null);
@@ -345,11 +350,11 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
 
   // Counts for category badges (aligned with pending approval & comments)
   const withCommentsCount = useMemo(() => {
-    return payrolls.filter((p) => p.status === 'pending_approval' || Boolean(p.hasComments || (p.payrollComments && p.payrollComments.trim() !== ''))).length;
+    return payrolls.filter((p) => p.status === 'pending_approval' || (p.status !== 'approved' && p.status !== 'rejected' && Boolean(p.hasComments || (p.payrollComments && p.payrollComments.trim() !== '')))).length;
   }, [payrolls]);
 
   const withoutCommentsCount = useMemo(() => {
-    return payrolls.filter((p) => p.status !== 'pending_approval' && !p.hasComments && (!p.payrollComments || p.payrollComments.trim() === '')).length;
+    return payrolls.filter((p) => p.status === 'approved' || (p.status !== 'pending_approval' && !p.hasComments && (!p.payrollComments || p.payrollComments.trim() === ''))).length;
   }, [payrolls]);
 
   const charterCount = useMemo(() => {
@@ -371,7 +376,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
       if (r.role === 'driver') driversCount++;
       if (r.role === 'attendant') attendantsCount++;
 
-      if (r.status === 'pending_approval' || Boolean(r.hasComments || (r.payrollComments && r.payrollComments.trim() !== ''))) pendingApprovalCount++;
+      if (r.status === 'pending_approval' || (r.status !== 'approved' && r.status !== 'rejected' && Boolean(r.hasComments || (r.payrollComments && r.payrollComments.trim() !== '')))) pendingApprovalCount++;
       if (r.syncedToFinance) syncedToFinanceCount++;
     }
 
@@ -565,6 +570,16 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
 
         {/* Action Buttons: Export & Refresh */}
         <div className="flex items-center gap-2">
+          {onNavigateToFinanceLog && (
+            <button
+              onClick={onNavigateToFinanceLog}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-sm font-semibold transition-colors shadow-xs"
+              title="Go to Payroll Department Log"
+            >
+              <span>Finance Log</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             onClick={handleRefresh}
             disabled={loading}
@@ -753,6 +768,17 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
             <option value="NP">NP (No Pay)</option>
             <option value="F">F (Fixed Override)</option>
           </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
+          >
+            <option value="all">All Statuses</option>
+            <option value="approved">Approved</option>
+            <option value="pending_approval">Pending Approval</option>
+            <option value="pending_checkout">Pending Checkout</option>
+            <option value="rejected">Rejected</option>
+          </select>
         </div>
       </div>
 
@@ -824,7 +850,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
               ) : (
                 <>
                   {payrollPaddingTop > 0 && (
-                    <tr>
+                    <tr key="payroll-padding-top">
                       <td style={{ height: `${payrollPaddingTop}px`, padding: 0, border: 0 }} colSpan={10} />
                     </tr>
                   )}
@@ -832,7 +858,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                     const rec = filteredPayrolls[virtualRow.index];
                     if (!rec) return null;
                   const hasComm = Boolean(rec.hasComments || (rec.payrollComments && rec.payrollComments.trim() !== ''));
-                    const isNeedsReviewRec = rec.status === 'pending_approval' || hasComm;
+                    const isNeedsReviewRec = rec.status === 'pending_approval' || (rec.status !== 'approved' && rec.status !== 'rejected' && hasComm);
                   return (
                     <tr
                       key={rec.id}
@@ -983,7 +1009,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                   );
                 })}
                   {payrollPaddingBottom > 0 && (
-                    <tr>
+                    <tr key="payroll-padding-bottom">
                       <td style={{ height: `${payrollPaddingBottom}px`, padding: 0, border: 0 }} colSpan={10} />
                     </tr>
                   )}

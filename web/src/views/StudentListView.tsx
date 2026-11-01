@@ -916,7 +916,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                                       onMessageParent({
                                         parentContact: primaryContact.mobilePhone || primaryContact.email || '',
                                         parentName: primaryContact.contactName,
-                                        studentId: s.id,
+                                        studentId: s.studentId,
                                         studentName: s.fullName,
                                         busUnitNumber: s.routes ? s.routes.split(',')[0].trim() : '',
                                         routeNo: s.routes || '',
@@ -1120,7 +1120,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                                 onMessageParent({
                                   parentContact: primaryContact.mobilePhone || primaryContact.email || '',
                                   parentName: primaryContact.contactName,
-                                  studentId: s.id,
+                                  studentId: s.studentId,
                                   studentName: s.fullName,
                                   busUnitNumber: s.routes ? s.routes.split(',')[0].trim() : '',
                                   routeNo: s.routes || '',

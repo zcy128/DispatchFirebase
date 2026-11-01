@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -26,6 +27,7 @@ type Config struct {
 	PayrollForwardEmail     string
 	AdminForwardEmail       string
 	EmailRoutesMap          map[string][]string
+	SNSTopicARNs            []string
 	SMTPHost                string
 	SMTPPort                int
 	SMTPUsername            string
@@ -160,6 +162,10 @@ func LoadConfig() *Config {
 	}
 
 	routesMap := parseEmailRoutesMap(os.Getenv("EMAIL_ROUTES_MAP"))
+	snsTopicARNs := parseCommaList(os.Getenv("SNS_TOPIC_ARNS"))
+	if singleTopic := strings.TrimSpace(os.Getenv("SNS_TOPIC_ARN")); singleTopic != "" {
+		snsTopicARNs = appendUnique(snsTopicARNs, singleTopic)
+	}
 
 	return &Config{
 		Port:                    port,
@@ -178,6 +184,7 @@ func LoadConfig() *Config {
 		PayrollForwardEmail:     payrollEmail,
 		AdminForwardEmail:       adminForwardEmail,
 		EmailRoutesMap:          routesMap,
+		SNSTopicARNs:            snsTopicARNs,
 		SMTPHost:                smtpHost,
 		SMTPPort:                smtpPort,
 		SMTPUsername:            smtpUser,
@@ -324,6 +331,31 @@ func parseEmailRoutesMap(raw string) map[string][]string {
 	return result
 }
 
+func parseCommaList(raw string) []string {
+	var list []string
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		list = appendUnique(list, item)
+	}
+	return list
+}
+
+func appendUnique(list []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return list
+	}
+	for _, existing := range list {
+		if existing == value {
+			return list
+		}
+	}
+	return append(list, value)
+}
+
 // ResolveCredentialsPath searches for Google Application Credentials in env or nearby files
 func ResolveCredentialsPath() string {
 	if envPath := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"); envPath != "" {
@@ -332,15 +364,25 @@ func ResolveCredentialsPath() string {
 		}
 	}
 
+	exeDir := ""
+	if exePath, err := os.Executable(); err == nil {
+		exeDir = filepath.Dir(exePath)
+	}
+
 	candidates := []string{
 		"serviceAccountKey.json",
+		"server/serviceAccountKey.json",
+		filepath.Join(exeDir, "serviceAccountKey.json"),
 		"../serviceAccountKey.json",
+		"../../serviceAccountKey.json",
 		"credentials.json",
+		"server/credentials.json",
+		filepath.Join(exeDir, "credentials.json"),
 		"../credentials.json",
 	}
 
 	for _, path := range candidates {
-		if fileExists(path) {
+		if path != "" && fileExists(path) {
 			return path
 		}
 	}

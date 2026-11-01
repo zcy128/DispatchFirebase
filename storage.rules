@@ -1,8 +1,61 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if true;
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAttachmentFolder(folder) {
+      return folder in [
+        'attachments',
+        'expense_reimbursements',
+        'route_assessments'
+      ];
+    }
+
+    function isAllowedUpload() {
+      return request.resource.size < 32 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)|application/pdf');
+    }
+
+    function isStaffReader() {
+      return isSignedIn() && request.auth.token.role in [
+        'admin', 'dispatcher', 'manager', 'supervisor', 'office staff',
+        'fleet', 'hr', 'payroll', 'studentcare', 'training'
+      ];
+    }
+
+    function ownsPrefix(ownerId) {
+      return ownerId == request.auth.uid
+        || (myEmployeeId() != '' && ownerId == myEmployeeId());
+    }
+
+    function safeFileName(fileName) {
+      return fileName.matches('[A-Za-z0-9._-]{1,180}');
+    }
+
+    function myEmployeeId() {
+      return request.auth != null && request.auth.token.employeeId != null
+        ? request.auth.token.employeeId
+        : '';
+    }
+
+    match /{folder}/{fileName} {
+      allow read: if isStaffReader() && isAttachmentFolder(folder) && safeFileName(fileName);
+      allow write: if false;
+    }
+
+    match /{folder}/{ownerId}/{fileName} {
+      allow read: if isSignedIn()
+        && isAttachmentFolder(folder)
+        && safeFileName(fileName)
+        && (isStaffReader() || ownsPrefix(ownerId));
+      allow create: if isSignedIn()
+        && isAttachmentFolder(folder)
+        && safeFileName(fileName)
+        && ownsPrefix(ownerId)
+        && isAllowedUpload();
+      allow update, delete: if false;
     }
   }
 }

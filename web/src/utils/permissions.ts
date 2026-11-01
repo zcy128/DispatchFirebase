@@ -529,7 +529,7 @@ export const FACTORY_ROLE_PERMISSIONS: Record<UserRole, Record<NavTab, Permissio
     staging_routes: 'none',
     route_assessments: 'readwrite',
     defects: 'readwrite',
-    vehicle_signouts: 'readwrite',
+    vehicle_signouts: 'readonly',
     student_incidents: 'readwrite',
     hazards: 'readwrite',
     employees: 'none',
