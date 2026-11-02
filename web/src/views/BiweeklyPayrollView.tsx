@@ -21,6 +21,8 @@ import {
   Download,
   FileText,
   Clock,
+  DollarSign,
+  Users,
 } from 'lucide-react';
 import { DispatchService } from '../services/dispatchService';
 import { SchoolService } from '../services/schoolService';
@@ -622,6 +624,13 @@ const getTodayDateString = (): string => {
   return `${year}-${month}-${day}`;
 };
 
+const DEFAULT_FALLBACK_BOARDS: SchoolBoard[] = [
+  { id: 'OCDSB', schoolBoardId: 1, schoolBoardName: 'Ottawa-Carleton District School Board', schoolBoardCode: 'OCDSB' },
+  { id: 'CECCE', schoolBoardId: 2, schoolBoardName: 'Conseil des écoles catholiques du Centre-Est', schoolBoardCode: 'CECCE' },
+  { id: 'CEPEO', schoolBoardId: 3, schoolBoardName: 'Conseil des écoles publiques de l’Est de l’Ontario', schoolBoardCode: 'CEPEO' },
+  { id: 'OCSB', schoolBoardId: 4, schoolBoardName: 'Ottawa Catholic School Board', schoolBoardCode: 'OCSB' },
+];
+
 export const BiweeklyPayrollView: React.FC = () => {
   // Start date of the 2-week calculation cycle (defaults to today)
   const [startDate, setStartDate] = useState<string>(getTodayDateString);
@@ -632,6 +641,7 @@ export const BiweeklyPayrollView: React.FC = () => {
   // Filters & toggles
   const [selectedBoard, setSelectedBoard] = useState<string>('all');
   const [selectedEmployee, setSelectedEmployee] = useState<string>('all');
+  const [selectedRole, setSelectedRole] = useState<'all' | 'driver' | 'attendant'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [includeExpenses, setIncludeExpenses] = useState<boolean>(true);
   const [includeHolidayEntitlements, setIncludeHolidayEntitlements] = useState<boolean>(true);
@@ -664,8 +674,14 @@ export const BiweeklyPayrollView: React.FC = () => {
   // 1. Load initial lookups (School Boards, Employees, Routes)
   useEffect(() => {
     SchoolService.listBoards()
-      .then((b) => setBoards(Array.isArray(b) ? b : []))
-      .catch((e) => console.warn('Could not fetch boards:', e));
+      .then((b) => {
+        const list = Array.isArray(b) && b.length > 0 ? b : DEFAULT_FALLBACK_BOARDS;
+        setBoards(list);
+      })
+      .catch((e) => {
+        console.warn('Could not fetch boards:', e);
+        setBoards(DEFAULT_FALLBACK_BOARDS);
+      });
 
     EmployeeService.list()
       .then((e) => {
@@ -986,6 +1002,10 @@ export const BiweeklyPayrollView: React.FC = () => {
       if (selectedEmployee !== 'all') {
         if (rec.employeeId !== selectedEmployee) return false;
       }
+      if (selectedRole !== 'all') {
+        const rRole = (rec.role || 'driver').toLowerCase();
+        if (rRole !== selectedRole.toLowerCase()) return false;
+      }
       if (searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase().trim();
         const empName = (rec.employeeName || '').toLowerCase();
@@ -1277,7 +1297,15 @@ export const BiweeklyPayrollView: React.FC = () => {
   const groupVirtualizer = useVirtualizer({
     count: groupedData.length,
     getScrollElement: () => tableContainerRef.current,
-    estimateSize: () => 140,
+    estimateSize: (index) => {
+      const grp = groupedData[index];
+      if (!grp) return 140;
+      const isExpanded = expandedMap[grp.employeeId];
+      if (isExpanded) {
+        return 140 + grp.rows.length * 36 + (grp.expenses.claimsCount > 0 ? 60 : 0);
+      }
+      return 120;
+    },
     overscan: 8,
   });
 
@@ -1721,6 +1749,15 @@ export const BiweeklyPayrollView: React.FC = () => {
               </button>
             </div>
 
+            {/* Current Period Button */}
+            <button
+              type="button"
+              onClick={() => setStartDate(getTodayDateString())}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-2xs transition-colors"
+              title="Jump to Current Bi-Weekly Period"
+            >
+              Current Period
+            </button>
             {/* Formatted Date Range Pill */}
             <div className="text-base font-bold tracking-tight text-slate-900 dark:text-white px-2">
               {startDate} - {endDate}
@@ -1743,6 +1780,19 @@ export const BiweeklyPayrollView: React.FC = () => {
               <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
             </div>
 
+            {/* Select Role Dropdown */}
+            <div className="relative">
+              <select
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value as 'all' | 'driver' | 'attendant')}
+                className="h-9 px-3 pr-8 text-sm font-normal rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 appearance-none shadow-2xs cursor-pointer min-w-[130px]"
+              >
+                <option value="all">All Roles</option>
+                <option value="driver">Drivers Only</option>
+                <option value="attendant">Attendants Only</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+            </div>
             {/* Select Employee Dropdown */}
             <div className="relative">
               <select
@@ -1889,6 +1939,61 @@ export const BiweeklyPayrollView: React.FC = () => {
           <span>{error}</span>
         </div>
       )}
+
+      {/* 4 大双周 KPI 指标卡 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
+            <span>Total Gross Wages</span>
+            <DollarSign className="w-4 h-4 text-emerald-500" />
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-slate-900 dark:text-white mt-1">
+            ${grandSummary.totalPay.toFixed(2)}
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            W1: ${grandSummary.w1Pay.toFixed(2)} · W2: ${grandSummary.w2Pay.toFixed(2)}
+          </div>
+        </div>
+
+        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
+            <span>Insurable EI Hours</span>
+            <Clock className="w-4 h-4 text-blue-500" />
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-blue-600 dark:text-blue-400 mt-1">
+            {grandSummary.totalHours.toFixed(2)} hrs
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {grandSummary.totalRuns} total shifts completed
+          </div>
+        </div>
+
+        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
+            <span>Approved Expenses</span>
+            <Receipt className="w-4 h-4 text-amber-500" />
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-amber-600 dark:text-amber-400 mt-1">
+            ${grandSummary.totalExpenses.toFixed(2)}
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            Net Payout: <b>${grandSummary.totalPayout.toFixed(2)}</b>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
+            <span>Active Staff Count</span>
+            <Users className="w-4 h-4 text-purple-500" />
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-purple-600 dark:text-purple-400 mt-1">
+            {grandSummary.employeeCount}
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            Drivers & Attendants
+          </div>
+        </div>
+      </div>
 
       {/* Main Payroll Table */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
