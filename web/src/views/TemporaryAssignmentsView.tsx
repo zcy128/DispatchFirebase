@@ -353,7 +353,7 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
         setCoversLoading(false);
       },
       (err) => {
-        console.error('Subscription error:', err);
+        console.warn('Temporary assignment subscription fell back after an error:', err);
       }
     );
 

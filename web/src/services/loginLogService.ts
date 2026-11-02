@@ -174,8 +174,11 @@ export class LoginLogService {
    * If none exists, generates ~1,000 realistic logs for that date.
    */
   public static getLocalLogsForDate(date: string): LoginLogEntry[] {
+    const dropSeeds = (list: LoginLogEntry[]) =>
+      list.filter((entry) => !String(entry.id || '').startsWith('seed-'));
+
     if (this.memoryCache.has(date)) {
-      return this.memoryCache.get(date)!;
+      return dropSeeds(this.memoryCache.get(date)!);
     }
 
     const key = `${LOCAL_STORAGE_PREFIX}${date}`;
@@ -184,19 +187,16 @@ export class LoginLogService {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          this.memoryCache.set(date, parsed);
-          return parsed;
+          const real = dropSeeds(parsed);
+          this.memoryCache.set(date, real);
+          return real;
         }
       }
     } catch (err) {
       console.warn('LoginLogService: error reading local cache:', err);
     }
 
-    // Generate ~1000 realistic logs for this date
-    const generated = generateDailySeedLogs(date, 1000);
-    this.memoryCache.set(date, generated);
-    this.saveLocalLogsForDate(date, generated);
-    return generated;
+    return [];
   }
 
   /**
@@ -271,10 +271,7 @@ export class LoginLogService {
     onError?: (error: any) => void
   ): () => void {
     const targetDate = date || new Date().toISOString().slice(0, 10);
-
-    // Deliver cached logs immediately for zero-wait rendering
-    const initialLogs = this.getLocalLogsForDate(targetDate);
-    onUpdate(initialLogs);
+    onUpdate([]);
 
     if (!db) {
       return () => {};
@@ -304,31 +301,19 @@ export class LoginLogService {
                 employeeId: d.employeeId,
                 role: d.role,
                 app: d.app || 'Unknown App',
-                appVersion: d.appVersion || 'v1.0.0',
+                appVersion: d.appVersion || '',
                 failureReason: d.failureReason,
                 deviceInfo: d.deviceInfo,
                 ipAddress: d.ipAddress,
               };
             });
 
-            // Merge with local newly created logs for that date if any
-            const local = this.getLocalLogsForDate(targetDate);
-            const map = new Map<string, LoginLogEntry>();
-            [...firestoreLogs, ...local].forEach((item) => {
-              if (!map.has(item.id)) {
-                map.set(item.id, item);
-              }
-            });
-
-            const merged = Array.from(map.values()).sort(
-              (a, b) => b.timestamp.localeCompare(a.timestamp)
-            );
-
-            this.saveLocalLogsForDate(targetDate, merged);
-            onUpdate(merged);
+            firestoreLogs.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+            this.saveLocalLogsForDate(targetDate, firestoreLogs);
+            onUpdate(firestoreLogs);
           } else {
-            // Snapshot empty: use cached/seed logs
-            onUpdate(initialLogs);
+            this.saveLocalLogsForDate(targetDate, []);
+            onUpdate([]);
           }
         },
         (err) => {
@@ -372,7 +357,7 @@ export class LoginLogService {
             employeeId: d.employeeId,
             role: d.role,
             app: d.app || 'Unknown App',
-            appVersion: d.appVersion || 'v1.0.0',
+            appVersion: d.appVersion || '',
             failureReason: d.failureReason,
             deviceInfo: d.deviceInfo,
             ipAddress: d.ipAddress,
@@ -383,10 +368,12 @@ export class LoginLogService {
         this.saveLocalLogsForDate(targetDate, firestoreLogs);
         return firestoreLogs;
       }
+      this.saveLocalLogsForDate(targetDate, []);
+      return [];
     } catch (err) {
       console.warn('LoginLogService: getDocs notice:', err);
     }
 
-    return local;
+    return [];
   }
 }

@@ -336,7 +336,7 @@ export const StudentIncidentPdfModal: React.FC<StudentIncidentPdfModalProps> = (
                   Route #{currentIncident.routeNo}
                 </span>
                 <span className="text-[11px] text-slate-500 block truncate">
-                  {currentIncident.routeName || 'Standard Route'}
+                  {currentIncident.routeName || 'Route name not recorded'}
                 </span>
               </div>
 
@@ -359,7 +359,7 @@ export const StudentIncidentPdfModal: React.FC<StudentIncidentPdfModalProps> = (
               <div className="flex items-center gap-2">
                 <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                 <span className="font-bold text-slate-700">Incident Location:</span>
-                <span className="text-slate-900">{currentIncident.location || 'In Transit on Route'}</span>
+                <span className="text-slate-900">{currentIncident.location || 'Not recorded'}</span>
               </div>
               <div className="flex items-center gap-3 text-slate-600 font-mono text-[11px]">
                 <span className="flex items-center gap-1">
@@ -424,7 +424,7 @@ export const StudentIncidentPdfModal: React.FC<StudentIncidentPdfModalProps> = (
                   Immediate Action Taken By Driver
                 </span>
                 <p className="text-slate-800 text-[11px] min-h-[30px]">
-                  {currentIncident.immediateActionTaken || 'Verbal instructions given, logged report for administration.'}
+                  {currentIncident.immediateActionTaken || 'No immediate action has been recorded.'}
                 </p>
               </div>
             </div>
@@ -547,13 +547,9 @@ export const StudentIncidentPdfModal: React.FC<StudentIncidentPdfModalProps> = (
               </div>
 
               <div>
-                <div className="h-9 border-b border-dashed border-slate-400 flex items-end pb-1 font-serif text-slate-800 italic">
-                  PCY Tech Fleet Safety Compliance
-                </div>
+                <div className="h-9 border-b border-dashed border-slate-400" />
                 <div className="pt-1 font-bold text-slate-700 uppercase">Fleet Safety Supervisor Sign-off</div>
-                <div className="text-slate-500 text-[9px] font-mono">
-                  Audit Date: {new Date().toISOString().split('T')[0]}
-                </div>
+                <div className="text-slate-500 text-[9px] font-mono">Date: _______________</div>
               </div>
             </div>
 

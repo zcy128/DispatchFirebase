@@ -37,9 +37,10 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
   });
 
   useEffect(() => {
-    if (initialPropsContacts && initialPropsContacts.length > 0) {
-      setContacts(initialPropsContacts);
-    }
+    if (!initialPropsContacts) return;
+    if (!contactsSynced.current && initialPropsContacts.length === 0) return;
+    contactsSynced.current = true;
+    setContacts(initialPropsContacts);
   }, [initialPropsContacts]);
 
   useEffect(() => {
@@ -66,6 +67,8 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
   const [formHours, setFormHours] = useState('');
   const [formIs24x7, setFormIs24x7] = useState(false);
   const [formNotes, setFormNotes] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const contactsSynced = React.useRef(false);
 
   // Check RBAC permission for this page
   const canEdit = canEditPage(currentUser, 'company_contacts');
@@ -75,11 +78,11 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
       if (selectedDept !== 'ALL' && c.department !== selectedDept) return false;
       if (searchTerm.trim()) {
         const t = searchTerm.toLowerCase().trim();
-        const matchName = c.name.toLowerCase().includes(t);
-        const matchTitle = c.title.toLowerCase().includes(t);
-        const matchPhone = c.phone.includes(t);
-        const matchEmail = c.email.toLowerCase().includes(t);
-        const matchDept = c.department.toLowerCase().includes(t);
+        const matchName = (c.name || '').toLowerCase().includes(t);
+        const matchTitle = (c.title || '').toLowerCase().includes(t);
+        const matchPhone = (c.phone || '').includes(t);
+        const matchEmail = (c.email || '').toLowerCase().includes(t);
+        const matchDept = (c.department || '').toLowerCase().includes(t);
         if (!matchName && !matchTitle && !matchPhone && !matchEmail && !matchDept) return false;
       }
       return true;
@@ -97,6 +100,7 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
     setFormHours('08:00 AM - 05:00 PM');
     setFormIs24x7(false);
     setFormNotes('');
+    setFormError(null);
     setIsModalOpen(true);
   };
 
@@ -111,6 +115,7 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
     setFormHours(contact.hours);
     setFormIs24x7(contact.is24x7 ?? false);
     setFormNotes(contact.notes || '');
+    setFormError(null);
     setIsModalOpen(true);
   };
 
@@ -128,18 +133,33 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
 
   const handleSaveModal = async (e: React.FormEvent) => {
     e.preventDefault();
+    const name = formName.trim();
+    const phone = formPhone.trim();
+    const email = formEmail.trim();
+    if (!name || !phone) {
+      setFormError('Contact name and phone number are required.');
+      return;
+    }
+    if (email && !email.includes('@')) {
+      setFormError('Enter a valid email address, or leave it blank.');
+      return;
+    }
+    setFormError(null);
+    const fields = {
+      name,
+      title: formTitle.trim(),
+      department: formDept,
+      phone,
+      extension: formExt.trim(),
+      email,
+      hours: formHours.trim(),
+      is24x7: formIs24x7,
+      notes: formNotes.trim()
+    };
     if (editingContact) {
       const updatedContact: CompanyContact = {
         ...editingContact,
-        name: formName,
-        title: formTitle,
-        department: formDept,
-        phone: formPhone,
-        extension: formExt,
-        email: formEmail,
-        hours: formHours,
-        is24x7: formIs24x7,
-        notes: formNotes
+        ...fields
       };
       setContacts(contacts.map((c) => (c.id === editingContact.id ? updatedContact : c)));
       try {
@@ -150,15 +170,7 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
     } else {
       const newContact: CompanyContact = {
         id: `CC-${Date.now()}`,
-        name: formName,
-        title: formTitle,
-        department: formDept,
-        phone: formPhone,
-        extension: formExt,
-        email: formEmail,
-        hours: formHours,
-        is24x7: formIs24x7,
-        notes: formNotes
+        ...fields
       };
       setContacts([newContact, ...contacts]);
       try {
@@ -263,6 +275,11 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
 
       {/* Contacts Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredContacts.length === 0 && (
+          <div className="col-span-full rounded-xl border border-slate-800 bg-slate-900/60 px-6 py-12 text-center text-sm text-slate-400">
+            No contacts match your search or department filter.
+          </div>
+        )}
         {filteredContacts.map((c) => (
           <div
             key={c.id}
@@ -505,6 +522,7 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
               </div>
 
               <div className="pt-3 border-t border-slate-800 flex items-center justify-end space-x-2">
+                {formError && <span className="mr-auto text-xs font-semibold text-rose-400">{formError}</span>}
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}

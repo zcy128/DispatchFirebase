@@ -759,7 +759,7 @@ export const AppContent: React.FC = () => {
       setSchools((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
     } else {
       const created = await SchoolService.create(data);
-      setSchools((prev) => [created, ...prev]);
+      setSchools((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
     }
   };
 
@@ -786,7 +786,7 @@ export const AppContent: React.FC = () => {
       setBoards((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
     } else {
       const created = await SchoolService.createBoard(data);
-      setBoards((prev) => [...prev, created]);
+      setBoards((prev) => [...prev.filter((b) => b.id !== created.id), created]);
     }
   };
 
@@ -813,7 +813,9 @@ export const AppContent: React.FC = () => {
       const updated = await StudentService.update(editingStudent.id, data);
       const newStudents = students.map((s) => (s.id === updated.id ? updated : s));
       setStudents(newStudents);
-      setStudentStats(calculateStudentStats(newStudents));
+      void StudentService.getStats()
+        .then(setStudentStats)
+        .catch((error) => console.warn('Student stats refresh failed:', error));
 
       const diffs = EntityOperationLogService.compareStudent(editingStudent, updated);
       const summary =
@@ -835,7 +837,9 @@ export const AppContent: React.FC = () => {
       const created = await StudentService.create(data);
       const newStudents = [created, ...students];
       setStudents(newStudents);
-      setStudentStats(calculateStudentStats(newStudents));
+      void StudentService.getStats()
+        .then(setStudentStats)
+        .catch((error) => console.warn('Student stats refresh failed:', error));
 
       const diffs: EntityFieldDiff[] = [
         { field: 'fullName', fieldLabel: 'Student Name', oldValue: undefined, newValue: created.fullName || created.studentName },
@@ -878,7 +882,9 @@ export const AppContent: React.FC = () => {
       await StudentService.delete(student.id);
       const newStudents = students.filter((s) => s.id !== student.id);
       setStudents(newStudents);
-      setStudentStats(calculateStudentStats(newStudents));
+      void StudentService.getStats()
+        .then(setStudentStats)
+        .catch((error) => console.warn('Student stats refresh failed:', error));
       setSelectedStudent(null);
 
       await EntityOperationLogService.logOperation({

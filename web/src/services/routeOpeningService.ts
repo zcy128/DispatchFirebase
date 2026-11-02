@@ -12,7 +12,7 @@ import {
   addDoc,
   serverTimestamp
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import { apiRequest } from './api';
 import {
   RouteOpening,
@@ -55,12 +55,44 @@ function stripUndefined<T>(obj: T): T {
   return cleaned as T;
 }
 
+let openingsSubscriber: ((openings: RouteOpening[]) => void) | null = null;
+
+function isFirestoreDenied(err: unknown): boolean {
+  const code = String((err as { code?: string })?.code || '');
+  const message = String((err as { message?: string })?.message || err || '');
+  return (
+    code.includes('permission-denied') ||
+    message.includes('Missing or insufficient permissions') ||
+    message.includes('Firestore not initialized')
+  );
+}
+
+async function refreshOpeningsBoard(): Promise<void> {
+  if (!openingsSubscriber) return;
+  const list = await RouteOpeningService.listOpenings();
+  openingsSubscriber(Array.isArray(list) ? list : []);
+}
+
+async function loadOpening(id: string): Promise<RouteOpening | null> {
+  if (db && auth?.currentUser) {
+    try {
+      const snap = await getDoc(doc(db, COLLECTION_NAME, id));
+      if (!snap.exists()) return null;
+      return { ...(snap.data() as RouteOpening), id: snap.id };
+    } catch (err) {
+      if (!isFirestoreDenied(err)) throw err;
+    }
+  }
+  const list = await RouteOpeningService.listOpenings();
+  return list.find((item) => item.id === id) || null;
+}
+
 export const RouteOpeningService = {
   /**
    * List all route openings
    */
   listOpenings: async (): Promise<RouteOpening[]> => {
-    if (db) {
+    if (db && auth?.currentUser) {
       try {
         const q = query(collection(db, COLLECTION_NAME), orderBy('createdAt', 'desc'));
         const snap = await getDocs(q);
@@ -91,9 +123,13 @@ export const RouteOpeningService = {
     onUpdate: (openings: RouteOpening[]) => void,
     onError?: (err: Error) => void
   ) => {
-    if (!db) {
+    openingsSubscriber = onUpdate;
+    const stop = () => {
+      if (openingsSubscriber === onUpdate) openingsSubscriber = null;
+    };
+    if (!db || !auth?.currentUser) {
       RouteOpeningService.listOpenings().then(onUpdate).catch(onError);
-      return () => {};
+      return stop;
     }
 
     try {
@@ -118,11 +154,14 @@ export const RouteOpeningService = {
           });
         }
       );
-      return unsubscribe;
+      return () => {
+        stop();
+        unsubscribe();
+      };
     } catch (e: any) {
       console.error('[RouteOpeningService] Exception in subscription:', e);
       RouteOpeningService.listOpenings().then(onUpdate).catch(onError);
-      return () => {};
+      return stop;
     }
   },
 
@@ -130,8 +169,6 @@ export const RouteOpeningService = {
    * Create and publish a new route opening
    */
   createOpening: async (payload: CreateRouteOpeningPayload): Promise<RouteOpening> => {
-    if (!db) throw new Error('Firestore is not initialized');
-
     const id =
       payload.postingType === 'charter' && payload.charterTripId
         ? `RO-CHARTER-${payload.charterTripId}`
@@ -147,7 +184,7 @@ export const RouteOpeningService = {
 
     // Preserve existing applicants if updating an existing charter opening
     let existingApplicants: RouteOpeningApplicant[] = [];
-    if (payload.postingType === 'charter') {
+    if (db && payload.postingType === 'charter') {
       try {
         const existingSnap = await getDoc(doc(db, COLLECTION_NAME, id));
         if (existingSnap.exists()) {
@@ -193,40 +230,91 @@ export const RouteOpeningService = {
       updatedAt: nowIso
     };
 
-    const docRef = doc(db, COLLECTION_NAME, id);
-    await setDoc(docRef, stripUndefined(newOpening), { merge: true });
-
-    // Broadcast bulletin to Fleet Chat if selected
-    if (payload.postToChat) {
-      try {
-        await RouteOpeningService.broadcastOpeningToChat(newOpening, payload.createdBy);
-        newOpening.chatAnnouncementSent = true;
-        newOpening.chatChannelId = 'channel-broadcast';
-        await setDoc(docRef, { chatAnnouncementSent: true, chatChannelId: 'channel-broadcast' }, { merge: true });
-      } catch (chatErr) {
-        console.warn('[RouteOpeningService] Could not send chat announcement:', chatErr);
+    const persistViaApi = async (): Promise<RouteOpening> => {
+      const saved = await apiRequest<RouteOpening>('/api/route-openings', {
+        method: 'POST',
+        body: JSON.stringify(stripUndefined(newOpening))
+      });
+      if (payload.postToChat) {
+        try {
+          await RouteOpeningService.broadcastOpeningToChat(saved, payload.createdBy);
+          saved.chatAnnouncementSent = true;
+          saved.chatChannelId = 'channel-broadcast';
+          await apiRequest(`/api/route-openings/${encodeURIComponent(saved.id)}`, {
+            method: 'PUT',
+            body: JSON.stringify({ chatAnnouncementSent: true, chatChannelId: 'channel-broadcast' })
+          });
+        } catch (chatErr) {
+          console.warn('[RouteOpeningService] Could not send chat announcement:', chatErr);
+        }
       }
-    }
+      await refreshOpeningsBoard();
+      return saved;
+    };
 
-    return newOpening;
+    if (!db || !auth?.currentUser) return persistViaApi();
+
+    try {
+      const docRef = doc(db, COLLECTION_NAME, id);
+      await setDoc(docRef, stripUndefined(newOpening), { merge: true });
+
+      // Broadcast bulletin to Fleet Chat if selected
+      if (payload.postToChat) {
+        try {
+          await RouteOpeningService.broadcastOpeningToChat(newOpening, payload.createdBy);
+          newOpening.chatAnnouncementSent = true;
+          newOpening.chatChannelId = 'channel-broadcast';
+          await setDoc(docRef, { chatAnnouncementSent: true, chatChannelId: 'channel-broadcast' }, { merge: true });
+        } catch (chatErr) {
+          console.warn('[RouteOpeningService] Could not send chat announcement:', chatErr);
+        }
+      }
+
+      return newOpening;
+    } catch (err) {
+      if (!isFirestoreDenied(err)) throw err;
+      return persistViaApi();
+    }
   },
 
   /**
    * Update an opening
    */
   updateOpening: async (id: string, updates: Partial<RouteOpening>): Promise<void> => {
-    if (!db) return;
-    const docRef = doc(db, COLLECTION_NAME, id);
-    await setDoc(docRef, stripUndefined({ ...updates, updatedAt: new Date().toISOString() }), { merge: true });
+    const payload = stripUndefined({ ...updates, updatedAt: new Date().toISOString() });
+    const saveViaApi = async () => {
+      await apiRequest(`/api/route-openings/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      await refreshOpeningsBoard();
+    };
+    if (!db || !auth?.currentUser) {
+      await saveViaApi();
+      return;
+    }
+    try {
+      await setDoc(doc(db, COLLECTION_NAME, id), payload, { merge: true });
+    } catch (err) {
+      if (!isFirestoreDenied(err)) throw err;
+      await saveViaApi();
+    }
   },
 
   /**
    * Delete an opening
    */
   deleteOpening: async (id: string): Promise<void> => {
-    if (!db) return;
-    const docRef = doc(db, COLLECTION_NAME, id);
-    await deleteDoc(docRef);
+    if (db && auth?.currentUser) {
+      try {
+        await deleteDoc(doc(db, COLLECTION_NAME, id));
+        return;
+      } catch (err) {
+        if (!isFirestoreDenied(err)) throw err;
+      }
+    }
+    await apiRequest(`/api/route-openings/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await refreshOpeningsBoard();
   },
 
   /**
@@ -236,12 +324,9 @@ export const RouteOpeningService = {
     openingId: string,
     applicant: RouteOpeningApplicant
   ): Promise<void> => {
-    if (!db) throw new Error('Firestore is not initialized');
-    const docRef = doc(db, COLLECTION_NAME, openingId);
-    const snap = await getDoc(docRef);
-    if (!snap.exists()) throw new Error('Opening not found');
+    const opening = await loadOpening(openingId);
+    if (!opening) throw new Error('Opening not found');
 
-    const opening = snap.data() as RouteOpening;
     const existing = opening.applicants || [];
 
     // Replace if already applied or append
@@ -250,26 +335,16 @@ export const RouteOpeningService = {
       stripUndefined(applicant)
     ];
 
-    await setDoc(
-      docRef,
-      stripUndefined({
-        applicants: updatedApplicants,
-        updatedAt: new Date().toISOString()
-      }),
-      { merge: true }
-    );
+    await RouteOpeningService.updateOpening(openingId, { applicants: updatedApplicants });
   },
 
   /**
    * Withdraw application
    */
   withdrawApplication: async (openingId: string, employeeId: string): Promise<void> => {
-    if (!db) throw new Error('Firestore is not initialized');
-    const docRef = doc(db, COLLECTION_NAME, openingId);
-    const snap = await getDoc(docRef);
-    if (!snap.exists()) return;
+    const opening = await loadOpening(openingId);
+    if (!opening) return;
 
-    const opening = snap.data() as RouteOpening;
     const existing = opening.applicants || [];
 
     const updated = existing.map((a) => {
@@ -279,14 +354,7 @@ export const RouteOpeningService = {
       return a;
     });
 
-    await setDoc(
-      docRef,
-      stripUndefined({
-        applicants: updated,
-        updatedAt: new Date().toISOString()
-      }),
-      { merge: true }
-    );
+    await RouteOpeningService.updateOpening(openingId, { applicants: updated });
   },
 
   /**
@@ -806,9 +874,9 @@ export const RouteOpeningService = {
       }
     }
 
-    // 3. Save opening state in Firestore
-    const docRef = doc(db, COLLECTION_NAME, opening.id);
-    await setDoc(docRef, stripUndefined(updatedOpening), { merge: true });
+    // 3. Save opening state. Client Firestore writes are denied without a Firebase session,
+    // so updateOpening falls back to the API.
+    await RouteOpeningService.updateOpening(opening.id, updatedOpening);
 
     // 4. If permanent:
     //    - If effectiveStartDate <= todayStr: immediately update route & route_shifts crew (and future dispatches)

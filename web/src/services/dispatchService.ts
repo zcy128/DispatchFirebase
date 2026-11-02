@@ -1404,11 +1404,21 @@ export const DispatchService = {
           onUpdate(list || []);
         },
         (error) => {
-          console.error('[DispatchService] Temporary assignments onSnapshot error:', error);
-          if (onError) onError(error);
+          const message = String((error as { message?: string })?.message || error || '');
+          const code = String((error as { code?: string })?.code || '');
+          const denied = code.includes('permission-denied') || message.includes('Missing or insufficient permissions');
+          if (denied) {
+            console.warn('[DispatchService] Temporary assignments listener denied, falling back to API:', error);
+          } else {
+            console.error('[DispatchService] Temporary assignments onSnapshot error:', error);
+            if (onError) onError(error);
+          }
           DispatchService.listTemporaryAssignments()
             .then((list) => onUpdate(Array.isArray(list) ? list : []))
-            .catch(console.error);
+            .catch((err) => {
+              console.error('[DispatchService] Temporary assignments API fallback failed:', err);
+              if (onError) onError(err as Error);
+            });
         }
       );
       return unsubscribe;

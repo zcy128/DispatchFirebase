@@ -11,131 +11,21 @@ import { RouteChangeLog } from '../types/routeAudit';
 
 const LOCAL_STORAGE_KEY = 'dispatch_route_change_logs';
 
-/**
- * Seed mock logs for demonstration and immediate verification
- */
-const SEED_ROUTE_LOGS: RouteChangeLog[] = [
-  {
-    id: 'rcl-seed-001',
-    routeId: 'RT-001',
-    routeNo: 'OCDSB-001',
-    routeName: 'Route 001 - Bell High School',
-    category: 'shift',
-    action: 'update',
-    summary: 'Updated AM Shift operating schedule to MTWRF (07:30 - 08:30)',
-    shiftId: 'SHIFT-001-AM',
-    shiftType: 'AM',
-    diffs: [
-      { field: 'runDays', fieldLabel: 'Operating Days', oldValue: 'MTWR-', newValue: 'MTWRF' },
-      { field: 'active', fieldLabel: 'Shift Active Status', oldValue: false, newValue: true }
-    ],
-    userId: 'usr-disp-101',
-    userName: 'Sarah Jenkins',
-    userEmail: 's.jenkins@dispatch.net',
-    userRole: 'dispatcher',
-    timestamp: new Date(Date.now() - 3600000 * 24 * 2).toISOString()
-  },
-  {
-    id: 'rcl-seed-002',
-    routeId: 'RT-001',
-    routeNo: 'OCDSB-001',
-    routeName: 'Route 001 - Bell High School',
-    category: 'stop',
-    action: 'update',
-    summary: 'Modified Stop #2 (1420 Woodroffe Ave): Pullaway time adjusted from 07:40 to 07:42',
-    shiftId: 'SHIFT-001-AM',
-    shiftType: 'AM',
-    stopId: 1002,
-    stopSequence: 2,
-    stopLocation: '1420 Woodroffe Ave',
-    diffs: [
-      { field: 'pullawayTime', fieldLabel: 'Pullaway Time', oldValue: '07:40', newValue: '07:42' },
-      { field: 'instruction', fieldLabel: 'Instructions', oldValue: '', newValue: 'Wait across sidewalk at north entrance' }
-    ],
-    userId: 'usr-disp-102',
-    userName: 'David Miller',
-    userEmail: 'd.miller@dispatch.net',
-    userRole: 'dispatcher',
-    timestamp: new Date(Date.now() - 3600000 * 18).toISOString()
-  },
-  {
-    id: 'rcl-seed-003',
-    routeId: 'RT-001',
-    routeNo: 'OCDSB-001',
-    routeName: 'Route 001 - Bell High School',
-    category: 'student',
-    action: 'assign',
-    summary: 'Assigned student Liam Tremblay (#STU-1004) to Stop #2 (Home Pickup 07:42)',
-    shiftId: 'SHIFT-001-AM',
-    shiftType: 'AM',
-    stopId: 1002,
-    stopSequence: 2,
-    stopLocation: '1420 Woodroffe Ave',
-    studentId: 1004,
-    studentNo: 'STU-1004',
-    studentName: 'Liam Tremblay',
-    diffs: [
-      { field: 'assignedStudents', fieldLabel: 'Assigned Riders', oldValue: 'None', newValue: 'Liam Tremblay' }
-    ],
-    userId: 'usr-admin-001',
-    userName: 'Admin User',
-    userEmail: 'admin@schoolbus.com',
-    userRole: 'admin',
-    timestamp: new Date(Date.now() - 3600000 * 12).toISOString()
-  },
-  {
-    id: 'rcl-seed-004',
-    routeId: 'RT-001',
-    routeNo: 'OCDSB-001',
-    routeName: 'Route 001 - Bell High School',
-    category: 'student',
-    action: 'update',
-    summary: 'Updated itinerary for Emma Watson: PM Dropoff address changed to 88 Richmond Rd',
-    shiftId: 'SHIFT-001-PM',
-    shiftType: 'PM',
-    studentId: 1002,
-    studentNo: 'STU-1002',
-    studentName: 'Emma Watson',
-    diffs: [
-      { field: 'dropoffAddress', fieldLabel: 'PM Dropoff Address', oldValue: '45 Baseline Rd', newValue: '88 Richmond Rd' },
-      { field: 'dropoffTime', fieldLabel: 'PM Dropoff Time', oldValue: '15:15', newValue: '15:20' }
-    ],
-    userId: 'usr-disp-101',
-    userName: 'Sarah Jenkins',
-    userEmail: 's.jenkins@dispatch.net',
-    userRole: 'dispatcher',
-    timestamp: new Date(Date.now() - 3600000 * 5).toISOString()
-  },
-  {
-    id: 'rcl-seed-005',
-    routeId: 'RT-001',
-    routeNo: 'OCDSB-001',
-    routeName: 'Route 001 - Bell High School',
-    category: 'route',
-    action: 'update',
-    summary: 'Updated route operational settings: Enabled Auto Marryup for AM & PM shift coupling',
-    diffs: [
-      { field: 'autoMarryup', fieldLabel: 'Auto Marryup', oldValue: false, newValue: true }
-    ],
-    userId: 'usr-disp-101',
-    userName: 'Sarah Jenkins',
-    userEmail: 's.jenkins@dispatch.net',
-    userRole: 'dispatcher',
-    timestamp: new Date(Date.now() - 3600000 * 2).toISOString()
-  }
-];
+function isStoredRouteLog(item: unknown): item is RouteChangeLog {
+  if (!item || typeof item !== 'object') return false;
+  const id = (item as { id?: unknown }).id;
+  return typeof id === 'string' && id.length > 0 && !id.startsWith('rcl-seed-') && !id.startsWith('rcl-init-');
+}
 
 function getStoredLogs(): RouteChangeLog[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(SEED_ROUTE_LOGS));
-      return [...SEED_ROUTE_LOGS];
-    }
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [...SEED_ROUTE_LOGS];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isStoredRouteLog);
   } catch {
-    return [...SEED_ROUTE_LOGS];
+    return [];
   }
 }
 
@@ -208,6 +98,7 @@ export const RouteAuditService = {
         (snapshot) => {
           const list: RouteChangeLog[] = [];
           snapshot.forEach((doc) => {
+            if (doc.id.startsWith('rcl-seed-') || doc.id.startsWith('rcl-init-')) return;
             list.push({ ...(doc.data() as RouteChangeLog), id: doc.id });
           });
 
@@ -267,6 +158,7 @@ export const RouteAuditService = {
         (snapshot) => {
           const list: RouteChangeLog[] = [];
           snapshot.forEach((doc) => {
+            if (doc.id.startsWith('rcl-seed-') || doc.id.startsWith('rcl-init-')) return;
             list.push({ ...(doc.data() as RouteChangeLog), id: doc.id });
           });
 

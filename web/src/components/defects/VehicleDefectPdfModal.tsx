@@ -508,7 +508,7 @@ export const VehicleDefectPdfModal: React.FC<VehicleDefectPdfModalProps> = ({
                   Fleet Maintenance Assessment &amp; Work Dispatch
                 </span>
                 <span className="font-mono text-[10px] text-slate-500">
-                  Assessed: {currentReport.assessment?.assessedAt || currentReport.reportDate}
+                  Assessed: {currentReport.assessment?.assessedAt || 'Not yet assessed'}
                 </span>
               </div>
 
@@ -516,7 +516,7 @@ export const VehicleDefectPdfModal: React.FC<VehicleDefectPdfModalProps> = ({
                 <div>
                   <span className="text-[10px] font-semibold text-slate-500 block">Assessed By</span>
                   <span className="font-bold text-slate-900 block truncate">
-                    {currentReport.assessment?.assessedBy || 'Fleet Maintenance Supervisor'}
+                    {currentReport.assessment?.assessedBy || 'Not yet assessed'}
                   </span>
                 </div>
 
@@ -524,21 +524,23 @@ export const VehicleDefectPdfModal: React.FC<VehicleDefectPdfModalProps> = ({
                   <span className="text-[10px] font-semibold text-slate-500 block">Repair Location / Bay</span>
                   <span className="font-bold text-slate-900 flex items-center gap-1 truncate">
                     <MapPin className="w-3 h-3 text-slate-400" />
-                    {currentReport.assessment?.repairLocation || 'Main Maintenance Depot'}
+                    {currentReport.assessment?.repairLocation || 'Not assigned'}
                   </span>
                 </div>
 
                 <div>
                   <span className="text-[10px] font-semibold text-slate-500 block">Estimated Schedule</span>
                   <span className="font-mono text-slate-900 block font-semibold text-[11px]">
-                    {currentReport.assessment?.estimatedRepairDays ?? 1} days (Due {currentReport.assessment?.estimatedCompletionDate || currentReport.reportDate})
+                    {currentReport.assessment?.estimatedCompletionDate
+                      ? `${currentReport.assessment.estimatedRepairDays ?? 0} days (Due ${currentReport.assessment.estimatedCompletionDate})`
+                      : 'Not scheduled'}
                   </span>
                 </div>
 
                 <div>
                   <span className="text-[10px] font-semibold text-slate-500 block">Repair Cost / Expense</span>
                   <span className="font-mono font-bold text-emerald-800 text-[11px] block">
-                    {currentReport.assessment?.repairCost ? `$${currentReport.assessment.repairCost.toFixed(2)}` : '$0.00'}
+                    {currentReport.assessment?.repairCost ? `$${currentReport.assessment.repairCost.toFixed(2)}` : '—'}
                   </span>
                 </div>
               </div>
@@ -547,7 +549,7 @@ export const VehicleDefectPdfModal: React.FC<VehicleDefectPdfModalProps> = ({
               <div className="bg-white p-2 rounded-lg border border-slate-200 text-[11px]">
                 <span className="font-bold text-slate-700">Triage &amp; Inspection Assessment: </span>
                 <span className="text-slate-600 italic">
-                  {currentReport.assessment?.assessmentNotes || 'Vehicle assessed by shop foreman. Parts ordered and technician assigned.'}
+                  {currentReport.assessment?.assessmentNotes || 'No fleet assessment has been recorded.'}
                 </span>
               </div>
 
@@ -555,7 +557,7 @@ export const VehicleDefectPdfModal: React.FC<VehicleDefectPdfModalProps> = ({
               <div className="bg-white p-2 rounded-lg border border-slate-200 text-[11px]">
                 <span className="font-bold text-slate-700">Mechanic / Work Completion Notes: </span>
                 <span className="text-slate-600 italic">
-                  {currentReport.assessment?.mechanicNotes || (currentReport.status === 'resolved' ? 'All required repairs completed and safety operational tests passed.' : 'Pending repair completion and road-test signoff.')}
+                  {currentReport.assessment?.mechanicNotes || 'No mechanic notes have been recorded.'}
                 </span>
               </div>
             </div>
@@ -616,7 +618,7 @@ export const VehicleDefectPdfModal: React.FC<VehicleDefectPdfModalProps> = ({
                   {currentReport.assessment?.assessedBy || 'Supervisor Signature / Code'}
                 </div>
                 <div className="text-[10px] text-slate-500 mt-1">
-                  Date: {currentReport.assessment?.assessedAt?.substring(0, 10) || currentReport.reportDate}
+                  Date: {currentReport.assessment?.assessedAt?.substring(0, 10) || '__________________'}
                 </div>
               </div>
             </div>

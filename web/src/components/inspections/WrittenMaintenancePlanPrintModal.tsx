@@ -104,9 +104,9 @@ export const WrittenMaintenancePlanPrintModal: React.FC<WrittenMaintenancePlanPr
                   : 'QUÉBEC SAAQ PROGRAMME D\'ENTRETIEN MÉCANIQUE OBLIGATOIRE (FICHE D\'ENTRETIEN)'}
               </h1>
               <div className="text-xs text-slate-600 font-mono mt-0.5">
-                {isFrench ? 'Immatriculation' : 'Registration'}: <strong>{complianceConfig.cvorOrPevlNumber}</strong> •{' '}
+                {isFrench ? 'Immatriculation' : 'Registration'}:                 <strong>{complianceConfig.cvorOrPevlNumber || (isFrench ? 'Non enregistré' : 'Not recorded')}</strong> •{' '}
                 {isFrench ? 'Version du plan' : 'Plan Version'}:{' '}
-                <strong>{complianceConfig.writtenPlanVersion || 'WMP-2026.2'}</strong> •{' '}
+                <strong>{complianceConfig.writtenPlanVersion || (isFrench ? 'Non enregistré' : 'Not recorded')}</strong> •{' '}
                 {isFrench ? 'Conservation' : 'Retention'}:{' '}
                 <strong>
                   {isFrench
@@ -124,7 +124,7 @@ export const WrittenMaintenancePlanPrintModal: React.FC<WrittenMaintenancePlanPr
             </div>
             <div>
               {isFrench ? 'Approuvé par' : 'Approved By'}:{' '}
-              <strong>{complianceConfig.writtenPlanApprovedBy || 'Fleet Safety Director'}</strong>
+              <strong>{complianceConfig.writtenPlanApprovedBy || (isFrench ? 'Non enregistré' : 'Not recorded')}</strong>
             </div>
             <div>
               {isFrench ? 'Généré le' : 'Generated'}: <strong>{new Date().toISOString().slice(0, 10)}</strong>
@@ -405,7 +405,7 @@ export const WrittenMaintenancePlanPrintModal: React.FC<WrittenMaintenancePlanPr
             </div>
             <div className="mt-1">
               {isFrench ? 'Titre' : 'Title'}:{' '}
-              {complianceConfig.writtenPlanApprovedBy || 'Director of Fleet Safety & Maintenance'}
+              {complianceConfig.writtenPlanApprovedBy || (isFrench ? 'Non enregistré' : 'Not recorded')}
             </div>
           </div>
         </div>

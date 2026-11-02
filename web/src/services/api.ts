@@ -4,8 +4,9 @@ import { auth } from './firebase';
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export async function getAuthToken(): Promise<string> {
-  // 1. Real Firebase Auth token if logged in
-  if (auth && auth.currentUser) {
+  // 1. Real Firebase Auth token if logged in as the employee's own account.
+  // Synthetic demo uids are not an identity; keep using the backend session token.
+  if (auth && auth.currentUser && !auth.currentUser.uid.startsWith('mock-')) {
     try {
       const token = await auth.currentUser.getIdToken();
       if (token) return token;

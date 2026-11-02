@@ -274,34 +274,23 @@ func (r *FirestoreCalendarRepository) GetCalendar(ctx context.Context, scope str
 		}
 	}
 
-	// 3. If board calendar does not exist in Firestore yet, automatically seed standard baseline
-	boardCode := "OCSB"
+	// Missing calendars stay empty until someone saves. Do not write the
+	// 2026-2027 OCSB template under another board or school year.
+	boardCode := ""
 	if boardID == 5 {
 		boardCode = "OCDSB"
+	} else if boardID == 6 {
+		boardCode = "OCSB"
 	}
-	defaultEvents := GenerateDefaultOCSB2026Events()
-	now := time.Now().UTC().Format(time.RFC3339)
-
-	defaultBoardCal := &models.SchoolCalendar{
+	return &models.SchoolCalendar{
 		ID:         boardDocID,
 		Scope:      "board",
 		BoardID:    boardID,
 		BoardCode:  boardCode,
 		SchoolYear: year,
 		IsCustom:   false,
-		Events:     defaultEvents,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-
-	// Seed to Firestore in background
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_, _ = r.client.Collection(r.coll).Doc(boardDocID).Set(bgCtx, defaultBoardCal)
-	}()
-
-	return defaultBoardCal, nil
+		Events:     []models.CalendarEvent{},
+	}, nil
 }
 
 func (r *FirestoreCalendarRepository) SaveCalendar(ctx context.Context, cal *models.SchoolCalendar) (*models.SchoolCalendar, error) {

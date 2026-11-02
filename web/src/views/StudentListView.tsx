@@ -93,6 +93,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
   // State for on-demand school student records
   const [loadedSchoolStudents, setLoadedSchoolStudents] = useState<Student[]>([]);
   const [loadingSchoolStudents, setLoadingSchoolStudents] = useState<boolean>(false);
+  const [rosterLive, setRosterLive] = useState<boolean>(false);
 
   // Dynamic onSnapshot listener scoped strictly to the selected school
   useEffect(() => {
@@ -100,6 +101,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
     setLoadingSchoolStudents(true);
 
     if (selectedSchoolId === 'ALL') {
+      setRosterLive(false);
       StudentService.list()
         .then((list) => {
           if (!isCancelled) {
@@ -118,18 +120,24 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
     }
 
     const sId = Number(selectedSchoolId);
+    let live = true;
     const unsub = StudentService.subscribeToSchoolStudents(
       sId,
       (list) => {
         if (!isCancelled) {
           setLoadedSchoolStudents(list);
           setLoadingSchoolStudents(false);
+          setRosterLive(live);
           onStudentsLoaded?.(list);
         }
       },
       (err) => {
+        live = false;
         console.error(`Error subscribing to school ${sId}:`, err);
-        if (!isCancelled) setLoadingSchoolStudents(false);
+        if (!isCancelled) {
+          setLoadingSchoolStudents(false);
+          setRosterLive(false);
+        }
       }
     );
 
@@ -165,7 +173,8 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
       try {
         const results = await StudentService.search(term);
         const currentSid = Number(selectedSchoolId);
-        const otherMatches = results.filter((s) => s.schoolId !== currentSid);
+        const list = Array.isArray(results) ? results : [];
+        const otherMatches = list.filter((s) => s.schoolId !== currentSid);
         setCrossSchoolMatches(otherMatches);
       } catch (err) {
         console.warn('Cross-school search failed:', err);
@@ -722,8 +731,8 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
             )}
           </div>
           <div className="text-xs text-slate-400 flex items-center space-x-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="hidden sm:inline">Real-time sync active</span>
+            <span className={`w-2 h-2 rounded-full ${rosterLive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}`} />
+            <span className="hidden sm:inline">{rosterLive ? 'Real-time sync active' : 'Directory loaded'}</span>
           </div>
         </div>
 

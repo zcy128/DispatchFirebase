@@ -47,6 +47,9 @@ func (h *StudentHandler) List(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"failed to retrieve students"}`, http.StatusInternalServerError)
 		return
 	}
+	if students == nil {
+		students = []*models.Student{}
+	}
 	json.NewEncoder(w).Encode(students)
 }
 

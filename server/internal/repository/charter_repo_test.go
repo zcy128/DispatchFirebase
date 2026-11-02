@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -51,6 +52,53 @@ func TestMemoryCharterTripRoundTrip(t *testing.T) {
 	}
 	if len(left) != 0 {
 		t.Fatalf("expected empty list, got %d", len(left))
+	}
+}
+
+func TestMemoryRouteOpeningRoundTrip(t *testing.T) {
+	repo := NewMemoryCharterRepository()
+	ctx := context.Background()
+
+	created, err := repo.CreateRouteOpening(ctx, map[string]interface{}{
+		"id":                 "RO-qa-1",
+		"routeId":            "RT-021",
+		"routeNo":            "021",
+		"postingType":        "permanent",
+		"status":             "open",
+		"description":        "QA test opening",
+		"effectiveStartDate": "2026-11-02",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if created["id"] != "RO-qa-1" {
+		t.Fatalf("id = %#v", created["id"])
+	}
+
+	updated, err := repo.UpdateRouteOpening(ctx, "RO-qa-1", map[string]interface{}{
+		"description": "QA test opening updated",
+		"status":      "reviewing",
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if updated["description"] != "QA test opening updated" || updated["routeNo"] != "021" {
+		t.Fatalf("merged = %#v", updated)
+	}
+
+	listed, err := repo.ListRouteOpenings(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("list len = %d", len(listed))
+	}
+
+	if err := repo.DeleteRouteOpening(ctx, "RO-qa-1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := repo.UpdateRouteOpening(ctx, "RO-qa-1", map[string]interface{}{"status": "open"}); !errors.Is(err, ErrRouteOpeningNotFound) {
+		t.Fatalf("expected not found, got %v", err)
 	}
 }
 

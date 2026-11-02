@@ -230,28 +230,16 @@ export const ExpenseReimbursementService = {
     let unsubscribeSnapshot: (() => void) | null = null;
     let restClaims: ExpenseReimbursement[] = [];
     let firestoreClaims: ExpenseReimbursement[] = [];
+    let listenerReady = false;
 
     const emitMerged = () => {
       if (!isSubscribed) return;
-      const map = new Map<string, ExpenseReimbursement>();
-      for (const r of restClaims) {
-        map.set(r.id, r);
-      }
-      for (const r of firestoreClaims) {
-        const existing = map.get(r.id);
-        if (
-          !existing ||
-          new Date(r.updatedAt || r.createdAt).getTime() >=
-            new Date(existing.updatedAt || existing.createdAt).getTime()
-        ) {
-          map.set(r.id, r);
-        }
-      }
       const cutoff = new Date();
       cutoff.setMonth(cutoff.getMonth() - 6);
       const cutoffStr = cutoff.toISOString().slice(0, 10);
+      const source = listenerReady ? firestoreClaims : restClaims;
 
-      const merged = Array.from(map.values())
+      const merged = source
         .filter((r) => {
           const cDate = r.claimDate || (r.createdAt ? r.createdAt.slice(0, 10) : '');
           return cDate >= cutoffStr;
@@ -269,7 +257,7 @@ export const ExpenseReimbursementService = {
       if (!isSubscribed) return;
       try {
         const claims = await ExpenseReimbursementService.listClaims();
-        if (isSubscribed) {
+        if (isSubscribed && !listenerReady) {
           restClaims = claims;
           emitMerged();
         }
@@ -303,9 +291,11 @@ export const ExpenseReimbursementService = {
               list.push(normalizeExpenseRecord(d.data(), d.id));
             });
             firestoreClaims = list;
+            listenerReady = true;
             emitMerged();
           },
           (error) => {
+            listenerReady = false;
             console.warn(
               '[ExpenseReimbursementService] Firestore snapshot error, switching to auto-polling:',
               error

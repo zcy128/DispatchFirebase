@@ -83,30 +83,35 @@ export const AssignmentTrackingView: React.FC = () => {
 
   // Subscribe to real-time events (<= 1 year live data) or load targeted archives (> 1 year)
   useEffect(() => {
-    if (timeRange === '1year') {
-      setLoading(true);
-      const unsubscribe = AssignmentHistoryService.subscribeToHistory(
-        (records) => {
-          setHistory(records);
-          setLoading(false);
-          setRefreshing(false);
-        },
-        () => {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      );
+    if (timeRange !== '1year') return;
+    setLoading(true);
+    const unsubscribe = AssignmentHistoryService.subscribeToHistory(
+      (records) => {
+        setHistory(records);
+        setLoading(false);
+        setRefreshing(false);
+      },
+      () => {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    );
 
-      return () => unsubscribe();
-    } else {
-      loadHistory();
-    }
+    return () => unsubscribe();
   }, [timeRange, activeTab, selectedAction, selectedDriverId, selectedRouteNo, selectedUnitNumber, selectedDate]);
+
+  useEffect(() => {
+    if (timeRange !== 'all') return;
+    const handle = window.setTimeout(() => {
+      loadHistory();
+    }, 300);
+    return () => window.clearTimeout(handle);
+  }, [timeRange, searchQuery, activeTab, selectedAction, selectedDriverId, selectedRouteNo, selectedUnitNumber, selectedDate]);
 
   const handleManualRefresh = async () => {
     setRefreshing(true);
     if (timeRange === '1year') {
-      const records = await AssignmentHistoryService.getHistory('1year');
+      const records = await AssignmentHistoryService.listHistory({ timeRange: '1year' });
       setHistory(records);
     } else {
       await loadHistory();
@@ -672,7 +677,7 @@ export const AssignmentTrackingView: React.FC = () => {
           </div>
         ) : filteredRecords.length === 0 ? (
           <div className="p-12 text-center space-y-2">
-            {timeRange === 'all' && !searchQuery.trim() && !selectedDriverId && !selectedRouteNo && !selectedUnitNumber && !selectedDate ? (
+            {timeRange === 'all' && !searchQuery.trim() && !selectedDriverId && !selectedRouteNo && !selectedUnitNumber && !selectedDate && selectedAction === 'all' ? (
               <>
                 <Search className="w-8 h-8 text-amber-500 mx-auto mb-2" />
                 <p className="text-sm font-semibold text-slate-200">

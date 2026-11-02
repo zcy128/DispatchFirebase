@@ -110,13 +110,33 @@ func (r *FirestoreSchoolRepository) Create(ctx context.Context, s *models.School
 	s.CreatedAt = now
 	s.UpdatedAt = now
 
-	if s.SchoolID == 0 {
-		count, _ := r.Count(ctx)
-		s.SchoolID = count + 1
-	}
-
-	if s.ID == "" {
-		s.ID = fmt.Sprintf("SCH-%03d", s.SchoolID)
+	if s.SchoolID == 0 || s.ID == "" {
+		snaps, err := r.client.Collection(r.coll).Documents(ctx).GetAll()
+		if err != nil {
+			return nil, err
+		}
+		maxID := 0
+		used := map[string]struct{}{}
+		for _, snap := range snaps {
+			used[snap.Ref.ID] = struct{}{}
+			var existing models.School
+			if err := snap.DataTo(&existing); err == nil && existing.SchoolID > maxID {
+				maxID = existing.SchoolID
+			}
+		}
+		if s.SchoolID == 0 {
+			s.SchoolID = maxID + 1
+		}
+		if s.ID == "" {
+			s.ID = fmt.Sprintf("SCH-%03d", s.SchoolID)
+		}
+		for {
+			if _, taken := used[s.ID]; !taken {
+				break
+			}
+			s.SchoolID++
+			s.ID = fmt.Sprintf("SCH-%03d", s.SchoolID)
+		}
 	}
 
 	_, err := r.client.Collection(r.coll).Doc(s.ID).Set(ctx, s)
@@ -199,12 +219,30 @@ func (r *FirestoreSchoolBoardRepository) GetBoardByID(ctx context.Context, id st
 }
 
 func (r *FirestoreSchoolBoardRepository) CreateBoard(ctx context.Context, b *models.SchoolBoard) (*models.SchoolBoard, error) {
-	if b.SchoolBoardID == 0 {
+	if b.SchoolBoardID == 0 || b.ID == "" {
 		snaps, _ := r.client.Collection(r.coll).Documents(ctx).GetAll()
-		b.SchoolBoardID = len(snaps) + 1
-	}
-	if b.ID == "" {
-		b.ID = fmt.Sprintf("BOARD-%02d", b.SchoolBoardID)
+		maxID := 0
+		used := map[string]struct{}{}
+		for _, snap := range snaps {
+			used[snap.Ref.ID] = struct{}{}
+			var existing models.SchoolBoard
+			if err := snap.DataTo(&existing); err == nil && existing.SchoolBoardID > maxID {
+				maxID = existing.SchoolBoardID
+			}
+		}
+		if b.SchoolBoardID == 0 {
+			b.SchoolBoardID = maxID + 1
+		}
+		if b.ID == "" {
+			b.ID = fmt.Sprintf("BOARD-%02d", b.SchoolBoardID)
+		}
+		for {
+			if _, taken := used[b.ID]; !taken {
+				break
+			}
+			b.SchoolBoardID++
+			b.ID = fmt.Sprintf("BOARD-%02d", b.SchoolBoardID)
+		}
 	}
 	_, err := r.client.Collection(r.coll).Doc(b.ID).Set(ctx, b)
 	if err != nil {

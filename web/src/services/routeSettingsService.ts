@@ -68,22 +68,18 @@ export const RouteSettingsService = {
       updatedAt: new Date().toISOString()
     };
 
-    // 1. Save to localStorage
+    if (!db) {
+      throw new Error('Cloud database is not available. Route settings were not saved.');
+    }
+
+    const { doc, setDoc } = await import('firebase/firestore');
+    const docRef = doc(db, 'system_settings', 'route_optimization');
+    await setDoc(docRef, updated, { merge: true });
+
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     } catch {
-      // ignore
-    }
-
-    // 2. Save to Firestore
-    if (db) {
-      try {
-        const { doc, setDoc } = await import('firebase/firestore');
-        const docRef = doc(db, 'system_settings', 'route_optimization');
-        await setDoc(docRef, updated, { merge: true });
-      } catch (err) {
-        console.warn('[RouteSettingsService] Firestore save error:', err);
-      }
+      // The cloud copy is already stored.
     }
 
     return updated;

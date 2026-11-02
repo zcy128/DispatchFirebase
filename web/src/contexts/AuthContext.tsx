@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, User, signInWithEmailAndPassword, signOut as fbSignOut } from 'firebase/auth';
+import { onAuthStateChanged, User, signInWithCustomToken, signInWithEmailAndPassword, signOut as fbSignOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { AuthUser, PermissionLevel } from '../types/employee';
 import { LoginLogService } from '../services/loginLogService';
@@ -18,6 +18,45 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function readStoredAuthUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem('dispatch_auth_user');
+    const token = localStorage.getItem('dispatch_auth_token');
+    if (!raw || !token) return null;
+    return JSON.parse(raw) as AuthUser;
+  } catch {
+    return null;
+  }
+}
+
+function isSyntheticUid(uid?: string | null): boolean {
+  return !!uid && uid.startsWith('mock-');
+}
+
+async function establishFirebaseSession(customToken?: string): Promise<boolean> {
+  if (!auth) return false;
+  if (auth.currentUser && !isSyntheticUid(auth.currentUser.uid) && !customToken) return true;
+  let token = customToken || '';
+  if (!token) {
+    if (!localStorage.getItem('dispatch_auth_token')) return false;
+    try {
+      const res = await apiRequest<{ customToken?: string }>('/api/auth/firebase-token', { method: 'POST' });
+      token = res?.customToken || '';
+    } catch (err) {
+      console.warn('[AuthContext] Firebase session exchange failed:', err);
+      return false;
+    }
+  }
+  if (!token) return false;
+  try {
+    await signInWithCustomToken(auth, token);
+    return true;
+  } catch (err) {
+    console.warn('[AuthContext] Firebase custom token sign-in failed:', err);
+    return false;
+  }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -32,18 +71,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // ignore
     }
 
-    // 1. Check stored auth user and token from genuine backend login
-    const storedAuthUser = localStorage.getItem('dispatch_auth_user');
-    const storedAuthToken = localStorage.getItem('dispatch_auth_token');
-    if (storedAuthUser && storedAuthToken) {
-      try {
-        setCurrentUser(JSON.parse(storedAuthUser));
-        setIsMockMode(false);
-        setLoading(false);
-      } catch {
-        localStorage.removeItem('dispatch_auth_user');
-        localStorage.removeItem('dispatch_auth_token');
-      }
+    const storedAuthUser = readStoredAuthUser();
+    if (storedAuthUser) {
+      setCurrentUser(storedAuthUser);
+      setIsMockMode(false);
     }
 
     if (!auth) {
@@ -51,38 +82,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    let cancelled = false;
+    let exchangeStarted = false;
+    let exchangeFinished = false;
+
     const unsubscribe = onAuthStateChanged(auth, async (user: User | null) => {
-      if (user) {
+      if (cancelled) return;
+      if (user && !isSyntheticUid(user.uid)) {
         try {
           const idTokenResult = await user.getIdTokenResult();
-          const role = (idTokenResult.claims.role as string) || 'admin';
-          const employeeId = (idTokenResult.claims.employeeId as string) || 'EMP-ADMIN-001';
-          const overrides = (idTokenResult.claims.ovr as Record<string, PermissionLevel>) || {};
+          const storedUser = readStoredAuthUser();
+          const role = (idTokenResult.claims.role as string) || storedUser?.role || 'admin';
+          const employeeId = (idTokenResult.claims.employeeId as string) || storedUser?.employeeId || '';
+          const overrides = (idTokenResult.claims.ovr as Record<string, PermissionLevel>) || storedUser?.overrides || {};
 
-          setCurrentUser({
+          const nextUser: AuthUser = {
+            ...(storedUser || {}),
             uid: user.uid,
-            email: user.email || '',
+            email: user.email || storedUser?.email || '',
             role,
             employeeId,
-            displayName: user.displayName || user.email || 'Dispatcher',
+            displayName: user.displayName || storedUser?.displayName || storedUser?.fullName || user.email || 'Dispatcher',
             overrides,
-          });
+          };
+          setCurrentUser(nextUser);
+          localStorage.setItem('dispatch_auth_user', JSON.stringify(nextUser));
           setIsMockMode(false);
         } catch (e) {
           console.warn('Failed to get idTokenResult:', e);
         }
-      } else {
-        const storedAuthUser = localStorage.getItem('dispatch_auth_user');
-        const storedAuthToken = localStorage.getItem('dispatch_auth_token');
-        if (!storedAuthUser || !storedAuthToken) {
-          setCurrentUser(null);
-          setIsMockMode(false);
-        }
+        if (!cancelled) setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      if (exchangeStarted && !exchangeFinished) return;
+
+      const storedUser = readStoredAuthUser();
+      const storedToken = localStorage.getItem('dispatch_auth_token');
+      if (storedUser && storedToken && !exchangeFinished) {
+        exchangeStarted = true;
+        const signedIn = await establishFirebaseSession();
+        exchangeFinished = true;
+        if (cancelled) return;
+        if (signedIn) return;
+      }
+
+      if (!storedUser || !storedToken) {
+        setCurrentUser(null);
+        setIsMockMode(false);
+      }
+      if (!cancelled) setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   const loginAsMockAdmin = async (customUser?: { username?: string; role?: string; displayName?: string; overrides?: Record<string, PermissionLevel> }) => {
@@ -101,13 +156,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 1. Primary: Try Go Backend API /api/auth/login to get lean user profile with role & overrides
     let backendUser: AuthUser | null = null;
+    let firebaseCustomToken = '';
     try {
-      const res = await apiRequest<{ success: boolean; token: string; user: AuthUser }>('/api/auth/login', {
+      const res = await apiRequest<{ success: boolean; token: string; user: AuthUser; firebaseCustomToken?: string }>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ username: identifier, password: pass }),
       });
       if (res && res.success && res.user) {
         backendUser = res.user;
+        firebaseCustomToken = res.firebaseCustomToken || '';
         if (res.token) {
           localStorage.setItem('dispatch_auth_token', res.token);
         }
@@ -118,15 +175,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (backendUser) {
+      if (auth) {
+        const signedIn = firebaseCustomToken ? await establishFirebaseSession(firebaseCustomToken) : false;
+        if (!signedIn) {
+          signInWithEmailAndPassword(auth, loginEmail, pass).catch((e) => {
+            console.warn('[AuthContext] Background Firebase signIn note:', e);
+          });
+        }
+      }
+
       setCurrentUser(backendUser);
       setIsMockMode(false);
-
-      // Trigger parallel Firebase client sign-in in background if available
-      if (auth) {
-        signInWithEmailAndPassword(auth, loginEmail, pass).catch((e) => {
-          console.warn('[AuthContext] Background Firebase signIn note:', e);
-        });
-      }
 
       // Record successful login audit log
       LoginLogService.recordLog({

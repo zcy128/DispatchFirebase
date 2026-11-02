@@ -276,6 +276,18 @@ service cloud.firestore {
                       (isAuthenticated() && request.auth.token.role in ['driver', 'helper']);
     }
 
+    match /vehicle_inspections/{id} {
+      // Semi-annual mechanical inspections: client reads only. Insert, edit, and delete go through the API.
+      allow read: if canRead('vehicle_inspections', ['manager', 'dispatcher', 'office staff', 'fleet', 'supervisor', 'HR', 'payroll', 'driver']);
+      allow write: if false;
+    }
+
+    match /preventive_maintenance_records/{id} {
+      // Preventive maintenance records: client reads only. Insert, edit, and delete go through the API.
+      allow read: if canRead('vehicle_inspections', ['manager', 'dispatcher', 'office staff', 'fleet', 'supervisor', 'HR', 'payroll', 'driver']);
+      allow write: if false;
+    }
+
     match /vehicle_defects/{id} {
       // 车辆报修与 DVIR 报告：车队全面管理；司机只能查看自己提交的报修
       allow read: if canRead('defects', ['dispatcher', 'fleet', 'manager']) ||
@@ -532,6 +544,11 @@ service cloud.firestore {
 
     match /system_settings/{doc} {
       allow read, write: if isAdmin();
+    }
+
+    match /system_config/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     // ═════════════════════════════════════════════════════════════════════════

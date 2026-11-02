@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -570,9 +571,227 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Success bool           `json:"success"`
-	Token   string         `json:"token"`
-	User    *auth.AuthUser `json:"user"`
+	Success             bool           `json:"success"`
+	Token               string         `json:"token"`
+	User                *auth.AuthUser `json:"user"`
+	FirebaseCustomToken string         `json:"firebaseCustomToken,omitempty"`
+}
+
+// firebaseCustomClaims are copied onto the Firebase ID token so Firestore rules
+// can read request.auth.token.role / employeeId / ovr after signInWithCustomToken.
+func firebaseCustomClaims(user *auth.AuthUser) map[string]interface{} {
+	claims := map[string]interface{}{}
+	if user == nil {
+		return claims
+	}
+	if user.Role != "" {
+		claims["role"] = user.Role
+	}
+	if user.EmployeeID != "" {
+		claims["employeeId"] = user.EmployeeID
+	}
+	if user.Username != "" {
+		claims["username"] = user.Username
+	}
+	if user.Email != "" {
+		claims["email"] = user.Email
+	}
+	if user.YardID != "" {
+		claims["yardId"] = user.YardID
+	}
+	if len(user.Overrides) > 0 {
+		ovr := make(map[string]interface{}, len(user.Overrides))
+		for key, value := range user.Overrides {
+			ovr[key] = value
+		}
+		claims["ovr"] = ovr
+	}
+	return claims
+}
+
+func isSyntheticUID(uid string) bool {
+	uid = strings.TrimSpace(uid)
+	return uid == "" || strings.HasPrefix(uid, "mock-")
+}
+
+func firebaseAuthEmails(user *auth.AuthUser, emp *models.Employee) []string {
+	seen := map[string]struct{}{}
+	var emails []string
+	add := func(email string) {
+		email = strings.ToLower(strings.TrimSpace(email))
+		if email == "" || !strings.Contains(email, "@") {
+			return
+		}
+		if _, ok := seen[email]; ok {
+			return
+		}
+		seen[email] = struct{}{}
+		emails = append(emails, email)
+	}
+	if user != nil && strings.HasSuffix(strings.ToLower(strings.TrimSpace(user.Email)), AuthEmailDomain) {
+		add(user.Email)
+	}
+	if emp != nil && emp.Username != "" {
+		add(emp.Username + AuthEmailDomain)
+	}
+	if user != nil && user.Username != "" {
+		add(user.Username + AuthEmailDomain)
+	}
+	if emp != nil {
+		add(emp.WorkEmail)
+	}
+	if user != nil {
+		add(user.Email)
+	}
+	return emails
+}
+
+func (h *AuthHandler) issueFirebaseCustomToken(ctx context.Context, user *auth.AuthUser) (string, error) {
+	if h.authClient == nil || user == nil || isSyntheticUID(user.UID) {
+		return "", errors.New("firebase auth client unavailable")
+	}
+	return h.authClient.CustomTokenWithClaims(ctx, user.UID, firebaseCustomClaims(user))
+}
+
+// bindRealFirebaseUser replaces a synthetic demo uid with the employee's Firebase Auth account.
+// The account is reused when it already exists and created from the employee's login email otherwise.
+func (h *AuthHandler) bindRealFirebaseUser(ctx context.Context, user *auth.AuthUser) error {
+	if h.authClient == nil || user == nil {
+		return nil
+	}
+	emp := h.findEmployeeForUser(ctx, user)
+	record, err := h.lookupFirebaseUser(ctx, user, emp)
+	if err != nil {
+		return err
+	}
+	if record == nil {
+		emails := firebaseAuthEmails(user, emp)
+		if len(emails) == 0 {
+			return errors.New("employee has no email for a firebase account")
+		}
+		displayName := strings.TrimSpace(user.FullName)
+		if emp != nil && strings.TrimSpace(emp.FullName) != "" {
+			displayName = strings.TrimSpace(emp.FullName)
+		}
+		params := (&firebaseAuth.UserToCreate{}).
+			Email(emails[0]).
+			Password(provisionPassword(h.cfg == nil || h.cfg.AllowsDemo())).
+			EmailVerified(true)
+		if displayName != "" {
+			params.DisplayName(displayName)
+		}
+		created, createErr := h.authClient.CreateUser(ctx, params)
+		if createErr != nil {
+			if existing, lookupErr := h.authClient.GetUserByEmail(ctx, emails[0]); lookupErr == nil && existing != nil {
+				record = existing
+			} else {
+				return createErr
+			}
+		} else {
+			record = created
+		}
+	}
+	if record == nil || strings.TrimSpace(record.UID) == "" {
+		return errors.New("firebase account was not created")
+	}
+
+	previousUID := user.UID
+	user.UID = record.UID
+	if record.Email != "" {
+		user.Email = record.Email
+	}
+	if emp != nil {
+		if emp.FullName != "" {
+			user.FullName = emp.FullName
+		}
+		if emp.Username != "" {
+			user.Username = emp.Username
+		} else if user.Username != "" {
+			emp.Username = user.Username
+		}
+		if emp.EmployeeNumber != "" {
+			user.EmployeeID = emp.EmployeeNumber
+		}
+		if emp.Role != "" {
+			user.Role = emp.Role
+		}
+		if emp.YardID != "" {
+			user.YardID = emp.YardID
+		}
+		if emp.ID != "" && emp.FirebaseUID != record.UID {
+			emp.FirebaseUID = record.UID
+			if updateErr := h.repo.Update(ctx, emp); updateErr != nil {
+				log.Printf("persist firebase uid: %v", updateErr)
+			}
+		}
+	}
+	if name := strings.TrimSpace(user.FullName); name != "" && record.DisplayName != name {
+		_, _ = h.authClient.UpdateUser(ctx, record.UID, (&firebaseAuth.UserToUpdate{}).DisplayName(name))
+	}
+	h.deleteSyntheticFirebaseUser(ctx, previousUID, record.UID)
+	h.deleteSyntheticFirebaseUser(ctx, "mock-admin-uid-001", record.UID)
+	return nil
+}
+
+func (h *AuthHandler) deleteSyntheticFirebaseUser(ctx context.Context, uid string, keepUID string) {
+	if h.authClient == nil || strings.TrimSpace(uid) == "" || !isSyntheticUID(uid) || uid == keepUID {
+		return
+	}
+	if err := h.authClient.DeleteUser(ctx, uid); err != nil && !firebaseAuth.IsUserNotFound(err) {
+		log.Printf("remove synthetic firebase user %s: %v", uid, err)
+	}
+}
+
+func (h *AuthHandler) lookupFirebaseUser(ctx context.Context, user *auth.AuthUser, emp *models.Employee) (*firebaseAuth.UserRecord, error) {
+	if emp != nil && !isSyntheticUID(emp.FirebaseUID) {
+		record, err := h.authClient.GetUser(ctx, emp.FirebaseUID)
+		if err == nil && record != nil {
+			return record, nil
+		}
+	}
+	if user != nil && !isSyntheticUID(user.UID) {
+		record, err := h.authClient.GetUser(ctx, user.UID)
+		if err == nil && record != nil {
+			return record, nil
+		}
+	}
+	var lastErr error
+	for _, email := range firebaseAuthEmails(user, emp) {
+		record, err := h.authClient.GetUserByEmail(ctx, email)
+		if err == nil && record != nil {
+			return record, nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+	}
+	if lastErr != nil && !firebaseAuth.IsUserNotFound(lastErr) {
+		return nil, lastErr
+	}
+	return nil, nil
+}
+
+// FirebaseToken exchanges an already-authenticated API session for a Firebase custom token.
+// The browser uses it to restore request.auth so Firestore listeners are not denied.
+func (h *AuthHandler) FirebaseToken(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user := auth.GetUser(r.Context())
+	if user == nil || (strings.TrimSpace(user.UID) == "" && strings.TrimSpace(user.EmployeeID) == "" && strings.TrimSpace(user.Email) == "") {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	if err := h.bindRealFirebaseUser(r.Context(), user); err != nil {
+		log.Printf("bind firebase user: %v", err)
+		http.Error(w, `{"error":"firebase session unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+	customToken, err := h.issueFirebaseCustomToken(r.Context(), user)
+	if err != nil {
+		log.Printf("firebase custom token: %v", err)
+		http.Error(w, `{"error":"firebase session unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"customToken": customToken})
 }
 
 // Login authenticates a user by username/email + password and returns their profile with role and allowed modules.
@@ -639,12 +858,26 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 		if usernamePart == "admin" || loginEmail == "admin@dispatch.local" || (h.cfg != nil && strings.EqualFold(loginEmail, h.cfg.AdminEmail)) {
 			verifiedUser = &auth.AuthUser{
-				UID:        "mock-admin-uid-001",
 				Email:      loginEmail,
 				Username:   "admin",
-				FullName:   "System Admin",
 				Role:       "admin",
 				EmployeeID: "EMP-ADMIN-001",
+			}
+			if h.repo != nil {
+				if emp, _ := h.repo.GetByEmployeeNumber(ctx, "EMP-ADMIN-001"); emp != nil {
+					verifiedUser.FullName = emp.FullName
+					verifiedUser.YardID = emp.YardID
+					verifiedUser.PagePermissions = emp.PagePermissions
+					if emp.Username != "" {
+						verifiedUser.Username = emp.Username
+					}
+					if emp.Role != "" {
+						verifiedUser.Role = emp.Role
+					}
+					if !isSyntheticUID(emp.FirebaseUID) {
+						verifiedUser.UID = emp.FirebaseUID
+					}
+				}
 			}
 		} else if h.repo != nil {
 			emp, _ := h.repo.GetByUsername(ctx, usernamePart)
@@ -672,8 +905,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 				YardID:          emp.YardID,
 				PagePermissions: emp.PagePermissions,
 			}
-			if verifiedUser.UID == "" {
-				verifiedUser.UID = "mock-uid-" + emp.Username
+			if isSyntheticUID(verifiedUser.UID) {
+				verifiedUser.UID = ""
 			}
 		}
 	}
@@ -688,9 +921,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusForbidden)
 		return
 	}
+	if bindErr := h.bindRealFirebaseUser(ctx, resolvedUser); bindErr != nil {
+		log.Printf("bind firebase user: %v", bindErr)
+	}
 
 	// 3. Sync Firebase Custom Claims if Firebase Admin client is active and user has a real UID
-	if h.authClient != nil && resolvedUser.UID != "" && !strings.HasPrefix(resolvedUser.UID, "mock-") {
+	if h.authClient != nil && !isSyntheticUID(resolvedUser.UID) {
 		claims := map[string]interface{}{
 			"role":       resolvedUser.Role,
 			"employeeId": resolvedUser.EmployeeID,
@@ -716,10 +952,16 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		token = generatedToken
 	}
 
+	firebaseCustomToken, tokenErr := h.issueFirebaseCustomToken(ctx, resolvedUser)
+	if tokenErr != nil {
+		log.Printf("firebase custom token: %v", tokenErr)
+	}
+
 	json.NewEncoder(w).Encode(LoginResponse{
-		Success: true,
-		Token:   token,
-		User:    resolvedUser,
+		Success:             true,
+		Token:               token,
+		User:                resolvedUser,
+		FirebaseCustomToken: firebaseCustomToken,
 	})
 }
 
@@ -786,12 +1028,26 @@ func (h *AuthHandler) LoginMCP(w http.ResponseWriter, r *http.Request) {
 
 		if usernamePart == "admin" || loginEmail == "admin@dispatch.local" || (h.cfg != nil && strings.EqualFold(loginEmail, h.cfg.AdminEmail)) {
 			verifiedUser = &auth.AuthUser{
-				UID:        "mock-admin-uid-001",
 				Email:      loginEmail,
 				Username:   "admin",
-				FullName:   "System Admin",
 				Role:       "admin",
 				EmployeeID: "EMP-ADMIN-001",
+			}
+			if h.repo != nil {
+				if emp, _ := h.repo.GetByEmployeeNumber(ctx, "EMP-ADMIN-001"); emp != nil {
+					verifiedUser.FullName = emp.FullName
+					verifiedUser.YardID = emp.YardID
+					verifiedUser.PagePermissions = emp.PagePermissions
+					if emp.Username != "" {
+						verifiedUser.Username = emp.Username
+					}
+					if emp.Role != "" {
+						verifiedUser.Role = emp.Role
+					}
+					if !isSyntheticUID(emp.FirebaseUID) {
+						verifiedUser.UID = emp.FirebaseUID
+					}
+				}
 			}
 		} else if h.repo != nil {
 			emp, _ := h.repo.GetByUsername(ctx, usernamePart)
@@ -815,8 +1071,8 @@ func (h *AuthHandler) LoginMCP(w http.ResponseWriter, r *http.Request) {
 				EmployeeID:      emp.EmployeeNumber,
 				PagePermissions: emp.PagePermissions,
 			}
-			if verifiedUser.UID == "" {
-				verifiedUser.UID = "mock-uid-" + emp.Username
+			if isSyntheticUID(verifiedUser.UID) {
+				verifiedUser.UID = ""
 			}
 		}
 	}
@@ -830,6 +1086,9 @@ func (h *AuthHandler) LoginMCP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusForbidden)
 		return
+	}
+	if bindErr := h.bindRealFirebaseUser(ctx, resolvedUser); bindErr != nil {
+		log.Printf("bind firebase user: %v", bindErr)
 	}
 
 	ttlDays := req.TTLDays

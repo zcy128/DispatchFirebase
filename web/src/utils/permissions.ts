@@ -672,16 +672,47 @@ export function isPageDefaultModified(role: UserRole, pageId: NavTab): boolean {
   return current !== factory;
 }
 
-export function updateRoleDefaultPermissions(
+export async function updateRoleDefaultPermissions(
   role: UserRole,
   permissions: Record<string, PermissionLevel>
-): void {
+): Promise<void> {
   const r = normalizeRole(role);
+  const previous = { ...DEFAULT_ROLE_PERMISSIONS[r] };
   DEFAULT_ROLE_PERMISSIONS[r] = {
     ...DEFAULT_ROLE_PERMISSIONS[r],
     ...(permissions as Record<NavTab, PermissionLevel>)
   };
+  persistRolePermissions();
+  notifyRolePermissionChanges();
+  try {
+    await syncRolePermissionsToCloud();
+  } catch (err) {
+    DEFAULT_ROLE_PERMISSIONS[r] = previous;
+    persistRolePermissions();
+    notifyRolePermissionChanges();
+    throw err;
+  }
+}
 
+export async function resetRoleDefaultPermissions(role: UserRole): Promise<void> {
+  const r = normalizeRole(role);
+  const previous = { ...DEFAULT_ROLE_PERMISSIONS[r] };
+  DEFAULT_ROLE_PERMISSIONS[r] = {
+    ...FACTORY_ROLE_PERMISSIONS[r]
+  };
+  persistRolePermissions();
+  notifyRolePermissionChanges();
+  try {
+    await syncRolePermissionsToCloud();
+  } catch (err) {
+    DEFAULT_ROLE_PERMISSIONS[r] = previous;
+    persistRolePermissions();
+    notifyRolePermissionChanges();
+    throw err;
+  }
+}
+
+function persistRolePermissions(): void {
   try {
     const saved: Partial<Record<UserRole, Record<string, PermissionLevel>>> = {};
     USER_ROLES.forEach((ur) => {
@@ -691,47 +722,22 @@ export function updateRoleDefaultPermissions(
   } catch (err) {
     console.warn('Could not save role permissions to localStorage:', err);
   }
-
-  notifyRolePermissionChanges();
-  syncRolePermissionsToCloud();
-}
-
-export function resetRoleDefaultPermissions(role: UserRole): void {
-  const r = normalizeRole(role);
-  DEFAULT_ROLE_PERMISSIONS[r] = {
-    ...FACTORY_ROLE_PERMISSIONS[r]
-  };
-
-  try {
-    const saved: Partial<Record<UserRole, Record<string, PermissionLevel>>> = {};
-    USER_ROLES.forEach((ur) => {
-      saved[ur] = DEFAULT_ROLE_PERMISSIONS[ur];
-    });
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(saved));
-  } catch (err) {
-    console.warn('Could not reset role permissions in localStorage:', err);
-  }
-
-  notifyRolePermissionChanges();
-  syncRolePermissionsToCloud();
 }
 
 export async function syncRolePermissionsToCloud(): Promise<void> {
-  try {
-    const { db } = await import('../services/firebase');
-    if (!db) return;
-    const { doc, setDoc } = await import('firebase/firestore');
-    await setDoc(
-      doc(db, 'system_config', 'role_permissions'),
-      {
-        permissions: DEFAULT_ROLE_PERMISSIONS,
-        updatedAt: new Date().toISOString()
-      },
-      { merge: true }
-    );
-  } catch (err) {
-    console.warn('Cloud sync of role permissions skipped:', err);
+  const { db } = await import('../services/firebase');
+  if (!db) {
+    throw new Error('Firestore is not available.');
   }
+  const { doc, setDoc } = await import('firebase/firestore');
+  await setDoc(
+    doc(db, 'system_config', 'role_permissions'),
+    {
+      permissions: DEFAULT_ROLE_PERMISSIONS,
+      updatedAt: new Date().toISOString()
+    },
+    { merge: true }
+  );
 }
 
 export function initCloudRolePermissionsListener(): () => void {

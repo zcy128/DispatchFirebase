@@ -56,6 +56,7 @@ export const StudentIncidentsView: React.FC = () => {
   const [disciplinaryOther, setDisciplinaryOther] = useState<string>('');
   const [officeNotes, setOfficeNotes] = useState<string>('');
   const [isOfficeLocked, setIsOfficeLocked] = useState<boolean>(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   const [timeRange, setTimeRange] = useState<'6months' | '1year' | 'all'>('6months');
 
@@ -206,6 +207,7 @@ export const StudentIncidentsView: React.FC = () => {
     setDisciplinaryOther(fu?.disciplinaryOther || '');
     setOfficeNotes(fu?.officeNotes || '');
     setIsOfficeLocked(fu?.isOfficeLocked || false);
+    setReviewError(null);
     setIsReviewModalOpen(true);
   };
 
@@ -217,6 +219,15 @@ export const StudentIncidentsView: React.FC = () => {
 
   const handleSaveReview = async () => {
     if (!selectedIncident) return;
+    if (!administratorName.trim()) {
+      setReviewError('Administrator name is required.');
+      return;
+    }
+    if (!reviewedDate) {
+      setReviewError('Review date is required.');
+      return;
+    }
+    setReviewError(null);
     setSaving(true);
     try {
       const payload: UpdateIncidentOfficeFollowUpPayload = {
@@ -1000,6 +1011,9 @@ export const StudentIncidentsView: React.FC = () => {
 
             {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3 bg-slate-50/50 dark:bg-slate-900/50">
+              {reviewError && (
+                <span className="mr-auto text-xs font-semibold text-rose-500">{reviewError}</span>
+              )}
               <button
                 type="button"
                 onClick={() => setIsReviewModalOpen(false)}

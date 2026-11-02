@@ -195,7 +195,12 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
       const customCal = await CalendarService.createCustomSchoolCalendar({
         schoolId: currentSchool.schoolId,
         schoolName: currentSchool.schoolName,
-        boardCalendar,
+        boardCalendar: {
+          ...boardCalendar,
+          boardId: selectedBoardId,
+          boardCode: currentBoard.schoolBoardCode || boardCalendar.boardCode,
+          schoolYear
+        },
         schoolYear
       });
       setCalendar(customCal);
@@ -256,6 +261,9 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
     // If currently on school scope with inherited board calendar, auto-elevate to custom school calendar
     let targetCal: SchoolCalendar = {
       ...calendar,
+      boardId: selectedBoardId,
+      boardCode: currentBoard.schoolBoardCode || calendar.boardCode,
+      schoolYear,
       events: updatedEvents
     };
 
@@ -286,6 +294,9 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
 
     let targetCal: SchoolCalendar = {
       ...calendar,
+      boardId: selectedBoardId,
+      boardCode: currentBoard.schoolBoardCode || calendar.boardCode,
+      schoolYear,
       events: updatedEvents
     };
 

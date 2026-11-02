@@ -79,14 +79,20 @@ export const ComplianceSettingsService = {
       updatedAt: new Date().toISOString()
     };
 
-    // Save to localStorage
+    if (!db) {
+      throw new Error('Cloud database is not available. Compliance settings were not saved.');
+    }
+
+    const { doc, setDoc } = await import('firebase/firestore');
+    const docRef = doc(db, 'system_settings', FIRESTORE_DOC_PATH);
+    await setDoc(docRef, merged, { merge: true });
+
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
     } catch {
-      // ignore
+      // The cloud copy is already stored.
     }
 
-    // Notify local listeners
     listeners.forEach((listener) => {
       try {
         listener(merged);
@@ -94,17 +100,6 @@ export const ComplianceSettingsService = {
         console.error('Error notifying compliance config listener:', err);
       }
     });
-
-    // Save to Firestore
-    if (db) {
-      try {
-        const { doc, setDoc } = await import('firebase/firestore');
-        const docRef = doc(db, 'system_settings', FIRESTORE_DOC_PATH);
-        await setDoc(docRef, merged, { merge: true });
-      } catch (err) {
-        console.warn('[ComplianceSettingsService] Firestore save error:', err);
-      }
-    }
 
     return merged;
   },

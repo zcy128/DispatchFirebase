@@ -44,6 +44,7 @@ export const SchoolModal: React.FC<SchoolModalProps> = ({
   const [gpsLongitude, setGpsLongitude] = useState<number | undefined>(-75.6972);
   const [parkingNotes, setParkingNotes] = useState('');
   const [schoolNotes, setSchoolNotes] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (initialData) {
@@ -96,6 +97,11 @@ export const SchoolModal: React.FC<SchoolModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!schoolName.trim() || !schoolAddress.trim()) {
+      setFormError('School name and address are required.');
+      return;
+    }
+    setFormError(null);
     setLoading(true);
 
     const selectedBoard = boards.find(b => b.schoolBoardId === Number(schoolBoardId));
@@ -504,7 +510,7 @@ export const SchoolModal: React.FC<SchoolModalProps> = ({
           {/* Footer Actions */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-800">
             <div className="text-[10px] text-slate-500">
-              * Required fields. All changes sync in real-time.
+              {formError ? <span className="text-rose-400 font-semibold">{formError}</span> : '* Required fields. All changes sync in real-time.'}
             </div>
             <div className="flex items-center space-x-3">
               <button
