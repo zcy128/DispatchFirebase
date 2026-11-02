@@ -77,9 +77,13 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
 
   // Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'driver' | 'attendant'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'driver' | 'attendant' | 'regular_driver' | 'spare_driver'>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sourceTypeFilter, setSourceTypeFilter] = useState<'all' | 'routes' | 'charter'>('all');
+
+  // Sync state
+  const [syncing, setSyncing] = useState<boolean>(false);
+  const [syncFeedback, setSyncFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Edit Modal State
   const [editingLog, setEditingLog] = useState<PayrollDepartmentLogRecord | null>(null);
@@ -149,6 +153,36 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
     setSelectedDate(getLocalTodayString());
   };
 
+  const handleSyncFromDailyDispatch = async () => {
+    try {
+      setSyncing(true);
+      setSyncFeedback(null);
+      const res = await DispatchService.syncCleanPayrollsForDate(selectedDate);
+      
+      await logDispatchAction({
+        date: selectedDate,
+        type: 'Payroll Synced',
+        detail: `Finance synced daily dispatch payroll records for ${selectedDate} (${res.synced} clean records synced)`,
+        user: actorName,
+      });
+
+      setSyncFeedback({
+        type: 'success',
+        message: `Successfully synchronized ${res.synced} clean record(s) from daily dispatch for ${selectedDate}.`,
+      });
+
+      await handleRefresh();
+    } catch (err) {
+      console.error('Failed to sync payroll from daily dispatch:', err);
+      setSyncFeedback({
+        type: 'error',
+        message: 'Failed to sync from daily dispatch: ' + (err as Error).message,
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleOpenEdit = (rec: PayrollDepartmentLogRecord) => {
     setEditingLog(rec);
     setEditPayAmount(rec.payAmount);
@@ -215,11 +249,37 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
       if (sourceTypeFilter === 'routes' && isCharterItem) {
         return false;
       }
-      if (roleFilter !== 'all' && (item.role || '').toLowerCase() !== roleFilter) {
-        return false;
+      if (roleFilter !== 'all') {
+        const itemRole = (item.role || '').toLowerCase();
+        if (roleFilter === 'attendant') {
+          if (itemRole !== 'attendant') return false;
+        } else if (roleFilter === 'driver') {
+          if (itemRole !== 'driver') return false;
+        } else if (roleFilter === 'spare_driver') {
+          if (itemRole !== 'driver') return false;
+          const isSpare =
+            (item.rateSource || '').toLowerCase().includes('spare') ||
+            (item.rateDescription || '').toLowerCase().includes('spare') ||
+            (item.dispatcherComments || '').toLowerCase().includes('spare') ||
+            (item.payrollNotes || '').toLowerCase().includes('spare');
+          if (!isSpare) return false;
+        } else if (roleFilter === 'regular_driver') {
+          if (itemRole !== 'driver') return false;
+          const isSpare =
+            (item.rateSource || '').toLowerCase().includes('spare') ||
+            (item.rateDescription || '').toLowerCase().includes('spare') ||
+            (item.dispatcherComments || '').toLowerCase().includes('spare') ||
+            (item.payrollNotes || '').toLowerCase().includes('spare');
+          if (isSpare) return false;
+        }
       }
-      if (statusFilter !== 'all' && (item.status || 'approved').toLowerCase() !== statusFilter.toLowerCase()) {
-        return false;
+      if (statusFilter !== 'all') {
+        const itemStatus = (item.status || 'approved').toLowerCase();
+        if (statusFilter === 'pending_review') {
+          if (itemStatus !== 'pending_review' && itemStatus !== 'pending') return false;
+        } else if (itemStatus !== statusFilter.toLowerCase()) {
+          return false;
+        }
       }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -245,14 +305,21 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
     let approvedCount = 0;
     let processedCount = 0;
     let paidCount = 0;
+    let pendingOrHoldCount = 0;
 
     for (const r of logs) {
       totalPay += r.payAmount || 0;
       totalEiHours += r.eiHours || 0;
       const s = (r.status || 'approved').toLowerCase();
-      if (s === 'paid') paidCount++;
-      else if (s === 'processed') processedCount++;
-      else approvedCount++;
+      if (s === 'paid') {
+        paidCount++;
+      } else if (s === 'processed') {
+        processedCount++;
+      } else if (s === 'on_hold' || s === 'pending_review' || s === 'pending' || s === 'draft' || s === 'rejected') {
+        pendingOrHoldCount++;
+      } else {
+        approvedCount++;
+      }
     }
 
     return {
@@ -262,6 +329,7 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
       approvedCount,
       processedCount,
       paidCount,
+      pendingOrHoldCount,
     };
   }, [logs]);
 
@@ -370,6 +438,25 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
             On Hold
           </span>
         );
+      case 'pending_review':
+      case 'pending':
+        return (
+          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 border border-orange-300 dark:border-orange-700">
+            Pending Review
+          </span>
+        );
+      case 'draft':
+        return (
+          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-600">
+            Draft
+          </span>
+        );
+      case 'rejected':
+        return (
+          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-700">
+            Rejected
+          </span>
+        );
       default:
         return (
           <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700">
@@ -399,6 +486,16 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
 
         <div className="flex items-center gap-2">
           <button
+            onClick={handleSyncFromDailyDispatch}
+            disabled={syncing || loading}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 font-semibold text-xs transition-colors shadow-xs disabled:opacity-50"
+            title="Sync routine and clean payroll records from daily dispatch for this date"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            <span>{syncing ? 'Syncing...' : 'Sync from Daily Dispatch'}</span>
+          </button>
+
+          <button
             onClick={handleRefresh}
             disabled={loading}
             className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-xs disabled:opacity-50"
@@ -419,6 +516,32 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
           </button>
         </div>
       </div>
+
+      {/* Sync Feedback Message */}
+      {syncFeedback && (
+        <div
+          className={`p-4 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+            syncFeedback.type === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+              : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {syncFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+            )}
+            <span>{syncFeedback.message}</span>
+          </div>
+          <button
+            onClick={() => setSyncFeedback(null)}
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Date Navigation & Filters Toolbar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
@@ -487,11 +610,13 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
             <select
               value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as 'all' | 'driver' | 'attendant')}
+              onChange={(e) => setRoleFilter(e.target.value as any)}
               className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
             >
               <option value="all">All Roles</option>
-              <option value="driver">Drivers Only</option>
+              <option value="driver">All Drivers</option>
+              <option value="regular_driver">Regular Drivers</option>
+              <option value="spare_driver">Spare Drivers</option>
               <option value="attendant">Attendants Only</option>
             </select>
           </div>
@@ -506,6 +631,9 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
             <option value="processed">Processed</option>
             <option value="paid">Paid</option>
             <option value="on_hold">On Hold</option>
+            <option value="pending_review">Pending Review</option>
+            <option value="draft">Draft</option>
+            <option value="rejected">Rejected</option>
           </select>
         </div>
       </div>
@@ -560,9 +688,9 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
 
         <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Processed & Paid</p>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Pending Review / Draft</p>
             <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
-              {stats.processedCount + stats.paidCount}
+              {stats.pendingOrHoldCount}
             </h3>
             <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
               {stats.processedCount} Processed • {stats.paidCount} Paid
@@ -902,6 +1030,9 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
                   <option value="processed">Processed</option>
                   <option value="paid">Paid</option>
                   <option value="on_hold">On Hold</option>
+                  <option value="pending_review">Pending Review</option>
+                  <option value="draft">Draft</option>
+                  <option value="rejected">Rejected</option>
                 </select>
               </div>
 
