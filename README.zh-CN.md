@@ -23,7 +23,7 @@
 
 | 模块 | 在线体验地址 | 登录方式与操作说明 |
 | :--- | :--- | :--- |
-| **调度中心控制台 (`web`)** | [schoolbus.pcytech.ca](https://schoolbus.pcytech.ca/)<br>*(备用: [schoolbusdispatchapp.web.app](https://schoolbusdispatchapp.web.app/))* | 页面提供 **「1-Click Launch as Operations Admin」** 快捷按钮，点击即可直接以超级管理员身份免密进入控制中心体验全部调度、排班与合规管理功能。<br>*(注：访问 `/?mode=ai` 可直接以全屏独立 PWA 模式打开 AI 调度助手)* |
+| **调度中心控制台 (`web`)** | [schoolbus.pcytech.ca](https://schoolbus.pcytech.ca/)<br>*(备用: [schoolbusdispatchapp.web.app](https://schoolbusdispatchapp.web.app/))* | 在登录页的 **Demo Access** 中点击 **Demo Admin**，即以运营管理员身份进入调度控制台。<br>*(注：访问 `/?mode=ai` 可直接以全屏独立 PWA 模式打开 AI 调度助手)* |
 | **司机与跟车员端 (`driver_app`)** | [schoolbus.pcytech.ca/driver](https://schoolbus.pcytech.ca/driver)<br>*(备用: [schoolbusdispatchapp.web.app/driver](https://schoolbusdispatchapp.web.app/driver))* | 在登录界面点击下方的 **「Quick Demo Credentials」**（填充演示凭据）按钮即可自动填入演示账号（`driver1d` / `Dispatch2026!`），角色选择「Driver」或「Attendant」，点击 **Sign In** 即可进入排班看板、Pre-trip 检查与学生签到界面。 |
 | **家长实时追踪端 (`parent_app`)** | [schoolbus.pcytech.ca/parent](https://schoolbus.pcytech.ca/parent)<br>*(备用: [schoolbusdispatchapp.web.app/parent](https://schoolbusdispatchapp.web.app/parent))* | 采用无密码安全验证码机制。在登录页面直接点击 **「Demo Phone」** 或 **「Demo Email」** 按钮自动填入，点击 **Continue** 后，在验证码输入页轻点黄色的 **「Dev Passcode (Tap to autofill)」** 即可自动填充验证码并登录，立即查看校车实时 GPS 地图轨迹与到站预计。 |
 | **MCP 模型上下文协议端点** | `https://dispatch-api-kv7qum3dca-nn.a.run.app/api/mcp` | 标准 Anthropic MCP 协议服务端点，供 Claude Desktop、Cursor、Gemini 等外部 AI 客户端通过 MCP Token 接入直接对话调度系统。 |

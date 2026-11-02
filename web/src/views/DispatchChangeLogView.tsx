@@ -115,32 +115,37 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
     setActiveFilter({ scope: 'all' });
   };
 
+  // Leave reviews belong on Time Off, not this dispatch audit.
+  const operationalLogs = useMemo(
+    () => logs.filter((log) => log.type !== 'Time Off Review'),
+    [logs]
+  );
+
+  const hasColumnFilter = Boolean(
+    globalSearch.trim() || routeFilter.trim() || shiftFilter.trim() || typeFilter.trim()
+  );
+
   // Distinct types for column filter dropdown
   const availableTypes = useMemo(() => {
     const set = new Set<string>();
-    logs.forEach((log) => {
-      if (log.type && log.type !== 'Time Off Review') set.add(log.type);
+    operationalLogs.forEach((log) => {
+      if (log.type) set.add(log.type);
     });
     return Array.from(set).sort();
-  }, [logs]);
+  }, [operationalLogs]);
 
   // Distinct shifts for column filter dropdown
   const availableShifts = useMemo(() => {
     const set = new Set<string>();
-    logs.forEach((log) => {
+    operationalLogs.forEach((log) => {
       if (log.shiftType) set.add(log.shiftType);
     });
     return Array.from(set).sort();
-  }, [logs]);
+  }, [operationalLogs]);
 
   // Filtered logs
   const filteredLogs = useMemo(() => {
-    return logs.filter((log) => {
-      // Exclude HR/leave requests from dispatch change logs
-      if (log.type === 'Time Off Review') {
-        return false;
-      }
-
+    return operationalLogs.filter((log) => {
       // Global search
       if (globalSearch.trim()) {
         const query = globalSearch.toLowerCase().trim();
@@ -178,7 +183,7 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
 
       return true;
     });
-  }, [logs, globalSearch, routeFilter, shiftFilter, typeFilter]);
+  }, [operationalLogs, globalSearch, routeFilter, shiftFilter, typeFilter]);
 
   // Virtual scrolling container for 1,000+ dispatch change logs
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -433,7 +438,7 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
                   <strong>Targeted DB Query:</strong> Showing logs for{' '}
                   {activeFilter.routeNo && <span className="font-semibold mr-2">Route #{activeFilter.routeNo}</span>}
                   {activeFilter.employee && <span className="font-semibold">Employee: {activeFilter.employee}</span>}
-                  {' '}({logs.length} found)
+                  {' '}({operationalLogs.length} found)
                   {isColdDate && <span className="ml-2 text-sky-600 dark:text-sky-400">(via BigQuery)</span>}
                 </span>
               </div>
@@ -531,7 +536,7 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
 
           <div className="ml-auto text-xs text-slate-500 dark:text-slate-400">
             Total entries: <span className="font-semibold text-slate-700 dark:text-slate-300">{filteredLogs.length}</span>
-            {logs.length !== filteredLogs.length && ` (filtered from ${logs.length})`}
+            {operationalLogs.length !== filteredLogs.length && ` (filtered from ${operationalLogs.length})`}
           </div>
         </div>
       </div>
@@ -567,7 +572,7 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {loading && logs.length === 0 ? (
+                {loading && operationalLogs.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-16 text-center text-slate-400">
                       <div className="flex flex-col items-center justify-center space-y-2">
@@ -582,12 +587,16 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
                       <div className="flex flex-col items-center justify-center space-y-2">
                         <History className="w-8 h-8 text-slate-300 dark:text-slate-600" />
                         <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
-                          {activeFilter
+                          {hasColumnFilter
+                            ? 'No loaded logs match the current filters.'
+                            : activeFilter
                             ? 'No change logs matched the specified Route / Employee query.'
                             : 'No global dispatch operations found for this date.'}
                         </span>
                         <span className="text-xs text-slate-400">
-                          {activeFilter ? (
+                          {hasColumnFilter ? (
+                            'Clear the route, shift, type, or search filters to see the loaded rows.'
+                          ) : activeFilter ? (
                             <button
                               type="button"
                               onClick={handleResetToGlobal}
@@ -678,7 +687,7 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
             <div>
               Showing <span className="font-semibold text-slate-700 dark:text-slate-200">{filteredLogs.length}</span>{' '}
               {filteredLogs.length === 1 ? 'entry' : 'entries'}
-              {logs.length !== filteredLogs.length && ` (filtered from ${logs.length})`}
+              {operationalLogs.length !== filteredLogs.length && ` (filtered from ${operationalLogs.length})`}
             </div>
             <div className="text-slate-400 dark:text-slate-500 text-[11px] font-medium">
               Virtual Scrolling Enabled

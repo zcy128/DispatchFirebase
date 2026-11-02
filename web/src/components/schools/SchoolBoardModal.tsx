@@ -19,6 +19,7 @@ export const SchoolBoardModal: React.FC<SchoolBoardModalProps> = ({
   const [boardCode, setBoardCode] = useState('');
   const [boardName, setBoardName] = useState('');
   const [boardId, setBoardId] = useState<number>(0);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (initialData) {
@@ -36,6 +37,11 @@ export const SchoolBoardModal: React.FC<SchoolBoardModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!boardCode.trim() || !boardName.trim()) {
+      setFormError('Board code and board name are required.');
+      return;
+    }
+    setFormError(null);
     setLoading(true);
     try {
       await onSave({
@@ -104,6 +110,7 @@ export const SchoolBoardModal: React.FC<SchoolBoardModalProps> = ({
           </div>
 
           <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-800">
+            {formError && <span className="mr-auto text-xs font-semibold text-rose-400">{formError}</span>}
             <button
               type="button"
               onClick={onClose}

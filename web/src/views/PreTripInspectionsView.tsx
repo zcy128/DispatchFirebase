@@ -206,8 +206,8 @@ export const PreTripInspectionsView: React.FC = () => {
       // Tab filter
       if (activeTab === 'all_dispatched' && !item.isAssigned) return false;
       if (activeTab === 'missing' && (!item.isAssigned || item.hasInspection)) return false;
-      if (activeTab === 'passed' && item.status !== 'passed') return false;
-      if (activeTab === 'defects' && item.status !== 'passed_with_minor_defects' && item.status !== 'failed_major_defects') return false;
+      if (activeTab === 'passed' && (!item.isAssigned || item.status !== 'passed')) return false;
+      if (activeTab === 'defects' && (!item.isAssigned || (item.status !== 'passed_with_minor_defects' && item.status !== 'failed_major_defects'))) return false;
       // 'all_fleet' includes everyone
 
       // Search Query
@@ -527,7 +527,7 @@ export const PreTripInspectionsView: React.FC = () => {
                         </button>
                       </div>
                     ) : (
-                      <>No vehicles found matching current filter ({activeTab}).</>
+                      <>{searchQuery.trim() ? 'No vehicles match this search.' : 'No vehicles match this filter.'}</>
                     )}
                   </td>
                 </tr>

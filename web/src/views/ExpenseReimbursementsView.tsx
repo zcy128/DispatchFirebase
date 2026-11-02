@@ -65,6 +65,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
   const [reviewAction, setReviewAction] = useState<'approved' | 'rejected'>('approved');
   const [reviewerName, setReviewerName] = useState<string>('');
   const [approvalNotes, setApprovalNotes] = useState<string>('');
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   // 1. 超过6个月是bigquery冷数据
   const [timeRange, setTimeRange] = useState<'6months' | 'all'>('6months');
@@ -209,6 +210,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
         'Dispatch Office'
     );
     setApprovalNotes(claim.approvalNotes || '');
+    setReviewError(null);
     setIsReviewModalOpen(true);
   };
 
@@ -219,12 +221,17 @@ export const ExpenseReimbursementsView: React.FC = () => {
 
   const handleSaveReview = async () => {
     if (!selectedClaim) return;
+    if (!reviewerName.trim()) {
+      setReviewError('Reviewer name is required.');
+      return;
+    }
+    setReviewError(null);
     setSaving(true);
     try {
       const payload: ReviewExpenseClaimPayload = {
         status: reviewAction,
         approvalNotes: approvalNotes.trim(),
-        approvedByName: reviewerName.trim() || 'Dispatch Office',
+        approvedByName: reviewerName.trim(),
       };
 
       const updated = await ExpenseReimbursementService.reviewClaim(selectedClaim.id, payload);
@@ -826,7 +833,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Reviewer Name
+                      Reviewer Name *
                     </label>
                     <input
                       type="text"
@@ -855,6 +862,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
 
             {/* Modal Actions */}
             <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
+              {reviewError && <span className="mr-auto text-xs font-semibold text-rose-500">{reviewError}</span>}
               <button
                 type="button"
                 onClick={closeReviewModal}

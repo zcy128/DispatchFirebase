@@ -317,6 +317,7 @@ func main() {
 
 		// Auth info
 		protected.Get("/api/auth/me", authHandler.Me)
+		protected.Post("/api/auth/firebase-token", authHandler.FirebaseToken)
 
 		// Employee routes
 		protected.Get("/api/employees", empHandler.List)
@@ -407,6 +408,9 @@ func main() {
 		protected.Put("/api/charter/trips/{id}", charterHandler.UpdateTrip)
 		protected.Delete("/api/charter/trips/{id}", charterHandler.DeleteTrip)
 		protected.Get("/api/route-openings", charterHandler.ListRouteOpenings)
+		protected.Post("/api/route-openings", charterHandler.CreateRouteOpening)
+		protected.Put("/api/route-openings/{id}", charterHandler.UpdateRouteOpening)
+		protected.Delete("/api/route-openings/{id}", charterHandler.DeleteRouteOpening)
 
 		// Dispatch Workbench routes
 		protected.Post("/api/dispatch/create-day", dispatchHandler.CreateDay)
@@ -498,6 +502,15 @@ func main() {
 		protected.Post("/api/dispatch/pretrip-inspections", dispatchHandler.CreatePreTripInspection)
 		protected.Get("/api/dispatch/pretrip-inspections/today/{vehicleUnit}", dispatchHandler.GetPreTripInspectionToday)
 		protected.Get("/api/dispatch/pretrip-inspections", dispatchHandler.ListPreTripInspections)
+
+		// Semi-annual mechanical inspections and preventive maintenance.
+		mechHandler := handlers.NewMechanicalInspectionHandler(fsClient)
+		protected.Get("/api/fleet/mechanical-inspections", mechHandler.ListInspections)
+		protected.Post("/api/fleet/mechanical-inspections", mechHandler.SaveInspection)
+		protected.Delete("/api/fleet/mechanical-inspections/{id}", mechHandler.DeleteInspection)
+		protected.Get("/api/fleet/preventive-maintenance", mechHandler.ListPMRecords)
+		protected.Post("/api/fleet/preventive-maintenance", mechHandler.SavePMRecord)
+		protected.Delete("/api/fleet/preventive-maintenance/{id}", mechHandler.DeletePMRecord)
 
 		// Vehicle Defect Reports
 		protected.Post("/api/dispatch/vehicle-defects", dispatchHandler.CreateDefectReport)

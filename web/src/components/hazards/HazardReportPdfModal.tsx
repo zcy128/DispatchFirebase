@@ -328,11 +328,11 @@ export const HazardReportPdfModal: React.FC<HazardReportPdfModalProps> = ({
                 </span>
                 <span className="text-xs font-bold text-slate-900 flex items-center gap-1 mt-0.5">
                   <User className="w-3.5 h-3.5 text-slate-700" />
-                  {currentReport.supervisor || 'Operations Dispatch'}
+                  {currentReport.supervisor || 'Not recorded'}
                 </span>
                 <span className="text-[11px] text-slate-500 block flex items-center gap-1">
                   <Phone className="w-3 h-3 text-slate-400" />
-                  {currentReport.phone || 'Fleet Line'}
+                  {currentReport.phone || 'Not recorded'}
                 </span>
               </div>
 
@@ -341,7 +341,7 @@ export const HazardReportPdfModal: React.FC<HazardReportPdfModalProps> = ({
                   Person(s) Involved
                 </span>
                 <span className="text-xs font-bold text-slate-900 block mt-0.5 truncate">
-                  {currentReport.personInvolved || 'Driver / Lone Worker'}
+                  {currentReport.personInvolved || 'Not recorded'}
                 </span>
                 <span className="text-[11px] text-slate-500 block truncate">
                   Witnesses: {currentReport.witnesses || 'None reported'}
@@ -354,7 +354,7 @@ export const HazardReportPdfModal: React.FC<HazardReportPdfModalProps> = ({
               <div className="flex items-center gap-2">
                 <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                 <span className="font-bold text-slate-700">Location of Event / Condition:</span>
-                <span className="text-slate-900">{currentReport.eventLocation || 'Terminal Yard / En Route'}</span>
+                <span className="text-slate-900">{currentReport.eventLocation || 'Not recorded'}</span>
               </div>
               <div className="text-slate-600 font-mono text-[11px] flex items-center gap-1">
                 <Clock className="w-3 h-3 text-slate-400" /> {eventDateStr}
@@ -511,7 +511,7 @@ export const HazardReportPdfModal: React.FC<HazardReportPdfModalProps> = ({
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-500 block">Action Implemented:</span>
-                  <span className="text-slate-800">{currentReport.actionTaken || 'Review & Corrective Action in Progress'}</span>
+                  <span className="text-slate-800">{currentReport.actionTaken || 'No corrective action has been recorded.'}</span>
                 </div>
               </div>
             </div>

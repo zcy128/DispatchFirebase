@@ -41,9 +41,10 @@ export const SettingsView: React.FC = () => {
   const { currentUser, isMockMode } = useAuth();
   const { t, isFrench } = useI18n();
   const { theme, setTheme } = useTheme();
-  const [adminEmail, setAdminEmail] = useState('admin@dispatch.local');
-  const [adminPassword, setAdminPassword] = useState('Admin@Dispatch2026!');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   const [provisionStatus, setProvisionStatus] = useState<string | null>(null);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Operations Simulation settings
@@ -144,11 +145,47 @@ export const SettingsView: React.FC = () => {
 
   const handleSaveComplianceSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    setProvSaving(true);
     setProvStatus(null);
     setProvError(null);
+    const alertDays = Number(provForm.advancePreInspectionDays);
+    const retentionYears = Number(provForm.retentionYears);
+    const intervals = [
+      provForm.serviceAIntervalKm,
+      provForm.serviceAIntervalDays,
+      provForm.serviceBIntervalKm,
+      provForm.serviceBIntervalDays,
+      provForm.serviceCIntervalKm,
+      provForm.serviceCIntervalDays
+    ];
+    if (!Number.isFinite(alertDays) || alertDays < 7 || alertDays > 60) {
+      setProvError(isFrench
+        ? 'Le délai d\'alerte doit être un nombre entre 7 et 60 jours.'
+        : 'Advance pre-inspection alert must be a number from 7 to 60 days.');
+      return;
+    }
+    if (!Number.isFinite(retentionYears) || retentionYears < 1 || retentionYears > 7) {
+      setProvError(isFrench
+        ? 'La conservation doit être un nombre entre 1 et 7 ans.'
+        : 'Archive retention must be a number from 1 to 7 years.');
+      return;
+    }
+    if (intervals.some((value) => !Number.isFinite(Number(value)) || Number(value) <= 0)) {
+      setProvError(isFrench
+        ? 'Les intervalles d\'entretien doivent être des nombres supérieurs à 0.'
+        : 'Maintenance intervals must be numbers greater than 0.');
+      return;
+    }
+    setProvSaving(true);
     try {
-      await updateConfig(provForm);
+      await updateConfig({
+        ...provForm,
+        cvorOrPevlNumber: (provForm.cvorOrPevlNumber || '').trim(),
+        pepNumber: (provForm.pepNumber || '').trim(),
+        notes: (provForm.notes || '').trim(),
+        defaultEngineOilSpec: (provForm.defaultEngineOilSpec || '').trim(),
+        writtenPlanVersion: (provForm.writtenPlanVersion || '').trim(),
+        writtenPlanApprovedBy: (provForm.writtenPlanApprovedBy || '').trim()
+      });
       setProvStatus(
         isFrench
           ? 'Paramètres de conformité et plan d\'entretien enregistrés avec succès.'
@@ -333,20 +370,36 @@ export const SettingsView: React.FC = () => {
 
   const handleSetupAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    const email = adminEmail.trim();
+    const password = adminPassword.trim();
     setProvisionStatus(null);
+    setProvisionError(null);
+    if (!email || !email.includes('@') || !password) {
+      setProvisionError(isFrench
+        ? 'Le courriel et le mot de passe administrateur sont requis.'
+        : 'Admin email and password are required.');
+      return;
+    }
+    setLoading(true);
 
     try {
       const res = (await EmployeeService.setupAdmin({
-        email: adminEmail,
-        password: adminPassword,
+        email,
+        password,
         firstName: 'System',
-        lastName: 'Admin',
-        mobilePhone: '613-555-0100'
-      })) as any;
-      setProvisionStatus(`Admin successfully registered: ${res?.email || adminEmail} [Employee: ${res?.employeeId || 'EMP-ADMIN-001'}]`);
+        lastName: 'Admin'
+      })) as { message?: string; email?: string; employeeId?: string };
+      if (res?.message && /already exists/i.test(res.message)) {
+        setProvisionStatus(isFrench
+          ? 'Un compte administrateur existe déjà. Aucun nouveau compte n\'a été créé.'
+          : 'An administrator account already exists. No new account was created.');
+        return;
+      }
+      const savedEmail = res?.email || email;
+      const savedEmployee = res?.employeeId ? ` (${res.employeeId})` : '';
+      setProvisionStatus(`Administrator account saved for ${savedEmail}${savedEmployee}.`);
     } catch (err: any) {
-      setProvisionStatus(`Notice: ${err.message || 'Setup completed with local fallback'}`);
+      setProvisionError(err.message || (isFrench ? 'Échec de l\'enregistrement du compte administrateur.' : 'Could not save the administrator account.'));
     } finally {
       setLoading(false);
     }
@@ -973,7 +1026,8 @@ export const SettingsView: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={provForm.defaultEngineOilSpec || '15W-40 Heavy Duty Synthetic Blend (CK-4)'}
+                    value={provForm.defaultEngineOilSpec || ''}
+                    placeholder="e.g. 15W-40 CK-4"
                     onChange={(e) => setProvForm((prev) => ({ ...prev, defaultEngineOilSpec: e.target.value }))}
                     className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
                   />
@@ -984,7 +1038,8 @@ export const SettingsView: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={provForm.writtenPlanVersion || 'WMP-2026.2'}
+                    value={provForm.writtenPlanVersion || ''}
+                    placeholder="Plan version"
                     onChange={(e) => setProvForm((prev) => ({ ...prev, writtenPlanVersion: e.target.value }))}
                     className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white"
                   />
@@ -995,7 +1050,8 @@ export const SettingsView: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={provForm.writtenPlanApprovedBy || 'Director of Fleet Maintenance & Safety'}
+                    value={provForm.writtenPlanApprovedBy || ''}
+                    placeholder="Approver name or title"
                     onChange={(e) => setProvForm((prev) => ({ ...prev, writtenPlanApprovedBy: e.target.value }))}
                     className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
                   />
@@ -1924,15 +1980,18 @@ export const SettingsView: React.FC = () => {
                 type="email"
                 value={adminEmail}
                 onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="name@company.com"
                 className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
               />
             </div>
             <div>
               <label className="block text-xs text-slate-400 mb-1">Admin Password</label>
               <input
-                type="text"
+                type="password"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
+                autoComplete="new-password"
+                placeholder="Enter a password"
                 className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono"
               />
             </div>
@@ -1953,6 +2012,12 @@ export const SettingsView: React.FC = () => {
                 <span>{provisionStatus}</span>
               </span>
             )}
+            {provisionError && (
+              <span className="text-xs text-rose-400 flex items-center space-x-1">
+                <AlertCircle className="w-4 h-4" />
+                <span>{provisionError}</span>
+              </span>
+            )}
           </div>
         </form>
       </div>
@@ -1966,7 +2031,7 @@ export const SettingsView: React.FC = () => {
           <div>
             <h2 className="text-sm font-bold text-white">Firestore Master Database Architecture</h2>
             <p className="text-xs text-slate-400">
-              Reference Model: <code>D:\DispatchNew\DispatchApiServer\Models\EmployeeModel.cs</code>
+              Employee records are stored in the Firestore <code>employees</code> collection.
             </p>
           </div>
         </div>
@@ -2001,16 +2066,9 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 font-mono text-xs text-slate-300 space-y-2">
-          <div className="text-slate-400"># Deploy Go server to Cloud Run via gcloud CLI:</div>
-          <div className="text-amber-400">
-            gcloud run deploy dispatch-api \<br />
-            &nbsp;&nbsp;--source ./server \<br />
-            &nbsp;&nbsp;--platform managed \<br />
-            &nbsp;&nbsp;--region us-central1 \<br />
-            &nbsp;&nbsp;--allow-unauthenticated
-          </div>
-        </div>
+        <p className="text-xs text-slate-400">
+          Cloud Run access is managed outside this screen. This page does not change who can call the API.
+        </p>
       </div>
 
       {/* Section 4: Dispatch AI Copilot Architecture & Status */}

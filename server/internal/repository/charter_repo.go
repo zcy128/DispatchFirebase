@@ -17,6 +17,7 @@ import (
 var (
 	ErrCharterClientNotFound = errors.New("charter client not found")
 	ErrCharterTripNotFound   = errors.New("charter trip not found")
+	ErrRouteOpeningNotFound  = errors.New("route opening not found")
 )
 
 // CharterRepository stores charter clients, trips, and a read model of route openings.
@@ -35,6 +36,9 @@ type CharterRepository interface {
 	DeleteTrip(ctx context.Context, id string) error
 
 	ListRouteOpenings(ctx context.Context) ([]map[string]interface{}, error)
+	CreateRouteOpening(ctx context.Context, doc map[string]interface{}) (map[string]interface{}, error)
+	UpdateRouteOpening(ctx context.Context, id string, patch map[string]interface{}) (map[string]interface{}, error)
+	DeleteRouteOpening(ctx context.Context, id string) error
 }
 
 type FirestoreCharterRepository struct {
@@ -105,6 +109,18 @@ func (r *FirestoreCharterRepository) ListRouteOpenings(ctx context.Context) ([]m
 		return docString(docs[i], "createdAt") > docString(docs[j], "createdAt")
 	})
 	return docs, nil
+}
+
+func (r *FirestoreCharterRepository) CreateRouteOpening(ctx context.Context, doc map[string]interface{}) (map[string]interface{}, error) {
+	return createCollectionDoc(ctx, r.client, "route_openings", "RO", doc)
+}
+
+func (r *FirestoreCharterRepository) UpdateRouteOpening(ctx context.Context, id string, patch map[string]interface{}) (map[string]interface{}, error) {
+	return updateCollectionDoc(ctx, r.client, "route_openings", id, patch, ErrRouteOpeningNotFound)
+}
+
+func (r *FirestoreCharterRepository) DeleteRouteOpening(ctx context.Context, id string) error {
+	return deleteCollectionDoc(ctx, r.client, "route_openings", id, ErrRouteOpeningNotFound)
 }
 
 func listCollection(ctx context.Context, client *firestore.Client, name string) ([]map[string]interface{}, error) {
@@ -300,6 +316,37 @@ func (r *MemoryCharterRepository) ListRouteOpenings(ctx context.Context) ([]map[
 		return docString(out[i], "createdAt") > docString(out[j], "createdAt")
 	})
 	return out, nil
+}
+
+func (r *MemoryCharterRepository) CreateRouteOpening(ctx context.Context, doc map[string]interface{}) (map[string]interface{}, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	prepared := prepareNewDoc(doc, "RO")
+	id := docString(prepared, "id")
+	r.openings[id] = cloneDoc(prepared)
+	return cloneDoc(prepared), nil
+}
+
+func (r *MemoryCharterRepository) UpdateRouteOpening(ctx context.Context, id string, patch map[string]interface{}) (map[string]interface{}, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	old, ok := r.openings[id]
+	if !ok {
+		return nil, ErrRouteOpeningNotFound
+	}
+	merged := mergeDoc(old, patch)
+	r.openings[id] = cloneDoc(merged)
+	return cloneDoc(merged), nil
+}
+
+func (r *MemoryCharterRepository) DeleteRouteOpening(ctx context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.openings[id]; !ok {
+		return ErrRouteOpeningNotFound
+	}
+	delete(r.openings, id)
+	return nil
 }
 
 func prepareNewDoc(doc map[string]interface{}, prefix string) map[string]interface{} {

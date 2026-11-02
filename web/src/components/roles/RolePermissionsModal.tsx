@@ -40,6 +40,7 @@ export const RolePermissionsModal: React.FC<RolePermissionsModalProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Initialize permissions when modal opens or role changes
   useEffect(() => {
@@ -101,21 +102,28 @@ export const RolePermissionsModal: React.FC<RolePermissionsModalProps> = ({
     setPermissions(updated);
   };
 
-  const handleResetToFactory = () => {
+  const handleResetToFactory = async () => {
     if (window.confirm(`Reset default permissions for role "${ROLE_LABELS[role]}" back to factory presets?`)) {
-      resetRoleDefaultPermissions(role);
-      const factory = FACTORY_ROLE_PERMISSIONS[role];
-      setPermissions({ ...factory });
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
-      if (onSaved) onSaved();
+      setSaveError(null);
+      try {
+        await resetRoleDefaultPermissions(role);
+        const factory = FACTORY_ROLE_PERMISSIONS[role];
+        setPermissions({ ...factory });
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2500);
+        if (onSaved) onSaved();
+      } catch (err) {
+        console.error('Failed to reset role default permissions:', err);
+        setSaveError('Could not save the reset. The previous permissions are still in effect.');
+      }
     }
   };
 
   const handleSave = async () => {
     setIsSaving(true);
+    setSaveError(null);
     try {
-      updateRoleDefaultPermissions(role, permissions);
+      await updateRoleDefaultPermissions(role, permissions);
       setSaveSuccess(true);
       if (onSaved) onSaved();
       setTimeout(() => {
@@ -124,6 +132,7 @@ export const RolePermissionsModal: React.FC<RolePermissionsModalProps> = ({
       }, 700);
     } catch (err) {
       console.error('Failed to update role default permissions:', err);
+      setSaveError('Could not save default permissions. Check that you are signed in as an administrator.');
       setIsSaving(false);
     }
   };
@@ -355,6 +364,9 @@ export const RolePermissionsModal: React.FC<RolePermissionsModalProps> = ({
               <span>Reset to Factory Defaults</span>
             </button>
 
+            {saveError && (
+              <span className="text-xs text-rose-400 font-semibold">{saveError}</span>
+            )}
             {saveSuccess && (
               <span className="text-xs text-emerald-400 font-semibold flex items-center space-x-1">
                 <CheckCircle2 className="w-4 h-4" />

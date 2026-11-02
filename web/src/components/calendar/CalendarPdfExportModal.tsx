@@ -157,9 +157,66 @@ export const CalendarPdfExportModal: React.FC<CalendarPdfExportModalProps> = ({
       ? t.calendar.secondaryCalendar
       : t.calendar.fullCalendar;
 
-  const boardWebsite = board.schoolBoardCode.toLowerCase().includes('catholic')
-    ? 'ocsb.ca'
-    : 'ocdsb.ca';
+  const boardWebsite = board.schoolBoardCode || board.schoolBoardName || 'School Board';
+
+  const monthShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthLong = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const calendarEvents = calendar.events || [];
+
+  const formatLong = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    if (!year || !month || !day) return 'Not recorded';
+    return `${monthLong[month - 1]} ${day}, ${year}`;
+  };
+
+  const formatShort = (dateStr: string) => {
+    const [, month, day] = dateStr.split('-').map(Number);
+    return `${monthShort[(month || 1) - 1]} ${day}`;
+  };
+
+  const formatSpan = (event: CalendarEvent) => {
+    if (!event.endDate || event.endDate === event.startDate) return formatShort(event.startDate);
+    const [, startMonth] = event.startDate.split('-').map(Number);
+    const [, endMonth] = event.endDate.split('-').map(Number);
+    if (startMonth === endMonth) {
+      const startDay = Number(event.startDate.slice(8, 10));
+      const endDay = Number(event.endDate.slice(8, 10));
+      return `${monthShort[(startMonth || 1) - 1]} ${startDay}–${endDay}`;
+    }
+    return `${formatShort(event.startDate)}–${formatShort(event.endDate)}`;
+  };
+
+  const groupByYear = (list: CalendarEvent[]) => {
+    const groups = new Map<string, string[]>();
+    [...list]
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))
+      .forEach((event) => {
+        const year = event.startDate.slice(0, 4) || 'Unknown';
+        const parts = groups.get(year) || [];
+        parts.push(formatSpan(event));
+        groups.set(year, parts);
+      });
+    return [...groups.entries()];
+  };
+
+  const firstDayEvent = [...calendarEvents]
+    .filter((event) => /first day of school/i.test(event.title) && !/after/i.test(event.title))
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+  const lastDayEvent = [...calendarEvents]
+    .filter((event) => /last day of school/i.test(event.title))
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+  const holidayGroups = groupByYear(calendarEvents.filter((event) => event.type === 'holiday' || event.type === 'break'));
+  const pdGroups = groupByYear(calendarEvents.filter((event) => event.type === 'pd_day'));
+  const examGroups = groupByYear(calendarEvents.filter((event) => event.type === 'exam'));
+
+  const renderYearGroups = (groups: Array<[string, string[]]>) => {
+    if (groups.length === 0) return <div>None recorded</div>;
+    return groups.map(([year, parts]) => (
+      <div key={year}>
+        <span className="font-semibold text-slate-700">{year}:</span> {parts.join(', ')}
+      </div>
+    ));
+  };
 
   // Export PDF using jsPDF + html2canvas with precise alignment & origin
   const handleDownloadPdf = async () => {
@@ -427,7 +484,7 @@ export const CalendarPdfExportModal: React.FC<CalendarPdfExportModalProps> = ({
                     </div>
                     <div>
                       <div className="font-bold text-slate-800">{t.calendar.firstDayOfSchool}</div>
-                      <div className="text-slate-600 font-medium">September 1, 2026</div>
+                      <div className="text-slate-600 font-medium">{firstDayEvent ? formatLong(firstDayEvent.startDate) : 'Not recorded'}</div>
                     </div>
                   </div>
 
@@ -456,10 +513,7 @@ export const CalendarPdfExportModal: React.FC<CalendarPdfExportModalProps> = ({
                     <div>
                       <div className="font-bold text-slate-800">{t.calendar.holidays}</div>
                       <div className="text-slate-600 leading-tight">
-                        <span className="font-semibold text-slate-700">2026:</span> Sep 7, Oct 12, Dec 21–31
-                      </div>
-                      <div className="text-slate-600 leading-tight">
-                        <span className="font-semibold text-slate-700">2027:</span> Jan 1, Feb 15, Mar 15–19, Mar 26, 29, May 24
+                        {renderYearGroups(holidayGroups)}
                       </div>
                     </div>
                   </div>
@@ -491,10 +545,7 @@ export const CalendarPdfExportModal: React.FC<CalendarPdfExportModalProps> = ({
                     <div>
                       <div className="font-bold text-slate-800">{t.calendar.paDays}</div>
                       <div className="text-slate-600 leading-tight">
-                        <span className="font-semibold text-slate-700">2026:</span> Aug 31, Oct 2, Nov 20, 23
-                      </div>
-                      <div className="text-slate-600 leading-tight">
-                        <span className="font-semibold text-slate-700">2027:</span> Jan 29, Apr 16, Jun 4, 25
+                        {renderYearGroups(pdGroups)}
                       </div>
                     </div>
                   </div>
@@ -553,7 +604,7 @@ export const CalendarPdfExportModal: React.FC<CalendarPdfExportModalProps> = ({
                     </div>
                     <div>
                       <div className="font-bold text-slate-800">{t.calendar.lastDayOfSchool}</div>
-                      <div className="text-slate-600 font-medium">June 24, 2027</div>
+                      <div className="text-slate-600 font-medium">{lastDayEvent ? formatLong(lastDayEvent.startDate) : 'Not recorded'}</div>
                     </div>
                   </div>
 
@@ -579,8 +630,10 @@ export const CalendarPdfExportModal: React.FC<CalendarPdfExportModalProps> = ({
                       </span>
                     </div>
                     <div>
-                      <div className="font-bold text-slate-800">Summer Learning & Exams</div>
-                      <div className="text-slate-600 leading-tight">July 5–30 (*Dates vary by program)</div>
+                      <div className="font-bold text-slate-800">Exams</div>
+                      <div className="text-slate-600 leading-tight">
+                        {renderYearGroups(examGroups)}
+                      </div>
                     </div>
                   </div>
                 </div>

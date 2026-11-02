@@ -19,8 +19,7 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
-  Zap,
-  Sparkles
+  Zap
 } from 'lucide-react';
 
 /**
@@ -92,13 +91,6 @@ export const LoginLogsView: React.FC = () => {
     setRefreshing(false);
   };
 
-  const handleRegenerateSeed = () => {
-    setRefreshing(true);
-    const generated = LoginLogService.regenerateMockLogs(selectedDate, 1000);
-    setLogs(generated);
-    setRefreshing(false);
-  };
-
   // Recent 7 days for quick day tabs
   const recentDays = useMemo(() => {
     const list: string[] = [];
@@ -131,7 +123,7 @@ export const LoginLogsView: React.FC = () => {
       }
 
       // App filter
-      if (appFilter !== 'all' && log.app.toLowerCase() !== appFilter.toLowerCase()) {
+      if (appFilter !== 'all' && (log.app || '').toLowerCase() !== appFilter.toLowerCase()) {
         return false;
       }
 
@@ -191,7 +183,7 @@ export const LoginLogsView: React.FC = () => {
     const total = filteredLogs.length;
     const successes = filteredLogs.filter((l) => l.status === 'success').length;
     const failures = filteredLogs.filter((l) => l.status === 'failure').length;
-    const successRate = total > 0 ? Math.round((successes / total) * 100) : 100;
+    const successRate = total > 0 ? Math.round((successes / total) * 100) : null;
     return { total, successes, failures, successRate };
   }, [filteredLogs]);
 
@@ -285,8 +277,8 @@ export const LoginLogsView: React.FC = () => {
               </h1>
               <p className="text-xs text-slate-400 mt-0.5">
                 {isFrench
-                  ? 'Audit de connexion (Web Hub / Driver App), volume quotidien ~1 000 événements avec défilement virtuel fluide'
-                  : 'Daily user and driver authentication audit trail across Web Hub and Driver App with smooth virtual scrolling'}
+                  ? 'Audit de connexion pour le Web Hub et l\'application conducteur'
+                  : 'Daily user and driver authentication audit trail across Web Hub and Driver App'}
               </p>
             </div>
           </div>
@@ -301,15 +293,6 @@ export const LoginLogsView: React.FC = () => {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             <span>{isFrench ? 'Actualiser' : 'Refresh'}</span>
-          </button>
-
-          <button
-            onClick={handleRegenerateSeed}
-            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 text-xs font-medium transition"
-            title={isFrench ? 'Générer 1 000 exemples de journaux pour la date sélectionnée' : 'Simulate ~1,000 test logs for selected date'}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>{isFrench ? 'Simuler 1 000' : 'Simulate 1,000'}</span>
           </button>
 
           <button
@@ -444,7 +427,9 @@ export const LoginLogsView: React.FC = () => {
           <span className="text-[11px] font-bold uppercase text-amber-400 block tracking-wider">
             {isFrench ? 'Taux de réussite' : 'Success Rate'}
           </span>
-          <div className="text-2xl font-black text-amber-400 mt-1">{stats.successRate}%</div>
+          <div className="text-2xl font-black text-amber-400 mt-1">
+            {stats.successRate === null ? '—' : `${stats.successRate}%`}
+          </div>
           <span className="text-[11px] text-slate-400">Overall ratio for this date</span>
         </div>
       </div>
@@ -585,8 +570,8 @@ export const LoginLogsView: React.FC = () => {
             </p>
             <p className="text-xs text-slate-500">
               {isFrench
-                ? 'Ajustez vos filtres ci-dessus ou cliquez sur "Simuler 1 000" pour générer des données de test.'
-                : 'Try adjusting your date or keyword filters above, or click "Simulate 1,000" to seed test logs.'}
+                ? 'Ajustez la date ou les filtres ci-dessus.'
+                : 'Try another date or clear the keyword filters.'}
             </p>
           </div>
         ) : (
@@ -668,7 +653,7 @@ export const LoginLogsView: React.FC = () => {
 
                       {/* Employee Name */}
                       <td className="py-3 px-4 font-medium text-white">
-                        {isSuccess && log.employeeName ? (
+                        {log.employeeName ? (
                           <div className="flex items-center space-x-2">
                             <div className="w-6 h-6 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-amber-400 font-bold">
                               {log.employeeName.charAt(0)}
@@ -676,9 +661,7 @@ export const LoginLogsView: React.FC = () => {
                             <span>{log.employeeName}</span>
                           </div>
                         ) : (
-                          <span className="text-slate-500 italic text-[11px]">
-                            {isSuccess ? '—' : 'Not Authenticated'}
-                          </span>
+                          <span className="text-slate-500 italic text-[11px]">—</span>
                         )}
                       </td>
 

@@ -73,6 +73,7 @@ export const AuditLogsView: React.FC = () => {
   // Loading States
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Log States for the 5 categories
   const [dispatchLogs, setDispatchLogs] = useState<DispatchChangeLog[]>([]);
@@ -82,6 +83,15 @@ export const AuditLogsView: React.FC = () => {
   const [safetyLogs, setSafetyLogs] = useState<OperationalSafetyLog[]>([]);
 
   // Calculate day difference between two dates
+  const localDay = (iso?: string): string => {
+    if (!iso) return '';
+    const parsed = new Date(iso);
+    if (Number.isNaN(parsed.getTime())) return iso.slice(0, 10);
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${parsed.getFullYear()}-${month}-${day}`;
+  };
+
   const calculateDaysDiff = (from: string, to: string): number => {
     try {
       const [y1, m1, d1] = from.split('-').map(Number);
@@ -195,10 +205,14 @@ export const AuditLogsView: React.FC = () => {
         allLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         setDispatchLogs(allLogs);
         setLoading(false);
+        setRefreshing(false);
       })
       .catch((err) => {
         console.error('Failed to load dispatch logs for range:', err);
-        if (isSubscribed) setLoading(false);
+        if (isSubscribed) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       });
 
     // If today is in dates, maintain real-time listener for today's logs
@@ -262,14 +276,11 @@ export const AuditLogsView: React.FC = () => {
       unsubPayroll();
       unsubSafety();
     };
-  }, [isAdmin, dateFrom, dateTo, today]);
+  }, [isAdmin, dateFrom, dateTo, today, reloadKey]);
 
-  // Refresh active category
-  const handleRefresh = async () => {
+  const handleRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 600);
+    setReloadKey((key) => key + 1);
   };
 
   const toggleExpand = (id: string) => {
@@ -320,7 +331,7 @@ export const AuditLogsView: React.FC = () => {
   // Filter 2: Route Audit Logs
   const filteredRouteLogs = useMemo(() => {
     return routeLogs.filter((log) => {
-      const d = log.timestamp ? log.timestamp.slice(0, 10) : '';
+      const d = localDay(log.timestamp);
       if (d && (d < dateFrom || d > dateTo)) return false;
 
       if (selectedActor && log.userId !== selectedActor && log.userName !== selectedActor) {
@@ -336,7 +347,7 @@ export const AuditLogsView: React.FC = () => {
         const matchActor = log.userName?.toLowerCase().includes(q);
         const matchDiff = log.diffs?.some(
           (diff) =>
-            diff.fieldLabel.toLowerCase().includes(q) ||
+            (diff.fieldLabel || '').toLowerCase().includes(q) ||
             String(diff.oldValue).toLowerCase().includes(q) ||
             String(diff.newValue).toLowerCase().includes(q)
         );
@@ -351,7 +362,7 @@ export const AuditLogsView: React.FC = () => {
   // Filter 3: Master Entity Logs
   const filteredMasterLogs = useMemo(() => {
     return masterLogs.filter((log) => {
-      const d = log.timestamp ? log.timestamp.slice(0, 10) : '';
+      const d = localDay(log.timestamp);
       if (d && (d < dateFrom || d > dateTo)) return false;
 
       if (selectedActor && log.actor?.userId !== selectedActor && log.actor?.userName !== selectedActor) {
@@ -363,14 +374,14 @@ export const AuditLogsView: React.FC = () => {
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         const matchTarget =
-          log.targetName.toLowerCase().includes(q) ||
-          log.targetIdentifier.toLowerCase().includes(q) ||
-          log.targetId.toLowerCase().includes(q);
-        const matchSummary = log.summary.toLowerCase().includes(q);
-        const matchActor = log.actor.userName.toLowerCase().includes(q);
+          (log.targetName || '').toLowerCase().includes(q) ||
+          (log.targetIdentifier || '').toLowerCase().includes(q) ||
+          (log.targetId || '').toLowerCase().includes(q);
+        const matchSummary = (log.summary || '').toLowerCase().includes(q);
+        const matchActor = (log.actor?.userName || '').toLowerCase().includes(q);
         const matchDiff = log.diffs?.some(
           (diff) =>
-            diff.fieldLabel.toLowerCase().includes(q) ||
+            (diff.fieldLabel || '').toLowerCase().includes(q) ||
             String(diff.oldValue).toLowerCase().includes(q) ||
             String(diff.newValue).toLowerCase().includes(q)
         );
@@ -385,7 +396,7 @@ export const AuditLogsView: React.FC = () => {
   // Filter 4: Payroll Logs
   const filteredPayrollLogs = useMemo(() => {
     return payrollLogs.filter((log) => {
-      const d = log.timestamp ? log.timestamp.slice(0, 10) : '';
+      const d = localDay(log.timestamp);
       if (d && (d < dateFrom || d > dateTo)) return false;
 
       if (selectedActor && log.actor?.userId !== selectedActor && log.actor?.userName !== selectedActor) {
@@ -397,14 +408,14 @@ export const AuditLogsView: React.FC = () => {
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         const matchTarget =
-          log.targetName.toLowerCase().includes(q) ||
-          log.targetIdentifier.toLowerCase().includes(q) ||
-          log.targetId.toLowerCase().includes(q);
-        const matchSummary = log.summary.toLowerCase().includes(q);
-        const matchActor = log.actor.userName.toLowerCase().includes(q);
+          (log.targetName || '').toLowerCase().includes(q) ||
+          (log.targetIdentifier || '').toLowerCase().includes(q) ||
+          (log.targetId || '').toLowerCase().includes(q);
+        const matchSummary = (log.summary || '').toLowerCase().includes(q);
+        const matchActor = (log.actor?.userName || '').toLowerCase().includes(q);
         const matchDiff = log.diffs?.some(
           (diff) =>
-            diff.fieldLabel.toLowerCase().includes(q) ||
+            (diff.fieldLabel || '').toLowerCase().includes(q) ||
             String(diff.oldValue).toLowerCase().includes(q) ||
             String(diff.newValue).toLowerCase().includes(q)
         );
@@ -419,7 +430,7 @@ export const AuditLogsView: React.FC = () => {
   // Filter 5: Safety Logs
   const filteredSafetyLogs = useMemo(() => {
     return safetyLogs.filter((log) => {
-      const d = log.timestamp ? log.timestamp.slice(0, 10) : '';
+      const d = localDay(log.timestamp);
       if (d && (d < dateFrom || d > dateTo)) return false;
 
       if (selectedActor && log.actor?.userId !== selectedActor && log.actor?.userName !== selectedActor) {
@@ -431,14 +442,14 @@ export const AuditLogsView: React.FC = () => {
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         const matchTarget =
-          log.targetIdentifier.toLowerCase().includes(q) ||
-          log.targetId.toLowerCase().includes(q);
-        const matchSummary = log.summary.toLowerCase().includes(q);
-        const matchActor = log.actor.userName.toLowerCase().includes(q);
+          (log.targetIdentifier || '').toLowerCase().includes(q) ||
+          (log.targetId || '').toLowerCase().includes(q);
+        const matchSummary = (log.summary || '').toLowerCase().includes(q);
+        const matchActor = (log.actor?.userName || '').toLowerCase().includes(q);
         const matchModule = log.module.toLowerCase().includes(q);
         const matchDiff = log.diffs?.some(
           (diff) =>
-            diff.fieldLabel.toLowerCase().includes(q) ||
+            (diff.fieldLabel || '').toLowerCase().includes(q) ||
             String(diff.oldValue).toLowerCase().includes(q) ||
             String(diff.newValue).toLowerCase().includes(q)
         );
@@ -519,7 +530,7 @@ export const AuditLogsView: React.FC = () => {
             `"${l.targetName}"`,
             `"${l.action}"`,
             `"${l.summary.replace(/"/g, '""')}"`,
-            `"${l.actor.userName} (${l.actor.userRole})"`,
+            `"${l.actor?.userName || ''} (${l.actor?.userRole || ''})"`,
           ]),
         ];
         break;
@@ -534,7 +545,7 @@ export const AuditLogsView: React.FC = () => {
             `"${l.action}"`,
             `"${l.amount !== undefined ? l.amount : ''}"`,
             `"${l.summary.replace(/"/g, '""')}"`,
-            `"${l.actor.userName} (${l.actor.userRole})"`,
+            `"${l.actor?.userName || ''} (${l.actor?.userRole || ''})"`,
           ]),
         ];
         break;
@@ -549,7 +560,7 @@ export const AuditLogsView: React.FC = () => {
             `"${l.action}"`,
             `"${l.severity || ''}"`,
             `"${l.summary.replace(/"/g, '""')}"`,
-            `"${l.actor.userName} (${l.actor.userRole})"`,
+            `"${l.actor?.userName || ''} (${l.actor?.userRole || ''})"`,
           ]),
         ];
         break;
@@ -1154,8 +1165,8 @@ export const AuditLogsView: React.FC = () => {
                         <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
                           <div className="flex items-center space-x-1.5">
                             <User className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="font-semibold text-slate-300">{log.actor.userName}</span>
-                            {log.actor.userRole && (
+                            <span className="font-semibold text-slate-300">{log.actor?.userName || '—'}</span>
+                            {log.actor?.userRole && (
                               <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
                                 {log.actor.userRole}
                               </span>
@@ -1203,7 +1214,7 @@ export const AuditLogsView: React.FC = () => {
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center space-x-2">
                             <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              {log.category.replace('_', ' ')} • {log.action}
+                              {(log.category || 'payroll').split('_').join(' ')} • {log.action}
                             </span>
                             <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
                               {log.targetIdentifier}
@@ -1227,8 +1238,8 @@ export const AuditLogsView: React.FC = () => {
                         <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
                           <div className="flex items-center space-x-1.5">
                             <User className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="font-semibold text-slate-300">{log.actor.userName}</span>
-                            {log.actor.userRole && (
+                            <span className="font-semibold text-slate-300">{log.actor?.userName || '—'}</span>
+                            {log.actor?.userRole && (
                               <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
                                 {log.actor.userRole}
                               </span>
@@ -1276,7 +1287,7 @@ export const AuditLogsView: React.FC = () => {
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center space-x-2">
                             <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                              {log.module.replace('_', ' ')} • {log.action}
+                              {(log.module || 'safety').split('_').join(' ')} • {log.action}
                             </span>
                             <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
                               {log.targetIdentifier}
@@ -1300,8 +1311,8 @@ export const AuditLogsView: React.FC = () => {
                         <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
                           <div className="flex items-center space-x-1.5">
                             <User className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="font-semibold text-slate-300">{log.actor.userName}</span>
-                            {log.actor.userRole && (
+                            <span className="font-semibold text-slate-300">{log.actor?.userName || '—'}</span>
+                            {log.actor?.userRole && (
                               <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
                                 {log.actor.userRole}
                               </span>

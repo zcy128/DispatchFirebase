@@ -8,6 +8,7 @@ import {
   onSnapshot,
   query,
   where,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { apiRequest, isClientHttpError } from './api';
@@ -287,24 +288,12 @@ export const RouteAssessmentService = {
     let unsubscribeSnapshot: (() => void) | null = null;
     let restItems: RouteAssessment[] = [];
     let firestoreItems: RouteAssessment[] = [];
+    let listenerReady = false;
 
     const emitMerged = () => {
       if (!isSubscribed) return;
-      const map = new Map<string, RouteAssessment>();
-      for (const item of restItems) {
-        map.set(item.id, item);
-      }
-      for (const item of firestoreItems) {
-        const existing = map.get(item.id);
-        if (
-          !existing ||
-          new Date(item.updatedAt || item.createdAt).getTime() >=
-            new Date(existing.updatedAt || existing.createdAt).getTime()
-        ) {
-          map.set(item.id, item);
-        }
-      }
-      const merged = Array.from(map.values()).sort(
+      const rows = listenerReady ? firestoreItems : restItems;
+      const merged = [...rows].sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       callback(merged);
@@ -313,12 +302,13 @@ export const RouteAssessmentService = {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - 365);
     const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+    const cutoffTs = Timestamp.fromDate(cutoffDate);
 
     const fetchLatestRest = async () => {
       if (!isSubscribed) return;
       try {
         const data = await RouteAssessmentService.listAssessments({ timeRange: '1year' });
-        if (isSubscribed) {
+        if (isSubscribed && !listenerReady) {
           restItems = data;
           emitMerged();
         }
@@ -341,8 +331,8 @@ export const RouteAssessmentService = {
         const ownId = listenerOwnEmployeeId();
         const assessmentRef = collection(db, 'route_assessments');
         const collRef = ownId
-          ? query(assessmentRef, where('conductedByEmployeeId', '==', ownId), where('createdAt', '>=', cutoffStr))
-          : query(assessmentRef, where('createdAt', '>=', cutoffStr));
+          ? query(assessmentRef, where('conductedByEmployeeId', '==', ownId), where('createdAt', '>=', cutoffTs))
+          : query(assessmentRef, where('createdAt', '>=', cutoffTs));
         unsubscribeSnapshot = onSnapshot(
           collRef,
           (snapshot) => {
@@ -356,9 +346,11 @@ export const RouteAssessmentService = {
               }
             });
             firestoreItems = items;
+            listenerReady = true;
             emitMerged();
           },
           (error) => {
+            listenerReady = false;
             console.warn('[RouteAssessmentService] Firestore onSnapshot error, starting polling:', error);
             startPolling();
           }

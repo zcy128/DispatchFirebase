@@ -82,6 +82,37 @@ export const RecordStudentAbsenceModal: React.FC<RecordStudentAbsenceModalProps>
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [dateShifts, setDateShifts] = useState<DispatchShift[]>(shifts);
+  const [loadingStudents, setLoadingStudents] = useState<boolean>(false);
+
+  // The absences log opens this modal without a shift list. Load the chosen
+  // date's runs so dispatchers can pick a rider. Workbench passes shifts for
+  // its own date and keeps that list until the date changes.
+  useEffect(() => {
+    if (!isOpen) return;
+    const parentMatchesDate = shifts.length > 0 && (!initialDate || targetDate === initialDate);
+    if (parentMatchesDate) {
+      setDateShifts(shifts);
+      setLoadingStudents(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingStudents(true);
+    DispatchService.list(targetDate)
+      .then((list) => {
+        if (!cancelled) setDateShifts(list);
+      })
+      .catch((err) => {
+        console.warn('[RecordStudentAbsence] shift load failed:', err);
+        if (!cancelled) setDateShifts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingStudents(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, targetDate, shifts, initialDate]);
 
   // Extract all distinct students across current shifts
   const distinctStudents = useMemo(() => {
@@ -93,7 +124,7 @@ export const RecordStudentAbsenceModal: React.FC<RecordStudentAbsenceModalProps>
       routeNo?: string;
     }>();
 
-    shifts.forEach((s) => {
+    dateShifts.forEach((s) => {
       if (selectedRouteNo !== 'ALL' && s.routeNo !== selectedRouteNo) return;
       (s.stops || []).forEach((st) => {
         const stuList: DispatchStopStudent[] = (st.assignedStudents || (st as any).students || []);
@@ -116,7 +147,7 @@ export const RecordStudentAbsenceModal: React.FC<RecordStudentAbsenceModalProps>
     }
 
     return Array.from(map.values()).sort((a, b) => a.studentName.localeCompare(b.studentName));
-  }, [shifts, selectedRouteNo, initialStudent]);
+  }, [dateShifts, selectedRouteNo, initialStudent]);
 
   // Filter students based on search term
   const filteredStudents = useMemo(() => {
@@ -133,11 +164,11 @@ export const RecordStudentAbsenceModal: React.FC<RecordStudentAbsenceModalProps>
   // Distinct Route Numbers
   const routeNumbers = useMemo(() => {
     const set = new Set<string>();
-    shifts.forEach((s) => {
+    dateShifts.forEach((s) => {
       if (s.routeNo) set.add(s.routeNo);
     });
     return Array.from(set).sort();
-  }, [shifts]);
+  }, [dateShifts]);
 
   if (!isOpen) return null;
 
@@ -315,7 +346,9 @@ export const RecordStudentAbsenceModal: React.FC<RecordStudentAbsenceModalProps>
             <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden max-h-36 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
               {filteredStudents.length === 0 ? (
                 <div className="p-3 text-center text-xs text-slate-400">
-                  No matching students found on this route.
+                  {loadingStudents
+                    ? 'Loading riders for this date...'
+                    : 'No matching students found on this route.'}
                 </div>
               ) : (
                 filteredStudents.map((stu) => {

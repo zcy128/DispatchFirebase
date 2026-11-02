@@ -93,11 +93,9 @@ export const StudentService = {
     }
 
     try {
-      const q = query(
-        collection(db, 'students'),
-        where('schoolId', '==', schoolId),
-        orderBy('studentNo', 'asc')
-      );
+      // Filter only. Ordering by studentNo as well needs a composite index and
+      // fails the listener with failed-precondition when that index is absent.
+      const q = query(collection(db, 'students'), where('schoolId', '==', schoolId));
       const unsubscribe = onSnapshot(
         q,
         (snapshot) => {
@@ -109,6 +107,11 @@ export const StudentService = {
               id: doc.id
             });
           });
+          list.sort((a, b) =>
+            String(a.studentNo || '').localeCompare(String(b.studentNo || ''), undefined, {
+              numeric: true
+            })
+          );
           onUpdate(list);
         },
         (error) => {

@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"dispatch-server/internal/models"
@@ -52,6 +53,13 @@ func (h *SchoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
 		return
 	}
+
+	if strings.TrimSpace(s.SchoolName) == "" || strings.TrimSpace(s.SchoolAddress) == "" {
+		http.Error(w, `{"error":"schoolName and schoolAddress are required"}`, http.StatusBadRequest)
+		return
+	}
+	s.SchoolName = strings.TrimSpace(s.SchoolName)
+	s.SchoolAddress = strings.TrimSpace(s.SchoolAddress)
 
 	created, err := h.repo.Create(r.Context(), &s)
 	if err != nil {
@@ -127,6 +135,13 @@ func (h *SchoolHandler) CreateBoard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
 		return
 	}
+
+	if strings.TrimSpace(b.SchoolBoardName) == "" || strings.TrimSpace(b.SchoolBoardCode) == "" {
+		http.Error(w, `{"error":"schoolBoardName and schoolBoardCode are required"}`, http.StatusBadRequest)
+		return
+	}
+	b.SchoolBoardName = strings.TrimSpace(b.SchoolBoardName)
+	b.SchoolBoardCode = strings.TrimSpace(b.SchoolBoardCode)
 
 	created, err := h.boardRepo.CreateBoard(r.Context(), &b)
 	if err != nil {

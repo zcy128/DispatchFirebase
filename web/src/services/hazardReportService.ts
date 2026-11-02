@@ -7,6 +7,7 @@ import {
   onSnapshot,
   query,
   where,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { apiRequest, isClientHttpError } from './api';
@@ -230,24 +231,12 @@ export const HazardReportService = {
     let unsubscribeSnapshot: (() => void) | null = null;
     let restReports: HazardReport[] = [];
     let firestoreReports: HazardReport[] = [];
+    let listenerReady = false;
 
     const emitMerged = () => {
       if (!isSubscribed) return;
-      const map = new Map<string, HazardReport>();
-      for (const r of restReports) {
-        map.set(r.id, r);
-      }
-      for (const r of firestoreReports) {
-        const existing = map.get(r.id);
-        if (
-          !existing ||
-          new Date(r.updatedAt || r.createdAt).getTime() >=
-            new Date(existing.updatedAt || existing.createdAt).getTime()
-        ) {
-          map.set(r.id, r);
-        }
-      }
-      const merged = Array.from(map.values()).sort(
+      const rows = listenerReady ? firestoreReports : restReports;
+      const merged = [...rows].sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       callback(merged);
@@ -256,12 +245,13 @@ export const HazardReportService = {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - 365);
     const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+    const cutoffTs = Timestamp.fromDate(cutoffDate);
 
     const fetchLatestRest = async () => {
       if (!isSubscribed) return;
       try {
         const data = await HazardReportService.listReports({ timeRange: '1year' });
-        if (isSubscribed) {
+        if (isSubscribed && !listenerReady) {
           restReports = data;
           emitMerged();
         }
@@ -283,8 +273,8 @@ export const HazardReportService = {
         const ownId = listenerOwnEmployeeId();
         const hazardRef = collection(db, 'hazard_reports');
         const qRef = ownId
-          ? query(hazardRef, where('reportedByEmployeeId', '==', ownId), where('createdAt', '>=', cutoffStr))
-          : query(hazardRef, where('createdAt', '>=', cutoffStr));
+          ? query(hazardRef, where('reportedByEmployeeId', '==', ownId), where('createdAt', '>=', cutoffTs))
+          : query(hazardRef, where('createdAt', '>=', cutoffTs));
         unsubscribeSnapshot = onSnapshot(
           qRef,
           (snapshot) => {
@@ -298,9 +288,11 @@ export const HazardReportService = {
               }
             });
             firestoreReports = items;
+            listenerReady = true;
             emitMerged();
           },
           (error) => {
+            listenerReady = false;
             console.warn('[HazardReportService] Firestore subscription error, falling back to polling:', error);
             startPolling();
           }

@@ -1207,6 +1207,33 @@ func isVehicleUnavailableInMap(unavailable map[string]bool, unitNumber string, v
 	return false
 }
 
+func markUnavailableVehicle(unavailable map[string]bool, data map[string]interface{}) {
+	unit := ""
+	for _, key := range []string{"unitNumber", "vehicleUnit", "vehicleUnitNumber"} {
+		if value, ok := data[key].(string); ok {
+			unit = strings.ToUpper(strings.TrimSpace(value))
+			if unit != "" {
+				break
+			}
+		}
+	}
+	if unit != "" {
+		unavailable["UNIT:"+unit] = true
+	}
+	var vehicleID int64
+	switch value := data["vehicleId"].(type) {
+	case int64:
+		vehicleID = value
+	case int:
+		vehicleID = int64(value)
+	case float64:
+		vehicleID = int64(value)
+	}
+	if vehicleID > 0 {
+		unavailable[fmt.Sprintf("ID:%d", vehicleID)] = true
+	}
+}
+
 // getUnavailableVehiclesForDate queries vehicle_defects, vehicle_inspections, and preventive_maintenance_records
 // to identify vehicles that must be excluded from dispatch shifts on target date.
 func (r *FirestoreDispatchRepository) getUnavailableVehiclesForDate(ctx context.Context, date string) map[string]bool {
@@ -1281,15 +1308,7 @@ func (r *FirestoreDispatchRepository) getUnavailableVehiclesForDate(ctx context.
 		schedDate, _ := data["scheduledInspectionDate"].(string)
 		isInInsp := strings.EqualFold(status, "in_inspection")
 		if isInInsp || inspDate == date || schedDate == date {
-			if unitStr, ok := data["vehicleUnit"].(string); ok {
-				u := strings.ToUpper(strings.TrimSpace(unitStr))
-				if u != "" {
-					unavailable["UNIT:"+u] = true
-				}
-			}
-			if vid, ok := data["vehicleId"].(int64); ok && vid > 0 {
-				unavailable[fmt.Sprintf("ID:%d", vid)] = true
-			}
+			markUnavailableVehicle(unavailable, data)
 		}
 	}
 	inspIter.Stop()
@@ -1313,15 +1332,7 @@ func (r *FirestoreDispatchRepository) getUnavailableVehiclesForDate(ctx context.
 		schedDate, _ := data["scheduledServiceDate"].(string)
 		isInProg := strings.EqualFold(status, "in_progress")
 		if isInProg || svcDate == date || schedDate == date {
-			if unitStr, ok := data["vehicleUnit"].(string); ok {
-				u := strings.ToUpper(strings.TrimSpace(unitStr))
-				if u != "" {
-					unavailable["UNIT:"+u] = true
-				}
-			}
-			if vid, ok := data["vehicleId"].(int64); ok && vid > 0 {
-				unavailable[fmt.Sprintf("ID:%d", vid)] = true
-			}
+			markUnavailableVehicle(unavailable, data)
 		}
 	}
 	pmIter.Stop()

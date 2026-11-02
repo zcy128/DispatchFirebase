@@ -1940,6 +1940,11 @@ func (h *DispatchHandler) UpdateStudentIncidentOfficeFollowUp(w http.ResponseWri
 		return
 	}
 
+	if strings.TrimSpace(req.AdministratorName) == "" || strings.TrimSpace(req.ReviewedDate) == "" {
+		http.Error(w, `{"error":"administratorName and reviewedDate are required"}`, http.StatusBadRequest)
+		return
+	}
+
 	record, err := h.repo.UpdateStudentIncidentOfficeFollowUp(r.Context(), id, &req)
 	if err != nil {
 		http.Error(w, `{"error":"failed to update student incident office follow up: `+err.Error()+`"}`, http.StatusInternalServerError)
@@ -2004,13 +2009,34 @@ func (h *DispatchHandler) CreateExpenseClaim(w http.ResponseWriter, r *http.Requ
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
 		return
 	}
-	if req.EmployeeID == "" {
-		http.Error(w, `{"error":"employeeId is required"}`, http.StatusBadRequest)
+	req.EmployeeID = strings.TrimSpace(req.EmployeeID)
+	req.EmployeeName = strings.TrimSpace(req.EmployeeName)
+	req.ClaimDate = strings.TrimSpace(req.ClaimDate)
+	req.RouteNo = strings.TrimSpace(req.RouteNo)
+	if req.EmployeeID == "" || req.EmployeeName == "" {
+		http.Error(w, `{"error":"employeeId and employeeName are required"}`, http.StatusBadRequest)
+		return
+	}
+	if req.ClaimDate == "" {
+		http.Error(w, `{"error":"claimDate is required"}`, http.StatusBadRequest)
 		return
 	}
 	if len(req.Lines) == 0 {
 		http.Error(w, `{"error":"at least one expense line is required"}`, http.StatusBadRequest)
 		return
+	}
+	for i := range req.Lines {
+		req.Lines[i].CategoryCode = strings.TrimSpace(req.Lines[i].CategoryCode)
+		req.Lines[i].CategoryDisplayName = strings.TrimSpace(req.Lines[i].CategoryDisplayName)
+		req.Lines[i].Note = strings.TrimSpace(req.Lines[i].Note)
+		if req.Lines[i].CategoryCode == "" && req.Lines[i].CategoryDisplayName == "" {
+			http.Error(w, `{"error":"each expense line needs a category"}`, http.StatusBadRequest)
+			return
+		}
+		if req.Lines[i].Amount <= 0 {
+			http.Error(w, `{"error":"each expense line needs an amount greater than zero"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	record, err := h.repo.CreateExpenseClaim(r.Context(), &req)
@@ -2104,6 +2130,12 @@ func (h *DispatchHandler) ReviewExpenseClaim(w http.ResponseWriter, r *http.Requ
 	}
 	if req.Status != "approved" && req.Status != "rejected" {
 		http.Error(w, `{"error":"status must be 'approved' or 'rejected'"}`, http.StatusBadRequest)
+		return
+	}
+	req.ApprovedByName = strings.TrimSpace(req.ApprovedByName)
+	req.ApprovalNotes = strings.TrimSpace(req.ApprovalNotes)
+	if req.ApprovedByName == "" {
+		http.Error(w, `{"error":"approvedByName is required"}`, http.StatusBadRequest)
 		return
 	}
 

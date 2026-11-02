@@ -215,7 +215,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
 
     await VehicleInspectionService.saveInspection(recordToSave);
 
-    const targetDispatchDate = recordToSave.scheduledInspectionDate || recordToSave.inspectionDate;
+    const excludesDispatch =
+      recordToSave.inspectionStatus === 'scheduled' || recordToSave.inspectionStatus === 'in_inspection';
+    const targetDispatchDate = excludesDispatch
+      ? recordToSave.scheduledInspectionDate || recordToSave.inspectionDate
+      : '';
     if (targetDispatchDate) {
       await DispatchService.removeUnavailableVehicleFromDispatches(
         recordToSave.unitNumber,
@@ -228,8 +232,12 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
     setIsInspFormOpen(false);
     setBqSyncSuccessMsg(
       isFrench
-        ? `Inspection enregistrée pour l'Unité #${recordToSave.unitNumber}. Le véhicule est exclu de la répartition à la date d'inspection (${targetDispatchDate}).`
-        : `Inspection saved for Unit #${recordToSave.unitNumber}. Vehicle excluded from dispatch shifts on inspection date (${targetDispatchDate}).`
+        ? excludesDispatch
+          ? `Inspection enregistrée pour l'Unité #${recordToSave.unitNumber}. Le véhicule est exclu de la répartition à la date d'inspection (${targetDispatchDate}).`
+          : `Inspection enregistrée pour l'Unité #${recordToSave.unitNumber}.`
+        : excludesDispatch
+          ? `Inspection saved for Unit #${recordToSave.unitNumber}. Vehicle excluded from dispatch shifts on inspection date (${targetDispatchDate}).`
+          : `Inspection saved for Unit #${recordToSave.unitNumber}.`
     );
     setTimeout(() => setBqSyncSuccessMsg(null), 4500);
   };
@@ -360,8 +368,10 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
   };
 
   const handleSavePMRecord = async (record: PreventiveMaintenanceRecord) => {
-    await VehicleInspectionService.savePMRecord(record);
-    if (record.serviceDate) {
+    const saved = await VehicleInspectionService.savePMRecord(record);
+    const shopStatus = saved.maintenanceStatus || record.maintenanceStatus;
+    const excludesDispatch = shopStatus === 'scheduled' || shopStatus === 'in_progress';
+    if (excludesDispatch && record.serviceDate) {
       await DispatchService.removeUnavailableVehicleFromDispatches(
         record.unitNumber,
         record.vehicleId,
@@ -371,8 +381,12 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
     }
     setBqSyncSuccessMsg(
       isFrench
-        ? `Dossier d'entretien préventif et vidange d'huile enregistré pour l'Unité #${record.unitNumber} (exclu de la répartition le ${record.serviceDate}).`
-        : `Saved Preventive Maintenance & Oil Change record for Unit #${record.unitNumber} (excluded from dispatch on ${record.serviceDate}).`
+        ? excludesDispatch
+          ? `Dossier d'entretien préventif et vidange d'huile enregistré pour l'Unité #${record.unitNumber} (exclu de la répartition le ${record.serviceDate}).`
+          : `Dossier d'entretien préventif et vidange d'huile enregistré pour l'Unité #${record.unitNumber}.`
+        : excludesDispatch
+          ? `Saved Preventive Maintenance & Oil Change record for Unit #${record.unitNumber} (excluded from dispatch on ${record.serviceDate}).`
+          : `Saved Preventive Maintenance & Oil Change record for Unit #${record.unitNumber}.`
     );
     setTimeout(() => setBqSyncSuccessMsg(null), 4000);
   };
@@ -948,8 +962,8 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                         <ShieldCheck className="w-8 h-8 mx-auto opacity-30 mb-2" />
                         <div>
                           {isFrench
-                            ? `Aucun véhicule ne correspond au filtre sélectionné (${activeFilterTab}).`
-                            : `No vehicles match the selected filter (${activeFilterTab}).`}
+                            ? 'Aucun véhicule ne correspond au filtre sélectionné.'
+                            : 'No vehicles match the selected filter.'}
                         </div>
                       </td>
                     </tr>
@@ -1633,8 +1647,8 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                         <Wrench className="w-8 h-8 mx-auto opacity-30 mb-2" />
                         <div>
                           {isFrench
-                            ? `Aucun dossier d'entretien préventif ne correspond au filtre (${pmFilterTab}).`
-                            : `No preventive maintenance records match the current filter (${pmFilterTab}).`}
+                            ? 'Aucun dossier d\'entretien préventif ne correspond au filtre.'
+                            : 'No preventive maintenance records match the current filter.'}
                         </div>
                       </td>
                     </tr>

@@ -16,155 +16,20 @@ import { Vehicle } from '../types/vehicle';
 
 const LOCAL_STORAGE_KEY = 'dispatch_entity_operation_logs';
 
-/**
- * Initial seed audit logs for demonstration and immediate display
- */
-const SEED_ENTITY_LOGS: EntityOperationLog[] = [
-  {
-    id: 'eol-seed-stu-001',
-    targetType: 'student',
-    targetId: 'STU-1004',
-    targetIdentifier: 'STU-1004',
-    targetName: 'Liam Tremblay',
-    action: 'update',
-    summary: 'Updated pickup stop instructions and marked Met at Bus requirement',
-    diffs: [
-      { field: 'metatBus', fieldLabel: 'Met at Bus Requirement', oldValue: false, newValue: true },
-      { field: 'studentDispatchNotes', fieldLabel: 'Care Plan / Dispatch Notes', oldValue: '', newValue: 'Parent must receive child directly at bus door' }
-    ],
-    actor: {
-      userId: 'usr-disp-101',
-      userName: 'Sarah Jenkins',
-      userEmail: 's.jenkins@dispatch.net',
-      userRole: 'dispatcher'
-    },
-    timestamp: new Date(Date.now() - 3600000 * 36).toISOString()
-  },
-  {
-    id: 'eol-seed-stu-002',
-    targetType: 'student',
-    targetId: 'STU-1002',
-    targetIdentifier: 'STU-1002',
-    targetName: 'Emma Watson',
-    action: 'update',
-    summary: 'Changed residential address and assigned route OCDSB-001',
-    diffs: [
-      { field: 'studentAddress', fieldLabel: 'Home Address', oldValue: '45 Baseline Rd, Ottawa', newValue: '88 Richmond Rd, Ottawa' },
-      { field: 'routes', fieldLabel: 'Assigned Routes', oldValue: 'OCDSB-004', newValue: 'OCDSB-001' }
-    ],
-    actor: {
-      userId: 'usr-admin-001',
-      userName: 'Admin User',
-      userEmail: 'admin@schoolbus.com',
-      userRole: 'admin'
-    },
-    timestamp: new Date(Date.now() - 3600000 * 24).toISOString()
-  },
-  {
-    id: 'eol-seed-stu-003',
-    targetType: 'student',
-    targetId: 'STU-1010',
-    targetIdentifier: 'STU-1010',
-    targetName: 'Lucas Martin',
-    action: 'create',
-    summary: 'Created new student profile for Grade 3 student at Bell High School',
-    diffs: [
-      { field: 'fullName', fieldLabel: 'Student Name', oldValue: undefined, newValue: 'Lucas Martin' },
-      { field: 'grade', fieldLabel: 'Grade', oldValue: undefined, newValue: '3' },
-      { field: 'schoolName', fieldLabel: 'School', oldValue: undefined, newValue: 'Bell High School' },
-      { field: 'active', fieldLabel: 'Status', oldValue: undefined, newValue: true }
-    ],
-    actor: {
-      userId: 'usr-disp-102',
-      userName: 'David Miller',
-      userEmail: 'd.miller@dispatch.net',
-      userRole: 'dispatcher'
-    },
-    timestamp: new Date(Date.now() - 3600000 * 12).toISOString()
-  },
-  {
-    id: 'eol-seed-veh-001',
-    targetType: 'vehicle',
-    targetId: 'VEH-001',
-    targetIdentifier: '1001',
-    targetName: 'Blue Bird CE Series (ON-1001)',
-    action: 'update',
-    summary: 'Transferred home yard from HQ-South to HQ-Central and updated safety inspection expiry',
-    diffs: [
-      { field: 'yardName', fieldLabel: 'Terminal Yard', oldValue: 'HQ-South', newValue: 'HQ-Central' },
-      { field: 'licenseExpiry', fieldLabel: 'Safety Inspection Expiry', oldValue: '2026-06-30', newValue: '2027-08-31' }
-    ],
-    actor: {
-      userId: 'usr-fleet-001',
-      userName: 'Robert Vance',
-      userEmail: 'r.vance@dispatch.net',
-      userRole: 'admin'
-    },
-    timestamp: new Date(Date.now() - 3600000 * 48).toISOString()
-  },
-  {
-    id: 'eol-seed-veh-002',
-    targetType: 'vehicle',
-    targetId: 'VEH-002',
-    targetIdentifier: '1002',
-    targetName: 'Thomas Saf-T-Liner C2 (ON-1002)',
-    action: 'update',
-    summary: 'Allocated vehicle to regular route OCDSB-001 with driver James Anderson',
-    diffs: [
-      { field: 'status', fieldLabel: 'Fleet Status', oldValue: 'Spare', newValue: 'In Service' },
-      { field: 'assignedRouteNo', fieldLabel: 'Assigned Route', oldValue: 'None', newValue: 'OCDSB-001' },
-      { field: 'driverName', fieldLabel: 'Assigned Driver', oldValue: 'None', newValue: 'James Anderson' }
-    ],
-    actor: {
-      userId: 'usr-disp-101',
-      userName: 'Sarah Jenkins',
-      userEmail: 's.jenkins@dispatch.net',
-      userRole: 'dispatcher'
-    },
-    timestamp: new Date(Date.now() - 3600000 * 18).toISOString()
-  },
-  {
-    id: 'eol-seed-veh-003',
-    targetType: 'vehicle',
-    targetId: 'VEH-099',
-    targetIdentifier: '1099',
-    targetName: 'Chevrolet Express Van 3500 (ON-9099)',
-    action: 'delete',
-    summary: 'Decommissioned fleet van due to age and retired from active inventory',
-    diffs: [
-      { field: 'status', fieldLabel: 'Fleet Status', oldValue: 'Maintenance', newValue: 'Decommissioned / Deleted' },
-      { field: 'active', fieldLabel: 'Active Flag', oldValue: true, newValue: false }
-    ],
-    actor: {
-      userId: 'usr-fleet-001',
-      userName: 'Robert Vance',
-      userEmail: 'r.vance@dispatch.net',
-      userRole: 'admin'
-    },
-    timestamp: new Date(Date.now() - 3600000 * 8).toISOString()
-  }
-];
-
 export const EntityOperationLogService = {
   /**
-   * Read stored logs from localStorage, merging with seed logs
+   * Read stored logs from localStorage, excluding placeholder demo records
    */
   getStoredLogs(): EntityOperationLog[] {
     try {
       const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (!raw) {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(SEED_ENTITY_LOGS));
-        return SEED_ENTITY_LOGS;
-      }
+      if (!raw) return [];
       const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(SEED_ENTITY_LOGS));
-        return SEED_ENTITY_LOGS;
-      }
-      return parsed;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((item) => item && typeof item.id === 'string' && !item.id.startsWith('eol-seed-') && !item.id.startsWith('eol-init-'));
     } catch (e) {
       console.warn('[EntityOperationLogService] Failed to read localStorage logs:', e);
-      return SEED_ENTITY_LOGS;
+      return [];
     }
   },
 
@@ -288,6 +153,7 @@ export const EntityOperationLogService = {
           const remoteList: EntityOperationLog[] = [];
           snap.forEach((doc) => {
             const d = doc.data() as EntityOperationLog;
+            if (doc.id.startsWith('eol-seed-') || doc.id.startsWith('eol-init-')) return;
             remoteList.push({
               ...d,
               id: doc.id

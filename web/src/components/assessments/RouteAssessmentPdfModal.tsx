@@ -370,10 +370,10 @@ export const RouteAssessmentPdfModal: React.FC<RouteAssessmentPdfModalProps> = (
                 </span>
                 <span className="text-xs font-bold text-slate-900 flex items-center gap-1 mt-0.5 truncate">
                   <School className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  {currentAssessment.school || 'Assigned Schools'}
+                  {currentAssessment.school || 'Not recorded'}
                 </span>
                 <span className="text-[11px] text-slate-500 block truncate">
-                  {currentAssessment.schoolBoard || 'Consortium Board'}
+                  {currentAssessment.schoolBoard || 'Not recorded'}
                 </span>
               </div>
 
@@ -396,7 +396,7 @@ export const RouteAssessmentPdfModal: React.FC<RouteAssessmentPdfModalProps> = (
                 </span>
                 <span className="text-[11px] text-slate-800 block mt-0.5 truncate flex items-center gap-1">
                   <Mail className="w-3 h-3 text-slate-400" />
-                  {currentAssessment.driverEmail || 'driver@pcytech.com'}
+                  {currentAssessment.driverEmail || 'Not recorded'}
                 </span>
                 <span className="text-[11px] text-slate-500 block truncate flex items-center gap-1">
                   <Phone className="w-3 h-3 text-slate-400" />
@@ -418,7 +418,7 @@ export const RouteAssessmentPdfModal: React.FC<RouteAssessmentPdfModalProps> = (
                 </span>
               </div>
               <p className="pt-1.5 text-slate-800 italic leading-relaxed">
-                "{currentAssessment.summary || 'Comprehensive route test drive executed in accordance with school bus standard operating procedures.'}"
+                "{currentAssessment.summary || 'No assessment summary has been recorded.'}"
               </p>
             </div>
 
@@ -471,7 +471,7 @@ export const RouteAssessmentPdfModal: React.FC<RouteAssessmentPdfModalProps> = (
               <div className="grid grid-cols-3 gap-2.5 text-xs">
                 <div>
                   <span className="text-[10px] text-slate-500 block">Assigned Dispatcher:</span>
-                  <span className="font-bold text-slate-800">{currentAssessment.assignedTo || 'Safety Officer'}</span>
+                  <span className="font-bold text-slate-800">{currentAssessment.assignedTo || 'Unassigned'}</span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-500 block">Review Completed:</span>
@@ -502,22 +502,18 @@ export const RouteAssessmentPdfModal: React.FC<RouteAssessmentPdfModalProps> = (
 
               <div>
                 <div className="h-9 border-b border-dashed border-slate-400 flex items-end pb-1 font-serif text-slate-800 italic">
-                  {currentAssessment.assignedTo || 'Fleet Routing Coordinator'}
+                  {currentAssessment.assignedTo || ''}
                 </div>
                 <div className="pt-1 font-bold text-slate-700 uppercase">Safety &amp; Routing Auditor</div>
                 <div className="text-slate-500 text-[9px] font-mono">
-                  Audit Date: {currentAssessment.isCompleted ? assessmentDateStr : '_______________'}
+                  Date: {currentAssessment.isCompleted && currentAssessment.assignedTo ? assessmentDateStr : '_______________'}
                 </div>
               </div>
 
               <div>
-                <div className="h-9 border-b border-dashed border-slate-400 flex items-end pb-1 font-serif text-slate-800 italic">
-                  PCY Tech Fleet Safety &amp; Consortium Liaison
-                </div>
+                <div className="h-9 border-b border-dashed border-slate-400" />
                 <div className="pt-1 font-bold text-slate-700 uppercase">Director of Transportation Sign-off</div>
-                <div className="text-slate-500 text-[9px] font-mono">
-                  Date: {new Date().toISOString().split('T')[0]}
-                </div>
+                <div className="text-slate-500 text-[9px] font-mono">Date: _______________</div>
               </div>
             </div>
 

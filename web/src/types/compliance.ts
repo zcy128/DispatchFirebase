@@ -50,8 +50,8 @@ export const ONTARIO_COMPLIANCE_DEFAULTS: ProvinceComplianceConfig = {
   retentionYears: 2, // Mandatory 2-year CVOR audit archive
   enforcementAgency: 'MTO Transportation Enforcement Officers (TEO) / OPP Highway Safety',
   pepEnabled: false,
-  cvorOrPevlNumber: 'CVOR-ON-889201',
-  notes: 'All inspections must be completed digitally via government DriveON tablets with direct photo telemetry (brake lining thickness mm, VIN, odometer) to MTO.',
+  cvorOrPevlNumber: '',
+  notes: '',
   serviceAIntervalKm: 4000,
   serviceAIntervalDays: 45,
   serviceBIntervalKm: 8000,
@@ -61,9 +61,9 @@ export const ONTARIO_COMPLIANCE_DEFAULTS: ProvinceComplianceConfig = {
   qcMandatoryMaintenanceDays: 90,
   qcRequireSignedFiche: true,
   strictNoOverdueEnforcement: true,
-  defaultEngineOilSpec: '15W-40 Heavy Duty Synthetic Blend (CK-4)',
-  writtenPlanVersion: 'ON-CVOR-WMP-2026.2',
-  writtenPlanApprovedBy: 'Director of Fleet Maintenance & Safety'
+  defaultEngineOilSpec: '',
+  writtenPlanVersion: '',
+  writtenPlanApprovedBy: ''
 };
 
 export const QUEBEC_COMPLIANCE_DEFAULTS: ProvinceComplianceConfig = {
@@ -80,10 +80,10 @@ export const QUEBEC_COMPLIANCE_DEFAULTS: ProvinceComplianceConfig = {
   advancePreInspectionDays: 21,
   retentionYears: 2,
   enforcementAgency: 'Contrôle routier Québec (CRQ) / Sûreté du Québec (SQ)',
-  pepEnabled: true,
-  pepNumber: 'PEP-SAAQ-44910',
-  cvorOrPevlNumber: 'NIR-CTQ-55291',
-  notes: 'Outre la VMP aux 6 mois (vignette), l\'entretien mécanique obligatoire avec signature de la Fiche d\'entretien SAAQ doit être effectué au moins aux 6 mois (ou intercalé aux 3 mois).',
+  pepEnabled: false,
+  pepNumber: '',
+  cvorOrPevlNumber: '',
+  notes: '',
   serviceAIntervalKm: 4000,
   serviceAIntervalDays: 45,
   serviceBIntervalKm: 8000,
@@ -93,7 +93,7 @@ export const QUEBEC_COMPLIANCE_DEFAULTS: ProvinceComplianceConfig = {
   qcMandatoryMaintenanceDays: 90,
   qcRequireSignedFiche: true,
   strictNoOverdueEnforcement: true,
-  defaultEngineOilSpec: '15W-40 Heavy Duty Synthetic Blend (CK-4)',
-  writtenPlanVersion: 'QC-SAAQ-PEP-2026.2',
-  writtenPlanApprovedBy: 'Directeur de l\'entretien mécanique et conformité SAAQ'
+  defaultEngineOilSpec: '',
+  writtenPlanVersion: '',
+  writtenPlanApprovedBy: ''
 };
