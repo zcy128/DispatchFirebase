@@ -24,6 +24,33 @@
 
 ---
 
+## 📁 目录结构 (Directory Structure)
+
+```text
+driver_app/
+├── lib/
+│   ├── core/                        # 网络层、鉴权拦截器、主题与离线存储
+│   ├── features/                    # 核心业务功能模块
+│   │   ├── auth/                    # 司机身份认证、Demo 登录与会话管理
+│   │   ├── charter/                 # 包车订单、站点序列与时间换算
+│   │   ├── chat/                    # 即时通讯频道、多媒体附件与调度私信
+│   │   ├── defect/                  # 车辆缺陷上报与维修历史跟踪
+│   │   ├── dispatch/                # 班次调度主流程、签到与签退生命周期
+│   │   ├── expense_reimbursement/   # 费用报销申报与发票凭证上传
+│   │   ├── forms/                   # 司机休假与请假审批流程
+│   │   ├── hazard_report/           # 道路与安全隐患上报
+│   │   ├── pretrip/                 # 发车前安全合规检查（安省 199/07 法规）
+│   │   ├── route/                   # 路线站点花名册、出发时间与学生考勤
+│   │   ├── timesheet/               # 双周薪资工时汇总与法定节假日津贴
+│   │   └── vehicle_signout/         # 车辆借出与归还审核
+│   └── firebase_options.dart.example# Firebase 客户端配置模板
+├── test/                            # 自动化单元测试套件 P0-P2 (49+ 测试用例)
+├── TESTING.md                       # 多语言单元测试指南 (中/英/法)
+└── web/                             # Web 入口与 ServiceWorker 模板
+```
+
+---
+
 ## 🧪 单元测试指南 (Unit Testing)
 
 本项目配备了一套**轻量、极速、零外部网络依赖**的自动化单元测试套件，全面覆盖司机端核心业务逻辑计算、考勤工时与薪资、发车前安全检查法规评定、网络鉴权拦截及弱网离线保活机制。

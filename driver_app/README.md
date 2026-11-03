@@ -24,6 +24,33 @@ Premier Bus Dispatch & Route Management Driver Application (Flutter).
 
 ---
 
+## 📁 Directory Structure
+
+```text
+driver_app/
+├── lib/
+│   ├── core/                        # Network, auth interceptors, theme & storage fallback
+│   ├── features/                    # Core modular feature implementations
+│   │   ├── auth/                    # Authentication, demo login & driver session
+│   │   ├── charter/                 # Charter trips, stops sequence & time calculations
+│   │   ├── chat/                    # Real-time channels, attachments & direct messaging
+│   │   ├── defect/                  # Vehicle defect reporting & repair history
+│   │   ├── dispatch/                # Daily shift dispatches, check-in & check-out lifecycle
+│   │   ├── expense_reimbursement/   # Driver expense claims & receipt attachments
+│   │   ├── forms/                   # Time-off requests & leave management
+│   │   ├── hazard_report/           # Road & safety hazards reporting
+│   │   ├── pretrip/                 # Ontario Reg 199/07 Schedule 5 pre-trip inspections
+│   │   ├── route/                   # Route rosters, stop pullaway times & student attendance
+│   │   ├── timesheet/               # Biweekly payroll aggregation & statutory holiday credits
+│   │   └── vehicle_signout/         # Vehicle checkout & return audits
+│   └── firebase_options.dart.example# Firebase client configuration template
+├── test/                            # Comprehensive P0-P2 unit test suites (49+ tests)
+├── TESTING.md                       # Detailed unit testing guide (EN / FR / ZH)
+└── web/                             # Web platform assets & ServiceWorker template
+```
+
+---
+
 ## 🧪 Unit Testing Instructions
 
 This project provides a **lightweight, high-speed, zero-external-dependency** automated unit testing suite, covering core business computations, payroll timesheets, pre-trip compliance ratings, network auth interceptions, and offline resilience.
