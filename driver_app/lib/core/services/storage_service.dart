@@ -163,7 +163,10 @@ class StorageService {
     String? customFileName,
   }) async {
     final bytes = await file.readAsBytes();
-    final ext = file.name.contains('.') ? file.name.split('.').last : 'jpg';
+    final effectiveName = (customFileName != null && customFileName.trim().isNotEmpty)
+        ? customFileName.trim()
+        : file.name;
+    final ext = effectiveName.contains('.') ? effectiveName.split('.').last : 'jpg';
     final fileName = customFileName ??
         'att_${DateTime.now().millisecondsSinceEpoch}_${file.name.hashCode.abs()}.$ext';
 
