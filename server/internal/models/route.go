@@ -1,7 +1,5 @@
 package models
 
-import "strings"
-
 // StopStudent represents a student boarding/alighting at a stop (lightweight reference)
 type StopStudent struct {
 	StudentID   int    `json:"studentId" firestore:"studentId"`
@@ -91,33 +89,33 @@ type BusRouteShift struct {
 
 // BusRoute represents primary route entity (Collection: routes)
 type BusRoute struct {
-	ID              string         `json:"id" firestore:"id"` // RT-{BusRouteId}
-	BusRouteId      int            `json:"busRouteId" firestore:"busRouteId"`
-	RouteNo         string         `json:"routeNo" firestore:"routeNo"` // OCDSB-001
-	RouteName       string         `json:"routeName" firestore:"routeName"`
-	Active          bool           `json:"active" firestore:"active"`
-	SchoolBoardID   int            `json:"schoolBoardId" firestore:"schoolBoardId"`
-	SchoolBoardCode string         `json:"schoolBoardCode" firestore:"schoolBoardCode"`
-	YardID          int            `json:"yardId" firestore:"yardId"`
-	YardName        string         `json:"yardName" firestore:"yardName"`
-	DriverID        string         `json:"driverId,omitempty" firestore:"driverId,omitempty"`
-	DriverName      string         `json:"driverName,omitempty" firestore:"driverName,omitempty"`
-	DriverPhone     string         `json:"driverPhone,omitempty" firestore:"driverPhone,omitempty"`
-	VehicleID       int            `json:"vehicleId,omitempty" firestore:"vehicleId,omitempty"`
-	UnitNumber      string         `json:"unitNumber,omitempty" firestore:"unitNumber,omitempty"`
-	PlateNumber     string         `json:"plateNumber,omitempty" firestore:"plateNumber,omitempty"`
-	VehicleCapacity int            `json:"vehicleCapacity,omitempty" firestore:"vehicleCapacity,omitempty"`
-	AttendantID     string         `json:"attendantId,omitempty" firestore:"attendantId,omitempty"`
-	AttendantName   string         `json:"attendantName,omitempty" firestore:"attendantName,omitempty"`
-	AttendantPhone  string         `json:"attendantPhone,omitempty" firestore:"attendantPhone,omitempty"`
-	Shifts          []ShiftSummary `json:"shifts,omitempty" firestore:"shifts,omitempty"`
-	TotalStops      int            `json:"totalStops" firestore:"totalStops"`
-	TotalStudents   int            `json:"totalStudents" firestore:"totalStudents"`
-	AutoMarryup     *bool          `json:"autoMarryup,omitempty" firestore:"autoMarryup,omitempty"`
-	Instructions    string         `json:"instructions,omitempty" firestore:"instructions,omitempty"`
-	AssignedEmployeeIds []string   `json:"assignedEmployeeIds,omitempty" firestore:"assignedEmployeeIds,omitempty"`
-	CreatedAt       interface{}    `json:"createdAt,omitempty" firestore:"createdAt,omitempty"`
-	UpdatedAt       interface{}    `json:"updatedAt,omitempty" firestore:"updatedAt,omitempty"`
+	ID                  string         `json:"id" firestore:"id"` // RT-{BusRouteId}
+	BusRouteId          int            `json:"busRouteId" firestore:"busRouteId"`
+	RouteNo             string         `json:"routeNo" firestore:"routeNo"` // OCDSB-001
+	RouteName           string         `json:"routeName" firestore:"routeName"`
+	Active              bool           `json:"active" firestore:"active"`
+	SchoolBoardID       int            `json:"schoolBoardId" firestore:"schoolBoardId"`
+	SchoolBoardCode     string         `json:"schoolBoardCode" firestore:"schoolBoardCode"`
+	YardID              int            `json:"yardId" firestore:"yardId"`
+	YardName            string         `json:"yardName" firestore:"yardName"`
+	DriverID            string         `json:"driverId,omitempty" firestore:"driverId,omitempty"`
+	DriverName          string         `json:"driverName,omitempty" firestore:"driverName,omitempty"`
+	DriverPhone         string         `json:"driverPhone,omitempty" firestore:"driverPhone,omitempty"`
+	VehicleID           int            `json:"vehicleId,omitempty" firestore:"vehicleId,omitempty"`
+	UnitNumber          string         `json:"unitNumber,omitempty" firestore:"unitNumber,omitempty"`
+	PlateNumber         string         `json:"plateNumber,omitempty" firestore:"plateNumber,omitempty"`
+	VehicleCapacity     int            `json:"vehicleCapacity,omitempty" firestore:"vehicleCapacity,omitempty"`
+	AttendantID         string         `json:"attendantId,omitempty" firestore:"attendantId,omitempty"`
+	AttendantName       string         `json:"attendantName,omitempty" firestore:"attendantName,omitempty"`
+	AttendantPhone      string         `json:"attendantPhone,omitempty" firestore:"attendantPhone,omitempty"`
+	Shifts              []ShiftSummary `json:"shifts,omitempty" firestore:"shifts,omitempty"`
+	TotalStops          int            `json:"totalStops" firestore:"totalStops"`
+	TotalStudents       int            `json:"totalStudents" firestore:"totalStudents"`
+	AutoMarryup         *bool          `json:"autoMarryup,omitempty" firestore:"autoMarryup,omitempty"`
+	Instructions        string         `json:"instructions,omitempty" firestore:"instructions,omitempty"`
+	AssignedEmployeeIds []string       `json:"assignedEmployeeIds,omitempty" firestore:"assignedEmployeeIds,omitempty"`
+	CreatedAt           interface{}    `json:"createdAt,omitempty" firestore:"createdAt,omitempty"`
+	UpdatedAt           interface{}    `json:"updatedAt,omitempty" firestore:"updatedAt,omitempty"`
 }
 
 // ComputeAssignedEmployeeIds computes normalized employee identifiers for database-level index filtering
@@ -125,21 +123,11 @@ func (r *BusRoute) ComputeAssignedEmployeeIds() []string {
 	seen := make(map[string]bool)
 	var list []string
 	add := func(v string) {
-		t := strings.TrimSpace(v)
-		if t == "" {
-			return
-		}
-		low := strings.ToLower(t)
-		if low == "0" || low == "tbd" || low == "unassigned" || low == "non assigné" {
-			return
-		}
-		if !seen[t] {
-			seen[t] = true
-			list = append(list, t)
-		}
-		if !seen[low] {
-			seen[low] = true
-			list = append(list, low)
+		for _, alias := range EmployeeIDAliases(v) {
+			if !seen[alias] {
+				seen[alias] = true
+				list = append(list, alias)
+			}
 		}
 	}
 	add(r.DriverID)

@@ -10,12 +10,16 @@ class RouteAssessmentSummaryCard extends StatelessWidget {
   final String driverId;
   final String driverName;
   final String? defaultRouteId;
+  final String? defaultSchoolName;
+  final String? defaultSchoolBoard;
 
   const RouteAssessmentSummaryCard({
     super.key,
     required this.driverId,
     required this.driverName,
     this.defaultRouteId,
+    this.defaultSchoolName,
+    this.defaultSchoolBoard,
   });
 
   @override
@@ -103,6 +107,8 @@ class RouteAssessmentSummaryCard extends StatelessWidget {
                               driverId: driverId,
                               driverName: driverName,
                               defaultRouteId: defaultRouteId,
+                              defaultSchoolName: defaultSchoolName,
+                              defaultSchoolBoard: defaultSchoolBoard,
                             ),
                           ),
                         ),
@@ -128,6 +134,8 @@ class RouteAssessmentSummaryCard extends StatelessWidget {
                               driverId: driverId,
                               driverName: driverName,
                               defaultRouteId: defaultRouteId,
+                              defaultSchoolName: defaultSchoolName,
+                              defaultSchoolBoard: defaultSchoolBoard,
                             ),
                           ),
                         ),

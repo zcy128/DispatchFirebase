@@ -11,11 +11,13 @@ import 'vehicle_signout_form_page.dart';
 class VehicleSignoutHistoryPage extends StatefulWidget {
   final String driverId;
   final String driverName;
+  final bool isReadOnly;
 
   const VehicleSignoutHistoryPage({
     super.key,
     required this.driverId,
     required this.driverName,
+    this.isReadOnly = false,
   });
 
   @override
@@ -56,7 +58,9 @@ class _VehicleSignoutHistoryPageState extends State<VehicleSignoutHistoryPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: widget.isReadOnly
+          ? null
+          : FloatingActionButton.extended(
         onPressed: () {
           Navigator.of(context).push(
             MaterialPageRoute(

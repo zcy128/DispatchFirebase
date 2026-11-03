@@ -50,6 +50,13 @@ class _DispatchPageView extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return BlocConsumer<DispatchBloc, DispatchState>(
+      listenWhen: (previous, current) {
+        if (previous is DispatchLoaded && current is DispatchLoaded) {
+          return previous.errorMessage != current.errorMessage ||
+              previous.actionFeedback != current.actionFeedback;
+        }
+        return true;
+      },
       listener: (context, state) {
         if (state is DispatchLoaded) {
           if (state.errorMessage != null) {
@@ -255,6 +262,7 @@ class _DispatchPageView extends StatelessWidget {
                       GoogleRouteMapCard(
                         routeTitle: 'Route ${active.routeNo}',
                         shiftLabel: active.shiftType,
+                        initiallyExpanded: false,
                         stops: active.stops.map((st) {
                           final isSchool = st.isSchoolStop ||
                               st.stopType.toLowerCase().contains('school');
@@ -633,6 +641,20 @@ class _OperatingDaysSelector extends StatelessWidget {
 }
 
 /// Shift Selector, Run Overview & Attendant Presence Card
+String _readOnlyStatusLine(DispatchRecord dispatch) {
+  if (dispatch.isCheckedOut) {
+    return 'Archived Run: Completed at ${dispatch.checkOutTime}';
+  }
+  if (dispatch.isCheckedIn) {
+    final arrived = dispatch.stops.where((stop) => stop.isArrived).length;
+    return 'Checked in at ${dispatch.checkInTime}. $arrived of ${dispatch.stops.length} stops recorded. Read-only off the operating day.';
+  }
+  if (dispatch.stops.any((stop) => stop.isArrived)) {
+    return 'Stops already recorded. Read-only off the operating day.';
+  }
+  return 'Upcoming Scheduled Run: Unmodified';
+}
+
 class _ShiftSelectorCard extends StatelessWidget {
   final DispatchLoaded state;
   final DispatchRecord activeDispatch;
@@ -1092,9 +1114,8 @@ class _ShiftSelectorCard extends StatelessWidget {
               ),
               child: Center(
                 child: Text(
-                  activeDispatch.isCheckedOut
-                      ? 'Archived Run: Completed at ${activeDispatch.checkOutTime}'
-                      : 'Upcoming Scheduled Run: Unmodified',
+                  _readOnlyStatusLine(activeDispatch),
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12,
                     color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
@@ -1251,6 +1272,7 @@ class _ShiftSelectorCard extends StatelessWidget {
   }
 
   void _confirmCheckOut(BuildContext context, DispatchRecord dispatch) {
+    final bloc = context.read<DispatchBloc>();
     final commentsController = TextEditingController();
 
     showDialog(
@@ -1338,12 +1360,12 @@ class _ShiftSelectorCard extends StatelessWidget {
             onPressed: () {
               final comments = commentsController.text.trim();
               Navigator.of(dialogCtx).pop();
-              context.read<DispatchBloc>().add(
-                    DriverCheckOutEvent(
-                      dispatch.id,
-                      payrollComments: comments.isNotEmpty ? comments : null,
-                    ),
-                  );
+              bloc.add(
+                DriverCheckOutEvent(
+                  dispatch.id,
+                  payrollComments: comments.isNotEmpty ? comments : null,
+                ),
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
@@ -1843,7 +1865,11 @@ class _StudentAttendanceTile extends StatelessWidget {
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      '${student.studentNo} · ${student.grade} · ${student.homeAddress}',
+                      [
+                        student.studentNo.trim(),
+                        student.grade.trim(),
+                        student.homeAddress.trim(),
+                      ].where((part) => part.isNotEmpty).join(' · '),
                       style: const TextStyle(fontSize: 11, color: Colors.grey),
                       overflow: TextOverflow.ellipsis,
                     ),

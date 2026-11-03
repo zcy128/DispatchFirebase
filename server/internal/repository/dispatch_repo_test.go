@@ -5,6 +5,27 @@ import (
 	"time"
 )
 
+func TestDriverIdentitiesOverlap(t *testing.T) {
+	if !DriverIdentitiesOverlap("001", "EMP-001") {
+		t.Fatal("employee number 001 should match EMP-001")
+	}
+	if !DriverIdentitiesOverlap("driver1d", "EMP-001") {
+		t.Fatal("demo driver1d should match the route stored as EMP-001")
+	}
+	if DriverIdentitiesOverlap("001", "EMP-2001") {
+		t.Fatal("employee 001 must not match EMP-2001")
+	}
+	if DriverIdentitiesOverlap("EMP-021", "EMP-001") {
+		t.Fatal("different employee numbers must not match")
+	}
+	if !matchesPersonQuery("001", "EMP-001", "Driver1 Doe") {
+		t.Fatal("dispatch filter should keep Driver1 Doe when the driver id is 001")
+	}
+	if matchesPersonQuery("EMP-021", "EMP-001", "Driver1 Doe") {
+		t.Fatal("another driver's id should not match Driver1 Doe")
+	}
+}
+
 func TestIsColdDate(t *testing.T) {
 	repo := &FirestoreDispatchRepository{
 		coldDays: 60,

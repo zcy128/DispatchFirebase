@@ -338,6 +338,9 @@ void main() {
       expect(RouteRepository.matchesDriver('driver1d', 'EMP-2001'), isTrue);
       expect(RouteRepository.matchesDriver('driver1d', 'EMP-001'), isTrue);
       expect(RouteRepository.matchesDriver('driver1d', 'EMP-021'), isFalse);
+      expect(RouteRepository.matchesDriver('001', 'EMP-001'), isTrue);
+      expect(RouteRepository.matchesDriver('001', 'EMP-2001'), isFalse);
+      expect(RouteRepository.firestoreEmployeeAliases('001'), contains('EMP-001'));
     });
 
     test('getDispatchesForDate filters records by driverId', () {

@@ -13,12 +13,16 @@ class RouteAssessmentFormPage extends StatelessWidget {
   final String driverId;
   final String driverName;
   final String? defaultRouteId;
+  final String? defaultSchoolName;
+  final String? defaultSchoolBoard;
 
   const RouteAssessmentFormPage({
     super.key,
     required this.driverId,
     required this.driverName,
     this.defaultRouteId,
+    this.defaultSchoolName,
+    this.defaultSchoolBoard,
   });
 
   @override
@@ -34,6 +38,8 @@ class RouteAssessmentFormPage extends StatelessWidget {
       driverId: driverId,
       driverName: driverName,
       defaultRouteId: defaultRouteId,
+      defaultSchoolName: defaultSchoolName,
+      defaultSchoolBoard: defaultSchoolBoard,
     );
 
     if (existingBloc != null) {
@@ -53,11 +59,15 @@ class _RouteAssessmentFormView extends StatefulWidget {
   final String driverId;
   final String driverName;
   final String? defaultRouteId;
+  final String? defaultSchoolName;
+  final String? defaultSchoolBoard;
 
   const _RouteAssessmentFormView({
     required this.driverId,
     required this.driverName,
     this.defaultRouteId,
+    this.defaultSchoolName,
+    this.defaultSchoolBoard,
   });
 
   @override
@@ -110,8 +120,8 @@ class _RouteAssessmentFormViewState extends State<_RouteAssessmentFormView> {
   void initState() {
     super.initState();
     _routeIdCtrl = TextEditingController(text: widget.defaultRouteId ?? '');
-    _schoolBoardCtrl = TextEditingController(text: 'Public School Board');
-    _schoolCtrl = TextEditingController(text: 'Hillcrest High');
+    _schoolBoardCtrl = TextEditingController(text: widget.defaultSchoolBoard ?? '');
+    _schoolCtrl = TextEditingController(text: widget.defaultSchoolName ?? '');
     _schoolYearCtrl = TextEditingController(text: '2026-2027');
     _summaryCtrl = TextEditingController();
   }

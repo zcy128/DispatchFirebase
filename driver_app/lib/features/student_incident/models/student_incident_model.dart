@@ -126,7 +126,8 @@ class RosterStudentOption extends Equatable {
 
   String get displaySubtitle {
     final buffer = StringBuffer();
-    if (grade.isNotEmpty) buffer.write('Gr $grade');
+    final gradeLabel = _gradeLabel(grade);
+    if (gradeLabel.isNotEmpty) buffer.write(gradeLabel);
     if (schoolName.isNotEmpty) {
       if (buffer.isNotEmpty) buffer.write(' · ');
       buffer.write(schoolName);
@@ -138,8 +139,36 @@ class RosterStudentOption extends Equatable {
     return buffer.toString();
   }
 
+  RosterStudentOption withGrade(String grade) {
+    return RosterStudentOption(
+      key: key,
+      studentId: studentId,
+      studentNo: studentNo,
+      studentName: studentName,
+      grade: grade,
+      schoolName: schoolName,
+      routeNo: routeNo,
+      routeName: routeName,
+      routeId: routeId,
+      shiftType: shiftType,
+    );
+  }
+
   @override
   List<Object?> get props => [key, studentId, studentNo, studentName, grade, schoolName, routeNo, routeName, routeId, shiftType];
+}
+
+String _gradeLabel(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return '';
+  final lower = trimmed.toLowerCase();
+  if (lower == 'gr' ||
+      lower.startsWith('gr ') ||
+      lower.startsWith('gr.') ||
+      lower.startsWith('grade ')) {
+    return trimmed;
+  }
+  return 'Gr $trimmed';
 }
 
 // ─────────────────────────── Office Follow-Up ─────────────────────────────────

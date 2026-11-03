@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -7,6 +8,17 @@ import 'package:http/http.dart' as http;
 import '../../../core/api_config.dart';
 import '../../../core/network/api_client.dart';
 import '../models/pretrip_model.dart';
+
+String _pretripSubmitError(int statusCode, String body) {
+  try {
+    final decoded = jsonDecode(body);
+    if (decoded is Map && decoded['error'] != null) {
+      final message = decoded['error'].toString().trim();
+      if (message.isNotEmpty) return message;
+    }
+  } catch (_) {}
+  return 'Failed to submit inspection ($statusCode)';
+}
 
 class PreTripRepository {
   static const String _boxName = 'driver_pretrip_v1';
@@ -238,53 +250,36 @@ class PreTripRepository {
     // Remove id so server auto-generates it
     payload.remove('id');
 
-    // REST
-    bool networkError = false;
+    // REST. Use the authenticated client. A bare post is rejected with 401,
+    // and that rejection must not be saved again through Firestore.
     try {
       final uri = Uri.parse('$_baseUrl/pretrip-inspections');
-      final res = await http
-          .post(uri,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode(payload))
+      final res = await _httpClient
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(payload),
+          )
           .timeout(const Duration(seconds: 10));
       if (res.statusCode == 201 || res.statusCode == 200) {
         final created = PreTripInspectionRecord.fromMap(
             jsonDecode(res.body) as Map<String, dynamic>);
-        // Cache completion
         final cacheKey =
             'inspected_${record.vehicleUnit}_${record.inspectionDate}';
         _box?.put(cacheKey, true);
         return created;
-      } else {
-        // Server returned an explicit validation or error response
-        try {
-          final errBody = jsonDecode(res.body) as Map<String, dynamic>;
-          final errMsg = errBody['error']?.toString() ?? 'Server error ${res.statusCode}';
-          throw Exception(errMsg);
-        } catch (e) {
-          if (e is Exception && e.toString().contains('odometer')) {
-            rethrow;
-          }
-          throw Exception('Failed to submit inspection (${res.statusCode}): ${res.body}');
-        }
       }
-    } on Exception catch (e) {
-      if (e.toString().contains('odometer') || e.toString().contains('Server error')) {
-        rethrow;
-      }
-      networkError = true;
-    } catch (_) {
-      networkError = true;
-    }
-
-    if (!networkError) {
-      return record;
+      throw Exception(_pretripSubmitError(res.statusCode, res.body));
+    } on TimeoutException {
+      // The API did not answer. Keep the offline Firestore path below.
+    } on http.ClientException {
+      // No connection. Keep the offline Firestore path below.
     }
 
     // Firestore fallback
     final fs = _firestore;
     if (fs == null) {
-      return record;
+      throw Exception('Failed to submit inspection. The server did not respond.');
     }
 
     // Validate odometer in Firestore fallback

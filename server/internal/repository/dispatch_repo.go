@@ -1607,7 +1607,7 @@ func matchesDispatchFilter(ds *models.DispatchShift, filter DispatchFilter) bool
 	if routeLower != "" && !strings.Contains(strings.ToLower(ds.RouteNo), routeLower) && !strings.Contains(strings.ToLower(ds.RouteName), routeLower) {
 		return false
 	}
-	if driverLower != "" && !strings.Contains(strings.ToLower(ds.DriverName), driverLower) {
+	if driverLower != "" && !matchesPersonQuery(filter.DriverFilter, ds.DriverID, ds.DriverName) {
 		return false
 	}
 	if vehicleLower != "" && !strings.Contains(strings.ToLower(ds.UnitNumber), vehicleLower) {

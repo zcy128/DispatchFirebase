@@ -16,6 +16,7 @@ class RouteRepository {
   final String apiBaseUrl;
   final http.Client _httpClient;
   Box<String>? _box;
+  final Map<String, String> _plateByUnit = {};
 
   bool get isFirestoreAvailable {
     try {
@@ -70,13 +71,39 @@ class RouteRepository {
   }
 
   /// Checks if two driver identifiers reference the same person.
+  /// "001" and "EMP-001" are the same employee number.
   static bool matchesDriver(String driverA, String driverB) {
     final normA = driverA.trim().toLowerCase();
     final normB = driverB.trim().toLowerCase();
+    if (normA.isEmpty || normB.isEmpty) return false;
     if (normA == normB) return true;
     final empA = resolveEmployeeId(driverA);
     final empB = resolveEmployeeId(driverB);
-    return empA.isNotEmpty && empA == empB;
+    if (empA.isNotEmpty && empA == empB) return true;
+    final numA = bareEmployeeNumber(driverA);
+    final numB = bareEmployeeNumber(driverB);
+    return numA != null && numB != null && numA == numB;
+  }
+
+  /// Numeric employee number, so 001, EMP-001, and emp-1 compare equal.
+  static int? bareEmployeeNumber(String input) {
+    final lower = input.trim().toLowerCase();
+    final match = RegExp(r'^(?:emp-|drv-)?0*(\d+)$').firstMatch(lower);
+    if (match == null) return null;
+    return int.tryParse(match.group(1)!);
+  }
+
+  /// Spellings Firestore rules accept for the signed-in employee id.
+  /// Kept to that list so a driver query is not rejected by the security rules.
+  static List<String> firestoreEmployeeAliases(String input) {
+    final id = input.trim();
+    if (id.isEmpty) return const [];
+    return <String>{
+      id,
+      id.toLowerCase(),
+      'EMP-$id',
+      'emp-${id.toLowerCase()}',
+    }.where((s) => s.isNotEmpty && s != 'tbd' && s != 'unassigned').take(10).toList();
   }
 
   Future<DriverRouteInfo?> getAssignedRoute(String driverId) async {
@@ -263,13 +290,7 @@ class RouteRepository {
       String? currentListeningRouteId;
 
       final cleanDriver = driverId.trim();
-      final empId = resolveEmployeeId(cleanDriver);
-      final queryKeys = <String>{
-        cleanDriver,
-        normalized,
-        if (empId.isNotEmpty) empId,
-        if (empId.isNotEmpty) empId.toLowerCase(),
-      }.where((s) => s.isNotEmpty && s != 'tbd' && s != 'unassigned').toList();
+      final queryKeys = firestoreEmployeeAliases(cleanDriver);
 
       controller = StreamController<DriverRouteInfo?>(
         onListen: () {
@@ -299,7 +320,11 @@ class RouteRepository {
               shiftsSub?.cancel();
               shiftsSub = null;
               currentListeningRouteId = null;
-              if (!controller.isClosed) controller.add(null);
+              if (!controller.isClosed) {
+                getAssignedRoute(driverId).then((cached) {
+                  if (!controller.isClosed) controller.add(cached);
+                });
+              }
               return;
             }
 
@@ -310,9 +335,13 @@ class RouteRepository {
               currentListeningRouteId = routeId;
               final routeMeta = matchingRoute;
 
-              shiftsSub = FirebaseFirestore.instance
+              var shiftsQuery = FirebaseFirestore.instance
                   .collection('route_shifts')
-                  .where('routeId', isEqualTo: routeId)
+                  .where('routeId', isEqualTo: routeId);
+              if (queryKeys.isNotEmpty) {
+                shiftsQuery = shiftsQuery.where('assignedEmployeeIds', arrayContainsAny: queryKeys);
+              }
+              shiftsSub = shiftsQuery
                   .snapshots()
                   .listen((shiftsSnap) async {
                 final shiftsJson = shiftsSnap.docs.map((d) {
@@ -321,11 +350,15 @@ class RouteRepository {
                   return sData;
                 }).toList();
 
+                await _fillMissingPlate(routeMeta);
                 final liveRoute = buildRouteInfoFromMap(routeMeta, shiftsJson, normalized);
                 await cacheLiveRoute(liveRoute);
                 if (!controller.isClosed) controller.add(liveRoute);
-              }, onError: (err) {
+              }, onError: (err) async {
                 debugPrint('[Firestore Route Shifts] Stream error: $err');
+                await _fillMissingPlate(routeMeta);
+                final liveRoute = buildRouteInfoFromMap(routeMeta, const [], normalized);
+                if (!controller.isClosed) controller.add(liveRoute);
               });
             }
           }, onError: (err) {
@@ -358,10 +391,11 @@ class RouteRepository {
         urlStr += '?driver=${Uri.encodeComponent(normalized)}';
       }
       final routesUri = Uri.parse(urlStr);
-      final res = await _httpClient.get(routesUri).timeout(const Duration(seconds: 4));
+      final res = await _httpClient.get(routesUri).timeout(const Duration(seconds: 12));
       if (res.statusCode != 200) return null;
 
-      final List<dynamic> routesJson = jsonDecode(res.body);
+      final decodedRoutes = jsonDecode(res.body);
+      final List<dynamic> routesJson = decodedRoutes is List ? decodedRoutes : const [];
       Map<String, dynamic>? matchingRoute;
 
       for (final r in routesJson) {
@@ -377,13 +411,15 @@ class RouteRepository {
 
       if (matchingRoute == null) return null;
       final routeId = matchingRoute['id'].toString();
+      await _fillMissingPlate(matchingRoute);
 
       // Fetch live shifts with detailed stops and updated pullaway times
       final shiftsUri = Uri.parse('$apiBaseUrl/api/public/routes/$routeId/shifts');
-      final shiftsRes = await _httpClient.get(shiftsUri).timeout(const Duration(seconds: 4));
+      final shiftsRes = await _httpClient.get(shiftsUri).timeout(const Duration(seconds: 12));
       if (shiftsRes.statusCode != 200) return null;
 
-      final List<dynamic> shiftsJson = jsonDecode(shiftsRes.body);
+      final decodedShifts = jsonDecode(shiftsRes.body);
+      final List<dynamic> shiftsJson = decodedShifts is List ? decodedShifts : const [];
       final liveRoute = buildRouteInfoFromMap(matchingRoute, shiftsJson, normalized);
 
       await cacheLiveRoute(liveRoute);
@@ -391,6 +427,39 @@ class RouteRepository {
     } catch (_) {
       // Offline fallback: returns null, calling layers will use cached Hive route
       return null;
+    }
+  }
+
+  /// Route documents often omit plateNumber. The assigned bus still has one.
+  Future<void> _fillMissingPlate(Map<String, dynamic> route) async {
+    final existing = (route['plateNumber'] ?? '').toString().trim();
+    if (existing.isNotEmpty) return;
+    final unit = (route['unitNumber'] ?? '').toString().trim();
+    if (unit.isEmpty) return;
+
+    final cached = _plateByUnit[unit];
+    if (cached != null) {
+      if (cached.isNotEmpty) route['plateNumber'] = cached;
+      return;
+    }
+
+    try {
+      final uri = Uri.parse(
+        '$apiBaseUrl/api/public/vehicles/${Uri.encodeComponent(unit)}',
+      );
+      final res = await _httpClient.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) {
+        _plateByUnit[unit] = '';
+        return;
+      }
+      final decoded = jsonDecode(res.body);
+      final plate = decoded is Map
+          ? (decoded['plateNumber'] ?? '').toString().trim()
+          : '';
+      _plateByUnit[unit] = plate;
+      if (plate.isNotEmpty) route['plateNumber'] = plate;
+    } catch (_) {
+      // Leave the plate blank. The header omits empty parentheses.
     }
   }
 

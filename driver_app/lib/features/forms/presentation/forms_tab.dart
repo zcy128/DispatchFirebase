@@ -28,8 +28,21 @@ import '../../vehicle_signout/bloc/vehicle_signout_event.dart';
 import '../../vehicle_signout/presentation/vehicle_signout_summary_card.dart';
 import '../../route/bloc/route_bloc.dart';
 import '../../route/bloc/route_state.dart';
+import '../../route/models/route_model.dart';
 import '../../timesheet/presentation/timesheet_page.dart';
 import '../../company_contacts/presentation/company_contacts_page.dart';
+
+String _routeSchoolName(DriverRouteInfo route) {
+  for (final shift in route.shifts) {
+    for (final stop in shift.stops) {
+      final name = (stop.schoolName ?? '').trim();
+      if (name.isNotEmpty) return name;
+    }
+    final serviced = shift.schoolsServiced.trim();
+    if (serviced.isNotEmpty) return serviced;
+  }
+  return '';
+}
 
 /// Central Forms & Work Hub providing vehicle inspection, defect reporting, student incidents, time-off operations, and bi-weekly timesheet.
 class FormsTab extends StatefulWidget {
@@ -526,14 +539,13 @@ class _FormsTabState extends State<FormsTab> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                 child: BlocBuilder<RouteBloc, RouteState>(
                   builder: (context, routeState) {
-                    final routeNo = routeState is RouteLoaded &&
-                            routeState.route != null
-                        ? routeState.route!.routeNo
-                        : '';
+                    final route = routeState is RouteLoaded ? routeState.route : null;
                     return RouteAssessmentSummaryCard(
                       driverId: driverId,
                       driverName: driverName,
-                      defaultRouteId: routeNo,
+                      defaultRouteId: route?.routeNo ?? '',
+                      defaultSchoolName: route == null ? '' : _routeSchoolName(route),
+                      defaultSchoolBoard: route?.schoolBoard ?? '',
                     );
                   },
                 ),

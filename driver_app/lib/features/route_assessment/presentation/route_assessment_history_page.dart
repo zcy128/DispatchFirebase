@@ -13,12 +13,16 @@ class RouteAssessmentHistoryPage extends StatelessWidget {
   final String driverId;
   final String driverName;
   final String? defaultRouteId;
+  final String? defaultSchoolName;
+  final String? defaultSchoolBoard;
 
   const RouteAssessmentHistoryPage({
     super.key,
     required this.driverId,
     required this.driverName,
     this.defaultRouteId,
+    this.defaultSchoolName,
+    this.defaultSchoolBoard,
   });
 
   @override
@@ -34,6 +38,8 @@ class RouteAssessmentHistoryPage extends StatelessWidget {
       driverId: driverId,
       driverName: driverName,
       defaultRouteId: defaultRouteId,
+      defaultSchoolName: defaultSchoolName,
+      defaultSchoolBoard: defaultSchoolBoard,
     );
 
     if (existingBloc != null) {
@@ -53,11 +59,15 @@ class _RouteAssessmentHistoryView extends StatefulWidget {
   final String driverId;
   final String driverName;
   final String? defaultRouteId;
+  final String? defaultSchoolName;
+  final String? defaultSchoolBoard;
 
   const _RouteAssessmentHistoryView({
     required this.driverId,
     required this.driverName,
     this.defaultRouteId,
+    this.defaultSchoolName,
+    this.defaultSchoolBoard,
   });
 
   @override
@@ -92,6 +102,8 @@ class _RouteAssessmentHistoryViewState extends State<_RouteAssessmentHistoryView
                   driverId: widget.driverId,
                   driverName: widget.driverName,
                   defaultRouteId: widget.defaultRouteId,
+                  defaultSchoolName: widget.defaultSchoolName,
+                  defaultSchoolBoard: widget.defaultSchoolBoard,
                 ),
               ),
             ),
