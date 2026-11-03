@@ -1,0 +1,13 @@
+# Cursor Rules for Dispatch Monorepo
+
+## Language & Coding Standards (Strict: No Chinese in Code)
+- **Identifiers & File Names**: All variable names, function names, class names, types, interfaces, constants, file names, and directories MUST be in English only.
+- **Code Comments & Documentation**: All inline comments, function docstrings, JSDoc/DartDoc/GoDoc, and TODO notes MUST be written in English.
+- **Error Messages & Logging**: All exception messages, error codes, and console logging statements MUST be in English.
+- **User-Facing Strings & i18n**: Never hardcode Chinese strings directly in business logic or presentation components. User-facing text must either use English by default or be managed through the project's dedicated localization/i18n translation system.
+- **Chat Communication vs. Code**: You may communicate with the user in Chinese (or their preferred language) during chat, but all generated/modified code, diffs, and comments MUST strictly remain 100% English.
+
+## Safety & Testing
+- Refer to `AGENTS.md` and `GEMINI.md` for project architecture guidelines.
+- Always round wage and monetary calculations to 2 decimal places.
+- Run tests (`npm test` in `web`, `flutter test` in `driver_app` and `parent_app`) after altering business rules. Full instructions in `docs/testing-guide.md`.

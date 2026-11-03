@@ -1,7 +1,7 @@
 import { collection, onSnapshot, query, orderBy, where, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 import { apiRequest, isClientHttpError } from './api';
-import { BusRoute, BusRouteShift, RouteStats, extractRouteAssignedEmployeeIds } from '../types/route';
+import { AssignRouteCrewPayload, BusRoute, BusRouteShift, RouteStats, extractRouteAssignedEmployeeIds } from '../types/route';
 
 export const calculateRouteStats = (routes: BusRoute[]): RouteStats => {
   const total = routes.length;
@@ -148,7 +148,7 @@ export const RouteService = {
     return apiRequest<RouteStats>('/api/routes/stats');
   },
 
-  assignCrew: async (routeId: string, payload: any): Promise<BusRoute> => {
+  assignCrew: async (routeId: string, payload: AssignRouteCrewPayload): Promise<BusRoute> => {
     return apiRequest<BusRoute>(`/api/routes/${routeId}/crew`, {
       method: 'PUT',
       body: JSON.stringify(payload)

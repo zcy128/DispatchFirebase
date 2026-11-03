@@ -176,7 +176,7 @@ export interface AssignRouteCrewPayload {
   attendantId?: string;
   attendantName?: string;
   attendantPhone?: string;
-  isCustomCrew: boolean;
+  isCustomCrew?: boolean;
   shiftOverrides?: ShiftCrewOverride[];
 }
 

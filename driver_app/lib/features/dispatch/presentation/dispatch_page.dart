@@ -1375,7 +1375,7 @@ class _ShiftSelectorCard extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ).whenComplete(commentsController.dispose);
   }
 }
 

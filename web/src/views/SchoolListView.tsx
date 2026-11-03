@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { School, SchoolBoard, SchoolStats } from '../types/school';
 import {
   Search,
@@ -91,6 +92,31 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
       );
     });
   }, [schools, selectedBoardId, statusFilter, searchTerm]);
+
+  const schoolTableRef = useRef<HTMLDivElement>(null);
+  const schoolMobileRef = useRef<HTMLDivElement>(null);
+  const schoolTableVirtualizer = useVirtualizer({
+    count: filteredSchools.length,
+    getScrollElement: () => schoolTableRef.current,
+    estimateSize: () => 72,
+    overscan: 8,
+  });
+  const schoolTableRows = schoolTableVirtualizer.getVirtualItems();
+  const schoolTablePadTop = schoolTableRows.length > 0 ? schoolTableRows[0]?.start || 0 : 0;
+  const schoolTablePadBottom = schoolTableRows.length > 0
+    ? schoolTableVirtualizer.getTotalSize() - (schoolTableRows[schoolTableRows.length - 1]?.end || 0)
+    : 0;
+  const schoolMobileVirtualizer = useVirtualizer({
+    count: filteredSchools.length,
+    getScrollElement: () => schoolMobileRef.current,
+    estimateSize: () => 168,
+    overscan: 6,
+  });
+  const schoolMobileRows = schoolMobileVirtualizer.getVirtualItems();
+  const schoolMobilePadTop = schoolMobileRows.length > 0 ? schoolMobileRows[0]?.start || 0 : 0;
+  const schoolMobilePadBottom = schoolMobileRows.length > 0
+    ? schoolMobileVirtualizer.getTotalSize() - (schoolMobileRows[schoolMobileRows.length - 1]?.end || 0)
+    : 0;
 
   const getBoardBadgeColor = (code?: string) => {
     switch (code) {
@@ -301,7 +327,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
           {/* Schools Table */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
             {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto">
+            <div ref={schoolTableRef} className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-800/80 text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-700/60">
                   <tr>
@@ -323,7 +349,15 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredSchools.map((s) => (
+                    <>
+                    {schoolTablePadTop > 0 && (
+                      <tr>
+                        <td style={{ height: `${schoolTablePadTop}px`, padding: 0, border: 0 }} colSpan={7} />
+                      </tr>
+                    )}
+                    {schoolTableRows.map((virtualRow) => {
+                      const s = filteredSchools[virtualRow.index];
+                      return (
                       <tr
                         key={s.id || s.schoolId}
                         onClick={() => onSelectSchool(s)}
@@ -438,21 +472,32 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                           </div>
                         </td>
                       </tr>
-                    ))
+                      );
+                    })}
+                    {schoolTablePadBottom > 0 && (
+                      <tr>
+                        <td style={{ height: `${schoolTablePadBottom}px`, padding: 0, border: 0 }} colSpan={7} />
+                      </tr>
+                    )}
+                    </>
                   )}
                 </tbody>
               </table>
             </div>
 
             {/* Mobile Touch Cards Stream */}
-            <div className="md:hidden divide-y divide-slate-800/80">
+            <div ref={schoolMobileRef} className="md:hidden divide-y divide-slate-800/80 overflow-y-auto max-h-[calc(100vh-270px)]">
               {filteredSchools.length === 0 ? (
                 <div className="p-8 text-center text-slate-500 space-y-2">
                   <SchoolIcon className="w-8 h-8 mx-auto opacity-40 text-slate-400" />
                   <p className="text-sm font-semibold">No schools match your filters</p>
                 </div>
               ) : (
-                filteredSchools.map((s) => (
+                <>
+                {schoolMobilePadTop > 0 && <div style={{ height: `${schoolMobilePadTop}px` }} />}
+                {schoolMobileRows.map((virtualRow) => {
+                  const s = filteredSchools[virtualRow.index];
+                  return (
                   <div
                     key={s.id || s.schoolId}
                     onClick={() => onSelectSchool(s)}
@@ -570,7 +615,10 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                       </div>
                     </div>
                   </div>
-                ))
+                  );
+                })}
+                {schoolMobilePadBottom > 0 && <div style={{ height: `${schoolMobilePadBottom}px` }} />}
+                </>
               )}
             </div>
           </div>

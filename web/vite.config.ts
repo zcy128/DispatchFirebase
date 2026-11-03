@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -72,6 +72,10 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
   build: {
     rollupOptions: {

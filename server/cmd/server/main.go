@@ -30,6 +30,7 @@ import (
 	"dispatch-server/internal/auth"
 	"dispatch-server/internal/config"
 	"dispatch-server/internal/handlers"
+	"dispatch-server/internal/httpjson"
 	"dispatch-server/internal/mcp"
 	"dispatch-server/internal/models"
 	"dispatch-server/internal/repository"
@@ -180,6 +181,7 @@ func main() {
 		AllowCredentials: allowCredentials,
 		MaxAge:           300,
 	}))
+	r.Use(httpjson.ErrorContentType)
 
 	// Auth, Employee, School, Student, Route & Vehicle handlers
 	authHandler := handlers.NewAuthHandler(repo, authClient, cfg)

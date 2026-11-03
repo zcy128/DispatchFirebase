@@ -35,7 +35,9 @@ export const RolePermissionsModal: React.FC<RolePermissionsModalProps> = ({
   role,
   onSaved
 }) => {
-  const [permissions, setPermissions] = useState<Record<NavTab, PermissionLevel>>({} as any);
+  const [permissions, setPermissions] = useState<Record<NavTab, PermissionLevel>>(() =>
+    getRoleDefaultPermissions(role)
+  );
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isSaving, setIsSaving] = useState(false);

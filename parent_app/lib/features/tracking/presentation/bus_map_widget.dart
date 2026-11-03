@@ -22,6 +22,8 @@ class _BusMapWidgetState extends State<BusMapWidget> {
 
   // Default stop coordinate in Ottawa if not explicitly provided
   static const LatLng _defaultStopCoord = LatLng(45.3524, -75.7558);
+  String? _decodedPolylineSource;
+  List<LatLng> _decodedPolyline = const [];
 
 
   @override
@@ -147,47 +149,45 @@ class _BusMapWidgetState extends State<BusMapWidget> {
     return const LatLng(45.37896, -75.76102);
   }
 
-  List<LatLng> get _routePolylinePoints {
-    final polyString = widget.commute.routePolyline;
-    List<LatLng> rawPoints = [];
-    if (polyString != null && polyString.isNotEmpty) {
-      rawPoints = MapSnappingEngine.decodePolyline(polyString);
-    }
-    if (rawPoints.length < 2) {
-      rawPoints = [_busRawPosition, _stopPosition, _schoolPosition];
-    }
-
+  List<LatLng> _filterRoutePoints(List<LatLng> rawPoints) {
     final filtered = <LatLng>[];
     for (final p in rawPoints) {
       if (p.latitude.isNaN || p.longitude.isNaN || p.latitude == 0 || p.longitude == 0) continue;
-      // Filter out duplicate consecutive points
       if (filtered.isEmpty ||
           (filtered.last.latitude - p.latitude).abs() > 0.00002 ||
           (filtered.last.longitude - p.longitude).abs() > 0.00002) {
         filtered.add(p);
       }
     }
-    return filtered.length >= 2 ? filtered : [_busRawPosition, _schoolPosition];
+    return filtered;
   }
 
-  SnappedPosition get _snappedBus {
-    final raw = _busRawPosition;
-    final heading = widget.commute.vehicleLocation?.heading ?? 90.0;
-    return MapSnappingEngine.snapToPolyline(
-      rawPos: raw,
-      polyline: _routePolylinePoints,
-      defaultHeading: heading,
-      thresholdMeters: 45.0,
-    );
+  List<LatLng> get _routePolylinePoints {
+    final polyString = widget.commute.routePolyline;
+    if (polyString != null && polyString.isNotEmpty) {
+      if (_decodedPolylineSource != polyString) {
+        _decodedPolylineSource = polyString;
+        _decodedPolyline = _filterRoutePoints(MapSnappingEngine.decodePolyline(polyString));
+      }
+      if (_decodedPolyline.length >= 2) return _decodedPolyline;
+    }
+
+    final fallback = _filterRoutePoints([_busRawPosition, _stopPosition, _schoolPosition]);
+    return fallback.length >= 2 ? fallback : [_busRawPosition, _schoolPosition];
   }
 
   @override
   Widget build(BuildContext context) {
-    final snapped = _snappedBus;
+    final routePoints = _routePolylinePoints;
+    final snapped = MapSnappingEngine.snapToPolyline(
+      rawPos: _busRawPosition,
+      polyline: routePoints,
+      defaultHeading: widget.commute.vehicleLocation?.heading ?? 90.0,
+      thresholdMeters: 45.0,
+    );
     final busPos = snapped.position;
     final stopPos = _stopPosition;
     final schoolPos = _schoolPosition;
-    final routePoints = _routePolylinePoints;
 
     return Stack(
       children: [
@@ -584,6 +584,17 @@ class _DirectRoadPolylinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_DirectRoadPolylinePainter oldDelegate) => true;
+  bool shouldRepaint(_DirectRoadPolylinePainter oldDelegate) {
+    return oldDelegate.points != points ||
+        oldDelegate.color != color ||
+        oldDelegate.strokeWidth != strokeWidth ||
+        oldDelegate.borderColor != borderColor ||
+        oldDelegate.borderStrokeWidth != borderStrokeWidth ||
+        oldDelegate.casingColor != casingColor ||
+        oldDelegate.casingStrokeWidth != casingStrokeWidth ||
+        oldDelegate.camera.center != camera.center ||
+        oldDelegate.camera.zoom != camera.zoom ||
+        oldDelegate.camera.rotation != camera.rotation;
+  }
 }
 

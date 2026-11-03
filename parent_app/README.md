@@ -86,11 +86,14 @@ flutter run -d chrome --web-port 8086
 ```
 
 ### Run Tests & Linter
+
+Refer to the complete [Unit Testing Guide](TESTING.md) ([Français](TESTING.fr.md) | [中文](TESTING.zh.md)) for test architecture and modular execution.
+
 ```bash
-# Run unit & widget tests
+# Run unit & widget tests (51 tests)
 flutter test
 
-# Run Dart analyzer
+# Run Dart analyzer (0 errors, 0 warnings)
 flutter analyze
 ```
 

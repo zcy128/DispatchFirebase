@@ -225,9 +225,9 @@ DispatchFirebase/
 │   ├── TESTING.md                       # 多语言单元测试指南 (中/英/法)
 │   └── web/firebase-messaging-sw.js.example # Web 推送 ServiceWorker 模板
 ├── parent_app/                          # 家长端 Flutter 应用 (实时校车追踪与到站提醒)
-│   ├── lib/core/api_client.dart         # 后端 API 客户端 (支持 --dart-define=API_BASE_URL)
-│   ├── lib/features/tracking/           # OpenStreetMap 实时校车位置图层与路线
-│   └── lib/features/auth/               # 家长免密 Passcode 认证
+│   ├── lib/                             # 地图图层、BLoC 状态机、Bento 卡片与设置弹窗
+│   ├── test/                            # 核心业务 P0-P2 单元与 Widget 测试套件 (51 测试用例)
+│   └── TESTING.md                       # 家长端测试指南 (中/英/法)
 ├── web/                                 # 调度台 React + Vite 前端应用
 │   ├── .env.example                     # Web 端环境变量模板
 │   └── src/                             # 控制台页面、组件、AI Copilot 与状态管理
@@ -236,7 +236,7 @@ DispatchFirebase/
 │   ├── cmd/mcp/main.go                  # Anthropic MCP 服务端程序入口
 │   ├── cmd/seed/main.go                 # 初始主数据与测试数据生成工具
 │   └── internal/                        # 认证、仓储层、ETA、邮件/短信服务、AI 调度引擎与 MCP 处理器
-├── docs/                                # 架构图、技术规范、工作流与 API 说明文档
+├── docs/                                # 架构图、技术规范、测试指南 (testing-guide.md) 与运营手册
 ├── deploy/                              # Google Cloud Run 部署脚本与 Docker 配置
 ├── pcyweb/                              # 承运商伙伴公共门户与 Web 视图
 ├── design-demos/                        # UI/UX 原型设计与交互 Demo
@@ -339,6 +339,9 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
 
 ## 🛠️ 运维与数据生命周期管理指南
 
+- 🧪 **[Monorepo 统一测试指南与浏览器 QA 智能体](docs/testing-guide.md#简体中文)**（[English](docs/testing-guide.md#english) | [Français](docs/testing-guide.md#français)）：
+  - **全项目测试唯一可信指南**：涵盖调度 Web 端（79 个 Vitest 测试）、司机端移动 App（49 个 Flutter 测试）、家长端 App（51 个 Flutter 测试）以及浏览器自动化端到端测试智能体（[`.agents/agents/qa-tester.md`](.agents/agents/qa-tester.md)）。
+  - 各端专项指南直达：[Web 单元测试说明](docs/unit-test-instructions.md)、[司机端测试指南](driver_app/TESTING.zh.md) 与 [家长端测试指南](parent_app/TESTING.zh.md)。
 - 📘 **[Firestore TTL 与 Cloud Scheduler 自动化归档配置指南](docs/firestore-ttl-cloud-scheduler-instructions.md#简体中文)**（[English](docs/firestore-ttl-cloud-scheduler-instructions.md#english) | [Français](docs/firestore-ttl-cloud-scheduler-instructions.md#français)）：
   - Google Cloud 控制台中的 Firestore 自动过期（TTL）规则设置说明。
   - Cloud Scheduler 唯一聚合归档任务（`/api/admin/archive/sync-all`）配置步骤，一键归档班次、流水日志及过期请假单，实现超低云端运行开销。

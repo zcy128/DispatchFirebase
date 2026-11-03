@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Compass,
   Plus,
@@ -455,6 +456,19 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
       return true;
     });
   }, [trips, showAllDates, selectedDate, statusFilter, typeFilter, tripSearch]);
+
+  const charterTableRef = useRef<HTMLDivElement>(null);
+  const charterVirtualizer = useVirtualizer({
+    count: filteredTrips.length,
+    getScrollElement: () => charterTableRef.current,
+    estimateSize: () => 120,
+    overscan: 6,
+  });
+  const charterRows = charterVirtualizer.getVirtualItems();
+  const charterPadTop = charterRows.length > 0 ? charterRows[0]?.start || 0 : 0;
+  const charterPadBottom = charterRows.length > 0
+    ? charterVirtualizer.getTotalSize() - (charterRows[charterRows.length - 1]?.end || 0)
+    : 0;
 
   // KPI Metrics
   const kpis = useMemo(() => {
@@ -1827,7 +1841,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
 
           {/* Trips Table */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
+            <div ref={charterTableRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50/75 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800">
                   <tr>
@@ -1860,7 +1874,14 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredTrips.map((trip) => {
+                    <>
+                    {charterPadTop > 0 && (
+                      <tr>
+                        <td style={{ height: `${charterPadTop}px`, padding: 0, border: 0 }} colSpan={7} />
+                      </tr>
+                    )}
+                    {charterRows.map((virtualRow) => {
+                      const trip = filteredTrips[virtualRow.index];
                       const departsTime = trip.departsAt ? trip.departsAt.replace('T', ' ').slice(11, 16) : '-';
                       const returnsTime = trip.returnsAt ? trip.returnsAt.replace('T', ' ').slice(11, 16) : '-';
                       const allShifts = trip.assignments || [];
@@ -2161,7 +2182,13 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
                           </td>
                         </tr>
                       );
-                    })
+                    })}
+                    {charterPadBottom > 0 && (
+                      <tr>
+                        <td style={{ height: `${charterPadBottom}px`, padding: 0, border: 0 }} colSpan={7} />
+                      </tr>
+                    )}
+                    </>
                   )}
                 </tbody>
               </table>

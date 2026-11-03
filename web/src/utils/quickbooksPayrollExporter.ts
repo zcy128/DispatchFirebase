@@ -27,7 +27,7 @@ const triggerDownload = (content: string, filename: string, mimeType: string) =>
   URL.revokeObjectURL(url);
 };
 
-const escapeCsv = (val: string | number | undefined | null): string => {
+export const escapeCsv = (val: string | number | undefined | null): string => {
   const s = String(val ?? '').replace(/"/g, '""');
   return `"${s}"`;
 };
@@ -35,7 +35,7 @@ const escapeCsv = (val: string | number | undefined | null): string => {
 /**
  * Converts YYYY-MM-DD to MM/DD/YYYY for QuickBooks Desktop IIF compatibility.
  */
-const toQbDate = (dateStr: string): string => {
+export const toQbDate = (dateStr: string): string => {
   const parts = (dateStr || '').split('-');
   if (parts.length === 3) {
     return `${parts[1]}/${parts[2]}/${parts[0]}`;
@@ -46,7 +46,7 @@ const toQbDate = (dateStr: string): string => {
 /**
  * Converts decimal hours (e.g. 2.5) to QuickBooks Desktop TIMEACT H:MM format (e.g. 2:30).
  */
-const toQbDuration = (decimalHours: number): string => {
+export const toQbDuration = (decimalHours: number): string => {
   const safeHours = Math.max(0, Number(decimalHours || 0));
   const wholeHours = Math.floor(safeHours);
   const minutes = Math.round((safeHours - wholeHours) * 60);
