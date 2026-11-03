@@ -122,6 +122,7 @@ class VehicleSignoutSummaryCard extends StatelessWidget {
                             child: VehicleSignoutHistoryPage(
                               driverId: driverId,
                               driverName: driverName,
+                              isReadOnly: isReadOnly,
                             ),
                           ),
                         ),

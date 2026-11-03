@@ -154,7 +154,7 @@ class DispatchRepository {
             studentId: sId,
             studentNo: (stu['studentNo'] ?? 'STU-$sId').toString(),
             studentName: (stu['studentName'] ?? 'Student $sId').toString(),
-            grade: (stu['grade'] ?? 'Gr 10').toString(),
+            grade: (stu['grade'] ?? '').toString().trim(),
             homeAddress: (stu['homeAddress'] ?? st['stopLocation'] ?? '').toString(),
             schoolName: (stu['schoolName'] ?? s['schoolName'] ?? st['schoolName'] ?? '').toString(),
             pickupStatus: pickupStatus,
@@ -306,15 +306,7 @@ class DispatchRepository {
 
     try {
       final cleanDriver = driverId?.trim() ?? '';
-      final norm = cleanDriver.toLowerCase();
-      final empId = cleanDriver.isNotEmpty ? RouteRepository.resolveEmployeeId(cleanDriver) : '';
-
-      final queryKeys = <String>{
-        if (cleanDriver.isNotEmpty) cleanDriver,
-        if (norm.isNotEmpty) norm,
-        if (empId.isNotEmpty) empId,
-        if (empId.isNotEmpty) empId.toLowerCase(),
-      }.where((s) => s.isNotEmpty && s != 'tbd' && s != 'unassigned').toList();
+      final queryKeys = RouteRepository.firestoreEmployeeAliases(cleanDriver);
 
       final query = queryKeys.isNotEmpty
           ? FirebaseFirestore.instance
@@ -374,12 +366,13 @@ class DispatchRepository {
         urlStr += '&driver=${Uri.encodeComponent(driverId.trim())}';
       }
       final uri = Uri.parse(urlStr);
-      final res = await _httpClient.get(uri).timeout(const Duration(seconds: 4));
+      final res = await _httpClient.get(uri).timeout(const Duration(seconds: 12));
       if (res.statusCode != 200) {
         return getDispatchesForDate(date, driverId: driverId);
       }
 
-      final List<dynamic> shiftsJson = jsonDecode(res.body);
+      final decoded = jsonDecode(res.body);
+      final List<dynamic> shiftsJson = decoded is List ? decoded : const [];
       final synced = <DispatchRecord>[];
 
       for (final raw in shiftsJson) {
@@ -492,27 +485,8 @@ class DispatchRepository {
     final comments = payrollComments?.trim();
     final hasComments = comments != null && comments.isNotEmpty;
 
-    // 1. Direct Firestore Real-Time update if available
-    if (isFirestoreAvailable) {
-      try {
-        final nowIso = currentTime.toUtc().toIso8601String();
-        final shiftUpdates = <String, dynamic>{
-          'isDriverCheckedOut': true,
-          'driverCheckedOutAt': timeStr,
-          'updatedAt': nowIso,
-        };
-        if (hasComments) {
-          shiftUpdates['driverCheckoutComments'] = comments;
-        }
-        await FirebaseFirestore.instance
-            .collection('dispatch_shifts')
-            .doc(dispatchId)
-            .update(shiftUpdates);
-      } catch (_) {
-        // Fallback to REST API / local persistence on error
-      }
-    }
-
+    // The API writes the shift. A direct client update can stall on security
+    // rules and never reach this request, so the Check-Out button appears dead.
     await _sendAccepted(
       'POST',
       Uri.parse('$apiBaseUrl/api/dispatch/shifts/$dispatchId/check-out'),

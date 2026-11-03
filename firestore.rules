@@ -16,6 +16,18 @@ service cloud.firestore {
         : '';
     }
 
+    // 001 and EMP-001 are the same employee. Shift records store the EMP- form.
+    function employeeAliases() {
+      return myEmployeeId() == ''
+        ? []
+        : [myEmployeeId(), myEmployeeId().lower(), 'EMP-' + myEmployeeId(), 'emp-' + myEmployeeId().lower()];
+    }
+
+    function assignedToMe() {
+      return resource.data.assignedEmployeeIds != null
+        && resource.data.assignedEmployeeIds.hasAny(employeeAliases());
+    }
+
     function isMyRecord(empId) {
       return isAuthenticated() && (
         request.auth.token.employeeId == empId ||
@@ -166,7 +178,7 @@ service cloud.firestore {
       // 敏感数据：调度员、学生关怀专员可读；司机仅能读取分配给自己线路上的学生
       allow read: if canRead('students', ['dispatcher', 'studentcare', 'office staff', 'manager']) ||
                      (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
-                      resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+                      assignedToMe());
       allow write: if canWrite('students', ['dispatcher', 'studentcare']);
     }
 
@@ -208,7 +220,7 @@ service cloud.firestore {
       // 调度与管理人员看所有路线；司机与随车人员只能看安排给自己的路线
       allow read: if canRead('routes', ['dispatcher', 'manager', 'supervisor', 'fleet', 'office staff']) ||
                      (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
-                      resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+                      assignedToMe());
       // 路线规划修改仅限调度员
       allow write: if canWrite('routes', ['dispatcher']);
     }
@@ -216,7 +228,7 @@ service cloud.firestore {
     match /route_shifts/{shiftId} {
       allow read: if canRead('routes', ['dispatcher', 'manager', 'supervisor', 'fleet']) ||
                      (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
-                      resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+                      assignedToMe());
       allow write: if canWrite('routes', ['dispatcher']);
     }
 
@@ -228,11 +240,11 @@ service cloud.firestore {
       // 调度台看全天班次；财务专员、车队、学生关怀员等可查看派工；司机仅能看分配给自己的班次
       allow read: if canRead('dispatch', ['dispatcher', 'manager', 'supervisor', 'office staff', 'fleet', 'payroll', 'studentcare']) ||
                      (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
-                      resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+                      assignedToMe());
       allow create, delete: if canWrite('dispatch', ['dispatcher']);
       allow update: if canWrite('dispatch', ['dispatcher']) ||
                       (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
-                       resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds &&
+                       assignedToMe() &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                          'isDriverCheckedIn', 'driverCheckedInAt', 'isDriverCheckedOut', 'driverCheckedOutAt',
                          'driverCheckoutComments', 'isAttendantCheckedIn', 'attendantCheckedInAt',
@@ -254,10 +266,10 @@ service cloud.firestore {
       // 调度员看全量包车；司机仅可查看并签到指派给自己的包车任务
       allow read: if canRead('charter', ['dispatcher', 'manager', 'supervisor', 'fleet']) ||
                      (isAuthenticated() && request.auth.token.role in ['driver', 'helper'] &&
-                      resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+                      assignedToMe());
       allow write: if canWrite('charter', ['dispatcher']) ||
                       (isAuthenticated() && request.auth.token.role == 'driver' &&
-                       resource.data.assignedEmployeeIds != null && myEmployeeId() in resource.data.assignedEmployeeIds);
+                       assignedToMe());
     }
 
     // ═════════════════════════════════════════════════════════════════════════

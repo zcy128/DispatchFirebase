@@ -9,6 +9,26 @@ import '../bloc/route_event.dart';
 import '../bloc/route_state.dart';
 import '../models/route_model.dart';
 
+String _studentMetaLine(DriverRouteStudent student) {
+  return <String>[
+    student.studentNo.trim(),
+    student.grade.trim(),
+    student.schoolName.trim(),
+  ].where((part) => part.isNotEmpty).join('  ·  ');
+}
+
+String _routeEquipmentLine(DriverRouteInfo route) {
+  final yard = route.yardName.trim();
+  final unit = route.vehicleUnit.trim();
+  final plate = route.plateNumber.trim();
+  final bus = unit.isEmpty
+      ? ''
+      : (plate.isEmpty ? 'Bus $unit' : 'Bus $unit ($plate)');
+  if (yard.isEmpty) return bus;
+  if (bus.isEmpty) return yard;
+  return '$yard  ·  $bus';
+}
+
 class RouteTab extends StatefulWidget {
   final String driverId;
 
@@ -352,7 +372,7 @@ class _RouteTabState extends State<RouteTab> {
           ),
           const SizedBox(height: 4),
           Text(
-            '${route.yardName}  ·  Bus ${route.vehicleUnit} (${route.plateNumber})',
+            _routeEquipmentLine(route),
             style: TextStyle(
               fontSize: 12,
               color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
@@ -922,7 +942,7 @@ class _RouteTabState extends State<RouteTab> {
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      '${student.studentNo}  ·  ${student.grade}  ·  ${student.schoolName}',
+                      _studentMetaLine(student),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 11, color: Colors.grey),
@@ -1033,11 +1053,25 @@ class _RouteTabState extends State<RouteTab> {
         actions: [
           if (phone.isNotEmpty)
             TextButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: phone));
+              onPressed: () async {
+                var copied = false;
+                try {
+                  await Clipboard.setData(ClipboardData(text: phone));
+                  copied = true;
+                } catch (_) {
+                  copied = false;
+                }
+                if (!dialogCtx.mounted) return;
                 Navigator.of(dialogCtx).pop();
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Phone number copied to clipboard!')),
+                  SnackBar(
+                    content: Text(
+                      copied
+                          ? 'Phone number copied to clipboard!'
+                          : 'Could not copy the phone number.',
+                    ),
+                  ),
                 );
               },
               child: const Text('Copy Number'),

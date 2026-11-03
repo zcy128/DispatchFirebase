@@ -83,6 +83,7 @@ class _CreateStudentIncidentViewState
   List<RosterStudentOption> _rosterStudents = [];
   String? _selectedRosterKey;
   bool _manualStudentEntry = false;
+  int _rosterRequest = 0;
 
   // Form Controllers
   final _studentNameCtrl = TextEditingController();
@@ -141,7 +142,8 @@ class _CreateStudentIncidentViewState
     super.dispose();
   }
 
-  void _loadRosterForDate(DateTime date) {
+  Future<void> _loadRosterForDate(DateTime date) async {
+    final ticket = ++_rosterRequest;
     try {
       final dispatchRepo = context.read<DispatchRepository>();
       final incidentRepo = context.read<StudentIncidentRepository>();
@@ -150,6 +152,7 @@ class _CreateStudentIncidentViewState
         driverId: widget.driverId,
         dispatchRepo: dispatchRepo,
       );
+      if (!mounted || ticket != _rosterRequest) return;
 
       setState(() {
         _rosterStudents = options;
@@ -162,6 +165,30 @@ class _CreateStudentIncidentViewState
         } else if (options.isEmpty) {
           _manualStudentEntry = true;
           _selectedRosterKey = null;
+        }
+      });
+
+      final enriched = await incidentRepo.fillMissingGrades(options);
+      if (!mounted || ticket != _rosterRequest) return;
+      if (DateFormat('yyyy-MM-dd').format(date) !=
+          DateFormat('yyyy-MM-dd').format(_incidentDate)) {
+        return;
+      }
+      setState(() {
+        _rosterStudents = enriched;
+        if (_manualStudentEntry || _selectedRosterKey == null) return;
+        RosterStudentOption? selected;
+        RosterStudentOption? previous;
+        for (final opt in enriched) {
+          if (opt.key == _selectedRosterKey) selected = opt;
+        }
+        for (final opt in options) {
+          if (opt.key == _selectedRosterKey) previous = opt;
+        }
+        if (selected == null || previous == null) return;
+        final currentGrade = _gradeCtrl.text.trim();
+        if (currentGrade.isEmpty || currentGrade == previous.grade.trim()) {
+          _gradeCtrl.text = selected.grade;
         }
       });
     } catch (e) {

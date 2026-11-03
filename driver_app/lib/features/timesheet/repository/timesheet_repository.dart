@@ -42,8 +42,8 @@ class TimesheetRepository {
     final today = DateTime(now.year, now.month, now.day);
     // In Dart, Sunday is weekday == 7 (Mon=1 .. Sun=7). Convert to 0=Sun..6=Sat:
     final dayOfWeek = today.weekday % 7;
-    final prevSunday = today.subtract(Duration(days: dayOfWeek));
-    return prevSunday.subtract(const Duration(days: 7));
+    final prevSunday = _addCalendarDays(today, -dayOfWeek);
+    return _addCalendarDays(prevSunday, -7);
   }
 
   static String formatDate(DateTime dt) => DateFormat('yyyy-MM-dd').format(dt);
@@ -60,9 +60,13 @@ class TimesheetRepository {
     return DateTime.now();
   }
 
+  /// Calendar days, so a 14-day period stays intact across daylight saving time.
+  static DateTime _addCalendarDays(DateTime dt, int days) {
+    return DateTime(dt.year, dt.month, dt.day + days);
+  }
+
   static String addDays(String dateStr, int days) {
-    final dt = parseDate(dateStr).add(Duration(days: days));
-    return formatDate(dt);
+    return formatDate(_addCalendarDays(parseDate(dateStr), days));
   }
 
   static const Map<String, String> predefinedHolidays = {

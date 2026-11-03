@@ -88,6 +88,9 @@ class RouteBloc extends Bloc<RouteEvent, RouteState> {
     final activeShift = state is RouteLoaded ? (state as RouteLoaded).selectedShiftType : 'AM';
     final activeSearch = state is RouteLoaded ? (state as RouteLoaded).searchQuery : '';
     final route = event.route;
+    if (route == null && state is RouteLoaded && (state as RouteLoaded).route != null) {
+      return;
+    }
 
     emit(RouteLoaded(
       route: route,

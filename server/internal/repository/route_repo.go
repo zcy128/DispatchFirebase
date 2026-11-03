@@ -102,13 +102,8 @@ func (r *FirestoreRouteRepository) ListRoutes(ctx context.Context, filter RouteF
 		}
 
 		if filter.DriverFilter != "" {
-			dLower := strings.ToLower(strings.TrimSpace(filter.DriverFilter))
-			matches := strings.EqualFold(rt.DriverID, dLower) ||
-				strings.EqualFold(rt.DriverName, dLower) ||
-				strings.Contains(strings.ToLower(rt.DriverName), dLower) ||
-				strings.Contains(dLower, strings.ToLower(rt.DriverName)) ||
-				strings.EqualFold(rt.AttendantID, dLower) ||
-				strings.EqualFold(rt.AttendantName, dLower)
+			matches := matchesPersonQuery(filter.DriverFilter, rt.DriverID, rt.DriverName) ||
+				matchesPersonQuery(filter.DriverFilter, rt.AttendantID, rt.AttendantName)
 			if !matches {
 				continue
 			}
@@ -117,6 +112,9 @@ func (r *FirestoreRouteRepository) ListRoutes(ctx context.Context, filter RouteF
 		result = append(result, &rt)
 	}
 
+	if result == nil {
+		result = []*models.BusRoute{}
+	}
 	return result, nil
 }
 

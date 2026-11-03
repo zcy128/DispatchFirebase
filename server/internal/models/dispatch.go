@@ -131,21 +131,11 @@ func (s *DispatchShift) ComputeAssignedEmployeeIds() []string {
 	seen := make(map[string]bool)
 	var list []string
 	add := func(v string) {
-		t := strings.TrimSpace(v)
-		if t == "" {
-			return
-		}
-		low := strings.ToLower(t)
-		if low == "0" || low == "tbd" || low == "unassigned" || low == "non assigné" {
-			return
-		}
-		if !seen[t] {
-			seen[t] = true
-			list = append(list, t)
-		}
-		if !seen[low] {
-			seen[low] = true
-			list = append(list, low)
+		for _, alias := range EmployeeIDAliases(v) {
+			if !seen[alias] {
+				seen[alias] = true
+				list = append(list, alias)
+			}
 		}
 	}
 	add(s.DriverID)

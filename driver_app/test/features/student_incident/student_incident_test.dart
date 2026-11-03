@@ -215,5 +215,39 @@ void main() {
 
       expect(opt.displaySubtitle, equals('Gr 9 · St. Mary High School · Rte Route 15'));
     });
+
+    test('RosterStudentOption keeps a grade that already includes a label', () {
+      const opt = RosterStudentOption(
+        key: 'id_6',
+        studentId: 6,
+        studentNo: '0006',
+        studentName: 'Benjamin Johnson',
+        grade: 'Gr 10',
+        schoolName: 'Hillcrest High School',
+        routeNo: 'OCDSB-001',
+      );
+
+      expect(
+        opt.displaySubtitle,
+        equals('Gr 10 · Hillcrest High School · Rte OCDSB-001'),
+      );
+    });
+
+    test('RosterStudentOption labels a numeric directory grade once', () {
+      const opt = RosterStudentOption(
+        key: 'id_6',
+        studentId: 6,
+        studentNo: '0006',
+        studentName: 'Benjamin Johnson',
+        grade: '3',
+        schoolName: 'Hillcrest High School',
+        routeNo: 'OCDSB-001',
+      );
+
+      expect(
+        opt.displaySubtitle,
+        equals('Gr 3 · Hillcrest High School · Rte OCDSB-001'),
+      );
+    });
   });
 }

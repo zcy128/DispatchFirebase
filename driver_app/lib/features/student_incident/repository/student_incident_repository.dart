@@ -95,6 +95,50 @@ class StudentIncidentRepository {
     return options;
   }
 
+  /// Shift payloads omit grade. Look up the student directory so the report
+  /// does not invent a grade.
+  Future<List<RosterStudentOption>> fillMissingGrades(
+    List<RosterStudentOption> options,
+  ) async {
+    if (options.isEmpty) return options;
+    return Future.wait(options.map((opt) async {
+      if (opt.grade.trim().isNotEmpty) return opt;
+      final grade = await _lookupStudentGrade(opt);
+      if (grade == null || grade.isEmpty) return opt;
+      return opt.withGrade(grade);
+    }));
+  }
+
+  Future<String?> _lookupStudentGrade(RosterStudentOption opt) async {
+    final ids = <String>[];
+    final studentNo = opt.studentNo.trim();
+    if (studentNo.isNotEmpty) {
+      ids.add('STU-$studentNo');
+    }
+    if (opt.studentId > 0) {
+      final padded = 'STU-${opt.studentId.toString().padLeft(4, '0')}';
+      if (!ids.contains(padded)) ids.add(padded);
+    }
+
+    for (final id in ids) {
+      try {
+        final uri = Uri.parse(
+          '${ApiConfig.baseUrl}/api/students/${Uri.encodeComponent(id)}',
+        );
+        final res = await _httpClient.get(uri).timeout(const Duration(seconds: 6));
+        if (res.statusCode != 200) continue;
+        final decoded = jsonDecode(res.body);
+        if (decoded is Map) {
+          final grade = (decoded['grade'] ?? '').toString().trim();
+          if (grade.isNotEmpty) return grade;
+        }
+      } catch (e) {
+        debugPrint('[StudentIncidentRepository] grade lookup error: $e');
+      }
+    }
+    return null;
+  }
+
   // ─── Fetch Reports ────────────────────────────────────────────────────────
 
   Future<List<StudentIncident>> getStudentIncidents({
