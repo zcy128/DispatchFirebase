@@ -216,30 +216,35 @@
 
 ```text
 DispatchFirebase/
-├── driver_app/                      # 司机端 Flutter 应用 (移动端与 Web)
+├── driver_app/                          # 司机端 Flutter 应用 (移动端与 Web)
 │   ├── lib/
-│   │   ├── firebase_options.dart.example  # Firebase 客户端配置模板
-│   │   ├── features/auth/                 # 身份认证与出勤
-│   │   └── features/dispatch/             # 班车排班与学生签到
+│   │   ├── core/                        # 网络层、鉴权拦截器与离线存储
+│   │   ├── features/                    # 班车排班、工时薪资、包车、即时通讯、安全检查等
+│   │   └── firebase_options.dart.example# Firebase 客户端配置模板
+│   ├── test/                            # 核心业务 P0-P2 单元测试套件 (49+ 测试用例)
+│   ├── TESTING.md                       # 多语言单元测试指南 (中/英/法)
 │   └── web/firebase-messaging-sw.js.example # Web 推送 ServiceWorker 模板
-├── parent_app/                      # 家长端 Flutter 应用 (实时校车追踪)
-│   ├── lib/core/api_client.dart     # 后端 API 客户端 (支持 --dart-define=API_BASE_URL)
-│   ├── lib/features/tracking/       # OpenStreetMap 实时校车位置图层与路线
-│   └── lib/features/auth/           # 家长免密 Passcode 认证
-├── web/                             # 调度台 React + Vite 前端应用
-│   ├── .env.example                 # Web 端环境变量模板
-│   └── src/                         # 控制台页面、组件、AI Copilot 与状态管理
-├── server/                          # Go 后端 API 服务
-│   ├── cmd/server/main.go           # Web API 服务入口
-│   ├── cmd/mcp/main.go              # Anthropic MCP 服务端程序入口
-│   ├── cmd/seed/main.go             # 初始主数据与测试数据生成工具
-│   └── internal/                    # 认证、仓储层、ETA、邮件/短信服务、AI 调度引擎与 MCP 处理器
-├── deploy/                          # Google Cloud Run 部署脚本
-├── .env.example                     # 后端与全系统环境变量模板
-├── firestore.rules                  # Firestore 安全规则
-├── README.md                        # 英文主说明文档
-├── README.fr.md                     # 法语说明文档
-└── README.zh-CN.md                  # 中文说明文档
+├── parent_app/                          # 家长端 Flutter 应用 (实时校车追踪与到站提醒)
+│   ├── lib/core/api_client.dart         # 后端 API 客户端 (支持 --dart-define=API_BASE_URL)
+│   ├── lib/features/tracking/           # OpenStreetMap 实时校车位置图层与路线
+│   └── lib/features/auth/               # 家长免密 Passcode 认证
+├── web/                                 # 调度台 React + Vite 前端应用
+│   ├── .env.example                     # Web 端环境变量模板
+│   └── src/                             # 控制台页面、组件、AI Copilot 与状态管理
+├── server/                              # Go 后端 API 服务
+│   ├── cmd/server/main.go               # Web API 服务入口
+│   ├── cmd/mcp/main.go                  # Anthropic MCP 服务端程序入口
+│   ├── cmd/seed/main.go                 # 初始主数据与测试数据生成工具
+│   └── internal/                        # 认证、仓储层、ETA、邮件/短信服务、AI 调度引擎与 MCP 处理器
+├── docs/                                # 架构图、技术规范、工作流与 API 说明文档
+├── deploy/                              # Google Cloud Run 部署脚本与 Docker 配置
+├── pcyweb/                              # 承运商伙伴公共门户与 Web 视图
+├── design-demos/                        # UI/UX 原型设计与交互 Demo
+├── .env.example                         # 后端与全系统环境变量模板
+├── firestore.rules                      # Firestore 安全规则
+├── README.md                            # 英文主说明文档
+├── README.fr.md                         # 法语说明文档
+└── README.zh-CN.md                      # 中文说明文档
 ```
 
 ---

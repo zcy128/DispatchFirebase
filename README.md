@@ -216,30 +216,35 @@ The platform consists of a deeply integrated ecosystem of specialized applicatio
 
 ```text
 DispatchFirebase/
-├── driver_app/                      # Flutter app for bus drivers & monitors
+├── driver_app/                          # Flutter app for school & charter bus drivers and monitors
 │   ├── lib/
-│   │   ├── firebase_options.dart.example  # Firebase client configuration template
-│   │   ├── features/auth/                 # Authentication & attendance clock-in
-│   │   └── features/dispatch/             # Run shifts, student roster & stop check-in
+│   │   ├── core/                        # Network, auth interceptors & storage fallback
+│   │   ├── features/                    # Dispatch, timesheet, charter, chat, pretrip, route, auth
+│   │   └── firebase_options.dart.example# Firebase client configuration template
+│   ├── test/                            # Comprehensive P0-P2 unit test suites (49+ tests)
+│   ├── TESTING.md                       # Unit testing instructions (EN / FR / ZH)
 │   └── web/firebase-messaging-sw.js.example # Web Push notification ServiceWorker template
-├── parent_app/                      # Flutter app for parents (live bus tracker)
-│   ├── lib/core/api_client.dart     # Backend API client (supports --dart-define=API_BASE_URL)
-│   ├── lib/features/tracking/       # Map layers & real-time bus location tracking
-│   └── lib/features/auth/           # Passwordless parent phone/email passcode auth
-├── web/                             # React + Vite fleet operations desktop console
-│   ├── .env.example                 # Web console environment variables template
-│   └── src/                         # Fleet dashboard, views, components, AI Copilot & store
-├── server/                          # Go backend microservice
-│   ├── cmd/server/main.go           # Web API server entrypoint
-│   ├── cmd/mcp/main.go              # Anthropic MCP Server entrypoint
-│   ├── cmd/seed/main.go             # Initial master data and mock seeding CLI
-│   └── internal/                    # Auth, repository layer, ETA, email/SMS services, AI engine & MCP handler
-├── deploy/                          # Google Cloud Run deployment scripts
-├── .env.example                     # Root environment variables template
-├── firestore.rules                  # Firestore database security rules
-├── README.md                        # English documentation (Primary)
-├── README.fr.md                     # Documentation en français
-└── README.zh-CN.md                  # 中文使用说明
+├── parent_app/                          # Flutter app for parents (live bus tracker & arrival alerts)
+│   ├── lib/core/api_client.dart         # Backend API client (supports --dart-define=API_BASE_URL)
+│   ├── lib/features/tracking/           # Map layers & real-time bus location tracking
+│   └── lib/features/auth/               # Passwordless parent phone/email passcode auth
+├── web/                                 # React + Vite fleet operations desktop console
+│   ├── .env.example                     # Web console environment variables template
+│   └── src/                             # Fleet dashboard, views, components, AI Copilot & store
+├── server/                              # Go backend microservice
+│   ├── cmd/server/main.go               # Web API server entrypoint
+│   ├── cmd/mcp/main.go                  # Anthropic MCP Server entrypoint
+│   ├── cmd/seed/main.go                 # Initial master data and mock seeding CLI
+│   └── internal/                        # Auth, repository layer, ETA, email/SMS services, AI engine & MCP handler
+├── docs/                                # Technical specifications, architectural diagrams & API docs
+├── deploy/                              # Google Cloud Run deployment scripts & Docker configurations
+├── pcyweb/                              # Partner & carrier public web portal
+├── design-demos/                        # UI/UX interactive prototypes and mockups
+├── .env.example                         # Root environment variables template
+├── firestore.rules                      # Firestore database security rules
+├── README.md                            # English documentation (Primary)
+├── README.fr.md                         # Documentation en français
+└── README.zh-CN.md                      # 中文使用说明
 ```
 
 ---

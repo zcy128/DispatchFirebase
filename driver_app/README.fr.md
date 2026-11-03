@@ -24,6 +24,33 @@ Application mobile Flutter pour conducteurs d'autobus scolaires et nolisés (Dis
 
 ---
 
+## 📁 Structure du Répertoire
+
+```text
+driver_app/
+├── lib/
+│   ├── core/                        # Réseau, intercepteurs, thèmes & stockage hors ligne
+│   ├── features/                    # Modules fonctionnels métier
+│   │   ├── auth/                    # Authentification, session & mode démo
+│   │   ├── charter/                 # Voyages nolisés, séquences d'arrêts & calculs d'horaires
+│   │   ├── chat/                    # Canaux de discussion, pièces jointes & messagerie directe
+│   │   ├── defect/                  # Signalement des défectuosités du véhicule & historique
+│   │   ├── dispatch/                # Tournées journalières, pointage départ/retour
+│   │   ├── expense_reimbursement/   # Réclamations de dépenses & reçus justificatifs
+│   │   ├── forms/                   # Demandes de congés & formulaires
+│   │   ├── hazard_report/           # Signalement des dangers routiers et de sécurité
+│   │   ├── pretrip/                 # Inspection pré-départ (Règlement 199/07 de l'Ontario)
+│   │   ├── route/                   # Listes de route, horaires d'arrêts & présence des élèves
+│   │   ├── timesheet/               # Feuilles de temps bimensuelles & crédits fériés
+│   │   └── vehicle_signout/         # Sortie et retour de véhicule
+│   └── firebase_options.dart.example# Modèle de configuration Firebase client
+├── test/                            # Suites de tests unitaires automatisées P0-P2 (49+ tests)
+├── TESTING.md                       # Guide détaillé des tests unitaires (EN / FR / ZH)
+└── web/                             # Ressources Web & modèle de ServiceWorker
+```
+
+---
+
 ## 🧪 Guide des tests unitaires (Unit Testing)
 
 Ce projet dispose d'une suite de tests unitaires automatisée **légère, rapide et sans dépendance réseau externe**, couvrant les calculs métier fondamentaux, les feuilles de temps et la paie, l'inspection pré-départ réglementaire, l'interception de sécurité réseau et la résilience hors ligne.

@@ -216,30 +216,35 @@ La plateforme est structurée autour d'un écosystème d'applications dédiées,
 
 ```text
 DispatchFirebase/
-├── driver_app/                      # Application Flutter chauffeurs & accompagnateurs
+├── driver_app/                          # Application Flutter chauffeurs & accompagnateurs
 │   ├── lib/
-│   │   ├── firebase_options.dart.example  # Modèle de configuration Firebase client
-│   │   ├── features/auth/                 # Authentification & pointage de présence
-│   │   └── features/dispatch/             # Tournées, liste des élèves & arrêts
+│   │   ├── core/                        # Réseau, intercepteurs d'authentification & stockage
+│   │   ├── features/                    # Tournées, paie, nolisés, messagerie, inspection, sécurité
+│   │   └── firebase_options.dart.example# Modèle de configuration Firebase client
+│   ├── test/                            # Suites complètes de tests unitaires P0-P2 (49+ tests)
+│   ├── TESTING.md                       # Instructions de tests unitaires (EN / FR / ZH)
 │   └── web/firebase-messaging-sw.js.example # Modèle de ServiceWorker Web Push
-├── parent_app/                      # Application Flutter parents (suivi en direct)
-│   ├── lib/core/api_client.dart     # Client d'API backend (supporte --dart-define=API_BASE_URL)
-│   ├── lib/features/tracking/       # Couches cartographiques & suivi de position en direct
-│   └── lib/features/auth/           # Authentification sans mot de passe par code temporaire
-├── web/                             # Console de dispatch React + Vite
-│   ├── .env.example                 # Modèle de variables d'environnement web
-│   └── src/                         # Tableaux de bord, vues, composants, Copilote IA & gestion d'état
-├── server/                          # Microservices backend en Go
-│   ├── cmd/server/main.go           # Point d'entrée de l'API Web
-│   ├── cmd/mcp/main.go              # Point d'entrée du serveur MCP Anthropic
-│   ├── cmd/seed/main.go             # Outil de génération des données initiales
-│   └── internal/                    # Auth, couche de données, ETA, courriel/SMS, moteur IA & handlers MCP
-├── deploy/                          # Scripts de déploiement Google Cloud Run
-├── .env.example                     # Modèle de variables d'environnement globales
-├── firestore.rules                  # Règles de sécurité Firestore
-├── README.md                        # Documentation principale en anglais
-├── README.fr.md                     # Documentation en français
-└── README.zh-CN.md                  # Documentation en chinois simplifié
+├── parent_app/                          # Application Flutter parents (suivi en direct & alertes)
+│   ├── lib/core/api_client.dart         # Client d'API backend (supporte --dart-define=API_BASE_URL)
+│   ├── lib/features/tracking/           # Couches cartographiques & suivi de position en direct
+│   └── lib/features/auth/               # Authentification sans mot de passe par code temporaire
+├── web/                                 # Console de dispatch React + Vite
+│   ├── .env.example                     # Modèle de variables d'environnement web
+│   └── src/                             # Tableaux de bord, vues, composants, Copilote IA & gestion d'état
+├── server/                              # Microservices backend en Go
+│   ├── cmd/server/main.go               # Point d'entrée de l'API Web
+│   ├── cmd/mcp/main.go                  # Point d'entrée du serveur MCP Anthropic
+│   ├── cmd/seed/main.go                 # Outil de génération des données initiales
+│   └── internal/                        # Auth, couche de données, ETA, courriel/SMS, moteur IA & handlers MCP
+├── docs/                                # Spécifications techniques, diagrammes et documentation d'API
+├── deploy/                              # Scripts de déploiement Google Cloud Run & configurations Docker
+├── pcyweb/                              # Portail public des transporteurs partenaires
+├── design-demos/                        # Maquettes interactives et prototypes UI/UX
+├── .env.example                         # Modèle de variables d'environnement globales
+├── firestore.rules                      # Règles de sécurité Firestore
+├── README.md                            # Documentation principale en anglais
+├── README.fr.md                         # Documentation en français
+└── README.zh-CN.md                      # Documentation en chinois simplifié
 ```
 
 ---
