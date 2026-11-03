@@ -1940,7 +1940,7 @@ export const BiweeklyPayrollView: React.FC = () => {
         </div>
       )}
 
-      {/* 4 大双周 KPI 指标卡 */}
+      {/* Four biweekly payroll KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">

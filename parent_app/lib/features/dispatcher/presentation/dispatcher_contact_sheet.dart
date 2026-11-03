@@ -112,10 +112,18 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
         grade: widget.commute?.grade,
       );
       _channelId = channelData['id'] as String?;
-      if (_channelId != null) {
-        await _fetchMessages(initial: true);
-        _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _fetchMessages());
-      }
+      if (!mounted || _channelId == null) return;
+      await _fetchMessages(initial: true);
+      if (!mounted) return;
+      _pollTimer?.cancel();
+      _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (!mounted) {
+          _pollTimer?.cancel();
+          _pollTimer = null;
+          return;
+        }
+        _fetchMessages();
+      });
     } catch (e) {
       debugPrint('Error creating/joining parent chat channel: $e');
     } finally {

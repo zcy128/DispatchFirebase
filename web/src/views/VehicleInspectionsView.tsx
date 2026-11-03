@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Vehicle } from '../types/vehicle';
 import {
   VehicleInspectionRecord,
@@ -486,6 +487,31 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
     });
   }, [pmRecords, pmFilterTab, yardFilter, searchTerm]);
 
+  const inspectionTableRef = useRef<HTMLDivElement>(null);
+  const pmTableRef = useRef<HTMLDivElement>(null);
+  const inspectionVirtualizer = useVirtualizer({
+    count: filteredInspections.length,
+    getScrollElement: () => inspectionTableRef.current,
+    estimateSize: () => 88,
+    overscan: 8,
+  });
+  const inspectionRows = inspectionVirtualizer.getVirtualItems();
+  const inspectionPadTop = inspectionRows.length > 0 ? inspectionRows[0]?.start || 0 : 0;
+  const inspectionPadBottom = inspectionRows.length > 0
+    ? inspectionVirtualizer.getTotalSize() - (inspectionRows[inspectionRows.length - 1]?.end || 0)
+    : 0;
+  const pmVirtualizer = useVirtualizer({
+    count: filteredPMRecords.length,
+    getScrollElement: () => pmTableRef.current,
+    estimateSize: () => 96,
+    overscan: 8,
+  });
+  const pmRows = pmVirtualizer.getVirtualItems();
+  const pmPadTop = pmRows.length > 0 ? pmRows[0]?.start || 0 : 0;
+  const pmPadBottom = pmRows.length > 0
+    ? pmVirtualizer.getTotalSize() - (pmRows[pmRows.length - 1]?.end || 0)
+    : 0;
+
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Header & Jurisdiction Flag */}
@@ -941,7 +967,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div ref={inspectionTableRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)]">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 uppercase font-semibold">
@@ -968,7 +994,14 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredInspections.map((r) => {
+                    <>
+                    {inspectionPadTop > 0 && (
+                      <tr>
+                        <td style={{ height: `${inspectionPadTop}px`, padding: 0, border: 0 }} colSpan={8} />
+                      </tr>
+                    )}
+                    {inspectionRows.map((virtualRow) => {
+                      const r = filteredInspections[virtualRow.index];
                       const daysLeft = getDaysRemainingUntilEndOfMonth(r.legalExpiryDate);
                       const isExp = daysLeft < 0;
                       const isDue30 = daysLeft >= 0 && daysLeft <= 30;
@@ -1222,7 +1255,13 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                           </td>
                         </tr>
                       );
-                    })
+                    })}
+                    {inspectionPadBottom > 0 && (
+                      <tr>
+                        <td style={{ height: `${inspectionPadBottom}px`, padding: 0, border: 0 }} colSpan={8} />
+                      </tr>
+                    )}
+                    </>
                   )}
                 </tbody>
               </table>
@@ -1616,7 +1655,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div ref={pmTableRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)]">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 uppercase font-semibold">
@@ -1653,7 +1692,14 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredPMRecords.map((r) => {
+                    <>
+                    {pmPadTop > 0 && (
+                      <tr>
+                        <td style={{ height: `${pmPadTop}px`, padding: 0, border: 0 }} colSpan={6} />
+                      </tr>
+                    )}
+                    {pmRows.map((virtualRow) => {
+                      const r = filteredPMRecords[virtualRow.index];
                       const todayMs = Date.now();
                       const dueMs = new Date(r.nextDueDate + 'T23:59:59').getTime();
                       const daysRemaining = Math.ceil((dueMs - todayMs) / 86400000);
@@ -1843,7 +1889,13 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                           </td>
                         </tr>
                       );
-                    })
+                    })}
+                    {pmPadBottom > 0 && (
+                      <tr>
+                        <td style={{ height: `${pmPadBottom}px`, padding: 0, border: 0 }} colSpan={6} />
+                      </tr>
+                    )}
+                    </>
                   )}
                 </tbody>
               </table>

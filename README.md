@@ -225,9 +225,9 @@ DispatchFirebase/
 │   ├── TESTING.md                       # Unit testing instructions (EN / FR / ZH)
 │   └── web/firebase-messaging-sw.js.example # Web Push notification ServiceWorker template
 ├── parent_app/                          # Flutter app for parents (live bus tracker & arrival alerts)
-│   ├── lib/core/api_client.dart         # Backend API client (supports --dart-define=API_BASE_URL)
-│   ├── lib/features/tracking/           # Map layers & real-time bus location tracking
-│   └── lib/features/auth/               # Passwordless parent phone/email passcode auth
+│   ├── lib/                             # Map layers, BLoC state machine, bento cards & sheets
+│   ├── test/                            # Comprehensive P0-P2 unit & widget test suites (51 tests)
+│   └── TESTING.md                       # Parent app testing guide (EN / FR / ZH)
 ├── web/                                 # React + Vite fleet operations desktop console
 │   ├── .env.example                     # Web console environment variables template
 │   └── src/                             # Fleet dashboard, views, components, AI Copilot & store
@@ -236,7 +236,7 @@ DispatchFirebase/
 │   ├── cmd/mcp/main.go                  # Anthropic MCP Server entrypoint
 │   ├── cmd/seed/main.go                 # Initial master data and mock seeding CLI
 │   └── internal/                        # Auth, repository layer, ETA, email/SMS services, AI engine & MCP handler
-├── docs/                                # Technical specifications, architectural diagrams & API docs
+├── docs/                                # Technical specifications, testing guides (testing-guide.md) & manuals
 ├── deploy/                              # Google Cloud Run deployment scripts & Docker configurations
 ├── pcyweb/                              # Partner & carrier public web portal
 ├── design-demos/                        # UI/UX interactive prototypes and mockups
@@ -340,6 +340,9 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
 
 ## 🛠️ Operations & Data Lifecycle Guides
 
+- 🧪 **[Monorepo Master Testing Guide & Browser QA Agent](docs/testing-guide.md#english)** ([Français](docs/testing-guide.md#français) | [简体中文](docs/testing-guide.md#简体中文)):
+  - **Single Source of Truth** for testing across the entire monorepo: Web console (79 Vitest tests), Driver mobile app (49 Flutter tests), Parent tracker app (51 Flutter tests), and autonomous browser E2E QA testing ([`.agents/agents/qa-tester.md`](.agents/agents/qa-tester.md)).
+  - Direct links to subsystem test guides: [Web Unit Tests](docs/unit-test-instructions.md), [Driver App Testing](driver_app/TESTING.md), and [Parent App Testing](parent_app/TESTING.md).
 - 📘 **[Firestore TTL & Cloud Scheduler Archiving Guide](docs/firestore-ttl-cloud-scheduler-instructions.md#english)** ([Français](docs/firestore-ttl-cloud-scheduler-instructions.md#français) | [简体中文](docs/firestore-ttl-cloud-scheduler-instructions.md#简体中文)):
   - Instructions for configuring Firestore Time-to-Live (TTL) in Google Cloud Console.
   - Setting up the single unified Cloud Scheduler job (`/api/admin/archive/sync-all`) to archive shifts, logs, and time-off requests to BigQuery with minimal cloud cost.

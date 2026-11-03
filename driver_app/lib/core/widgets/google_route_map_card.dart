@@ -193,6 +193,7 @@ class _GoogleRouteMapCardState extends State<GoogleRouteMapCard> {
   @override
   void dispose() {
     _telematicsTimer?.cancel();
+    _mapController.dispose();
     super.dispose();
   }
 

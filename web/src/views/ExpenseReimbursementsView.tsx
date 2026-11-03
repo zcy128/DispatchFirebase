@@ -67,7 +67,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
   const [approvalNotes, setApprovalNotes] = useState<string>('');
   const [reviewError, setReviewError] = useState<string | null>(null);
 
-  // 1. 超过6个月是bigquery冷数据
+  // Claims older than six months are BigQuery cold data.
   const [timeRange, setTimeRange] = useState<'6months' | 'all'>('6months');
 
   const isArchivedDate = (claimDate?: string) => {
@@ -147,7 +147,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
     return { total, pending, approved, rejected, approvedDollars, pendingDollars };
   }, [claims]);
 
-  // 3. 按照日期逆序 (Newest claim date first)
+  // Newest claim date first.
   const filteredClaims = useMemo(() => {
     const list = claims.filter((c) => {
       if (statusFilter !== 'all' && c.status !== statusFilter) {
@@ -186,7 +186,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
     });
   }, [claims, statusFilter, searchQuery]);
 
-  // 2. 虚拟滚动 (Virtual Scrolling for large expense roster)
+  // Virtual scrolling for a large expense roster.
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
     count: filteredClaims.length,
@@ -414,7 +414,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ─── Claims Table (2. 虚拟滚动) ──────────────────────────────────────────── */}
+      {/* Claims table with virtual scrolling. */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
         <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] min-h-[350px]">
           <table className="w-full text-left text-sm">

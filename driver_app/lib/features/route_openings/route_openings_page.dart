@@ -2197,7 +2197,7 @@ class _RouteOpeningsPageState extends State<RouteOpeningsPage> {
           },
         );
       },
-    );
+    ).whenComplete(noteController.dispose);
   }
 
   Future<void> _submitApplication({

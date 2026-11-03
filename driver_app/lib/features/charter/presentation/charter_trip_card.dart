@@ -219,7 +219,10 @@ class _CharterTripCardState extends State<CharterTripCard> {
 
   Future<void> _handleCheckOut() async {
     final commentsCtrl = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final bool confirmed;
+    final String comments;
+    try {
+      confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Row(
@@ -264,9 +267,13 @@ class _CharterTripCardState extends State<CharterTripCard> {
           ),
         ],
       ),
-    );
+    ) ?? false;
+      comments = commentsCtrl.text.trim();
+    } finally {
+      commentsCtrl.dispose();
+    }
 
-    if (confirmed != true) return;
+    if (!confirmed || !mounted) return;
 
     setState(() => _isProcessingAction = true);
     try {
@@ -276,7 +283,7 @@ class _CharterTripCardState extends State<CharterTripCard> {
         isDriver: _isDriverRole,
         employeeId: widget.driverId,
         employeeName: widget.username,
-        comments: commentsCtrl.text.trim(),
+        comments: comments,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

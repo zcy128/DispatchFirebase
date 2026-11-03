@@ -41,10 +41,10 @@ import { StudentService, calculateStudentStats } from './services/studentService
 import { SchoolService, calculateSchoolStats } from './services/schoolService';
 import { RouteService, calculateRouteStats } from './services/routeService';
 import { VehicleService, calculateVehicleStats } from './services/vehicleService';
-import { Employee, DashboardStats } from './types/employee';
+import { Employee, DashboardStats, UserRole } from './types/employee';
 import { Student, StudentStats } from './types/student';
 import { School, SchoolBoard } from './types/school';
-import { BusRoute, RouteStats } from './types/route';
+import { AssignRouteCrewPayload, BusRoute, RouteStats } from './types/route';
 import { Vehicle, VehicleStats } from './types/vehicle';
 import { Yard } from './types/yard';
 import { YardListView } from './views/YardListView';
@@ -559,7 +559,7 @@ export const AppContent: React.FC = () => {
     setSelectedEmployee(null);
   };
 
-  const handleQuickReassignRole = async (employeeId: string, newRole: any) => {
+  const handleQuickReassignRole = async (employeeId: string, newRole: UserRole) => {
     const emp = employees.find((e) => e.id === employeeId || e.employeeNumber === employeeId);
     if (!emp) return;
     const updated = await EmployeeService.update(emp.id, { role: newRole });
@@ -719,7 +719,7 @@ export const AppContent: React.FC = () => {
     setIsRouteAssignModalOpen(true);
   };
 
-  const handleSaveRouteCrew = async (routeId: string, payload: any) => {
+  const handleSaveRouteCrew = async (routeId: string, payload: AssignRouteCrewPayload) => {
     const updated = await RouteService.assignCrew(routeId, payload);
     setRoutes((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
     if (selectedRoute && selectedRoute.id === updated.id) {

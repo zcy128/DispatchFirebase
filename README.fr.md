@@ -225,9 +225,9 @@ DispatchFirebase/
 │   ├── TESTING.md                       # Instructions de tests unitaires (EN / FR / ZH)
 │   └── web/firebase-messaging-sw.js.example # Modèle de ServiceWorker Web Push
 ├── parent_app/                          # Application Flutter parents (suivi en direct & alertes)
-│   ├── lib/core/api_client.dart         # Client d'API backend (supporte --dart-define=API_BASE_URL)
-│   ├── lib/features/tracking/           # Couches cartographiques & suivi de position en direct
-│   └── lib/features/auth/               # Authentification sans mot de passe par code temporaire
+│   ├── lib/                             # Couches cartographiques, BLoC, cartes Bento & volets
+│   ├── test/                            # Suites de tests unitaires et de widgets P0-P2 (51 tests)
+│   └── TESTING.md                       # Guide des tests de l'app parents (EN / FR / ZH)
 ├── web/                                 # Console de dispatch React + Vite
 │   ├── .env.example                     # Modèle de variables d'environnement web
 │   └── src/                             # Tableaux de bord, vues, composants, Copilote IA & gestion d'état
@@ -236,7 +236,7 @@ DispatchFirebase/
 │   ├── cmd/mcp/main.go                  # Point d'entrée du serveur MCP Anthropic
 │   ├── cmd/seed/main.go                 # Outil de génération des données initiales
 │   └── internal/                        # Auth, couche de données, ETA, courriel/SMS, moteur IA & handlers MCP
-├── docs/                                # Spécifications techniques, diagrammes et documentation d'API
+├── docs/                                # Spécifications, guides de tests (testing-guide.md) & manuels
 ├── deploy/                              # Scripts de déploiement Google Cloud Run & configurations Docker
 ├── pcyweb/                              # Portail public des transporteurs partenaires
 ├── design-demos/                        # Maquettes interactives et prototypes UI/UX
@@ -339,6 +339,9 @@ flutter build web --dart-define=API_BASE_URL=https://votre-domaine-api.com
 
 ## 🛠️ Guides d'Exploitation & de Cycle de Vie des Données
 
+- 🧪 **[Guide Principal des Tests du Monorepo et Agent QA](docs/testing-guide.md#français)** ([English](docs/testing-guide.md#english) | [简体中文](docs/testing-guide.md#简体中文)) :
+  - **Source Unique de Vérité** pour les tests de tout le projet : console Web (79 tests Vitest), application mobile chauffeur (49 tests Flutter), application de suivi parents (51 tests Flutter) et agent autonome de test QA sur navigateur ([`.agents/agents/qa-tester.md`](.agents/agents/qa-tester.md)).
+  - Liens directs vers les guides spécialisés : [Tests unitaires Web](docs/unit-test-instructions.md), [Guide de tests Chauffeur](driver_app/TESTING.fr.md) et [Guide de tests Parents](parent_app/TESTING.fr.md).
 - 📘 **[Guide d'Archivage Firestore TTL & Cloud Scheduler](docs/firestore-ttl-cloud-scheduler-instructions.md#français)** ([English](docs/firestore-ttl-cloud-scheduler-instructions.md#english) | [简体中文](docs/firestore-ttl-cloud-scheduler-instructions.md#简体中文)) :
   - Configuration du Time-to-Live (TTL) Firestore dans Google Cloud Console.
   - Mise en place de la tâche planifiée Cloud Scheduler unique (`/api/admin/archive/sync-all`) pour archiver les services, journaux d'audit et congés vers BigQuery au coût le plus bas.

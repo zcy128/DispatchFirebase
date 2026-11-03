@@ -69,6 +69,20 @@ import { logDispatchAction } from '../utils/dispatchLogger';
 
 const DISPATCH_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+function DispatchLiveClock() {
+  const [label, setLabel] = useState(() => getCurrentHHmm());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const next = getCurrentHHmm();
+      setLabel((prev) => (prev === next ? prev : next));
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <>Live {label}</>;
+}
+
 interface DispatchWorkbenchViewProps {
   employees: Employee[];
   vehicles: Vehicle[];
@@ -98,11 +112,12 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
   const [currentTimeStr, setCurrentTimeStr] = useState<string>(() => getCurrentHHmm());
   const isToday = selectedDate === getLocalTodayString();
 
-  // Dynamic 15-second in-memory clock ticker (zero Firestore writes)
+  // Refresh lateness once per minute. The visible badge keeps its own clock.
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentTimeStr(getCurrentHHmm());
-    }, 15000);
+      const next = getCurrentHHmm();
+      setCurrentTimeStr((prev) => (prev === next ? prev : next));
+    }, 60000);
     return () => clearInterval(timer);
   }, []);
 
@@ -745,7 +760,7 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
                 title="Dynamic auto-refreshing ticker every 15s"
               >
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Live {currentTimeStr}
+                <DispatchLiveClock />
               </span>
             )}
           </div>

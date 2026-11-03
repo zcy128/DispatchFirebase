@@ -790,7 +790,7 @@ export function getPagePermission(
   if (role === 'admin') return 'readwrite';
 
   // Check specific override passed directly or from user record
-  const overrides = customOverrides || user.overrides || (user as any).pagePermissions;
+  const overrides = customOverrides || user.overrides || user.pagePermissions;
   if (overrides && overrides[pageId]) {
     const overrideVal = overrides[pageId];
     if (overrideVal === 'readwrite' || overrideVal === 'readonly' || overrideVal === 'none') {

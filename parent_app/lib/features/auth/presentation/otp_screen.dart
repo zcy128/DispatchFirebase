@@ -123,8 +123,9 @@ class _OtpScreenState extends State<OtpScreen> {
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: Colors.amber.shade300),
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          child: Wrap(
+                            alignment: WrapAlignment.center,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Icon(Icons.bolt_rounded, size: 18, color: Colors.amber.shade800),
                               const SizedBox(width: 8),
@@ -186,8 +187,9 @@ class _OtpScreenState extends State<OtpScreen> {
                   const SizedBox(height: 16),
 
                   // Resend / Back
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       TextButton(
                         onPressed: () {
@@ -214,3 +216,5 @@ class _OtpScreenState extends State<OtpScreen> {
     );
   }
 }
+
+
