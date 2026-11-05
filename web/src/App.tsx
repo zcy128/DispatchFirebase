@@ -1,26 +1,18 @@
-import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
 import { useAuth } from './contexts/AuthContext';
 import { Header } from './components/common/Header';
 import { Sidebar, NavTab } from './components/common/Sidebar';
 import { DashboardView } from './views/DashboardView';
-import { EmployeeListView } from './views/EmployeeListView';
 import { StudentListView } from './views/StudentListView';
-import { RouteListView } from './views/RouteListView';
-import { StagingRouteListView } from './views/StagingRouteListView';
 import { VehicleListView } from './views/VehicleListView';
 import { ComplianceView } from './views/ComplianceView';
-import { SettingsView } from './views/SettingsView';
 import { ExternalSyncView } from './views/ExternalSyncView';
 import { LoginView } from './views/LoginView';
-import { EmployeeDetailDrawer } from './components/employees/EmployeeDetailDrawer';
-import { EmployeeModal } from './components/employees/EmployeeModal';
 import { StudentDetailDrawer } from './components/students/StudentDetailDrawer';
 import { StudentModal } from './components/students/StudentModal';
 import { RouteDetailDrawer } from './components/routes/RouteDetailDrawer';
 import { VehicleDetailDrawer } from './components/vehicles/VehicleDetailDrawer';
 import { VehicleModal } from './components/vehicles/VehicleModal';
-import { DispatchDailyPayrollTab } from './components/payroll/DispatchDailyPayrollTab';
-
 const SchoolListView = React.lazy(() => import('./views/SchoolListView').then((m) => ({ default: m.SchoolListView })));
 const SchoolCalendarView = React.lazy(() => import('./views/SchoolCalendarView').then((m) => ({ default: m.SchoolCalendarView })));
 const PayrollRateView = React.lazy(() => import('./views/PayrollRateView').then((m) => ({ default: m.PayrollRateView })));
@@ -30,6 +22,18 @@ const RoleManagementView = React.lazy(() => import('./views/RoleManagementView')
 const CompanyContactsView = React.lazy(() => import('./views/CompanyContactsView').then((m) => ({ default: m.CompanyContactsView })));
 const LoginLogsView = React.lazy(() => import('./views/LoginLogsView').then((m) => ({ default: m.LoginLogsView })));
 const AuditLogsView = React.lazy(() => import('./views/AuditLogsView').then((m) => ({ default: m.AuditLogsView })));
+const SettingsView = React.lazy(() => import('./views/SettingsView').then((m) => ({ default: m.SettingsView })));
+const DispatchWorkbenchView = React.lazy(() => import('./views/DispatchWorkbenchView').then((m) => ({ default: m.DispatchWorkbenchView })));
+const RouteListView = React.lazy(() => import('./views/RouteListView').then((m) => ({ default: m.RouteListView })));
+const StagingRouteListView = React.lazy(() => import('./views/StagingRouteListView').then((m) => ({ default: m.StagingRouteListView })));
+const DispatchDailyPayrollTab = React.lazy(() => import('./components/payroll/DispatchDailyPayrollTab').then((m) => ({ default: m.DispatchDailyPayrollTab })));
+const CharterManagementView = React.lazy(() => import('./views/CharterManagementView').then((m) => ({ default: m.CharterManagementView })));
+const EmployeeListView = React.lazy(() => import('./views/EmployeeListView').then((m) => ({ default: m.EmployeeListView })));
+const EmployeeDetailDrawer = React.lazy(() => import('./components/employees/EmployeeDetailDrawer').then((m) => ({ default: m.EmployeeDetailDrawer })));
+const EmployeeModal = React.lazy(() => import('./components/employees/EmployeeModal').then((m) => ({ default: m.EmployeeModal })));
+const TimeOffView = React.lazy(() => import('./views/TimeOffView').then((m) => ({ default: m.TimeOffView })));
+const VehicleInspectionsView = React.lazy(() => import('./views/VehicleInspectionsView').then((m) => ({ default: m.VehicleInspectionsView })));
+const AICopilotDrawer = React.lazy(() => import('./components/ai/AICopilotDrawer').then((m) => ({ default: m.AICopilotDrawer })));
 import { SchoolDetailDrawer } from './components/schools/SchoolDetailDrawer';
 import { SchoolModal } from './components/schools/SchoolModal';
 import { SchoolBoardModal } from './components/schools/SchoolBoardModal';
@@ -55,12 +59,13 @@ import { SchoolCalendar } from './types/calendar';
 import { PayrollService } from './services/payrollService';
 import { BusRoutePayrollRate, SchoolBoardBaseRatesDTO } from './types/payroll';
 import { CompanyContact, CompanyContactsService } from './services/companyContactsService';
-import { DispatchWorkbenchView } from './views/DispatchWorkbenchView';
-import { CharterManagementView } from './views/CharterManagementView';
-import { DispatchChangeLogView } from './views/DispatchChangeLogView';
-import { TemporaryAssignmentsView } from './views/TemporaryAssignmentsView';
+const DispatchChangeLogView = React.lazy(() =>
+  import('./views/DispatchChangeLogView').then((m) => ({ default: m.DispatchChangeLogView }))
+);
+const TemporaryAssignmentsView = React.lazy(() =>
+  import('./views/TemporaryAssignmentsView').then((m) => ({ default: m.TemporaryAssignmentsView }))
+);
 import { AssignmentTrackingView } from './views/AssignmentTrackingView';
-import { TimeOffView } from './views/TimeOffView';
 import { TrainingView } from './views/TrainingView';
 import { DefectReportsView } from './views/DefectReportsView';
 import { StudentIncidentsView } from './views/StudentIncidentsView';
@@ -69,7 +74,6 @@ import { ExpenseReimbursementsView } from './views/ExpenseReimbursementsView';
 import { HazardReportsView } from './views/HazardReportsView';
 import { RouteAssessmentsView } from './views/RouteAssessmentsView';
 import { VehicleSignoutView } from './views/VehicleSignoutView';
-import { VehicleInspectionsView } from './views/VehicleInspectionsView';
 import { PreTripInspectionsView } from './views/PreTripInspectionsView';
 import { BottomNav } from './components/common/BottomNav';
 import { MobileDrawer } from './components/common/MobileDrawer';
@@ -77,7 +81,6 @@ import { getLocalTodayString } from './utils/dateUtils';
 import { EntityOperationLogService } from './services/entityOperationLogService';
 import { EntityOperationActor, EntityFieldDiff } from './types/entityOperationLog';
 import { ChatDrawer } from './components/chat/ChatDrawer';
-import { AICopilotDrawer } from './components/ai/AICopilotDrawer';
 import { useChatNotifications } from './hooks/useChatNotifications';
 import { MessageSquare, X, ArrowRight } from 'lucide-react';
 import { CreateParentChannelPayload } from './types/chat';
@@ -98,6 +101,7 @@ export const AppContent: React.FC = () => {
     }
     return false;
   });
+  const [aiCopilotMounted, setAiCopilotMounted] = useState<boolean>(isAICopilotOpen);
   const [chatInitialTargetUserId, setChatInitialTargetUserId] = useState<string | null>(null);
   const [chatInitialParent, setChatInitialParent] = useState<CreateParentChannelPayload | null>(null);
 
@@ -115,6 +119,7 @@ export const AppContent: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
         e.preventDefault();
+        setAiCopilotMounted(true);
         setIsAICopilotOpen((prev) => !prev);
       }
     };
@@ -134,6 +139,8 @@ export const AppContent: React.FC = () => {
   );
 
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const employeesRef = useRef(employees);
+  employeesRef.current = employees;
   const [stats, setStats] = useState<DashboardStats>({
     totalEmployees: 0,
     activeEmployees: 0,
@@ -203,6 +210,27 @@ export const AppContent: React.FC = () => {
     return map;
   }, [students]);
 
+  const openDispatchChangeLog = useCallback((date?: string) => {
+    if (date) setDispatchLogDate(date);
+    setCurrentTab('dispatch_log');
+  }, []);
+  const openTemporaryAssignments = useCallback(() => {
+    setCurrentTab('temporary_assignments');
+  }, []);
+  const openStudentAbsences = useCallback(() => {
+    setCurrentTab('student_absences');
+  }, []);
+  const openPayrollFinanceLog = useCallback(() => {
+    setCurrentTab('payroll_dept_log');
+  }, []);
+  const openDispatchPayroll = useCallback(() => {
+    setCurrentTab('dispatch_payroll');
+  }, []);
+  const messageDriverFromDispatch = useCallback((driverId: string) => {
+    setChatInitialTargetUserId(driverId);
+    setIsChatOpen(true);
+  }, []);
+
   // Top-level permanent caches
   const [schoolCalendars, setSchoolCalendars] = useState<SchoolCalendar[]>([]);
   const [payrollBoardRates, setPayrollBoardRates] = useState<SchoolBoardBaseRatesDTO[]>(() =>
@@ -224,7 +252,7 @@ export const AppContent: React.FC = () => {
   const [assigningRoute, setAssigningRoute] = useState<BusRoute | null>(null);
 
   // Manual fallback sync (only triggered if user explicitly clicks "Sync Cloud")
-  const handleManualSync = async () => {
+  const handleManualSync = useCallback(async () => {
     setDataLoading(true);
     try {
       const [empList, dashboardStats] = await Promise.all([
@@ -238,7 +266,7 @@ export const AppContent: React.FC = () => {
     } finally {
       setDataLoading(false);
     }
-  };
+  }, []);
 
   const handleStudentsLoaded = React.useCallback((loadedStudents: Student[]) => {
     setStudents((prev) => {
@@ -274,7 +302,7 @@ export const AppContent: React.FC = () => {
     }
   };
 
-  const handleRouteRefresh = async () => {
+  const handleRouteRefresh = useCallback(async () => {
     try {
       const rtList = await RouteService.list();
       setRoutes(rtList);
@@ -282,7 +310,17 @@ export const AppContent: React.FC = () => {
     } catch (err) {
       console.error("Route manual sync error:", err);
     }
-  };
+  }, []);
+
+  const handleRouteUpdated = useCallback((updatedRoute: BusRoute) => {
+    setRoutes((prev) => prev.map((route) => (route.id === updatedRoute.id ? updatedRoute : route)));
+    setSelectedRoute((current) => (current && current.id === updatedRoute.id ? updatedRoute : current));
+  }, []);
+
+  const handleOpenAssignCrew = useCallback((route: BusRoute) => {
+    setAssigningRoute(route);
+    setIsRouteAssignModalOpen(true);
+  }, []);
 
   const handleVehicleRefresh = async () => {
     try {
@@ -523,6 +561,60 @@ export const AppContent: React.FC = () => {
     }
   }, [currentUser, currentTab]);
 
+  const closeEmployeeDrawer = useCallback(() => setSelectedEmployee(null), []);
+  const closeEmployeeModal = useCallback(() => setIsModalOpen(false), []);
+
+  const handleCreateEmployee = useCallback(() => {
+    setEditingEmployee(null);
+    setEmployeeModalInitialTab('profile');
+    setIsModalOpen(true);
+  }, []);
+
+  const handleEditEmployee = useCallback((
+    emp: Employee,
+    initialTab: 'profile' | 'permissions' | 'contact' | 'license' | 'emergency' = 'profile'
+  ) => {
+    setEditingEmployee(emp);
+    setEmployeeModalInitialTab(initialTab);
+    setIsModalOpen(true);
+    setSelectedEmployee(null);
+  }, []);
+
+  const handleQuickReassignRole = useCallback(async (employeeId: string, newRole: UserRole) => {
+    const emp = employeesRef.current.find((e) => e.id === employeeId || e.employeeNumber === employeeId);
+    if (!emp) return;
+    const updated = await EmployeeService.update(emp.id, { role: newRole });
+    setEmployees((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+  }, []);
+
+  const handleSaveEmployee = useCallback(async (data: Partial<Employee>) => {
+    if (editingEmployee) {
+      const updated = await EmployeeService.update(editingEmployee.id, data);
+      setEmployees((prev) =>
+        prev.map((e) =>
+          e.id === updated.id || (updated.employeeNumber && e.employeeNumber === updated.employeeNumber)
+            ? updated
+            : e
+        )
+      );
+      return;
+    }
+    const created = await EmployeeService.create(data);
+    setEmployees((prev) => {
+      const withoutNew = prev.filter(
+        (e) => e.id !== created.id && (!created.employeeNumber || e.employeeNumber !== created.employeeNumber)
+      );
+      return [created, ...withoutNew];
+    });
+  }, [editingEmployee]);
+
+  const handleDeleteEmployee = useCallback(async (id: string) => {
+    if (!window.confirm(`Are you sure you want to delete employee #${id}?`)) return;
+    await EmployeeService.delete(id);
+    setEmployees((prev) => prev.filter((e) => e.id !== id && e.employeeNumber !== id));
+    setSelectedEmployee(null);
+  }, []);
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-100">
@@ -542,63 +634,6 @@ export const AppContent: React.FC = () => {
       </>
     );
   }
-
-  const handleCreateEmployee = () => {
-    setEditingEmployee(null);
-    setEmployeeModalInitialTab('profile');
-    setIsModalOpen(true);
-  };
-
-  const handleEditEmployee = (
-    emp: Employee,
-    initialTab: 'profile' | 'permissions' | 'contact' | 'license' | 'emergency' = 'profile'
-  ) => {
-    setEditingEmployee(emp);
-    setEmployeeModalInitialTab(initialTab);
-    setIsModalOpen(true);
-    setSelectedEmployee(null);
-  };
-
-  const handleQuickReassignRole = async (employeeId: string, newRole: UserRole) => {
-    const emp = employees.find((e) => e.id === employeeId || e.employeeNumber === employeeId);
-    if (!emp) return;
-    const updated = await EmployeeService.update(emp.id, { role: newRole });
-    setEmployees((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
-    const newStats = await EmployeeService.getStats();
-    setStats(newStats);
-  };
-
-  const handleSaveEmployee = async (data: Partial<Employee>) => {
-    if (editingEmployee) {
-      const updated = await EmployeeService.update(editingEmployee.id, data);
-      setEmployees((prev) =>
-        prev.map((e) =>
-          e.id === updated.id || (updated.employeeNumber && e.employeeNumber === updated.employeeNumber)
-            ? updated
-            : e
-        )
-      );
-    } else {
-      const created = await EmployeeService.create(data);
-      setEmployees((prev) => {
-        const withoutNew = prev.filter(
-          (e) => e.id !== created.id && (!created.employeeNumber || e.employeeNumber !== created.employeeNumber)
-        );
-        return [created, ...withoutNew];
-      });
-    }
-    const newStats = await EmployeeService.getStats();
-    setStats(newStats);
-  };
-
-  const handleDeleteEmployee = async (id: string) => {
-    if (!window.confirm(`Are you sure you want to delete employee #${id}?`)) return;
-    await EmployeeService.delete(id);
-    setEmployees(employees.filter((e) => e.id !== id && e.employeeNumber !== id));
-    setSelectedEmployee(null);
-    const newStats = await EmployeeService.getStats();
-    setStats(newStats);
-  };
 
   const handleCreateVehicle = () => {
     setEditingVehicle(null);
@@ -712,11 +747,6 @@ export const AppContent: React.FC = () => {
       console.error('Delete vehicle failed:', err);
       alert(`Failed to delete vehicle: ${err.message || 'Unknown error'}`);
     }
-  };
-
-  const handleOpenAssignCrew = (route: BusRoute) => {
-    setAssigningRoute(route);
-    setIsRouteAssignModalOpen(true);
   };
 
   const handleSaveRouteCrew = async (routeId: string, payload: AssignRouteCrewPayload) => {
@@ -916,7 +946,10 @@ export const AppContent: React.FC = () => {
           clearUnread();
         }}
         chatUnreadCount={unreadCount}
-        onOpenAICopilot={() => setIsAICopilotOpen((prev) => !prev)}
+        onOpenAICopilot={() => {
+          setAiCopilotMounted(true);
+          setIsAICopilotOpen((prev) => !prev);
+        }}
       />
 
       <div className="flex flex-1 min-h-0 overflow-hidden relative">
@@ -1020,20 +1053,10 @@ export const AppContent: React.FC = () => {
               vehicles={vehicles}
               yards={yards}
               studentsMap={studentsMap}
-              onNavigateToChangeLog={(date) => {
-                if (date) setDispatchLogDate(date);
-                setCurrentTab('dispatch_log');
-              }}
-              onNavigateToTemporaryAssignments={() => {
-                setCurrentTab('temporary_assignments');
-              }}
-              onNavigateToAbsences={() => {
-                setCurrentTab('student_absences');
-              }}
-              onMessageDriver={(driverId) => {
-                setChatInitialTargetUserId(driverId);
-                setIsChatOpen(true);
-              }}
+              onNavigateToChangeLog={openDispatchChangeLog}
+              onNavigateToTemporaryAssignments={openTemporaryAssignments}
+              onNavigateToAbsences={openStudentAbsences}
+              onMessageDriver={messageDriverFromDispatch}
             />
           )}
 
@@ -1042,24 +1065,21 @@ export const AppContent: React.FC = () => {
               employees={employees}
               vehicles={vehicles}
               schools={schools}
-              onNavigateToPayroll={() => {
-                setCurrentTab('dispatch_payroll');
-              }}
+              onNavigateToPayroll={openDispatchPayroll}
             />
           )}
 
           {currentTab === 'dispatch_payroll' && (
             <div className="p-4 md:p-6 max-w-7xl mx-auto">
               <DispatchDailyPayrollTab
-                onNavigateToFinanceLog={() => {
-                  setCurrentTab('payroll_dept_log');
-                }}
+                onNavigateToFinanceLog={openPayrollFinanceLog}
               />
             </div>
           )}
 
           {currentTab === 'dispatch_log' && (
             <DispatchChangeLogView
+              key={dispatchLogDate}
               initialDate={dispatchLogDate}
               onNavigateToDispatch={() => {
                 setCurrentTab('dispatch');
@@ -1084,9 +1104,7 @@ export const AppContent: React.FC = () => {
               employees={employees}
               routes={routes}
               vehicles={vehicles}
-              onNavigateToTemporaryAssignments={() => {
-                setCurrentTab('temporary_assignments');
-              }}
+              onNavigateToTemporaryAssignments={openTemporaryAssignments}
             />
           )}
 
@@ -1125,17 +1143,15 @@ export const AppContent: React.FC = () => {
               routes={routes}
               stats={routeStats}
               studentsMap={studentsMap}
+              schools={schools}
+              yards={yards}
+              employees={employees}
               loading={dataLoading}
               onSelectRoute={setSelectedRoute}
               onSelectStudent={setSelectedStudent}
               onAssignCrew={handleOpenAssignCrew}
               onRefresh={handleRouteRefresh}
-              onRouteUpdated={(updatedRoute) => {
-                setRoutes((prev) => prev.map((r) => r.id === updatedRoute.id ? updatedRoute : r));
-                if (selectedRoute && selectedRoute.id === updatedRoute.id) {
-                  setSelectedRoute(updatedRoute);
-                }
-              }}
+              onRouteUpdated={handleRouteUpdated}
             />
           )}
 
@@ -1192,7 +1208,11 @@ export const AppContent: React.FC = () => {
           )}
 
           {currentTab === 'biweekly_payroll' && (
-            <BiweeklyPayrollView />
+            <BiweeklyPayrollView
+              boards={boards}
+              employees={employees}
+              routes={routes}
+            />
           )}
 
           {currentTab === 'payroll_dept_log' && (
@@ -1241,12 +1261,16 @@ export const AppContent: React.FC = () => {
       </div>
 
       {/* Slide-over Drawer for employee details */}
-      <EmployeeDetailDrawer
-        employee={selectedEmployee}
-        onClose={() => setSelectedEmployee(null)}
-        onEdit={handleEditEmployee}
-        onDelete={handleDeleteEmployee}
-      />
+      {selectedEmployee && (
+        <Suspense fallback={null}>
+          <EmployeeDetailDrawer
+            employee={selectedEmployee}
+            onClose={closeEmployeeDrawer}
+            onEdit={handleEditEmployee}
+            onDelete={handleDeleteEmployee}
+          />
+        </Suspense>
+      )}
 
       {/* Slide-over Drawer for student details (links school in real-time) */}
       <StudentDetailDrawer
@@ -1267,10 +1291,7 @@ export const AppContent: React.FC = () => {
           setSelectedStudent(stu);
         }}
         onAssignCrew={handleOpenAssignCrew}
-        onRouteUpdated={(updatedRoute) => {
-          setSelectedRoute(updatedRoute);
-          setRoutes((prev) => prev.map((r) => r.id === updatedRoute.id ? updatedRoute : r));
-        }}
+        onRouteUpdated={handleRouteUpdated}
       />
 
       {/* Slide-over Drawer for vehicle fleet details */}
@@ -1290,13 +1311,17 @@ export const AppContent: React.FC = () => {
       />
 
       {/* Modal for creating / editing employee records */}
-      <EmployeeModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveEmployee}
-        initialData={editingEmployee}
-        initialTab={employeeModalInitialTab}
-      />
+      {isModalOpen && (
+        <Suspense fallback={null}>
+          <EmployeeModal
+            isOpen
+            onClose={closeEmployeeModal}
+            onSave={handleSaveEmployee}
+            initialData={editingEmployee}
+            initialTab={employeeModalInitialTab}
+          />
+        </Suspense>
+      )}
 
       {/* Modal for creating / editing vehicle records */}
       <VehicleModal
@@ -1309,15 +1334,17 @@ export const AppContent: React.FC = () => {
       />
 
       {/* Modal for assigning Route Crew, Vehicle & Attendant */}
-      <RouteAssignModal
-        isOpen={isRouteAssignModalOpen}
-        onClose={() => setIsRouteAssignModalOpen(false)}
-        route={assigningRoute}
-        employees={employees}
-        vehicles={vehicles}
-        allRoutes={routes}
-        onSave={handleSaveRouteCrew}
-      />
+      {isRouteAssignModalOpen && assigningRoute && (
+        <RouteAssignModal
+          isOpen
+          onClose={() => setIsRouteAssignModalOpen(false)}
+          route={assigningRoute}
+          employees={employees}
+          vehicles={vehicles}
+          allRoutes={routes}
+          onSave={handleSaveRouteCrew}
+        />
+      )}
 
       {/* Slide-over Drawer for school details */}
       <SchoolDetailDrawer
@@ -1423,20 +1450,23 @@ export const AppContent: React.FC = () => {
         onClearInitialParentMetadata={() => setChatInitialParent(null)}
       />
 
-      {/* AI Dispatch Copilot Drawer */}
-      <AICopilotDrawer
-        isOpen={isAICopilotOpen}
-        onClose={() => setIsAICopilotOpen(false)}
-        currentDate={dispatchLogDate}
-        onShiftUpdated={() => {
-          handleRouteRefresh();
-        }}
-        onNavigateToChangeLog={(date) => {
-          if (date) setDispatchLogDate(date);
-          setCurrentTab('dispatch_log');
-          setIsAICopilotOpen(false);
-        }}
-      />
+      {aiCopilotMounted && (
+        <Suspense fallback={null}>
+          <AICopilotDrawer
+            isOpen={isAICopilotOpen}
+            onClose={() => setIsAICopilotOpen(false)}
+            currentDate={dispatchLogDate}
+            onShiftUpdated={() => {
+              handleRouteRefresh();
+            }}
+            onNavigateToChangeLog={(date) => {
+              if (date) setDispatchLogDate(date);
+              setCurrentTab('dispatch_log');
+              setIsAICopilotOpen(false);
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

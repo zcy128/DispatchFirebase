@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue, Suspense } from 'react';
 import {
   GraduationCap,
   Plus,
@@ -27,9 +27,15 @@ import {
 } from '../types/training';
 import { Employee } from '../types/employee';
 import { TrainingService } from '../services/trainingService';
-import { TrainingCourseModal } from '../components/training/TrainingCourseModal';
-import { TrainingCourseDetailModal } from '../components/training/TrainingCourseDetailModal';
-import { TrainingTypeModal } from '../components/training/TrainingTypeModal';
+const TrainingCourseModal = React.lazy(() =>
+  import('../components/training/TrainingCourseModal').then((m) => ({ default: m.TrainingCourseModal }))
+);
+const TrainingCourseDetailModal = React.lazy(() =>
+  import('../components/training/TrainingCourseDetailModal').then((m) => ({ default: m.TrainingCourseDetailModal }))
+);
+const TrainingTypeModal = React.lazy(() =>
+  import('../components/training/TrainingTypeModal').then((m) => ({ default: m.TrainingTypeModal }))
+);
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalTodayString, addDaysToDateString } from '../utils/dateUtils';
 
@@ -55,6 +61,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
   // Filters
   const [viewScope, setViewScope] = useState<'all' | 'mine'>(isManagement ? 'all' : 'mine');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'upcoming' | 'today' | 'past'>('all');
@@ -69,31 +76,39 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
   const [isTypeModalOpen, setIsTypeModalOpen] = useState(false);
   const [editingType, setEditingType] = useState<TrainingType | null>(null);
 
-  const loadData = async () => {
+  const loadData = async (opts?: { isCancelled?: () => boolean }) => {
     setLoading(true);
     try {
       const [coursesData, typesData] = await Promise.all([
         TrainingService.listCourses(),
         TrainingService.listTrainingTypes()
       ]);
+      if (opts?.isCancelled?.()) return;
       setCourses(Array.isArray(coursesData) ? coursesData : []);
       setTrainingTypes(Array.isArray(typesData) ? typesData : []);
       setError(null);
     } catch (err: any) {
       console.error('Failed to load training data:', err);
-      setError('Failed to load training courses. Please refresh.');
+      if (!opts?.isCancelled?.()) {
+        setError('Failed to load training courses. Please refresh.');
+      }
     } finally {
-      setLoading(false);
+      if (!opts?.isCancelled?.()) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadData();
+    let isCancelled = false;
+    void loadData({ isCancelled: () => isCancelled });
 
     const unsubscribe = TrainingService.subscribeToTrainingCourses(
       (updatedCourses) => {
-        setCourses(Array.isArray(updatedCourses) ? updatedCourses : []);
-        setLoading(false);
+        if (!isCancelled) {
+          setCourses(Array.isArray(updatedCourses) ? updatedCourses : []);
+          setLoading(false);
+        }
       },
       (err) => {
         console.error('Training courses subscription error:', err);
@@ -101,6 +116,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
     );
 
     return () => {
+      isCancelled = true;
       if (unsubscribe) unsubscribe();
     };
   }, []);
@@ -148,9 +164,9 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
         if (c.startDate >= todayStr) return false;
       }
 
-      // Search term
-      if (searchTerm.trim() !== '') {
-        const q = searchTerm.toLowerCase();
+      // Search term (decoupled via deferredSearchTerm)
+      if (deferredSearchTerm.trim() !== '') {
+        const q = deferredSearchTerm.toLowerCase();
         const titleMatch = (c.title || '').toLowerCase().includes(q);
         const descMatch = (c.description || '').toLowerCase().includes(q);
         const instMatch = (c.instructorName || '').toLowerCase().includes(q);
@@ -165,24 +181,30 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
 
       return true;
     });
-  }, [courses, viewScope, statusFilter, categoryFilter, dateFilter, searchTerm, todayStr, currentUser]);
+  }, [courses, viewScope, statusFilter, categoryFilter, dateFilter, deferredSearchTerm, todayStr, currentUser]);
 
-  // Statistics
+  // Statistics: single-pass iteration with hoisted date window
   const stats = useMemo(() => {
-    const published = courses.filter((c) => c.status === 'published');
-    const upcomingWeek = courses.filter((c) => {
-      const maxNext = addDaysToDateString(todayStr, 7);
-      return c.startDate >= todayStr && c.startDate <= maxNext && c.status !== 'cancelled';
-    });
-    const totalEnrolled = courses.reduce((sum, c) => {
+    const maxNext = addDaysToDateString(todayStr, 7);
+    let publishedCount = 0;
+    let upcomingWeekCount = 0;
+    let totalEnrolled = 0;
+
+    for (const c of courses) {
+      if (c.status === 'published') {
+        publishedCount++;
+      }
+      if (c.startDate >= todayStr && c.startDate <= maxNext && c.status !== 'cancelled') {
+        upcomingWeekCount++;
+      }
       const roster = c.attendees || c.registrations || [];
-      return sum + (roster.length > 0 ? roster.length : (c.registeredCount || 0));
-    }, 0);
+      totalEnrolled += roster.length > 0 ? roster.length : (c.registeredCount || 0);
+    }
 
     return {
       totalCourses: courses.length,
-      publishedCount: published.length,
-      upcomingWeekCount: upcomingWeek.length,
+      publishedCount,
+      upcomingWeekCount,
       totalEnrolled,
       catalogCount: trainingTypes.length
     };
@@ -268,7 +290,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
 
         <div className="flex items-center space-x-2.5">
           <button
-            onClick={loadData}
+            onClick={() => void loadData()}
             disabled={loading}
             className="p-2 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 rounded-lg border border-slate-700 transition"
             title="Refresh Courses"
@@ -700,44 +722,50 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
 
       {/* Modals */}
       {isCourseModalOpen && (
-        <TrainingCourseModal
-          isOpen={isCourseModalOpen}
-          onClose={() => setIsCourseModalOpen(false)}
-          course={editingCourse}
-          trainingTypes={trainingTypes}
-          onSaved={loadData}
-        />
+        <Suspense fallback={null}>
+          <TrainingCourseModal
+            isOpen={isCourseModalOpen}
+            onClose={() => setIsCourseModalOpen(false)}
+            course={editingCourse}
+            trainingTypes={trainingTypes}
+            onSaved={loadData}
+          />
+        </Suspense>
       )}
 
       {isDetailModalOpen && selectedCourse && (
-        <TrainingCourseDetailModal
-          isOpen={isDetailModalOpen}
-          onClose={() => {
-            setIsDetailModalOpen(false);
-            setSelectedCourse(null);
-          }}
-          course={selectedCourse}
-          employees={employees}
-          onRefresh={async () => {
-            await loadData();
-            // Refresh currently selected course from updated list
-            const updated = await TrainingService.getCourse(selectedCourse.id);
-            if (updated) setSelectedCourse(updated);
-          }}
-          onEdit={(c) => {
-            setIsDetailModalOpen(false);
-            handleEditCourse(c);
-          }}
-        />
+        <Suspense fallback={null}>
+          <TrainingCourseDetailModal
+            isOpen={isDetailModalOpen}
+            onClose={() => {
+              setIsDetailModalOpen(false);
+              setSelectedCourse(null);
+            }}
+            course={selectedCourse}
+            employees={employees}
+            onRefresh={async () => {
+              await loadData();
+              // Refresh currently selected course from updated list
+              const updated = await TrainingService.getCourse(selectedCourse.id);
+              if (updated) setSelectedCourse(updated);
+            }}
+            onEdit={(c) => {
+              setIsDetailModalOpen(false);
+              handleEditCourse(c);
+            }}
+          />
+        </Suspense>
       )}
 
       {isTypeModalOpen && (
-        <TrainingTypeModal
-          isOpen={isTypeModalOpen}
-          onClose={() => setIsTypeModalOpen(false)}
-          trainingType={editingType}
-          onSaved={loadData}
-        />
+        <Suspense fallback={null}>
+          <TrainingTypeModal
+            isOpen={isTypeModalOpen}
+            onClose={() => setIsTypeModalOpen(false)}
+            trainingType={editingType}
+            onSaved={loadData}
+          />
+        </Suspense>
       )}
     </div>
   );

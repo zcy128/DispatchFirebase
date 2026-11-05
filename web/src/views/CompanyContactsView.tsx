@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { canEditPage } from '../utils/permissions';
 import {
@@ -18,12 +18,52 @@ import { CompanyContact, CompanyContactsService, INITIAL_COMPANY_CONTACTS } from
 
 export type { CompanyContact };
 
+export const FILTER_DEPARTMENTS = [
+  'ALL',
+  'Operations',
+  'Emergency',
+  'Fleet',
+  'HR',
+  'Training',
+  'Finance',
+] as const;
+
+export const CONTACT_DEPARTMENTS: readonly CompanyContact['department'][] = [
+  'Operations',
+  'Emergency',
+  'Fleet',
+  'HR',
+  'Training',
+  'Finance',
+] as const;
+
+// Pure styling helper hoisted outside component
+export function getDeptBadgeClass(dept: CompanyContact['department']): string {
+  switch (dept) {
+    case 'Operations':
+      return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+    case 'Emergency':
+      return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+    case 'Fleet':
+      return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+    case 'HR':
+      return 'bg-pink-500/10 text-pink-400 border-pink-500/20';
+    case 'Training':
+      return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+    case 'Finance':
+      return 'bg-teal-500/10 text-teal-400 border-teal-500/20';
+    default:
+      return 'bg-slate-700/40 text-slate-300 border-slate-700';
+  }
+}
+
 interface CompanyContactsViewProps {
   contacts?: CompanyContact[];
 }
 
 export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contacts: initialPropsContacts }) => {
   const { currentUser } = useAuth();
+  const contactsSynced = useRef(false);
   const [contacts, setContacts] = useState<CompanyContact[]>(() => {
     if (initialPropsContacts && initialPropsContacts.length > 0) {
       return initialPropsContacts;
@@ -36,23 +76,8 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
     }
   });
 
-  useEffect(() => {
-    if (!initialPropsContacts) return;
-    if (!contactsSynced.current && initialPropsContacts.length === 0) return;
-    contactsSynced.current = true;
-    setContacts(initialPropsContacts);
-  }, [initialPropsContacts]);
-
-  useEffect(() => {
-    if (!initialPropsContacts) {
-      const unsub = CompanyContactsService.subscribeToCompanyContacts((data) => {
-        setContacts(data);
-      });
-      return () => unsub();
-    }
-  }, [initialPropsContacts]);
-
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [selectedDept, setSelectedDept] = useState<string>('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<CompanyContact | null>(null);
@@ -68,16 +93,39 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
   const [formIs24x7, setFormIs24x7] = useState(false);
   const [formNotes, setFormNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
-  const contactsSynced = React.useRef(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!initialPropsContacts) return;
+    if (!contactsSynced.current && initialPropsContacts.length === 0) return;
+    contactsSynced.current = true;
+    setContacts(initialPropsContacts);
+  }, [initialPropsContacts]);
+
+  useEffect(() => {
+    if (initialPropsContacts) return;
+    let isCancelled = false;
+    const unsub = CompanyContactsService.subscribeToCompanyContacts((data) => {
+      if (!isCancelled) {
+        setContacts(data);
+      }
+    });
+    return () => {
+      isCancelled = true;
+      unsub();
+    };
+  }, [initialPropsContacts]);
 
   // Check RBAC permission for this page
   const canEdit = canEditPage(currentUser, 'company_contacts');
 
   const filteredContacts = useMemo(() => {
+    const t = deferredSearchTerm.trim().toLowerCase();
+    const hasTerm = t.length > 0;
+
     return contacts.filter((c) => {
       if (selectedDept !== 'ALL' && c.department !== selectedDept) return false;
-      if (searchTerm.trim()) {
-        const t = searchTerm.toLowerCase().trim();
+      if (hasTerm) {
         const matchName = (c.name || '').toLowerCase().includes(t);
         const matchTitle = (c.title || '').toLowerCase().includes(t);
         const matchPhone = (c.phone || '').includes(t);
@@ -87,7 +135,7 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
       }
       return true;
     });
-  }, [contacts, selectedDept, searchTerm]);
+  }, [contacts, selectedDept, deferredSearchTerm]);
 
   const handleOpenCreate = () => {
     setEditingContact(null);
@@ -121,12 +169,13 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this company contact?')) {
-      const nextList = contacts.filter((c) => c.id !== id);
-      setContacts(nextList);
       try {
         await CompanyContactsService.deleteContact(id);
-      } catch (err) {
+        setContacts((prev) => prev.filter((c) => c.id !== id));
+      } catch (err: unknown) {
         console.error('Failed to delete contact from Firestore:', err);
+        const errMsg = err instanceof Error ? err.message : 'Network or permission error';
+        alert(`Failed to delete contact from database: ${errMsg}`);
       }
     }
   };
@@ -145,6 +194,7 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
       return;
     }
     setFormError(null);
+    setSaving(true);
     const fields = {
       name,
       title: formTitle.trim(),
@@ -156,48 +206,30 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
       is24x7: formIs24x7,
       notes: formNotes.trim()
     };
-    if (editingContact) {
-      const updatedContact: CompanyContact = {
-        ...editingContact,
-        ...fields
-      };
-      setContacts(contacts.map((c) => (c.id === editingContact.id ? updatedContact : c)));
-      try {
-        await CompanyContactsService.saveContact(updatedContact);
-      } catch (err) {
-        console.error('Failed to save contact to Firestore:', err);
-      }
-    } else {
-      const newContact: CompanyContact = {
-        id: `CC-${Date.now()}`,
-        ...fields
-      };
-      setContacts([newContact, ...contacts]);
-      try {
-        await CompanyContactsService.saveContact(newContact);
-      } catch (err) {
-        console.error('Failed to create contact in Firestore:', err);
-      }
-    }
-    setIsModalOpen(false);
-  };
 
-  const getDeptBadgeClass = (dept: CompanyContact['department']) => {
-    switch (dept) {
-      case 'Operations':
-        return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-      case 'Emergency':
-        return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-      case 'Fleet':
-        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-      case 'HR':
-        return 'bg-pink-500/10 text-pink-400 border-pink-500/20';
-      case 'Training':
-        return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-      case 'Finance':
-        return 'bg-teal-500/10 text-teal-400 border-teal-500/20';
-      default:
-        return 'bg-slate-700/40 text-slate-300 border-slate-700';
+    try {
+      if (editingContact) {
+        const updatedContact: CompanyContact = {
+          ...editingContact,
+          ...fields
+        };
+        await CompanyContactsService.saveContact(updatedContact);
+        setContacts((prev) => prev.map((c) => (c.id === editingContact.id ? updatedContact : c)));
+      } else {
+        const newContact: CompanyContact = {
+          id: `CC-${Date.now()}`,
+          ...fields
+        };
+        await CompanyContactsService.saveContact(newContact);
+        setContacts((prev) => [newContact, ...prev]);
+      }
+      setIsModalOpen(false);
+    } catch (err: unknown) {
+      console.error('Failed to save contact to Firestore:', err);
+      const errMsg = err instanceof Error ? err.message : 'Network or permission error';
+      setFormError(`Failed to save to database: ${errMsg}. Please ensure you are logged in and backend is running.`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -234,7 +266,7 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
         {canEdit && (
           <button
             onClick={handleOpenCreate}
-            className="flex items-center space-x-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-bold text-xs transition shadow-lg shadow-amber-500/20 self-start md:self-auto"
+            className="flex items-center space-x-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-bold text-xs transition shadow-lg shadow-amber-500/20 self-start md:self-auto cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Add New Contact</span>
@@ -248,6 +280,7 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            aria-label="Search contacts by name, department, phone, or title"
             placeholder="Search contacts by name, department, phone, or title..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -256,12 +289,12 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
         </div>
 
         <div className="flex items-center space-x-2 overflow-x-auto pb-1 md:pb-0">
-          {['ALL', 'Operations', 'Emergency', 'Fleet', 'HR', 'Training', 'Finance'].map((dept) => (
+          {FILTER_DEPARTMENTS.map((dept) => (
             <button
               key={dept}
               type="button"
               onClick={() => setSelectedDept(dept)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
                 selectedDept === dept
                   ? 'bg-amber-500 text-slate-950 font-bold'
                   : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
@@ -392,10 +425,11 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
 
             <form onSubmit={handleSaveModal} className="p-5 space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">
+                <label htmlFor="contact-name" className="block text-slate-300 font-semibold mb-1">
                   Contact / Line Name *
                 </label>
                 <input
+                  id="contact-name"
                   type="text"
                   required
                   value={formName}
@@ -407,10 +441,11 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
+                  <label htmlFor="contact-title" className="block text-slate-300 font-semibold mb-1">
                     Title / Role
                   </label>
                   <input
+                    id="contact-title"
                     type="text"
                     value={formTitle}
                     onChange={(e) => setFormTitle(e.target.value)}
@@ -420,30 +455,31 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
+                  <label htmlFor="contact-dept" className="block text-slate-300 font-semibold mb-1">
                     Department *
                   </label>
                   <select
+                    id="contact-dept"
                     value={formDept}
-                    onChange={(e) => setFormDept(e.target.value as any)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
+                    onChange={(e) => setFormDept(e.target.value as CompanyContact['department'])}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500 cursor-pointer"
                   >
-                    <option value="Operations">Operations</option>
-                    <option value="Emergency">Emergency</option>
-                    <option value="Fleet">Fleet</option>
-                    <option value="HR">HR</option>
-                    <option value="Training">Training</option>
-                    <option value="Finance">Finance</option>
+                    {CONTACT_DEPARTMENTS.map((dept) => (
+                      <option key={dept} value={dept}>
+                        {dept}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
+                  <label htmlFor="contact-phone" className="block text-slate-300 font-semibold mb-1">
                     Phone Number *
                   </label>
                   <input
+                    id="contact-phone"
                     type="tel"
                     required
                     value={formPhone}
@@ -454,10 +490,11 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
+                  <label htmlFor="contact-ext" className="block text-slate-300 font-semibold mb-1">
                     Extension / Radio
                   </label>
                   <input
+                    id="contact-ext"
                     type="text"
                     value={formExt}
                     onChange={(e) => setFormExt(e.target.value)}
@@ -469,10 +506,11 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
+                  <label htmlFor="contact-email" className="block text-slate-300 font-semibold mb-1">
                     Email Address
                   </label>
                   <input
+                    id="contact-email"
                     type="email"
                     value={formEmail}
                     onChange={(e) => setFormEmail(e.target.value)}
@@ -482,10 +520,11 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
+                  <label htmlFor="contact-hours" className="block text-slate-300 font-semibold mb-1">
                     Hours of Operation
                   </label>
                   <input
+                    id="contact-hours"
                     type="text"
                     value={formHours}
                     onChange={(e) => setFormHours(e.target.value)}
@@ -503,16 +542,17 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
                   onChange={(e) => setFormIs24x7(e.target.checked)}
                   className="rounded bg-slate-800 border-slate-700 text-amber-500 focus:ring-amber-500"
                 />
-                <label htmlFor="check24x7" className="text-slate-300 font-semibold">
+                <label htmlFor="check24x7" className="text-slate-300 font-semibold cursor-pointer">
                   Available 24 Hours / 7 Days Hotline
                 </label>
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">
+                <label htmlFor="contact-notes" className="block text-slate-300 font-semibold mb-1">
                   Notes & Instructions
                 </label>
                 <textarea
+                  id="contact-notes"
                   rows={2}
                   value={formNotes}
                   onChange={(e) => setFormNotes(e.target.value)}
@@ -532,9 +572,10 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold"
+                  disabled={saving}
+                  className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold cursor-pointer"
                 >
-                  Save Contact
+                  {saving ? 'Saving...' : 'Save Contact'}
                 </button>
               </div>
             </form>

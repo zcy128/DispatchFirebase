@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { BiweeklyEmployeeGroup } from '../views/BiweeklyPayrollView';
+import { BiweeklyEmployeeGroup } from '../types/biweeklyPayroll';
 import { Employee } from '../types/employee';
 import { addDaysToDateString } from './dateUtils';
 

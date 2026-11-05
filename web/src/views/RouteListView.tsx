@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useMemo, useDeferredValue, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { BusRoute, RouteStats, formatOpDays, getShiftBadgeStyle, isAutoMarryupEnabled } from '../types/route';
 import { Student } from '../types/student';
+import { School } from '../types/school';
+import { Employee } from '../types/employee';
 import { Yard } from '../types/yard';
-import { YardService } from '../services/yardService';
 import { RouteService } from '../services/routeService';
 import { RouteInlineDetail } from '../components/routes/RouteInlineDetail';
 import { RouteEditModal } from '../components/routes/RouteEditModal';
@@ -34,6 +35,9 @@ interface RouteListViewProps {
   routes: BusRoute[];
   stats: RouteStats;
   studentsMap: Record<number, Student>;
+  schools: School[];
+  yards: Yard[];
+  employees: Employee[];
   loading?: boolean;
   onRefresh?: () => void;
   onSelectRoute: (route: BusRoute) => void;
@@ -42,16 +46,19 @@ interface RouteListViewProps {
   onRouteUpdated?: (route: BusRoute) => void;
 }
 
-export const RouteListView: React.FC<RouteListViewProps> = ({
+export const RouteListView = memo(function RouteListView({
   routes,
   stats,
   studentsMap,
+  schools,
+  yards,
+  employees,
   onRefresh,
   onSelectRoute,
   onSelectStudent,
   onAssignCrew,
   onRouteUpdated
-}) => {
+}: RouteListViewProps) {
   const { currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [boardFilter, setBoardFilter] = useState('ALL');
@@ -60,16 +67,9 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
   const [marryupFilter, setMarryupFilter] = useState<'ALL' | 'ENABLED' | 'DISABLED'>('ALL');
   const [refreshing, setRefreshing] = useState(false);
   const [expandedRouteIds, setExpandedRouteIds] = useState<Record<string, boolean>>({});
-  const [yards, setYards] = useState<Yard[]>([]);
   const [editingRoute, setEditingRoute] = useState<BusRoute | null>(null);
   const [togglingRouteIds, setTogglingRouteIds] = useState<Record<string, boolean>>({});
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-
-  useEffect(() => {
-    YardService.list().then(setYards).catch((err) => {
-      console.warn('Failed to load yards list:', err);
-    });
-  }, []);
 
   const handleRefresh = async () => {
     if (!onRefresh) return;
@@ -147,63 +147,76 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
     setExpandedRouteIds({});
   };
 
-  const filteredRoutes = routes.filter((r) => {
-    if (boardFilter !== 'ALL' && r.schoolBoardCode !== boardFilter) {
-      return false;
-    }
-    if (yardFilter !== 'ALL' && r.yardName !== yardFilter) {
-      return false;
-    }
-    if (marryupFilter === 'ENABLED' && !isAutoMarryupEnabled(r)) {
-      return false;
-    }
-    if (marryupFilter === 'DISABLED' && isAutoMarryupEnabled(r)) {
-      return false;
-    }
+  const deferredSearch = useDeferredValue(searchTerm);
 
-    // Op Days filter: check if any of the route's shifts match the filter
-    if (opDaysFilter !== 'ALL') {
-      const hasMatchingShift = r.shifts?.some((s) => {
-        const op = formatOpDays(s.runDays);
-        if (opDaysFilter === '----F') {
-          return op.includes('F') && !op.includes('M');
-        }
-        if (opDaysFilter === 'MTWR-') {
-          return op.includes('M') && !op.includes('F');
-        }
-        if (opDaysFilter === 'MTWRF') {
-          return op === 'MTWRF';
-        }
-        return op === opDaysFilter;
-      });
-      if (!hasMatchingShift) {
+  const { uniqueBoards, uniqueYards } = useMemo(() => {
+    const boards = new Set<string>();
+    const yardNames = new Set<string>();
+    for (const route of routes) {
+      if (route.schoolBoardCode) boards.add(route.schoolBoardCode);
+      if (route.yardName) yardNames.add(route.yardName);
+    }
+    return {
+      uniqueBoards: Array.from(boards),
+      uniqueYards: Array.from(yardNames),
+    };
+  }, [routes]);
+
+  const filteredRoutes = useMemo(() => {
+    const term = deferredSearch.trim().toLowerCase();
+    return routes.filter((r) => {
+      if (boardFilter !== 'ALL' && r.schoolBoardCode !== boardFilter) {
         return false;
       }
-    }
-
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      const matchNo = r.routeNo.toLowerCase().includes(term);
-      const matchName = r.routeName.toLowerCase().includes(term);
-      const matchDriver = (r.driverName || '').toLowerCase().includes(term);
-      const matchVehicle = (r.unitNumber || '').toLowerCase().includes(term);
-      const matchYard = (r.yardName || '').toLowerCase().includes(term);
-      const matchShift = r.shifts?.some(
-        (s) =>
-          s.shiftType.toLowerCase().includes(term) ||
-          (s.schoolsServiced || '').toLowerCase().includes(term)
-      );
-
-      if (!matchNo && !matchName && !matchDriver && !matchVehicle && !matchYard && !matchShift) {
+      if (yardFilter !== 'ALL' && r.yardName !== yardFilter) {
         return false;
       }
-    }
+      if (marryupFilter === 'ENABLED' && !isAutoMarryupEnabled(r)) {
+        return false;
+      }
+      if (marryupFilter === 'DISABLED' && isAutoMarryupEnabled(r)) {
+        return false;
+      }
 
-    return true;
-  });
+      if (opDaysFilter !== 'ALL') {
+        const hasMatchingShift = r.shifts?.some((s) => {
+          const op = formatOpDays(s.runDays);
+          if (opDaysFilter === '----F') {
+            return op.includes('F') && !op.includes('M');
+          }
+          if (opDaysFilter === 'MTWR-') {
+            return op.includes('M') && !op.includes('F');
+          }
+          if (opDaysFilter === 'MTWRF') {
+            return op === 'MTWRF';
+          }
+          return op === opDaysFilter;
+        });
+        if (!hasMatchingShift) {
+          return false;
+        }
+      }
 
-  const uniqueBoards = Array.from(new Set(routes.map((r) => r.schoolBoardCode).filter(Boolean)));
-  const uniqueYards = Array.from(new Set(routes.map((r) => r.yardName).filter(Boolean)));
+      if (term) {
+        const matchNo = r.routeNo.toLowerCase().includes(term);
+        const matchName = r.routeName.toLowerCase().includes(term);
+        const matchDriver = (r.driverName || '').toLowerCase().includes(term);
+        const matchVehicle = (r.unitNumber || '').toLowerCase().includes(term);
+        const matchYard = (r.yardName || '').toLowerCase().includes(term);
+        const matchShift = r.shifts?.some(
+          (s) =>
+            s.shiftType.toLowerCase().includes(term) ||
+            (s.schoolsServiced || '').toLowerCase().includes(term)
+        );
+
+        if (!matchNo && !matchName && !matchDriver && !matchVehicle && !matchYard && !matchShift) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [routes, boardFilter, yardFilter, marryupFilter, opDaysFilter, deferredSearch]);
   const totalExpanded = Object.values(expandedRouteIds).filter(Boolean).length;
 
   // Virtual scrolling containers for 1,000+ routes
@@ -757,6 +770,8 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                               <RouteInlineDetail
                                 route={r}
                                 studentsMap={studentsMap}
+                                schools={schools}
+                                employees={employees}
                                 onSelectStudent={onSelectStudent}
                                 onOpenDrawer={onSelectRoute}
                                 onRouteUpdated={onRouteUpdated}
@@ -971,6 +986,8 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
                         <RouteInlineDetail
                           route={r}
                           studentsMap={studentsMap}
+                          schools={schools}
+                          employees={employees}
                           onSelectStudent={onSelectStudent}
                           onOpenDrawer={onSelectRoute}
                           onRouteUpdated={onRouteUpdated}
@@ -998,4 +1015,4 @@ export const RouteListView: React.FC<RouteListViewProps> = ({
       )}
     </div>
   );
-};
+});

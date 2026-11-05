@@ -202,8 +202,13 @@ export class LoginLogService {
   /**
    * Save logs for a specific date to memory & localStorage.
    */
-  public static saveLocalLogsForDate(date: string, logs: LoginLogEntry[]): void {
+  /** Keep the latest day in memory without blocking the snapshot path on localStorage. */
+  private static rememberLogs(date: string, logs: LoginLogEntry[]): void {
     this.memoryCache.set(date, logs);
+  }
+
+  public static saveLocalLogsForDate(date: string, logs: LoginLogEntry[]): void {
+    this.rememberLogs(date, logs);
     try {
       const key = `${LOCAL_STORAGE_PREFIX}${date}`;
       localStorage.setItem(key, JSON.stringify(logs.slice(0, 1500)));
@@ -271,7 +276,6 @@ export class LoginLogService {
     onError?: (error: any) => void
   ): () => void {
     const targetDate = date || new Date().toISOString().slice(0, 10);
-    onUpdate([]);
 
     if (!db) {
       return () => {};
@@ -309,10 +313,10 @@ export class LoginLogService {
             });
 
             firestoreLogs.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-            this.saveLocalLogsForDate(targetDate, firestoreLogs);
+            this.rememberLogs(targetDate, firestoreLogs);
             onUpdate(firestoreLogs);
           } else {
-            this.saveLocalLogsForDate(targetDate, []);
+            this.rememberLogs(targetDate, []);
             onUpdate([]);
           }
         },

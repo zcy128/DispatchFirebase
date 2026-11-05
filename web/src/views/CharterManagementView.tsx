@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Compass,
@@ -41,7 +41,11 @@ import {
 } from '../types/charter';
 import { RouteOpening, RouteOpeningRole } from '../types/routeOpening';
 import { RouteOpeningService } from '../services/routeOpeningService';
-import { RouteOpeningApplicantsDrawer } from '../components/dispatch/RouteOpeningApplicantsDrawer';
+const RouteOpeningApplicantsDrawer = React.lazy(() =>
+  import('../components/dispatch/RouteOpeningApplicantsDrawer').then((m) => ({
+    default: m.RouteOpeningApplicantsDrawer,
+  }))
+);
 import { Employee } from '../types/employee';
 import { Vehicle } from '../types/vehicle';
 import { School } from '../types/school';
@@ -51,6 +55,9 @@ import { useI18n } from '../contexts/I18nContext';
 import { getLocalTodayString, addDaysToDateString } from '../utils/dateUtils';
 import { logDispatchAction } from '../utils/dispatchLogger';
 
+import { normalizeCharterTripStops, resolveDefaultStopTime } from './charterStopHelpers';
+import { CharterTripTableRow } from './CharterTripTableRow';
+
 interface CharterManagementViewProps {
   employees?: Employee[];
   vehicles?: Vehicle[];
@@ -58,12 +65,16 @@ interface CharterManagementViewProps {
   onNavigateToPayroll?: () => void;
 }
 
-export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
-  employees = [],
-  vehicles = [],
-  schools = [],
+const EMPTY_EMPLOYEES: Employee[] = [];
+const EMPTY_VEHICLES: Vehicle[] = [];
+const EMPTY_SCHOOLS: School[] = [];
+
+export const CharterManagementView = memo(function CharterManagementView({
+  employees = EMPTY_EMPLOYEES,
+  vehicles = EMPTY_VEHICLES,
+  schools = EMPTY_SCHOOLS,
   onNavigateToPayroll,
-}) => {
+}: CharterManagementViewProps) {
   const { currentUser } = useAuth();
   const { isFrench } = useI18n();
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
@@ -81,8 +92,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
-  // Selected Trip Drawer / Modal
-  const [selectedTrip, setSelectedTrip] = useState<CharterTrip | null>(null);
+  // Selected trip id. The live record is derived from the latest subscription snapshot.
 
   // New Trip Modal
   const [isTripModalOpen, setIsTripModalOpen] = useState<boolean>(false);
@@ -162,7 +172,8 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
   const [pubDescription, setPubDescription] = useState<string>('');
   const [pubPostToChat, setPubPostToChat] = useState<boolean>(true);
   const [isPublishingOpening, setIsPublishingOpening] = useState<boolean>(false);
-  const [reviewingCharterOpening, setReviewingCharterOpening] = useState<RouteOpening | null>(null);
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [reviewingOpeningId, setReviewingOpeningId] = useState<string | null>(null);
 
   // Subscribe to trips, clients, and route_openings
   useEffect(() => {
@@ -229,116 +240,18 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
     return map;
   }, [routeOpenings]);
 
-  // Keep reviewingCharterOpening fresh when routeOpenings updates
-  useEffect(() => {
-    if (reviewingCharterOpening) {
-      const updated = routeOpenings.find((o) => o.id === reviewingCharterOpening.id);
-      if (updated) setReviewingCharterOpening(updated);
-    }
-  }, [routeOpenings]);
-
-  // Update selectedTrip if trips array updates
-  useEffect(() => {
-    if (selectedTrip) {
-      const updated = trips.find((t) => t.id === selectedTrip.id);
-      if (updated) setSelectedTrip(updated);
-    }
-  }, [trips]);
+  const selectedTrip = useMemo(
+    () => (selectedTripId ? trips.find((trip) => trip.id === selectedTripId) || null : null),
+    [trips, selectedTripId]
+  );
+  const reviewingCharterOpening = useMemo(
+    () => (reviewingOpeningId ? routeOpenings.find((opening) => opening.id === reviewingOpeningId) || null : null),
+    [routeOpenings, reviewingOpeningId]
+  );
 
   // Normalizes a trip's stops so legacy 3-stop round trips upgrade to the 4-stop itinerary:
   // #1 Pickup (e.g. School @ 08:00), #2 Dropoff (e.g. Museum @ 08:30),
   // #3 Return Pickup (e.g. Library/Museum @ 15:00), #4 Return Dropoff (e.g. School @ 15:30)
-  const normalizeCharterTripStops = (trip: CharterTrip, existingOp?: RouteOpening): CharterStop[] => {
-    const rawStops = trip.stops || [];
-    const dateStr = trip.dispatchDate || trip.departsAt?.slice(0, 10) || getLocalTodayString();
-    const depTime = formatCharterStopTime(trip.departsAt) || '08:00';
-    const retTime = formatCharterStopTime(trip.returnsAt) || '15:00';
-
-    if (
-      trip.roundTrip !== false &&
-      rawStops.length === 3 &&
-      rawStops[0]?.stopType === 0 &&
-      rawStops[1]?.stopType === 1 &&
-      rawStops[2]?.stopType === 2
-    ) {
-      const s1Time = formatCharterStopTime(rawStops[0].scheduledAt) || depTime;
-      const s2Time = addMinutesToCharterTime(s1Time, 30);
-      const s3Time = formatCharterStopTime(rawStops[2].scheduledAt) || retTime;
-      const s4Time = addMinutesToCharterTime(s3Time, 30);
-
-      return [
-        {
-          ...rawStops[0],
-          id: rawStops[0].id || `ST-${trip.id}-1`,
-          sequenceOrder: 1,
-          stopType: 0,
-          locationName: 'Pickup',
-          address: rawStops[0].address || 'School',
-          scheduledAt: `${dateStr}T${s1Time}`,
-        },
-        {
-          ...rawStops[1],
-          id: rawStops[1].id || `ST-${trip.id}-2`,
-          sequenceOrder: 2,
-          stopType: 1,
-          locationName: 'Dropoff',
-          address: rawStops[1].address || 'Destination',
-          scheduledAt: `${dateStr}T${s2Time}`,
-        },
-        {
-          id: `ST-${trip.id}-3`,
-          charterTripId: trip.id,
-          sequenceOrder: 3,
-          stopType: 3,
-          locationName: 'Return Pickup',
-          address: rawStops[1].address || 'Destination',
-          scheduledAt: `${dateStr}T${s3Time}`,
-        },
-        {
-          ...rawStops[2],
-          id: `ST-${trip.id}-4`,
-          sequenceOrder: 4,
-          stopType: 2,
-          locationName: 'Return Dropoff',
-          address: rawStops[2].address || rawStops[0].address || 'School',
-          scheduledAt: `${dateStr}T${s4Time}`,
-        },
-      ];
-    }
-
-    if (rawStops.length === 0) {
-      return buildCharterSimpleStops({
-        tripId: trip.id || 'temp',
-        fromAddress: 'School',
-        toAddress: 'Destination',
-        roundTrip: trip.roundTrip !== false,
-        departsAt: `${dateStr}T${depTime}`,
-        returnsAt: `${dateStr}T${retTime}`,
-      });
-    }
-
-    return rawStops.map((s, idx) => {
-      const fromOp = existingOp?.sanitizedStops?.find(
-        (ss) => String(ss.stopId) === String(s.id) || ss.sequence === (s.sequenceOrder || idx + 1)
-      )?.stopScheduleTime;
-      const resolvedTime =
-        formatCharterStopTime(fromOp) ||
-        formatCharterStopTime(s.scheduledAt) ||
-        (idx === 0
-          ? depTime
-          : idx === 1
-          ? addMinutesToCharterTime(depTime, 30)
-          : idx === 2
-          ? retTime
-          : addMinutesToCharterTime(retTime, 30));
-      return {
-        ...s,
-        sequenceOrder: idx + 1,
-        scheduledAt: `${dateStr}T${resolvedTime}`,
-      };
-    });
-  };
-
   // Auto-upgrade any legacy 3-stop round-trip charter_trips and route_openings in Firestore to the 4-stop itinerary
   const migratedIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -434,14 +347,17 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
     );
   }, [employees]);
 
-  // Filtered trips
+  const deferredTripSearch = useDeferredValue(tripSearch);
+  const deferredClientSearch = useDeferredValue(clientSearch);
+
+  // Filtered trips. Status, type, and date stay immediate.
   const filteredTrips = useMemo(() => {
+    const q = deferredTripSearch.trim().toLowerCase();
     return trips.filter((t) => {
       if (!showAllDates && t.dispatchDate !== selectedDate) return false;
       if (statusFilter !== 'all' && String(t.status) !== statusFilter) return false;
       if (typeFilter !== 'all' && String(t.tripType) !== typeFilter) return false;
-      if (tripSearch.trim()) {
-        const q = tripSearch.toLowerCase();
+      if (q) {
         const numMatch = (t.tripNumber || '').toLowerCase().includes(q);
         const titleMatch = (t.title || '').toLowerCase().includes(q);
         const clientMatch = (t.clientName || '').toLowerCase().includes(q);
@@ -455,7 +371,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
       }
       return true;
     });
-  }, [trips, showAllDates, selectedDate, statusFilter, typeFilter, tripSearch]);
+  }, [trips, showAllDates, selectedDate, statusFilter, typeFilter, deferredTripSearch]);
 
   const charterTableRef = useRef<HTMLDivElement>(null);
   const charterVirtualizer = useVirtualizer({
@@ -502,9 +418,9 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
 
   // Filtered clients
   const filteredClients = useMemo(() => {
+    const q = deferredClientSearch.trim().toLowerCase();
     return clients.filter((c) => {
-      if (!clientSearch.trim()) return true;
-      const q = clientSearch.toLowerCase();
+      if (!q) return true;
       return (
         c.name.toLowerCase().includes(q) ||
         (c.contactName && c.contactName.toLowerCase().includes(q)) ||
@@ -512,7 +428,17 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
         (c.contactPhone && c.contactPhone.toLowerCase().includes(q))
       );
     });
-  }, [clients, clientSearch]);
+  }, [clients, deferredClientSearch]);
+  const clientListRef = useRef<HTMLDivElement>(null);
+  const clientVirtualizer = useVirtualizer({
+    count: Math.ceil(filteredClients.length / 3),
+    getScrollElement: () => clientListRef.current,
+    estimateSize: () => 220,
+    overscan: 4,
+    measureElement: (element) => element.getBoundingClientRect().height,
+  });
+  const clientRows = clientVirtualizer.getVirtualItems();
+
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -538,6 +464,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
 
   // Filtered and sorted drivers for assignment
   const filteredDrivers = useMemo(() => {
+    if (!isAssignmentModalOpen) return EMPTY_EMPLOYEES;
     const sorted = [...driverOptions].sort((a, b) =>
       `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)
     );
@@ -549,10 +476,11 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
       const phone = (d.mobilePhone || d.workPhonePhone || d.homePhone || '').toLowerCase();
       return fullName.includes(q) || empNum.includes(q) || phone.includes(q);
     });
-  }, [driverOptions, asgDriverSearchQuery]);
+  }, [isAssignmentModalOpen, driverOptions, asgDriverSearchQuery]);
 
   // Filtered and sorted attendants for assignment
   const filteredAttendants = useMemo(() => {
+    if (!isAssignmentModalOpen) return EMPTY_EMPLOYEES;
     const sorted = [...attendantOptions].sort((a, b) =>
       `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)
     );
@@ -564,10 +492,11 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
       const phone = (a.mobilePhone || a.workPhonePhone || a.homePhone || '').toLowerCase();
       return fullName.includes(q) || empNum.includes(q) || phone.includes(q);
     });
-  }, [attendantOptions, asgAttendantSearchQuery]);
+  }, [isAssignmentModalOpen, attendantOptions, asgAttendantSearchQuery]);
 
   // Filtered and sorted schools for the school selector combobox in New/Edit Client modal
   const filteredSchools = useMemo(() => {
+    if (!isClientModalOpen) return EMPTY_SCHOOLS;
     const sorted = [...schools].sort((a, b) => (a.schoolName || '').localeCompare(b.schoolName || ''));
     if (!schoolSearchQuery.trim()) return sorted;
     const q = schoolSearchQuery.toLowerCase().trim();
@@ -580,7 +509,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
         (s.contactPerson && s.contactPerson.toLowerCase().includes(q))
       );
     });
-  }, [schools, schoolSearchQuery]);
+  }, [isClientModalOpen, schools, schoolSearchQuery]);
 
   const selectedSchool = useMemo(() => {
     if (!clientSchoolId) return null;
@@ -959,7 +888,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
   const handleUpdateTripStatus = async (trip: CharterTrip, newStatus: CharterTripStatus) => {
     try {
       await CharterService.updateTrip(trip.id, { status: newStatus }, actorName);
-      await logDispatchAction({
+      void logDispatchAction({
         date: trip.dispatchDate,
         type: 'Charter Status Updated',
         detail: `Trip ${trip.tripNumber} status changed to ${getCharterTripStatusLabel(newStatus, false)}`,
@@ -975,7 +904,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
     if (!window.confirm(`Delete charter trip ${trip.tripNumber} (${trip.title})?`)) return;
     try {
       await CharterService.deleteTrip(trip.id);
-      if (selectedTrip?.id === trip.id) setSelectedTrip(null);
+      if (selectedTripId === trip.id) setSelectedTripId(null);
     } catch (err) {
       alert('Failed to delete trip: ' + (err as Error).message);
     }
@@ -1096,7 +1025,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
           actorName
         );
 
-        await logDispatchAction({
+        void logDispatchAction({
           date: selectedTrip.dispatchDate,
           type: 'Charter Crew Modified',
           detail: `Modified crew assignment on ${selectedTrip.tripNumber}: Driver ${asgDriverName || 'TBD'}, Unit ${asgVehicleId ? asgUnitNumber : 'TBD'}`,
@@ -1163,8 +1092,10 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
     if (!window.confirm(`Remove vehicle ${assignment.vehicleUnitNumber} and crew from this trip?`)) return;
 
     try {
-      await CharterService.removeAssignmentPayroll(selectedTrip.id, assignment.id, 'driver');
-      await CharterService.removeAssignmentPayroll(selectedTrip.id, assignment.id, 'attendant');
+      await Promise.all([
+        CharterService.removeAssignmentPayroll(selectedTrip.id, assignment.id, 'driver'),
+        CharterService.removeAssignmentPayroll(selectedTrip.id, assignment.id, 'attendant'),
+      ]);
       const updatedAssignments = (selectedTrip.assignments || []).filter((a) => a.id !== assignment.id);
       await CharterService.updateTrip(selectedTrip.id, { assignments: updatedAssignments }, actorName);
     } catch (err) {
@@ -1183,7 +1114,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
 
     try {
       await CharterService.checkInCrew(selectedTrip.id, assignment.id, role, timeStr, actorName);
-      await logDispatchAction({
+      void logDispatchAction({
         date: selectedTrip.dispatchDate,
         type: 'Charter Crew Check-In',
         detail: `Checked in ${role === 'driver' ? assignment.driverName : assignment.attendantName} for trip ${selectedTrip.tripNumber} at ${timeStr}. Payroll record generated.`,
@@ -1217,7 +1148,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
         comments || undefined,
         actorName
       );
-      await logDispatchAction({
+      void logDispatchAction({
         date: selectedTrip.dispatchDate,
         type: 'Charter Crew Check-Out',
         detail: `Checked out ${role === 'driver' ? assignment.driverName : assignment.attendantName} for trip ${selectedTrip.tripNumber} at ${timeStr}.`,
@@ -1235,7 +1166,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
 
     try {
       await CharterService.undoCrewCheckIn(selectedTrip.id, assignment.id, role, actorName);
-      await logDispatchAction({
+      void logDispatchAction({
         date: selectedTrip.dispatchDate,
         type: 'Charter Check-In Undone',
         detail: `Undid check-in for ${role} on trip ${selectedTrip.tripNumber}. Payroll record removed.`,
@@ -1282,25 +1213,6 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
   };
 
   // Helper to resolve default HH:MM for a charter stop
-  const resolveDefaultStopTime = (trip: CharterTrip, stop: CharterStop, idx: number, existingOp?: RouteOpening): string => {
-    const fromExistingOp = existingOp?.sanitizedStops?.find(
-      (ss) => String(ss.stopId) === String(stop.id) || ss.sequence === (stop.sequenceOrder || idx + 1)
-    )?.stopScheduleTime;
-    if (fromExistingOp && formatCharterStopTime(fromExistingOp)) {
-      return formatCharterStopTime(fromExistingOp);
-    }
-    const fromStop = formatCharterStopTime(stop.scheduledAt);
-    if (fromStop) return fromStop;
-
-    const depTime = formatCharterStopTime(trip.departsAt) || '08:00';
-    const retTime = formatCharterStopTime(trip.returnsAt) || '15:00';
-    if (idx === 0 || stop.stopType === 0) return depTime;
-    if (idx === 1 || stop.stopType === 1) return addMinutesToCharterTime(depTime, 30);
-    if (idx === 2 || stop.stopType === 3) return retTime;
-    if (idx === 3 || stop.stopType === 2) return addMinutesToCharterTime(retTime, 30);
-    return depTime;
-  };
-
   // Update a stop's scheduled time or address in the master trip and assignments
   const handleUpdateStopScheduledTime = async (stop: CharterStop, idx: number) => {
     if (!selectedTrip) return;
@@ -1549,7 +1461,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
         actorName
       );
 
-      await logDispatchAction({
+      void logDispatchAction({
         date: publishingTrip.dispatchDate,
         type: 'Charter Assignment Open Published',
         detail: `Published Charter Opening for ${publishingTrip.tripNumber} (${publishingTrip.title}) — ${openShiftsCount} shift(s) open`,
@@ -1656,6 +1568,22 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
       alert('Delete client error: ' + (err as Error).message);
     }
   };
+
+  const rowActionsRef = useRef({
+    edit: handleOpenEditTrip,
+    remove: handleDeleteTrip,
+    publish: handleOpenPublishCharterModal,
+  });
+  rowActionsRef.current.edit = handleOpenEditTrip;
+  rowActionsRef.current.remove = handleDeleteTrip;
+  rowActionsRef.current.publish = handleOpenPublishCharterModal;
+  const openTrip = useCallback((tripId: string) => setSelectedTripId(tripId), []);
+  const editTrip = useCallback((trip: CharterTrip) => rowActionsRef.current.edit(trip), []);
+  const deleteTripRow = useCallback((trip: CharterTrip) => rowActionsRef.current.remove(trip), []);
+  const publishTrip = useCallback((trip: CharterTrip, event?: React.MouseEvent) => {
+    rowActionsRef.current.publish(trip, event);
+  }, []);
+  const reviewOpening = useCallback((openingId: string) => setReviewingOpeningId(openingId), []);
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
@@ -1882,305 +1810,18 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
                     )}
                     {charterRows.map((virtualRow) => {
                       const trip = filteredTrips[virtualRow.index];
-                      const departsTime = trip.departsAt ? trip.departsAt.replace('T', ' ').slice(11, 16) : '-';
-                      const returnsTime = trip.returnsAt ? trip.returnsAt.replace('T', ' ').slice(11, 16) : '-';
-                      const allShifts = trip.assignments || [];
-                      const totalShifts = Math.max(trip.vehiclesNeeded || 1, allShifts.length);
-                      const assignedShifts = allShifts.filter(
-                        (a) => Boolean(a.driverId || a.driverName || (a.vehicleId && a.vehicleUnitNumber && a.vehicleUnitNumber !== 'TBD'))
-                      );
-                      const driverFilledCount = allShifts.filter((a) => Boolean(a.driverId || a.driverName)).length;
-                      const openShiftsCount = Math.max(0, totalShifts - assignedShifts.length);
-
                       return (
-                        <tr
+                        <CharterTripTableRow
                           key={trip.id}
-                          className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
-                          onClick={() => setSelectedTrip(trip)}
-                        >
-                          <td className="py-3.5 px-4">
-                            <div className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                              {trip.tripNumber}
-                            </div>
-                            <div className="font-medium text-slate-900 dark:text-white truncate max-w-[200px]">
-                              {trip.title}
-                            </div>
-                            <div className="text-xs text-slate-400 font-mono">
-                              {trip.dispatchDate}
-                            </div>
-                          </td>
-
-                          <td className="py-3.5 px-4">
-                            <div className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[180px]">
-                              {trip.clientName}
-                            </div>
-                            <div className="text-xs text-slate-400">
-                              {trip.passengerCount} {isFrench ? 'passagers' : 'passengers'}
-                            </div>
-                          </td>
-
-                          <td className="py-3.5 px-4 space-y-1">
-                            <div>
-                              <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                                {getCharterTripTypeLabel(trip.tripType, isFrench)}
-                              </span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-1">
-                              <span
-                                className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                                  trip.status === 4
-                                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
-                                    : trip.status === 3
-                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
-                                    : trip.status === 2
-                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-                                    : trip.status === 1
-                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                                }`}
-                              >
-                                {getCharterTripStatusLabel(trip.status, isFrench)}
-                              </span>
-                            </div>
-                            {(() => {
-                              const charterOp = charterOpeningsByTripId[trip.id];
-                              const isPublished = Boolean(
-                                (charterOp && charterOp.status !== 'cancelled') || trip.isPublishedOpen
-                              );
-                              if (!isPublished) return null;
-                              const isAwarded = charterOp?.status === 'awarded';
-                              return (
-                                <div>
-                                  <span
-                                    className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold border ${
-                                      isAwarded
-                                        ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/70 dark:text-purple-300 dark:border-purple-800'
-                                        : 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-700'
-                                    }`}
-                                  >
-                                    <CheckCircle2 className="w-3 h-3 shrink-0" />
-                                    <span>
-                                      {isAwarded
-                                        ? isFrench
-                                          ? 'Offre attribuée'
-                                          : 'Opening Awarded'
-                                        : isFrench
-                                        ? 'Publié (Open)'
-                                        : 'Published (Open)'}
-                                    </span>
-                                  </span>
-                                </div>
-                              );
-                            })()}
-                          </td>
-
-                          <td className="py-3.5 px-4 text-xs font-mono">
-                            <div className="text-slate-700 dark:text-slate-300 font-semibold">
-                              {isFrench ? 'Dép :' : 'Dep:'} {departsTime}
-                            </div>
-                            <div className="text-slate-400">
-                              {isFrench ? 'Ret :' : 'Ret:'} {returnsTime}
-                            </div>
-                            {(() => {
-                              const charterOp = charterOpeningsByTripId[trip.id];
-                              const displayStops = normalizeCharterTripStops(trip, charterOp);
-                              if (!displayStops.length) return null;
-                              return (
-                                <div className="mt-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800 space-y-0.5">
-                                  {displayStops.map((st, sIdx) => {
-                                    const stTime =
-                                      formatCharterStopTime(st.scheduledAt) ||
-                                      resolveDefaultStopTime(trip, st, sIdx, charterOp);
-                                    const isPickup = st.stopType === 0 || st.stopType === 3;
-                                    const actionTag = isPickup ? 'Pick' : 'Drop';
-                                    return (
-                                      <div
-                                        key={st.id || sIdx}
-                                        className="flex items-center justify-between gap-2 text-[10px] text-slate-600 dark:text-slate-300"
-                                        title={`#${sIdx + 1} ${actionTag}: ${st.address} @ ${stTime}`}
-                                      >
-                                        <span className="truncate max-w-[125px] font-sans">
-                                          <span
-                                            className={`font-bold ${
-                                              isPickup
-                                                ? 'text-emerald-600 dark:text-emerald-400'
-                                                : 'text-amber-600 dark:text-amber-400'
-                                            }`}
-                                          >
-                                            {actionTag}
-                                          </span>{' '}
-                                          {st.address}
-                                        </span>
-                                        <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 shrink-0">
-                                          {stTime || '--:--'}
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              );
-                            })()}
-                          </td>
-
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-1.5 mb-1.5">
-                              <span
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                  driverFilledCount >= totalShifts
-                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300'
-                                    : assignedShifts.length > 0
-                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300'
-                                    : 'bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300'
-                                }`}
-                              >
-                                {driverFilledCount} / {totalShifts} {isFrench ? 'quarts assignés' : 'shifts assigned'}
-                              </span>
-                            </div>
-                            {assignedShifts.length === 0 ? (
-                              <span className="text-xs text-amber-500 font-semibold">
-                                {totalShifts} {isFrench ? 'quarts ouverts (non assignés)' : 'open shifts (unassigned)'}
-                              </span>
-                            ) : (
-                              <div className="space-y-1">
-                                {assignedShifts.slice(0, 4).map((asg, sIdx) => (
-                                  <div key={asg.id} className="text-xs flex items-center gap-1.5">
-                                    <span className="text-[10px] font-mono px-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                                      #{asg.runNumber || sIdx + 1}
-                                    </span>
-                                    <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                                      {asg.vehicleUnitNumber || 'TBD'}
-                                    </span>
-                                    <span className="text-slate-400">•</span>
-                                    <span className="text-slate-800 dark:text-slate-200">
-                                      {asg.driverName || (isFrench ? 'Chauffeur à assigner' : 'Driver TBD')}
-                                    </span>
-                                    {asg.isDriverCheckedIn && (
-                                      <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                                        {isFrench ? 'Pointé' : 'Checked In'}
-                                      </span>
-                                    )}
-                                  </div>
-                                ))}
-                                {assignedShifts.length > 4 && (
-                                  <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">
-                                    +{assignedShifts.length - 4} {isFrench ? 'autres assignés' : 'more assigned'}
-                                  </div>
-                                )}
-                                {openShiftsCount > 0 && (
-                                  <div className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
-                                    +{openShiftsCount} {isFrench ? 'quarts ouverts' : 'open shift(s)'}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </td>
-
-                          <td className="py-3.5 px-4 text-right">
-                            <div className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                              ${(trip.quotedAmount || 0).toFixed(2)}
-                            </div>
-                            <div className="text-xs text-slate-400">
-                              {trip.billableHours || 0} hrs
-                            </div>
-                            <div className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400 mt-0.5">
-                              {isFrench ? 'Chauff:' : 'Drv:'} ${(trip.driverPayRate ?? trip.assignments?.[0]?.driverPayRate ?? 150).toFixed(0)}
-                              {(trip.needsAttendant || trip.attendantPayRate) && (
-                                <span>
-                                  {' • '}
-                                  {isFrench ? 'Acc:' : 'Att:'} ${(trip.attendantPayRate ?? trip.assignments?.[0]?.attendantPayRate ?? 100).toFixed(0)}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                            {(() => {
-                              const charterOp = charterOpeningsByTripId[trip.id];
-                              const isPublished = Boolean(
-                                (charterOp && charterOp.status !== 'cancelled') || trip.isPublishedOpen
-                              );
-                              const applicantCount = charterOp?.applicants?.filter((a) => a.status !== 'withdrawn').length || 0;
-                              return (
-                                <div className="flex flex-col items-center gap-1.5">
-                                  <div className="flex items-center justify-center gap-1 flex-wrap">
-                                    <button
-                                      onClick={(e) => handleOpenPublishCharterModal(trip, e)}
-                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
-                                        isPublished
-                                          ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 shadow-2xs'
-                                          : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900/60'
-                                      }`}
-                                      title={
-                                        isPublished
-                                          ? isFrench
-                                            ? 'Déjà publié dans Route Openings — Cliquer pour modifier'
-                                            : 'Already Published to Route Openings — Click to update'
-                                          : isFrench
-                                          ? 'Publier l\'offre aux chauffeurs (Route Openings)'
-                                          : 'Publish Assignment Open to Driver App (Route Openings)'
-                                      }
-                                    >
-                                      {isPublished ? (
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                                      ) : (
-                                        <Megaphone className="w-3 h-3 shrink-0" />
-                                      )}
-                                      <span>
-                                        {isPublished
-                                          ? isFrench
-                                            ? 'Publié ✓'
-                                            : 'Published ✓'
-                                          : isFrench
-                                          ? 'Publier Open'
-                                          : 'Publish Open'}
-                                      </span>
-                                    </button>
-                                    {(charterOp || isPublished) && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (charterOp) {
-                                            setReviewingCharterOpening(charterOp);
-                                          } else {
-                                            handleOpenPublishCharterModal(trip, e);
-                                          }
-                                        }}
-                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-950/70 dark:text-purple-300 transition-all"
-                                        title={isFrench ? 'Voir les candidats' : 'Review Applicants'}
-                                      >
-                                        <Users className="w-3 h-3" />
-                                        <span>{applicantCount}</span>
-                                      </button>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center justify-center gap-1">
-                                    <button
-                                      onClick={() => setSelectedTrip(trip)}
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                                      title={isFrench ? 'Détails & affectation' : 'Details & Crew'}
-                                    >
-                                      <ArrowRight className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleOpenEditTrip(trip)}
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                                      title={isFrench ? 'Modifier' : 'Edit'}
-                                    >
-                                      <Pencil className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteTrip(trip)}
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all"
-                                      title={isFrench ? 'Supprimer' : 'Delete'}
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                          </td>
-                        </tr>
+                          trip={trip}
+                          opening={charterOpeningsByTripId[trip.id]}
+                          isFrench={isFrench}
+                          onOpen={openTrip}
+                          onEdit={editTrip}
+                          onDelete={deleteTripRow}
+                          onPublish={publishTrip}
+                          onReview={reviewOpening}
+                        />
                       );
                     })}
                     {charterPadBottom > 0 && (
@@ -2211,8 +1852,19 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredClients.map((client) => (
+          <div ref={clientListRef} className="overflow-y-auto max-h-[70vh]">
+            <div style={{ height: clientVirtualizer.getTotalSize(), position: 'relative' }}>
+              {clientRows.map((virtualRow) => {
+                const rowClients = filteredClients.slice(virtualRow.index * 3, virtualRow.index * 3 + 3);
+                return (
+                  <div
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={clientVirtualizer.measureElement}
+                    className="absolute left-0 top-0 w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-4"
+                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                  >
+                    {rowClients.map((client) => (
               <div
                 key={client.id}
                 className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3"
@@ -2285,7 +1937,11 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
                   </div>
                 </div>
               </div>
-            ))}
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -2330,7 +1986,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
               </div>
 
               <button
-                onClick={() => setSelectedTrip(null)}
+                onClick={() => setSelectedTripId(null)}
                 className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
@@ -2532,7 +2188,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
                     {charterOpeningsByTripId[selectedTrip.id] && (
                       <button
                         onClick={() =>
-                          setReviewingCharterOpening(charterOpeningsByTripId[selectedTrip.id])
+                          setReviewingOpeningId(charterOpeningsByTripId[selectedTrip.id]?.id || null)
                         }
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition-all"
                       >
@@ -2838,7 +2494,7 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
                 </button>
               )}
               <button
-                onClick={() => setSelectedTrip(null)}
+                onClick={() => setSelectedTripId(null)}
                 className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold"
               >
                 {isFrench ? 'Fermer' : 'Close'}
@@ -4294,13 +3950,15 @@ export const CharterManagementView: React.FC<CharterManagementViewProps> = ({
 
       {/* REVIEW CHARTER APPLICANTS DRAWER */}
       {reviewingCharterOpening && (
-        <RouteOpeningApplicantsDrawer
-          isOpen={!!reviewingCharterOpening}
-          onClose={() => setReviewingCharterOpening(null)}
-          opening={reviewingCharterOpening}
-          onAwarded={() => {}}
-        />
+        <React.Suspense fallback={null}>
+          <RouteOpeningApplicantsDrawer
+            isOpen={!!reviewingCharterOpening}
+            onClose={() => setReviewingOpeningId(null)}
+            opening={reviewingCharterOpening}
+            onAwarded={() => {}}
+          />
+        </React.Suspense>
       )}
     </div>
   );
-};
+});

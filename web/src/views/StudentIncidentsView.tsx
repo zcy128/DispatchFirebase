@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useI18n } from '../contexts/I18nContext';
 import {
@@ -30,7 +30,20 @@ import {
 } from '../types/studentIncident';
 import { StudentIncidentService } from '../services/studentIncidentService';
 import { useAuth } from '../contexts/AuthContext';
-import { StudentIncidentPdfModal } from '../components/incidents/StudentIncidentPdfModal';
+import { ExportLoadingOverlay } from '../components/common/ExportLoadingOverlay';
+
+// Helper to calculate 180-day cutoff date string once
+function getCutoffDate180Days(): string {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 180);
+  return cutoff.toISOString().slice(0, 10);
+}
+
+const StudentIncidentPdfModal = React.lazy(() =>
+  import('../components/incidents/StudentIncidentPdfModal').then((module) => ({
+    default: module.StudentIncidentPdfModal,
+  }))
+);
 
 export const StudentIncidentsView: React.FC = () => {
   const { currentUser } = useAuth();
@@ -38,6 +51,7 @@ export const StudentIncidentsView: React.FC = () => {
   const [incidents, setIncidents] = useState<StudentIncident[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [needsFollowUpOnly, setNeedsFollowUpOnly] = useState<boolean>(false);
   const [selectedIncident, setSelectedIncident] = useState<StudentIncident | null>(null);
@@ -60,18 +74,17 @@ export const StudentIncidentsView: React.FC = () => {
 
   const [timeRange, setTimeRange] = useState<'6months' | '1year' | 'all'>('6months');
 
-  const isArchivedDate = (d?: string) => {
-    if (!d) return false;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 180);
-    return d < cutoff.toISOString().slice(0, 10);
-  };
+  // Pre-calculate 180-day cutoff date string once to avoid per-row Date allocations
+  const cutoffDate180Str = useMemo(() => getCutoffDate180Days(), []);
+  const isArchivedDate = (d?: string) => Boolean(d && d < cutoffDate180Str);
 
-  const loadIncidents = async (targetQuery?: string) => {
+  const loadIncidents = async (targetQuery?: string, opts?: { isCancelled?: () => boolean }) => {
     const q = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
     if (timeRange === 'all' && !q) {
-      setIncidents([]);
-      setLoading(false);
+      if (!opts?.isCancelled || !opts.isCancelled()) {
+        setIncidents([]);
+        setLoading(false);
+      }
       return;
     }
     setLoading(true);
@@ -81,65 +94,98 @@ export const StudentIncidentsView: React.FC = () => {
         params.query = q;
       }
       const data = await StudentIncidentService.listIncidents(params);
+      if (opts?.isCancelled && opts.isCancelled()) return;
       setIncidents(data);
     } catch (err) {
+      if (opts?.isCancelled && opts.isCancelled()) return;
       console.error('Failed to load student incidents:', err);
       setIncidents([]);
     } finally {
-      setLoading(false);
+      if (!opts?.isCancelled || !opts.isCancelled()) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
+    let isCancelled = false;
     if (timeRange === '6months') {
       setLoading(true);
       const unsubscribe = StudentIncidentService.subscribeToIncidents((data) => {
-        setIncidents(data);
-        setLoading(false);
+        if (!isCancelled) {
+          setIncidents(data);
+          setLoading(false);
+        }
       });
-      return () => unsubscribe();
+      return () => {
+        isCancelled = true;
+        unsubscribe();
+      };
     } else if (timeRange === '1year') {
-      loadIncidents();
+      void loadIncidents(undefined, { isCancelled: () => isCancelled });
     } else {
       if (searchQuery.trim()) {
-        loadIncidents(searchQuery.trim());
+        void loadIncidents(searchQuery.trim(), { isCancelled: () => isCancelled });
       } else {
         setIncidents([]);
         setLoading(false);
       }
     }
+    return () => {
+      isCancelled = true;
+    };
   }, [timeRange]);
 
   const refreshData = async () => {
     if (timeRange === 'all') {
       if (searchQuery.trim()) {
-        loadIncidents(searchQuery.trim());
+        await loadIncidents(searchQuery.trim());
       } else {
         setIncidents([]);
       }
     } else {
-      loadIncidents();
+      await loadIncidents();
     }
   };
 
-  // KPIs
+  // KPIs - single pass loop
   const stats = useMemo(() => {
-    const total = incidents.length;
-    const pendingReview = incidents.filter(
-      (r) =>
-        r.status !== 'closed' &&
-        (!r.officeFollowUp || !r.officeFollowUp.isOfficeLocked)
-    ).length;
-    const underInvestigation = incidents.filter((r) => r.status === 'under_investigation').length;
-    const parentContacted = incidents.filter(
-      (r) => r.status === 'parent_contacted' || r.status === 'school_notified'
-    ).length;
-    const closed = incidents.filter((r) => r.status === 'closed').length;
-    return { total, pendingReview, underInvestigation, parentContacted, closed };
+    let pendingReview = 0;
+    let underInvestigation = 0;
+    let parentContacted = 0;
+    let closed = 0;
+
+    for (const r of incidents) {
+      if (r.status === 'closed') {
+        closed++;
+      } else {
+        if (!r.officeFollowUp || !r.officeFollowUp.isOfficeLocked) {
+          pendingReview++;
+        }
+      }
+
+      if (r.status === 'under_investigation') {
+        underInvestigation++;
+      } else if (r.status === 'parent_contacted' || r.status === 'school_notified') {
+        parentContacted++;
+      }
+    }
+
+    return {
+      total: incidents.length,
+      pendingReview,
+      underInvestigation,
+      parentContacted,
+      closed,
+    };
   }, [incidents]);
 
   // Filtered reports
   const filteredIncidents = useMemo(() => {
+    const q = deferredSearchQuery.trim().toLowerCase();
+    const hasSearch = q.length > 0;
+    const isStatusFiltered = statusFilter !== 'all';
+
     return incidents.filter((r) => {
       // Needs Follow-up toggle
       if (needsFollowUpOnly) {
@@ -148,20 +194,19 @@ export const StudentIncidentsView: React.FC = () => {
       }
 
       // Status filter
-      if (statusFilter !== 'all' && r.status !== statusFilter) {
+      if (isStatusFiltered && r.status !== statusFilter) {
         return false;
       }
 
       // Free text search
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesStudent = r.studentName.toLowerCase().includes(q);
+      if (hasSearch) {
+        const matchesStudent = (r.studentName || '').toLowerCase().includes(q);
         const matchesStudentNo = (r.studentNo || '').toLowerCase().includes(q);
         const matchesSchool = (r.schoolName || '').toLowerCase().includes(q);
         const matchesRoute = (r.routeNo || '').toLowerCase().includes(q);
-        const matchesDriver = r.driverName.toLowerCase().includes(q);
-        const matchesDesc = r.description.toLowerCase().includes(q);
-        const matchesLocation = r.location.toLowerCase().includes(q);
+        const matchesDriver = (r.driverName || '').toLowerCase().includes(q);
+        const matchesDesc = (r.description || '').toLowerCase().includes(q);
+        const matchesLocation = (r.location || '').toLowerCase().includes(q);
         if (
           !matchesStudent &&
           !matchesStudentNo &&
@@ -177,7 +222,7 @@ export const StudentIncidentsView: React.FC = () => {
 
       return true;
     });
-  }, [incidents, needsFollowUpOnly, statusFilter, searchQuery]);
+  }, [incidents, needsFollowUpOnly, statusFilter, deferredSearchQuery]);
 
   // Virtual scrolling for 1,000+ student incident records
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -382,7 +427,7 @@ export const StudentIncidentsView: React.FC = () => {
           </button>
 
           <button
-            onClick={refreshData}
+            onClick={() => void refreshData()}
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer"
           >
@@ -456,7 +501,7 @@ export const StudentIncidentsView: React.FC = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && timeRange === 'all') {
-                  loadIncidents(searchQuery.trim());
+                  void loadIncidents(searchQuery.trim());
                 }
               }}
               className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
@@ -465,7 +510,7 @@ export const StudentIncidentsView: React.FC = () => {
           {timeRange === 'all' && (
             <button
               type="button"
-              onClick={() => loadIncidents(searchQuery.trim())}
+              onClick={() => void loadIncidents(searchQuery.trim())}
               disabled={loading || !searchQuery.trim()}
               className="px-3.5 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-900 rounded-lg transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5"
             >
@@ -1044,13 +1089,16 @@ export const StudentIncidentsView: React.FC = () => {
         </div>
       )}
 
-      {/* ─── Official Printable Incident Report PDF Modal ───────────────────── */}
-      <StudentIncidentPdfModal
-        isOpen={isPdfModalOpen}
-        onClose={() => setIsPdfModalOpen(false)}
-        incident={pdfTargetIncident}
-        allIncidents={filteredIncidents}
-      />
+      {isPdfModalOpen && (
+        <React.Suspense fallback={<ExportLoadingOverlay />}>
+          <StudentIncidentPdfModal
+            isOpen={isPdfModalOpen}
+            onClose={() => setIsPdfModalOpen(false)}
+            incident={pdfTargetIncident}
+            allIncidents={filteredIncidents}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

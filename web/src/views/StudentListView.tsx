@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Student, StudentContact, StudentStats } from '../types/student';
 import { School } from '../types/school';
@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { CreateParentChannelPayload } from '../types/chat';
 
+const AVAILABLE_GRADES = ['JK', 'SK', '1', '2', '3', '4', '5', '6', '7', '8'] as const;
+
 interface StudentListViewProps {
   students?: Student[];
   schools: School[];
@@ -54,6 +56,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
   onStudentsLoaded,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   // School selection defaults to saved preference or first active school
   const [selectedSchoolId, setSelectedSchoolId] = useState<string>(() => {
     const saved = localStorage.getItem('last_selected_school_id');
@@ -223,7 +226,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
     } catch (err) {
       console.error('Refresh students failed:', err);
     } finally {
-      setTimeout(() => setRefreshing(false), 500);
+      setRefreshing(false);
     }
   };
 
@@ -239,11 +242,20 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
     return counts;
   }, [schools, selectedSchoolId, loadedSchoolStudents.length]);
 
+  // Pre-index schools for O(1) retrieval
+  const schoolsById = useMemo(() => {
+    const map = new Map<number, School>();
+    for (const s of schools) {
+      map.set(s.schoolId, s);
+    }
+    return map;
+  }, [schools]);
+
   // Current selected school entity
   const currentSchool = useMemo(() => {
     if (selectedSchoolId === 'ALL') return null;
-    return schools.find((s) => s.schoolId === Number(selectedSchoolId)) || null;
-  }, [schools, selectedSchoolId]);
+    return schoolsById.get(Number(selectedSchoolId)) || null;
+  }, [schoolsById, selectedSchoolId]);
 
   // Filtered schools inside popover search
   const filteredSchools = useMemo(() => {
@@ -258,14 +270,20 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
     );
   }, [schools, schoolSearchQuery]);
 
-  // Filter active students based on grade, route assignment, metAtBus, and local searchTerm
+  // Filter active students based on grade, route assignment, metAtBus, and deferredSearchTerm
   const filteredStudents = useMemo(() => {
+    const term = deferredSearchTerm.trim().toLowerCase();
+    const hasSearch = term.length > 0;
+    const isSchoolFiltered = selectedSchoolId !== 'ALL';
+    const sIdNum = isSchoolFiltered ? Number(selectedSchoolId) : 0;
+    const isGradeFiltered = selectedGrade !== 'ALL';
+
     return activeStudents.filter((s) => {
-      if (selectedSchoolId !== 'ALL' && s.schoolId !== Number(selectedSchoolId)) {
+      if (isSchoolFiltered && s.schoolId !== sIdNum) {
         return false;
       }
 
-      if (selectedGrade !== 'ALL' && s.grade !== selectedGrade) {
+      if (isGradeFiltered && s.grade !== selectedGrade) {
         return false;
       }
 
@@ -280,8 +298,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
         return false;
       }
 
-      if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase().trim();
+      if (hasSearch) {
         const matchName = (s.fullName || s.studentName || '').toLowerCase().includes(term);
         const matchNo = (s.studentNo || '').toLowerCase().includes(term);
         const matchSchool = (s.schoolName || '').toLowerCase().includes(term);
@@ -295,7 +312,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
 
       return true;
     });
-  }, [activeStudents, selectedSchoolId, selectedGrade, metAtBusOnly, routeFilter, searchTerm]);
+  }, [activeStudents, selectedSchoolId, selectedGrade, metAtBusOnly, routeFilter, deferredSearchTerm]);
 
   // Aggregated other schools found during cross-school peek
   const distinctCrossSchools = useMemo(() => {
@@ -314,8 +331,6 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
     }
     return Array.from(map.values());
   }, [crossSchoolMatches]);
-
-  const availableGrades = ['JK', 'SK', '1', '2', '3', '4', '5', '6', '7', '8'];
 
   // Dynamic search placeholder
   const searchPlaceholder = useMemo(() => {
@@ -572,7 +587,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
             className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-500"
           >
             <option value="ALL">All Grades</option>
-            {availableGrades.map((g) => (
+            {AVAILABLE_GRADES.map((g) => (
               <option key={g} value={g}>
                 Grade {g}
               </option>

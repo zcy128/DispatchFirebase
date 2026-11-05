@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import { BiweeklyEmployeeGroup } from '../views/BiweeklyPayrollView';
+import { BiweeklyEmployeeGroup } from '../types/biweeklyPayroll';
 import { PCY_TECH_LOGO_DATA_URL } from '../assets/logoDataUrl';
 
 export interface ExportDriverTimesheetPdfOptions {

@@ -189,7 +189,12 @@ export const CompanyContactsService = {
       updatedAt: new Date().toISOString(),
     };
 
-    // Update local cache optimistically
+    if (db) {
+      const docRef = doc(db, 'company_contacts', id);
+      await setDoc(docRef, payload, { merge: true });
+    }
+
+    // Update local cache on successful persist
     const local = getLocalContacts();
     const idx = local.findIndex((c) => c.id === id);
     if (idx >= 0) {
@@ -198,23 +203,18 @@ export const CompanyContactsService = {
       local.push(payload);
     }
     setLocalContacts(local);
-
-    if (db) {
-      const docRef = doc(db, 'company_contacts', id);
-      await setDoc(docRef, payload, { merge: true });
-    }
   },
 
   /**
    * Delete contact
    */
   deleteContact: async (id: string): Promise<void> => {
-    const local = getLocalContacts().filter((c) => c.id !== id);
-    setLocalContacts(local);
-
     if (db) {
       const docRef = doc(db, 'company_contacts', id);
       await deleteDoc(docRef);
     }
+
+    const local = getLocalContacts().filter((c) => c.id !== id);
+    setLocalContacts(local);
   },
 };

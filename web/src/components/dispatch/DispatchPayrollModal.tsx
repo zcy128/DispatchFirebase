@@ -6,6 +6,8 @@ import { Employee } from '../../types/employee';
 import { useAuth } from '../../contexts/AuthContext';
 import { logDispatchAction } from '../../utils/dispatchLogger';
 
+const EMPTY_EMPLOYEES: Employee[] = [];
+
 interface DispatchPayrollModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -15,18 +17,26 @@ interface DispatchPayrollModalProps {
   onShiftUpdated: (updatedShift: DispatchShift) => void;
 }
 
-export const DispatchPayrollModal: React.FC<DispatchPayrollModalProps> = ({
-  isOpen,
+export const DispatchPayrollModal: React.FC<DispatchPayrollModalProps> = (props) => {
+  if (!props.isOpen || !props.shift) return null;
+  return (
+    <DispatchPayrollModalContent
+      {...props}
+      shift={props.shift}
+      employees={props.employees ?? EMPTY_EMPLOYEES}
+    />
+  );
+};
+
+const DispatchPayrollModalContent: React.FC<DispatchPayrollModalProps & { shift: DispatchShift }> = ({
   onClose,
   shift,
-  employees = [],
+  employees = EMPTY_EMPLOYEES,
   payrollSettings: initialSettings,
   onShiftUpdated,
 }) => {
   const { currentUser } = useAuth();
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
-
-  if (!isOpen || !shift) return null;
 
   const [settings, setSettings] = useState<DispatchPayrollSettings | null>(initialSettings || null);
   const [driverOption, setDriverOption] = useState<string>(shift.driverPayOption || '');

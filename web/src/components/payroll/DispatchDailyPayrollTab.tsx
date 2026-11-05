@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Calendar,
@@ -31,6 +31,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { getLocalTodayString, addDaysToDateString } from '../../utils/dateUtils';
 import { logDispatchAction } from '../../utils/dispatchLogger';
 
+function payrollNeedsReview(item: DispatchPayrollRecord): boolean {
+  return item.status === 'pending_approval' || (item.status !== 'approved' && item.status !== 'rejected' && Boolean(item.hasComments || (item.payrollComments && item.payrollComments.trim() !== '')));
+}
+
 const formatModifiedAt = (dateStr?: string) => {
   if (!dateStr) return '-';
   try {
@@ -55,10 +59,10 @@ interface DispatchDailyPayrollTabProps {
   onNavigateToFinanceLog?: () => void;
 }
 
-export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = ({
+export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
   initialDate,
   onNavigateToFinanceLog,
-}) => {
+}: DispatchDailyPayrollTabProps) {
   const { currentUser } = useAuth();
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
   const isDispatcherOrAdmin = currentUser?.role === 'dispatcher' || currentUser?.role === 'admin';
@@ -80,38 +84,25 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
   const [payOptionFilter, setPayOptionFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'approved' | 'pending_approval' | 'pending_checkout' | 'rejected'>('all');
 
-  // Review & Edit Modal State
+  // Review modal holds its own draft fields so typing does not re-render the table.
   const [editingPayroll, setEditingPayroll] = useState<DispatchPayrollRecord | null>(null);
-  const [editPayRate, setEditPayRate] = useState<number>(0);
-  const [editEiHours, setEditEiHours] = useState<number>(0);
-  const [editPayOption, setEditPayOption] = useState<string>('STANDARD');
-  const [editComments, setEditComments] = useState<string>('');
   const [savingAction, setSavingAction] = useState<boolean>(false);
 
-  // Load dispatch payrolls and subscribe to real-time updates
+  // The snapshot is the source of truth and already falls back to the list endpoint.
   useEffect(() => {
     setLoading(true);
     setError(null);
-
-    DispatchService.listDispatchPayrolls(selectedDate)
-      .then((records) => {
-        setPayrolls(Array.isArray(records) ? records : []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error('Failed to load dispatch payrolls:', err);
-        setError('Failed to fetch dispatch payrolls for the selected date.');
-        setLoading(false);
-      });
 
     const unsubscribe = DispatchService.subscribeToDispatchPayrolls(
       selectedDate,
       (updatedList) => {
         setPayrolls(updatedList);
         setLoading(false);
+        setError(null);
       },
       (err) => {
         console.warn('Realtime payroll subscription error, using polled data:', err);
+        setLoading(false);
       }
     );
 
@@ -160,7 +151,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
       const updated = await DispatchService.approveDispatchPayroll(rec.id, payload);
       setPayrolls((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
 
-      await logDispatchAction({
+      void logDispatchAction({
         date: rec.dispatchDate,
         type: 'Payroll Approved',
         detail: `Quick-approved payroll for ${rec.employeeName} (${rec.role}): $${rec.payRate.toFixed(2)} (${rec.eiHours}h EI)`,
@@ -187,7 +178,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
       });
       setPayrolls((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
 
-      await logDispatchAction({
+      void logDispatchAction({
         date: rec.dispatchDate,
         type: 'Payroll Rejected',
         detail: `Quick-rejected payroll for ${rec.employeeName} (${rec.role})`,
@@ -201,98 +192,22 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
     }
   };
 
-  // Open Edit Modal
   const handleOpenEditModal = (rec: DispatchPayrollRecord) => {
     setEditingPayroll(rec);
-    setEditPayRate(rec.payRate);
-    setEditEiHours(rec.eiHours);
-    setEditPayOption(rec.payOption || 'STANDARD');
-    setEditComments(rec.payrollComments || '');
   };
 
-  // Save Modal as Approved / Updated
-  const handleSaveModalApprove = async () => {
-    if (!editingPayroll) return;
-    try {
-      setSavingAction(true);
-      const isAlreadyApproved = editingPayroll.status === 'approved';
-      const payload: ApproveDispatchPayrollPayload = {
-        approvedBy: actorName,
-        payRate: Number(editPayRate),
-        eiHours: Number(editEiHours),
-        payOption: editPayOption,
-        payrollComments: editComments,
-      };
-      const updated = await DispatchService.approveDispatchPayroll(editingPayroll.id, payload);
-      setPayrolls((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+  const applyPayrollUpdate = useCallback((updated: DispatchPayrollRecord) => {
+    setPayrolls((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+  }, []);
 
-      const changes: string[] = [];
-      if (editingPayroll.payRate !== Number(editPayRate)) {
-        changes.push(`Rate: $${editingPayroll.payRate.toFixed(2)} -> $${Number(editPayRate).toFixed(2)}`);
-      }
-      if (editingPayroll.eiHours !== Number(editEiHours)) {
-        changes.push(`EI: ${editingPayroll.eiHours}h -> ${Number(editEiHours)}h`);
-      }
-      if (editingPayroll.payOption !== editPayOption) {
-        changes.push(`Option: ${editingPayroll.payOption} -> ${editPayOption}`);
-      }
-      if (editComments && editComments !== editingPayroll.payrollComments) {
-        changes.push(`Comments: "${editComments}"`);
-      }
+  const deferredSearch = useDeferredValue(searchQuery);
 
-      const logType = isAlreadyApproved ? 'Payroll Modified' : 'Payroll Approved';
-      const detailStr = changes.length > 0
-        ? `${isAlreadyApproved ? 'Modified' : 'Approved'} payroll for ${editingPayroll.employeeName} (${editingPayroll.role}): [${changes.join(', ')}]`
-        : `Approved payroll for ${editingPayroll.employeeName} (${editingPayroll.role}): $${editingPayroll.payRate.toFixed(2)}`;
-
-      await logDispatchAction({
-        date: editingPayroll.dispatchDate,
-        type: logType,
-        detail: detailStr,
-        shift: { id: editingPayroll.shiftId, routeNo: editingPayroll.routeNo, shiftType: editingPayroll.shiftType },
-        user: actorName,
-      });
-
-      setEditingPayroll(null);
-    } catch (err) {
-      alert('Failed to approve: ' + (err as Error).message);
-    } finally {
-      setSavingAction(false);
-    }
-  };
-
-  // Save Modal as Rejected
-  const handleSaveModalReject = async () => {
-    if (!editingPayroll) return;
-    try {
-      setSavingAction(true);
-      const updated = await DispatchService.rejectDispatchPayroll(editingPayroll.id, {
-        rejectedBy: actorName,
-        reason: editComments || 'Rejected by Dispatcher',
-      });
-      setPayrolls((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-
-      await logDispatchAction({
-        date: editingPayroll.dispatchDate,
-        type: 'Payroll Rejected',
-        detail: `Rejected payroll for ${editingPayroll.employeeName} (${editingPayroll.role})${editComments ? ` (Reason: ${editComments})` : ''}`,
-        shift: { id: editingPayroll.shiftId, routeNo: editingPayroll.routeNo, shiftType: editingPayroll.shiftType },
-        user: actorName,
-      });
-
-      setEditingPayroll(null);
-    } catch (err) {
-      alert('Failed to reject: ' + (err as Error).message);
-    } finally {
-      setSavingAction(false);
-    }
-  };
-
-  // Filtered list
+  // Filtered list. Shift, role, and status filters stay immediate.
   const filteredPayrolls = useMemo(() => {
+    const q = deferredSearch.trim().toLowerCase();
     return payrolls.filter((item) => {
       const isCharterItem = Boolean(item.isCharter || item.shiftType === 'CHARTER');
-      const isNeedsReviewItem = item.status === 'pending_approval' || (item.status !== 'approved' && item.status !== 'rejected' && Boolean(item.hasComments || (item.payrollComments && item.payrollComments.trim() !== '')));
+      const isNeedsReviewItem = payrollNeedsReview(item);
 
       // Category filter (All vs Needs Review vs Clean vs Charter)
       if (category === 'charter') {
@@ -315,9 +230,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
       if (statusFilter !== 'all' && (item.status || 'pending_checkout').toLowerCase() !== statusFilter) {
         return false;
       }
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (q) {
         const routeMatch = (item.routeNo || '').toLowerCase().includes(q);
         const nameMatch = (item.employeeName || '').toLowerCase().includes(q);
         const empIdMatch = (item.employeeId || '').toLowerCase().includes(q);
@@ -331,7 +244,7 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
       }
       return true;
     });
-  }, [payrolls, category, roleFilter, payOptionFilter, statusFilter, searchQuery]);
+  }, [payrolls, category, roleFilter, payOptionFilter, statusFilter, deferredSearch]);
 
   // Virtual scrolling for 1,000+ daily dispatch payroll items
   const payrollTableContainerRef = useRef<HTMLDivElement>(null);
@@ -348,48 +261,50 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
     ? payrollVirtualizer.getTotalSize() - (virtualPayrolls[virtualPayrolls.length - 1]?.end || 0)
     : 0;
 
-  // Counts for category badges (aligned with pending approval & comments)
-  const withCommentsCount = useMemo(() => {
-    return payrolls.filter((p) => p.status === 'pending_approval' || (p.status !== 'approved' && p.status !== 'rejected' && Boolean(p.hasComments || (p.payrollComments && p.payrollComments.trim() !== '')))).length;
-  }, [payrolls]);
-
-  const withoutCommentsCount = useMemo(() => {
-    return payrolls.filter((p) => p.status === 'approved' || (p.status !== 'pending_approval' && !p.hasComments && (!p.payrollComments || p.payrollComments.trim() === ''))).length;
-  }, [payrolls]);
-
-  const charterCount = useMemo(() => {
-    return payrolls.filter((p) => Boolean(p.isCharter || p.shiftType === 'CHARTER')).length;
-  }, [payrolls]);
-
-  // Aggregate statistics
-  const stats = useMemo(() => {
+  const payrollSummary = useMemo(() => {
     let totalPay = 0;
     let totalEiHours = 0;
     let driversCount = 0;
     let attendantsCount = 0;
     let pendingApprovalCount = 0;
     let syncedToFinanceCount = 0;
+    let withCommentsCount = 0;
+    let withoutCommentsCount = 0;
+    let charterCount = 0;
 
-    for (const r of payrolls) {
-      totalPay += r.payRate || 0;
-      totalEiHours += r.eiHours || 0;
-      if (r.role === 'driver') driversCount++;
-      if (r.role === 'attendant') attendantsCount++;
-
-      if (r.status === 'pending_approval' || (r.status !== 'approved' && r.status !== 'rejected' && Boolean(r.hasComments || (r.payrollComments && r.payrollComments.trim() !== '')))) pendingApprovalCount++;
-      if (r.syncedToFinance) syncedToFinanceCount++;
+    for (const record of payrolls) {
+      totalPay += record.payRate || 0;
+      totalEiHours += record.eiHours || 0;
+      if (record.role === 'driver') driversCount++;
+      if (record.role === 'attendant') attendantsCount++;
+      if (record.syncedToFinance) syncedToFinanceCount++;
+      if (payrollNeedsReview(record)) {
+        pendingApprovalCount++;
+        withCommentsCount++;
+      }
+      if (record.status === 'approved' || (record.status !== 'pending_approval' && !record.hasComments && (!record.payrollComments || record.payrollComments.trim() === ''))) {
+        withoutCommentsCount++;
+      }
+      if (record.isCharter || record.shiftType === 'CHARTER') charterCount++;
     }
 
     return {
-      totalPay,
-      totalEiHours,
-      totalCrew: payrolls.length,
-      driversCount,
-      attendantsCount,
-      pendingApprovalCount,
-      syncedToFinanceCount,
+      stats: {
+        totalPay,
+        totalEiHours,
+        totalCrew: payrolls.length,
+        driversCount,
+        attendantsCount,
+        pendingApprovalCount,
+        syncedToFinanceCount,
+      },
+      withCommentsCount,
+      withoutCommentsCount,
+      charterCount,
     };
   }, [payrolls]);
+
+  const { stats, withCommentsCount, withoutCommentsCount, charterCount } = payrollSummary;
 
   // Export to Excel / CSV with UTF-8 BOM
   const handleExportExcel = () => {
@@ -1039,8 +954,109 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
         )}
       </div>
 
-      {/* DISPATCHER EDIT & APPROVAL MODAL */}
       {editingPayroll && (
+        <DispatchPayrollEditModal
+          record={editingPayroll}
+          actorName={actorName}
+          onClose={() => setEditingPayroll(null)}
+          onUpdated={applyPayrollUpdate}
+        />
+      )}
+    </div>
+  );
+});
+
+function DispatchPayrollEditModal({
+  record,
+  actorName,
+  onClose,
+  onUpdated,
+}: {
+  record: DispatchPayrollRecord;
+  actorName: string;
+  onClose: () => void;
+  onUpdated: (updated: DispatchPayrollRecord) => void;
+}) {
+  const [payRate, setPayRate] = useState(record.payRate);
+  const [eiHours, setEiHours] = useState(record.eiHours);
+  const [payOption, setPayOption] = useState(record.payOption || 'STANDARD');
+  const [comments, setComments] = useState(record.payrollComments || '');
+  const [saving, setSaving] = useState(false);
+
+  const handleApprove = async () => {
+    try {
+      setSaving(true);
+      const isAlreadyApproved = record.status === 'approved';
+      const nextRate = Number(payRate);
+      const nextHours = Number(eiHours);
+      const payload: ApproveDispatchPayrollPayload = {
+        approvedBy: actorName,
+        payRate: nextRate,
+        eiHours: nextHours,
+        payOption,
+        payrollComments: comments,
+      };
+      const updated = await DispatchService.approveDispatchPayroll(record.id, payload);
+      onUpdated(updated);
+
+      const changes: string[] = [];
+      if (record.payRate !== nextRate) {
+        changes.push(`Rate: $${record.payRate.toFixed(2)} -> $${nextRate.toFixed(2)}`);
+      }
+      if (record.eiHours !== nextHours) {
+        changes.push(`EI: ${record.eiHours}h -> ${nextHours}h`);
+      }
+      if (record.payOption !== payOption) {
+        changes.push(`Option: ${record.payOption} -> ${payOption}`);
+      }
+      if (comments && comments !== record.payrollComments) {
+        changes.push(`Comments: "${comments}"`);
+      }
+
+      const logType = isAlreadyApproved ? 'Payroll Modified' : 'Payroll Approved';
+      const detailStr = changes.length > 0
+        ? `${isAlreadyApproved ? 'Modified' : 'Approved'} payroll for ${record.employeeName} (${record.role}): [${changes.join(', ')}]`
+        : `Approved payroll for ${record.employeeName} (${record.role}): $${record.payRate.toFixed(2)}`;
+
+      void logDispatchAction({
+        date: record.dispatchDate,
+        type: logType,
+        detail: detailStr,
+        shift: { id: record.shiftId, routeNo: record.routeNo, shiftType: record.shiftType },
+        user: actorName,
+      });
+      onClose();
+    } catch (err) {
+      alert('Failed to approve: ' + (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReject = async () => {
+    try {
+      setSaving(true);
+      const updated = await DispatchService.rejectDispatchPayroll(record.id, {
+        rejectedBy: actorName,
+        reason: comments || 'Rejected by Dispatcher',
+      });
+      onUpdated(updated);
+      void logDispatchAction({
+        date: record.dispatchDate,
+        type: 'Payroll Rejected',
+        detail: `Rejected payroll for ${record.employeeName} (${record.role})${comments ? ` (Reason: ${comments})` : ''}`,
+        shift: { id: record.shiftId, routeNo: record.routeNo, shiftType: record.shiftType },
+        user: actorName,
+      });
+      onClose();
+    } catch (err) {
+      alert('Failed to reject: ' + (err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden animate-scale-in">
             {/* Header */}
@@ -1051,8 +1067,8 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                   Review & Approve Dispatch Payroll
                 </h3>
               </div>
-              <button
-                onClick={() => setEditingPayroll(null)}
+                <button
+                onClick={onClose}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
                 <X className="w-5 h-5" />
@@ -1063,24 +1079,24 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
             <div className="p-6 space-y-4">
               <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 space-y-1">
                 <div className="flex justify-between">
-                  <span>Route: <strong>{editingPayroll.routeNo}</strong> ({editingPayroll.shiftType})</span>
-                  <span>Role: <strong className="capitalize">{editingPayroll.role}</strong></span>
+                  <span>Route: <strong>{record.routeNo}</strong> ({record.shiftType})</span>
+                  <span>Role: <strong className="capitalize">{record.role}</strong></span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Employee: <strong>{editingPayroll.employeeName}</strong></span>
-                  <span>Check-in / Out: <strong>{editingPayroll.checkInTime || '-'} / {editingPayroll.checkOutTime || '-'}</strong></span>
+                  <span>Employee: <strong>{record.employeeName}</strong></span>
+                  <span>Check-in / Out: <strong>{record.checkInTime || '-'} / {record.checkOutTime || '-'}</strong></span>
                 </div>
               </div>
 
               {/* Crew Comments Highlight */}
-              {editingPayroll.payrollComments && (
+              {record.payrollComments && (
                 <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs">
                   <div className="font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5 mb-1">
                     <MessageSquare className="w-4 h-4" />
                     <span>Crew Member Submitted Comments:</span>
                   </div>
                   <p className="text-slate-800 dark:text-slate-200 italic">
-                    "{editingPayroll.payrollComments}"
+                    "{record.payrollComments}"
                   </p>
                 </div>
               )}
@@ -1091,8 +1107,8 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                   Pay Option
                 </label>
                 <select
-                  value={editPayOption}
-                  onChange={(e) => setEditPayOption(e.target.value)}
+                  value={payOption}
+                  onChange={(e) => setPayOption(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-hidden"
                 >
                   <option value="STANDARD">STANDARD (Route Shift Rate)</option>
@@ -1112,8 +1128,8 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                   type="number"
                   step="0.01"
                   min="0"
-                  value={editPayRate}
-                  onChange={(e) => setEditPayRate(parseFloat(e.target.value) || 0)}
+                  value={payRate}
+                  onChange={(e) => setPayRate(parseFloat(e.target.value) || 0)}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
                 />
               </div>
@@ -1127,8 +1143,8 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                   type="number"
                   step="0.1"
                   min="0"
-                  value={editEiHours}
-                  onChange={(e) => setEditEiHours(parseFloat(e.target.value) || 0)}
+                  value={eiHours}
+                  onChange={(e) => setEiHours(parseFloat(e.target.value) || 0)}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
                 />
               </div>
@@ -1140,8 +1156,8 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
                 </label>
                 <textarea
                   rows={2}
-                  value={editComments}
-                  onChange={(e) => setEditComments(e.target.value)}
+                  value={comments}
+                  onChange={(e) => setComments(e.target.value)}
                   placeholder="Review notes, e.g. Approved overtime, weather delay confirmed..."
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
                 />
@@ -1152,8 +1168,8 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
             <div className="flex items-center justify-between px-6 py-4 bg-slate-50/75 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800">
               <button
                 type="button"
-                onClick={handleSaveModalReject}
-                disabled={savingAction}
+                onClick={handleReject}
+                disabled={saving}
                 className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors"
               >
                 Reject Record
@@ -1162,25 +1178,23 @@ export const DispatchDailyPayrollTab: React.FC<DispatchDailyPayrollTabProps> = (
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setEditingPayroll(null)}
+                  onClick={onClose}
                   className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={handleSaveModalApprove}
-                  disabled={savingAction}
+                  onClick={handleApprove}
+                  disabled={saving}
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{savingAction ? 'Saving...' : 'Approve & Sync to Finance'}</span>
+                  <span>{saving ? 'Saving...' : 'Approve & Sync to Finance'}</span>
                 </button>
               </div>
             </div>
           </div>
         </div>
-      )}
-    </div>
   );
-};
+}

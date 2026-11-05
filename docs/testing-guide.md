@@ -48,6 +48,13 @@ cd ../driver_app && flutter analyze
 cd ../parent_app && flutter analyze
 ```
 
+> 💡 **Automated One-Command Regression Skill**:
+> Run the full suite across all workspaces in one shot:
+> ```powershell
+> powershell -ExecutionPolicy Bypass -File .agents/skills/monorepo-regression-test/scripts/run-all.ps1
+> ```
+> Or ask Antigravity: *"Run full monorepo regression test"* to trigger the **[`monorepo-regression-test`](../.agents/skills/monorepo-regression-test/SKILL.md)** skill.
+
 ---
 
 ### 2. Comprehensive Test Suites Index & Direct Links
@@ -112,6 +119,13 @@ cd ../driver_app && flutter test
 # 3. Application Suivi Parents (51 tests Flutter)
 cd ../parent_app && flutter test
 ```
+
+> 💡 **Compétence d'Exécution en Une Seule Ligne** :
+> Exécutez la suite complète de régression et d'analyse en une seule commande :
+> ```powershell
+> powershell -ExecutionPolicy Bypass -File .agents/skills/monorepo-regression-test/scripts/run-all.ps1
+> ```
+> Ou demandez à Antigravity : *"Exécuter les tests de régression du monorepo"* pour déclencher la compétence **[`monorepo-regression-test`](../.agents/skills/monorepo-regression-test/SKILL.md)**.
 
 ---
 
@@ -179,6 +193,13 @@ cd ../driver_app && flutter analyze
 # 家长端 Dart 静态分析 (0 警告)
 cd ../parent_app && flutter analyze
 ```
+
+> 💡 **一键自动化全栈回归 Skill**：
+> 在根目录下单行命令一键跑通所有项目的单元测试与类型静态分析：
+> ```powershell
+> powershell -ExecutionPolicy Bypass -File .agents/skills/monorepo-regression-test/scripts/run-all.ps1
+> ```
+> 或直接向 Antigravity 提示：*“运行全栈回归测试”*，即可自动触发 **[`monorepo-regression-test`](../.agents/skills/monorepo-regression-test/SKILL.md)** 技能。
 
 ---
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue, Suspense } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { AssignmentHistoryService, isColdRecord } from '../services/assignmentHistoryService';
 import {
@@ -23,9 +23,15 @@ import {
   GraduationCap,
   Info
 } from 'lucide-react';
-import { RouteAuditHistoryPanel } from '../components/routes/RouteAuditHistoryPanel';
-import { EntityOperationLogPanel } from '../components/common/EntityOperationLogPanel';
 import { useI18n } from '../contexts/I18nContext';
+
+// Lazy-load heavy subpanels to optimize initial chunk bundle size per Vercel best practices
+const RouteAuditHistoryPanel = React.lazy(() =>
+  import('../components/routes/RouteAuditHistoryPanel').then((m) => ({ default: m.RouteAuditHistoryPanel }))
+);
+const EntityOperationLogPanel = React.lazy(() =>
+  import('../components/common/EntityOperationLogPanel').then((m) => ({ default: m.EntityOperationLogPanel }))
+);
 
 export const AssignmentTrackingView: React.FC = () => {
   const { isFrench } = useI18n();
@@ -81,7 +87,11 @@ export const AssignmentTrackingView: React.FC = () => {
     }
   };
 
-  // Subscribe to real-time events (<= 1 year live data) or load targeted archives (> 1 year)
+  // Deferred search query to keep typing responsive at 60fps (Vercel rerender-use-deferred-value)
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
+  // Subscribe to real-time events (<= 1 year live data)
+  // Decoupled from dropdown filter changes to prevent tearing down Firestore listeners (Vercel client-event-listeners)
   useEffect(() => {
     if (timeRange !== '1year') return;
     setLoading(true);
@@ -98,7 +108,7 @@ export const AssignmentTrackingView: React.FC = () => {
     );
 
     return () => unsubscribe();
-  }, [timeRange, activeTab, selectedAction, selectedDriverId, selectedRouteNo, selectedUnitNumber, selectedDate]);
+  }, [timeRange]);
 
   useEffect(() => {
     if (timeRange !== 'all') return;
@@ -119,46 +129,30 @@ export const AssignmentTrackingView: React.FC = () => {
     setRefreshing(false);
   };
 
-  // Unique list of drivers that have history records
-  const historicalDrivers = useMemo(() => {
-    const map = new Map<string, string>();
-    history.forEach((h) => {
-      if (h.driverId) {
-        map.set(h.driverId, h.driverName);
-      }
-    });
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  // Single-pass extraction for historical filter dropdown options (Vercel js-combine-iterations)
+  const { historicalDrivers, historicalDispatchers, historicalRoutes, historicalVehicles } = useMemo(() => {
+    const driversMap = new Map<string, string>();
+    const dispatchersSet = new Set<string>();
+    const routesSet = new Set<string>();
+    const vehiclesSet = new Set<string>();
+
+    for (const h of history) {
+      if (h.driverId) driversMap.set(h.driverId, h.driverName);
+      const actor = h.dispatcherName || h.assignedBy;
+      if (actor) dispatchersSet.add(actor);
+      if (h.routeNo) routesSet.add(h.routeNo);
+      if (h.unitNumber) vehiclesSet.add(h.unitNumber);
+    }
+
+    return {
+      historicalDrivers: Array.from(driversMap.entries()).map(([id, name]) => ({ id, name })),
+      historicalDispatchers: Array.from(dispatchersSet).sort(),
+      historicalRoutes: Array.from(routesSet).sort(),
+      historicalVehicles: Array.from(vehiclesSet).sort(),
+    };
   }, [history]);
 
-  // Unique list of dispatchers / actors who changed assignments
-  const historicalDispatchers = useMemo(() => {
-    const set = new Set<string>();
-    history.forEach((h) => {
-      const name = h.dispatcherName || h.assignedBy;
-      if (name) set.add(name);
-    });
-    return Array.from(set).sort();
-  }, [history]);
-
-  // Unique list of routes in history
-  const historicalRoutes = useMemo(() => {
-    const set = new Set<string>();
-    history.forEach((h) => {
-      if (h.routeNo) set.add(h.routeNo);
-    });
-    return Array.from(set).sort();
-  }, [history]);
-
-  // Unique list of vehicles in history
-  const historicalVehicles = useMemo(() => {
-    const set = new Set<string>();
-    history.forEach((h) => {
-      if (h.unitNumber) set.add(h.unitNumber);
-    });
-    return Array.from(set).sort();
-  }, [history]);
-
-  // Filtered records
+  // Filtered records evaluated with deferred search query
   const filteredRecords = useMemo(() => {
     return history.filter((rec) => {
       // Type / Tab filter
@@ -199,9 +193,9 @@ export const AssignmentTrackingView: React.FC = () => {
         return false;
       }
 
-      // Freeform Search
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
+      // Freeform Search using deferred query to prevent input stutter
+      if (deferredSearchQuery.trim()) {
+        const q = deferredSearchQuery.trim().toLowerCase();
         const match =
           rec.driverName.toLowerCase().includes(q) ||
           rec.driverId.toLowerCase().includes(q) ||
@@ -227,22 +221,35 @@ export const AssignmentTrackingView: React.FC = () => {
     selectedUnitNumber,
     selectedDispatcher,
     selectedDate,
-    searchQuery
+    deferredSearchQuery
   ]);
 
-  // Aggregate stats
+  // Single-pass aggregate stats calculation (Vercel js-combine-iterations)
   const stats = useMemo(() => {
-    const total = filteredRecords.length;
-    const routeAssignments = filteredRecords.filter((r) => r.type === 'driver_route' && r.action === 'assign').length;
-    const routeUnassignments = filteredRecords.filter((r) => r.type === 'driver_route' && r.action === 'unassign').length;
-    const vehicleAssignments = filteredRecords.filter((r) => r.type === 'driver_vehicle' && r.action === 'assign').length;
-    const vehicleUnassignments = filteredRecords.filter((r) => r.type === 'driver_vehicle' && r.action === 'unassign').length;
+    let routeAssignments = 0;
+    let routeUnassignments = 0;
+    let vehicleAssignments = 0;
+    let vehicleUnassignments = 0;
+    let activeCurrentHolds = 0;
+
+    for (const r of filteredRecords) {
+      if (r.isCurrent) activeCurrentHolds++;
+      if (r.type === 'driver_route') {
+        if (r.action === 'assign') routeAssignments++;
+        else if (r.action === 'unassign') routeUnassignments++;
+      } else if (r.type === 'driver_vehicle') {
+        if (r.action === 'assign') vehicleAssignments++;
+        else if (r.action === 'unassign') vehicleUnassignments++;
+      }
+    }
+
     return {
-      total,
+      total: filteredRecords.length,
       routeAssignments,
       routeUnassignments,
       vehicleAssignments,
-      vehicleUnassignments
+      vehicleUnassignments,
+      activeCurrentHolds
     };
   }, [filteredRecords]);
 
@@ -298,14 +305,16 @@ export const AssignmentTrackingView: React.FC = () => {
       `"${r.dispatcherRole || ''}"`
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
-    const encoded = encodeURI(csvContent);
+    const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encoded);
+    link.href = url;
     link.setAttribute('download', `assignment_tracking_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleResetFilters = () => {
@@ -397,7 +406,7 @@ export const AssignmentTrackingView: React.FC = () => {
           </span>
           <div className="text-2xl font-black text-emerald-400 mt-1 flex items-center space-x-1.5">
             <CheckCircle2 className="w-5 h-5" />
-            <span>{filteredRecords.filter((r) => r.isCurrent).length}</span>
+            <span>{stats.activeCurrentHolds}</span>
           </div>
           <span className="text-[11px] text-slate-400">Ongoing active assignments</span>
         </div>
@@ -467,13 +476,31 @@ export const AssignmentTrackingView: React.FC = () => {
       </div>
 
       {activeTab === 'route_modifications' ? (
-        <RouteAuditHistoryPanel />
+        <Suspense
+          fallback={
+            <div className="p-12 text-center text-slate-400 text-xs">
+              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-amber-500" />
+              Loading route audit logs...
+            </div>
+          }
+        >
+          <RouteAuditHistoryPanel />
+        </Suspense>
       ) : activeTab === 'entity_operations' ? (
-        <EntityOperationLogPanel
-          targetType="all"
-          title="Student & Vehicle Fleet Operations Audit"
-          subtitle="Comprehensive audit trail tracking creates, updates, and deletes for students and fleet vehicles"
-        />
+        <Suspense
+          fallback={
+            <div className="p-12 text-center text-slate-400 text-xs">
+              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-amber-500" />
+              Loading entity operations audit...
+            </div>
+          }
+        >
+          <EntityOperationLogPanel
+            targetType="all"
+            title="Student & Vehicle Fleet Operations Audit"
+            subtitle="Comprehensive audit trail tracking creates, updates, and deletes for students and fleet vehicles"
+          />
+        </Suspense>
       ) : (
         <>
           {/* Multi-Faceted Query & Filter Bar */}

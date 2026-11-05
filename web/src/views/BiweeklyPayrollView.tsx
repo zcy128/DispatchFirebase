@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Calendar,
@@ -25,596 +25,29 @@ import {
   Users,
 } from 'lucide-react';
 import { DispatchService } from '../services/dispatchService';
-import { SchoolService } from '../services/schoolService';
-import { EmployeeService } from '../services/employeeService';
-import { RouteService } from '../services/routeService';
 import { ExpenseReimbursementService } from '../services/expenseReimbursementService';
-import { PayrollDepartmentLogRecord, DispatchPayrollRecord } from '../types/dispatch';
+import { PayrollDepartmentLogRecord } from '../types/dispatch';
+import {
+  BiweeklyEmployeeGroup,
+  BiweeklyRouteRateRow,
+  EmployeeExpenseSummary,
+} from '../types/biweeklyPayroll';
 import { SchoolBoard } from '../types/school';
 import { Employee } from '../types/employee';
 import { BusRoute } from '../types/route';
 import { ExpenseReimbursement } from '../types/expenseReimbursement';
 import { addDaysToDateString } from '../utils/dateUtils';
-import { exportBiweeklyPayrollToExcel } from '../utils/payrollExcelExporter';
-import { exportDriverTimesheetToPDF } from '../utils/timesheetPdfExporter';
 import {
-  exportPayrollForQuickBooks,
-  QuickBooksExportFormat,
-} from '../utils/quickbooksPayrollExporter';
+  PREDEFINED_HOLIDAYS,
+  buildHolidayEntitlements,
+} from '../utils/biweeklyHolidayEntitlements';
+import type { QuickBooksExportFormat } from '../utils/quickbooksPayrollExporter';
 
-// Represents one grouped route & rate line for an employee
-export interface BiweeklyRouteRateRow {
-  routeNo: string;
-  payRate: number;
-  eiHours: number; // insurable EI hours per run
-  hourlyRate: number; // payRate / eiHours
-  week1Runs: number;
-  week1Pay: number;
-  week2Runs: number;
-  week2Pay: number;
-  totalRuns: number;
-  subTotalPay: number;
-  week1Hours: number;
-  week2Hours: number;
-  subTotalHours: number;
-
-  // Holiday attribution
-  holidayRuns: number;
-  holidayPay: number;
-  holidayNote?: string;
-}
-
-// Summary of approved expenses for an employee
-export interface EmployeeExpenseSummary {
-  totalAmount: number;
-  byCategory: Record<
-    string,
-    {
-      code: string;
-      label: string;
-      amount: number;
-      count: number;
-    }
-  >;
-  claimsCount: number;
-  claims: ExpenseReimbursement[];
-}
-
-// Grouped data for one employee
-export interface BiweeklyEmployeeGroup {
-  employeeId: string;
-  employeeName: string;
-  schoolBoardCode?: string;
-  rows: BiweeklyRouteRateRow[];
-  totalWeek1Runs: number;
-  totalWeek1Pay: number;
-  totalWeek1Hours: number;
-  totalWeek2Runs: number;
-  totalWeek2Pay: number;
-  totalWeek2Hours: number;
-  grandTotalRuns: number;
-  grandTotalPay: number; // Base Route Wages
-  grandTotalHours: number;
-
-  // Holiday entitlement
-  totalHolidayRuns: number;
-  totalHolidayPay: number;
-
-  // Approved Expenses
-  expenses: EmployeeExpenseSummary;
-  totalPayout: number; // grandTotalPay + expenses.totalAmount
-
-  // Individual daily shift records for the 2-week period
-  dailyRecords: PayrollDepartmentLogRecord[];
-}
-
-// Statutory Holiday Definition for Ontario/Canada
-interface StatHolidayInfo {
-  date: string;
-  name: string;
-  type: string;
-  description?: string;
-}
-
-// Details of a credited holiday shift from route assignment
-interface CreditedHolidayShift {
-  date: string;
-  holidayName: string;
-  routeNo: string;
-  driverId: string;
-  driverName: string;
-  shiftsCount: number;
-  rate: number;
-  eiHours: number;
-}
-
-// Predefined Statutory & Public Holidays for Ontario / Canada (covering 2026-2027)
-const PREDEFINED_HOLIDAYS: StatHolidayInfo[] = [
-  { date: '2026-01-01', name: "New Year's Day", type: 'Statutory Holiday' },
-  { date: '2026-02-16', name: 'Family Day', type: 'Statutory Holiday' },
-  { date: '2026-04-03', name: 'Good Friday', type: 'Statutory Holiday' },
-  { date: '2026-04-06', name: 'Easter Monday', type: 'School Holiday' },
-  { date: '2026-05-18', name: 'Victoria Day', type: 'Statutory Holiday' },
-  { date: '2026-07-01', name: 'Canada Day', type: 'Statutory Holiday' },
-  { date: '2026-08-03', name: 'Civic Holiday', type: 'Public Holiday' },
-  { date: '2026-09-07', name: 'Labour Day', type: 'Statutory Holiday' },
-  { date: '2026-09-30', name: 'National Day for Truth and Reconciliation', type: 'Federal Holiday' },
-  { date: '2026-10-12', name: 'Thanksgiving Day (10-12 Holiday)', type: 'Statutory Holiday' },
-  { date: '2026-11-11', name: 'Remembrance Day', type: 'Federal Holiday' },
-  { date: '2026-12-25', name: 'Christmas Day', type: 'Statutory Holiday' },
-  { date: '2026-12-26', name: 'Boxing Day', type: 'Statutory Holiday' },
-];
-
-// Sample dataset accurately matching the user's uploaded screenshot (June 7 - June 20, 2026)
-const SCREENSHOT_SAMPLE_RECORDS: PayrollDepartmentLogRecord[] = [
-  // Alnoor PREMJI (414) - CCSD-815 @ $44.40 (Week 1: 2 runs, Week 2: 3 runs, EI: 2.83355)
-  ...[1, 2].map((i) => ({
-    id: `DEMO-414-815-1-${i}`,
-    dispatchPayrollId: `DP-DEMO-414-815-1-${i}`,
-    dispatchDate: `2026-06-0${8 + i}`, // Week 1 (June 9, June 10)
-    shiftId: `S-414-815-1-${i}`,
-    routeNo: 'CCSD-815',
-    shiftType: 'AM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '414',
-    employeeName: 'Alnoor PREMJI',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 44.40,
-    payAmount: 44.40,
-    originalEiHours: 2.83355,
-    eiHours: 2.83355,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:15',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-  ...[1, 2, 3].map((i) => ({
-    id: `DEMO-414-815-2-${i}`,
-    dispatchPayrollId: `DP-DEMO-414-815-2-${i}`,
-    dispatchDate: `2026-06-${14 + i}`, // Week 2 (June 15, June 16, June 17)
-    shiftId: `S-414-815-2-${i}`,
-    routeNo: 'CCSD-815',
-    shiftType: 'AM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '414',
-    employeeName: 'Alnoor PREMJI',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 44.40,
-    payAmount: 44.40,
-    originalEiHours: 2.83355,
-    eiHours: 2.83355,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:15',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-
-  // Alnoor PREMJI (414) - CCSD-815 @ $53.15 (Week 1: 1 run, Week 2: 0, EI: 3.00000)
-  {
-    id: `DEMO-414-815-53-1`,
-    dispatchPayrollId: `DP-DEMO-414-815-53-1`,
-    dispatchDate: '2026-06-11', // Week 1
-    shiftId: 'S-414-815-53-1',
-    routeNo: 'CCSD-815',
-    shiftType: 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '414',
-    employeeName: 'Alnoor PREMJI',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 53.15,
-    payAmount: 53.15,
-    originalEiHours: 3.0,
-    eiHours: 3.0,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '14:30',
-    syncedAt: '2026-06-20T12:00:00Z',
-  },
-
-  // Alnoor PREMJI (414) - CCSD-905 (BLACK) @ $53.15 (Week 1: 8 runs, Week 2: 10 runs, EI: 3.00000)
-  ...Array.from({ length: 8 }, (_, i) => ({
-    id: `DEMO-414-905-1-${i}`,
-    dispatchPayrollId: `DP-DEMO-414-905-1-${i}`,
-    dispatchDate: `2026-06-0${8 + (i % 5)}`, // Week 1
-    shiftId: `S-414-905-1-${i}`,
-    routeNo: 'CCSD-905 (BLACK)',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '414',
-    employeeName: 'Alnoor PREMJI',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 53.15,
-    payAmount: 53.15,
-    originalEiHours: 3.0,
-    eiHours: 3.0,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:00',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-  ...Array.from({ length: 10 }, (_, i) => ({
-    id: `DEMO-414-905-2-${i}`,
-    dispatchPayrollId: `DP-DEMO-414-905-2-${i}`,
-    dispatchDate: `2026-06-${15 + (i % 5)}`, // Week 2
-    shiftId: `S-414-905-2-${i}`,
-    routeNo: 'CCSD-905 (BLACK)',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '414',
-    employeeName: 'Alnoor PREMJI',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 53.15,
-    payAmount: 53.15,
-    originalEiHours: 3.0,
-    eiHours: 3.0,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:00',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-
-  // Alnoor PREMJI (414) - CCSD-915 @ $53.15 (Week 1: 1 run, Week 2: 0, EI: 3.00000)
-  {
-    id: `DEMO-414-915-1-1`,
-    dispatchPayrollId: `DP-DEMO-414-915-1-1`,
-    dispatchDate: '2026-06-12', // Week 1
-    shiftId: 'S-414-915-1-1',
-    routeNo: 'CCSD-915',
-    shiftType: 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '414',
-    employeeName: 'Alnoor PREMJI',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 53.15,
-    payAmount: 53.15,
-    originalEiHours: 3.0,
-    eiHours: 3.0,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '15:00',
-    syncedAt: '2026-06-20T12:00:00Z',
-  },
-
-  // Amal MAHAMDOH (1651) - CCSD-915 @ $39.00 (Week 1: 10 runs, Week 2: 10 runs, EI: 2.50000)
-  ...Array.from({ length: 10 }, (_, i) => ({
-    id: `DEMO-1651-915-1-${i}`,
-    dispatchPayrollId: `DP-DEMO-1651-915-1-${i}`,
-    dispatchDate: `2026-06-0${8 + (i % 5)}`, // Week 1
-    shiftId: `S-1651-915-1-${i}`,
-    routeNo: 'CCSD-915',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '1651',
-    employeeName: 'Amal MAHAMDOH',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 39.00,
-    payAmount: 39.00,
-    originalEiHours: 2.5,
-    eiHours: 2.5,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:30',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-  ...Array.from({ length: 10 }, (_, i) => ({
-    id: `DEMO-1651-915-2-${i}`,
-    dispatchPayrollId: `DP-DEMO-1651-915-2-${i}`,
-    dispatchDate: `2026-06-${15 + (i % 5)}`, // Week 2
-    shiftId: `S-1651-915-2-${i}`,
-    routeNo: 'CCSD-915',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '1651',
-    employeeName: 'Amal MAHAMDOH',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 39.00,
-    payAmount: 39.00,
-    originalEiHours: 2.5,
-    eiHours: 2.5,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:30',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-
-  // Hardeep SIDHU (1689) - CCSD-813 @ $47.35 (Week 1: 10 runs, Week 2: 10 runs, EI: 2.83355)
-  ...Array.from({ length: 10 }, (_, i) => ({
-    id: `DEMO-1689-813-1-${i}`,
-    dispatchPayrollId: `DP-DEMO-1689-813-1-${i}`,
-    dispatchDate: `2026-06-0${8 + (i % 5)}`,
-    shiftId: `S-1689-813-1-${i}`,
-    routeNo: 'CCSD-813',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '1689',
-    employeeName: 'Hardeep SIDHU',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 47.35,
-    payAmount: 47.35,
-    originalEiHours: 2.83355,
-    eiHours: 2.83355,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:00',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-  ...Array.from({ length: 10 }, (_, i) => ({
-    id: `DEMO-1689-813-2-${i}`,
-    dispatchPayrollId: `DP-DEMO-1689-813-2-${i}`,
-    dispatchDate: `2026-06-${15 + (i % 5)}`,
-    shiftId: `S-1689-813-2-${i}`,
-    routeNo: 'CCSD-813',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '1689',
-    employeeName: 'Hardeep SIDHU',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 47.35,
-    payAmount: 47.35,
-    originalEiHours: 2.83355,
-    eiHours: 2.83355,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:00',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-
-  // Karim RAYANI (641) - CCSD-903 @ $44.40 (Week 1: 10 runs, Week 2: 10 runs, EI: 2.83355)
-  ...Array.from({ length: 10 }, (_, i) => ({
-    id: `DEMO-641-903-1-${i}`,
-    dispatchPayrollId: `DP-DEMO-641-903-1-${i}`,
-    dispatchDate: `2026-06-0${8 + (i % 5)}`,
-    shiftId: `S-641-903-1-${i}`,
-    routeNo: 'CCSD-903',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '641',
-    employeeName: 'Karim RAYANI',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 44.40,
-    payAmount: 44.40,
-    originalEiHours: 2.83355,
-    eiHours: 2.83355,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:15',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-  ...Array.from({ length: 10 }, (_, i) => ({
-    id: `DEMO-641-903-2-${i}`,
-    dispatchPayrollId: `DP-DEMO-641-903-2-${i}`,
-    dispatchDate: `2026-06-${15 + (i % 5)}`,
-    shiftId: `S-641-903-2-${i}`,
-    routeNo: 'CCSD-903',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '641',
-    employeeName: 'Karim RAYANI',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 44.40,
-    payAmount: 44.40,
-    originalEiHours: 2.83355,
-    eiHours: 2.83355,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:15',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-
-  // Peter DIAS (1791) - CCSD-807 @ $47.35 (Week 1: 10 runs, Week 2: 10 runs, EI: 2.83355)
-  ...Array.from({ length: 10 }, (_, i) => ({
-    id: `DEMO-1791-807-1-${i}`,
-    dispatchPayrollId: `DP-DEMO-1791-807-1-${i}`,
-    dispatchDate: `2026-06-0${8 + (i % 5)}`,
-    shiftId: `S-1791-807-1-${i}`,
-    routeNo: 'CCSD-807',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '1791',
-    employeeName: 'Peter DIAS',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 47.35,
-    payAmount: 47.35,
-    originalEiHours: 2.83355,
-    eiHours: 2.83355,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:20',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-  ...Array.from({ length: 10 }, (_, i) => ({
-    id: `DEMO-1791-807-2-${i}`,
-    dispatchPayrollId: `DP-DEMO-1791-807-2-${i}`,
-    dispatchDate: `2026-06-${15 + (i % 5)}`,
-    shiftId: `S-1791-807-2-${i}`,
-    routeNo: 'CCSD-807',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '1791',
-    employeeName: 'Peter DIAS',
-    role: 'driver',
-    payOption: 'STANDARD',
-    originalPayRate: 47.35,
-    payAmount: 47.35,
-    originalEiHours: 2.83355,
-    eiHours: 2.83355,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:20',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-
-  // Tania VAN MELSEN (1719) - Attendant CCSD-813 @ $20.00 (Week 1: 10 runs, Week 2: 10 runs, EI: 2.50000)
-  ...Array.from({ length: 10 }, (_, i) => ({
-    id: `DEMO-1719-813-1-${i}`,
-    dispatchPayrollId: `DP-DEMO-1719-813-1-${i}`,
-    dispatchDate: `2026-06-0${8 + (i % 5)}`,
-    shiftId: `S-1719-813-1-${i}`,
-    routeNo: 'CCSD-813',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '1719',
-    employeeName: 'Tania VAN MELSEN',
-    role: 'attendant',
-    payOption: 'STANDARD',
-    originalPayRate: 20.00,
-    payAmount: 20.00,
-    originalEiHours: 2.5,
-    eiHours: 2.5,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:30',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-  ...Array.from({ length: 10 }, (_, i) => ({
-    id: `DEMO-1719-813-2-${i}`,
-    dispatchPayrollId: `DP-DEMO-1719-813-2-${i}`,
-    dispatchDate: `2026-06-${15 + (i % 5)}`,
-    shiftId: `S-1719-813-2-${i}`,
-    routeNo: 'CCSD-813',
-    shiftType: i % 2 === 0 ? 'AM' : 'PM',
-    schoolBoardCode: 'CCSD',
-    employeeId: '1719',
-    employeeName: 'Tania VAN MELSEN',
-    role: 'attendant',
-    payOption: 'STANDARD',
-    originalPayRate: 20.00,
-    payAmount: 20.00,
-    originalEiHours: 2.5,
-    eiHours: 2.5,
-    rateSource: 'custom_rate',
-    status: 'approved',
-    checkInTime: '07:30',
-    syncedAt: '2026-06-20T12:00:00Z',
-  })),
-];
-
-// Fallback lookup metadata for sample employees matching uploaded excel template
-const DEMO_EMPLOYEES: Employee[] = [
-  {
-    id: '414',
-    employeeNumber: '414',
-    firstName: 'Alnoor',
-    lastName: 'PREMJI',
-    jobPosition: 'Driver',
-    driverLicense: { licenseClass: 'Class 2' } as any,
-  } as any,
-  {
-    id: '1651',
-    employeeNumber: '1651',
-    firstName: 'Amal',
-    lastName: 'MAHAMDOH',
-    jobPosition: 'Driver',
-    driverLicense: { licenseClass: 'Class 4' } as any,
-  } as any,
-  {
-    id: '1689',
-    employeeNumber: '1689',
-    firstName: 'Hardeep',
-    lastName: 'SIDHU',
-    jobPosition: 'Driver',
-    driverLicense: { licenseClass: 'Class 2' } as any,
-  } as any,
-  {
-    id: '641',
-    employeeNumber: '641',
-    firstName: 'Karim',
-    lastName: 'RAYANI',
-    jobPosition: 'Driver',
-    driverLicense: { licenseClass: 'Class 2' } as any,
-  } as any,
-  {
-    id: '1791',
-    employeeNumber: '1791',
-    firstName: 'Peter',
-    lastName: 'DIAS',
-    jobPosition: 'Driver',
-    driverLicense: { licenseClass: 'Class 2' } as any,
-  } as any,
-  {
-    id: '1719',
-    employeeNumber: '1719',
-    firstName: 'Tania',
-    lastName: 'VAN MELSEN',
-    jobPosition: 'Attendant',
-    driverLicense: { licenseClass: '' } as any,
-  } as any,
-];
-
-// Sample demo approved expenses (e.g. for Alnoor PREMJI and John Miller)
-const SAMPLE_APPROVED_EXPENSES: ExpenseReimbursement[] = [
-  {
-    id: 'EXP-DEMO-001',
-    employeeId: '414',
-    employeeName: 'Alnoor PREMJI',
-    claimDate: '2026-06-10',
-    routeNo: 'CCSD-815',
-    totalAmount: 65.0,
-    status: 'approved',
-    lines: [
-      {
-        id: 'line-1',
-        categoryCode: 'fuel',
-        categoryDisplayName: 'Fuel / Gas',
-        amount: 48.0,
-        note: 'Diesel top-up at Esso',
-        sortOrder: 1,
-      },
-      {
-        id: 'line-2',
-        categoryCode: 'parking',
-        categoryDisplayName: 'Parking & Tolls',
-        amount: 17.0,
-        note: 'School athletic charter parking',
-        sortOrder: 2,
-      },
-    ],
-    createdAt: '2026-06-10T10:00:00Z',
-    updatedAt: '2026-06-12T14:00:00Z',
-  },
-  {
-    id: 'EXP-DEMO-002',
-    employeeId: 'EMP-021',
-    employeeName: 'Driver21 Doe',
-    claimDate: '2026-10-09',
-    routeNo: 'CEPEO-021',
-    totalAmount: 45.0,
-    status: 'approved',
-    lines: [
-      {
-        id: 'line-1',
-        categoryCode: 'fuel',
-        categoryDisplayName: 'Fuel / Gas',
-        amount: 35.0,
-        note: 'Bus refueling Shell #32',
-        sortOrder: 1,
-      },
-      {
-        id: 'line-2',
-        categoryCode: 'cleaning',
-        categoryDisplayName: 'Vehicle Cleaning',
-        amount: 10.0,
-        note: 'Interior wash supplies',
-        sortOrder: 2,
-      },
-    ],
-    createdAt: '2026-10-09T10:00:00Z',
-    updatedAt: '2026-10-09T12:00:00Z',
-  },
-];
+export type {
+  BiweeklyEmployeeGroup,
+  BiweeklyRouteRateRow,
+  EmployeeExpenseSummary,
+} from '../types/biweeklyPayroll';
 
 const getTodayDateString = (): string => {
   const d = new Date();
@@ -624,290 +57,118 @@ const getTodayDateString = (): string => {
   return `${year}-${month}-${day}`;
 };
 
-const DEFAULT_FALLBACK_BOARDS: SchoolBoard[] = [
-  { id: 'OCDSB', schoolBoardId: 1, schoolBoardName: 'Ottawa-Carleton District School Board', schoolBoardCode: 'OCDSB' },
-  { id: 'CECCE', schoolBoardId: 2, schoolBoardName: 'Conseil des écoles catholiques du Centre-Est', schoolBoardCode: 'CECCE' },
-  { id: 'CEPEO', schoolBoardId: 3, schoolBoardName: 'Conseil des écoles publiques de l’Est de l’Ontario', schoolBoardCode: 'CEPEO' },
-  { id: 'OCSB', schoolBoardId: 4, schoolBoardName: 'Ottawa Catholic School Board', schoolBoardCode: 'OCSB' },
-];
+const EMPTY_BOARDS: SchoolBoard[] = [];
+const EMPTY_EMPLOYEES: Employee[] = [];
+const EMPTY_ROUTES: BusRoute[] = [];
 
-export const BiweeklyPayrollView: React.FC = () => {
-  // Start date of the 2-week calculation cycle (defaults to today)
+interface BiweeklyPayrollViewProps {
+  boards?: SchoolBoard[];
+  employees?: Employee[];
+  routes?: BusRoute[];
+}
+
+export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
+  boards: boardsProp = EMPTY_BOARDS,
+  employees: employeesProp = EMPTY_EMPLOYEES,
+  routes: routesProp = EMPTY_ROUTES,
+}: BiweeklyPayrollViewProps) {
   const [startDate, setStartDate] = useState<string>(getTodayDateString);
   const endDate = useMemo(() => addDaysToDateString(startDate, 13), [startDate]);
   const week1EndDate = useMemo(() => addDaysToDateString(startDate, 6), [startDate]);
   const week2StartDate = useMemo(() => addDaysToDateString(startDate, 7), [startDate]);
 
-  // Filters & toggles
   const [selectedBoard, setSelectedBoard] = useState<string>('all');
   const [selectedEmployee, setSelectedEmployee] = useState<string>('all');
   const [selectedRole, setSelectedRole] = useState<'all' | 'driver' | 'attendant'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [includeExpenses, setIncludeExpenses] = useState<boolean>(true);
   const [includeHolidayEntitlements, setIncludeHolidayEntitlements] = useState<boolean>(true);
 
-  // Data states
-  const [boards, setBoards] = useState<SchoolBoard[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [routes, setRoutes] = useState<BusRoute[]>([]);
+  const boards = boardsProp.length > 0 ? boardsProp : EMPTY_BOARDS;
+  const employees = employeesProp;
+  const routes = routesProp;
+
   const [expenseClaims, setExpenseClaims] = useState<ExpenseReimbursement[]>([]);
-  const [rawRecords, setRawRecords] = useState<PayrollDepartmentLogRecord[]>([]);
-  const [creditedHolidayShifts, setCreditedHolidayShifts] = useState<CreditedHolidayShift[]>([]);
+  const [baseRecords, setBaseRecords] = useState<PayrollDepartmentLogRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Accordion collapsed state: employeeId -> boolean (true = expanded)
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
-
-  // Holiday modal state
   const [isHolidayModalOpen, setIsHolidayModalOpen] = useState<boolean>(false);
-  const [holidaysInPeriod, setHolidaysInPeriod] = useState<StatHolidayInfo[]>([]);
-
-  // Driver Timesheet Details modal state
   const [detailEmployeeId, setDetailEmployeeId] = useState<string | null>(null);
   const [detailWeekFilter, setDetailWeekFilter] = useState<'all' | 'week1' | 'week2'>('all');
-
-  // QuickBooks & Canadian Payroll Export modal state ('all' = all filtered employees, or single BiweeklyEmployeeGroup)
   const [qbExportTarget, setQbExportTarget] = useState<BiweeklyEmployeeGroup[] | null>(null);
   const [qbExportSingleSuffix, setQbExportSingleSuffix] = useState<string>('');
 
-  // 1. Load initial lookups (School Boards, Employees, Routes)
-  useEffect(() => {
-    SchoolService.listBoards()
-      .then((b) => {
-        const list = Array.isArray(b) && b.length > 0 ? b : DEFAULT_FALLBACK_BOARDS;
-        setBoards(list);
-      })
-      .catch((e) => {
-        console.warn('Could not fetch boards:', e);
-        setBoards(DEFAULT_FALLBACK_BOARDS);
-      });
+  const holidaysInPeriod = useMemo(
+    () => PREDEFINED_HOLIDAYS.filter((holiday) => holiday.date >= startDate && holiday.date <= endDate),
+    [startDate, endDate]
+  );
 
-    EmployeeService.list()
-      .then((e) => {
-        const fetched = Array.isArray(e) ? e : [];
-        const merged = [...fetched];
-        DEMO_EMPLOYEES.forEach((demoEmp) => {
-          if (!merged.some((m) => m.id === demoEmp.id || m.employeeNumber === demoEmp.employeeNumber)) {
-            merged.push(demoEmp);
-          }
-        });
-        setEmployees(merged);
-      })
-      .catch((e) => {
-        console.warn('Could not fetch employees:', e);
-        setEmployees(DEMO_EMPLOYEES);
-      });
+  const { creditedShifts: creditedHolidayShifts, holidayRecords } = useMemo(
+    () =>
+      buildHolidayEntitlements(
+        routes,
+        baseRecords,
+        startDate,
+        endDate,
+        includeHolidayEntitlements
+      ),
+    [routes, baseRecords, startDate, endDate, includeHolidayEntitlements]
+  );
 
-    RouteService.list()
-      .then((r) => setRoutes(Array.isArray(r) ? r : []))
-      .catch((e) => console.warn('Could not fetch routes:', e));
-  }, []);
+  const rawRecords = useMemo(
+    () => [...baseRecords, ...holidayRecords],
+    [baseRecords, holidayRecords]
+  );
 
-  // 2. Process statutory holidays occurring in this period
-  useEffect(() => {
-    const currentHolidays = PREDEFINED_HOLIDAYS.filter(
-      (h) => h.date >= startDate && h.date <= endDate
-    );
-    setHolidaysInPeriod(currentHolidays);
-  }, [startDate, endDate]);
-
-  // 3. Fetch Bi-Weekly Records, Routes & Expenses
   const loadBiweeklyData = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Parallel fetch: Payroll department logs, Routes, and Approved Expenses
-      const [logsRes, routesRes, expensesRes] = await Promise.all([
+      const [logsRes, expensesRes] = await Promise.all([
         DispatchService.listPayrollDepartmentLogs({ startDate, endDate }).catch(() => []),
-        RouteService.list().catch(() => []),
         ExpenseReimbursementService.listClaims().catch(() => []),
       ]);
 
-      const activeRoutes = Array.isArray(routesRes) && routesRes.length > 0 ? routesRes : routes;
-      if (activeRoutes.length > 0) {
-        setRoutes(activeRoutes);
-      }
-
-      // Merge real expense claims with demo expenses if period matches
       let allClaims = Array.isArray(expensesRes) ? [...expensesRes] : [];
       if (allClaims.length === 0 || startDate.startsWith('2026-06')) {
+        const { SAMPLE_APPROVED_EXPENSES } = await import('./biweeklyPayrollDemoData');
         allClaims = [...allClaims, ...SAMPLE_APPROVED_EXPENSES];
       }
       setExpenseClaims(allClaims);
 
       let validRecords = Array.isArray(logsRes) ? logsRes : [];
-
-      // If database has no logs for this exact date range, check fallback
       if (validRecords.length === 0) {
-        if (startDate === '2026-06-07' || startDate === '2026-06-08') {
-          validRecords = [...SCREENSHOT_SAMPLE_RECORDS];
-        } else {
-          // Check if there are any records in dispatch_payrolls for these dates
-          try {
-            const payrollPromises = Array.from({ length: 14 }, (_, i) => {
-              const d = addDaysToDateString(startDate, i);
-              return DispatchService.listDispatchPayrolls(d).catch(() => []);
-            });
-            const allDayPayrolls = await Promise.all(payrollPromises);
-            const flatPayrolls: DispatchPayrollRecord[] = allDayPayrolls.flat();
-
-            if (flatPayrolls.length > 0) {
-              validRecords = flatPayrolls
-                .filter((p) => p.payRate > 0)
-                .map((p) => ({
-                  id: p.id.replace('DP-', 'PL-'),
-                  dispatchPayrollId: p.id,
-                  dispatchDate: p.dispatchDate,
-                  shiftId: p.shiftId,
-                  routeNo: p.routeNo,
-                  routeName: p.routeName,
-                  shiftType: p.shiftType,
-                  schoolBoardCode: p.schoolBoardCode,
-                  employeeId: p.employeeId,
-                  employeeName: p.employeeName,
-                  role: p.role,
-                  unitNumber: p.unitNumber,
-                  checkInTime: p.checkInTime,
-                  checkOutTime: p.checkOutTime,
-                  payOption: p.payOption,
-                  originalPayRate: p.payRate,
-                  payAmount: p.payRate,
-                  originalEiHours: p.eiHours || 3,
-                  eiHours: p.eiHours || 3,
-                  rateSource: p.rateSource || 'board_base_rate',
-                  status: p.status || 'approved',
-                  syncedAt: p.updatedAt || new Date().toISOString(),
-                }));
-            } else {
-              validRecords = [...SCREENSHOT_SAMPLE_RECORDS];
-            }
-          } catch {
-            validRecords = [...SCREENSHOT_SAMPLE_RECORDS];
-          }
-        }
+        const { SCREENSHOT_SAMPLE_RECORDS } = await import('./biweeklyPayrollDemoData');
+        validRecords = [...SCREENSHOT_SAMPLE_RECORDS];
       }
 
-      // =========================================================================
-      // REQUIREMENT 1: STATUTORY HOLIDAY ROUTE ASSIGNMENT CALCULATION
-      // Example: If a driver is assigned to CEPEO-021 with 2 shifts on holiday 10-12,
-      // credit the 2 shifts as holiday entitlement runs.
-      // =========================================================================
-      const creditedShifts: CreditedHolidayShift[] = [];
-      const holidayEntitlementRecords: PayrollDepartmentLogRecord[] = [];
+      setBaseRecords(validRecords);
 
-      if (includeHolidayEntitlements) {
-        // Find statutory holidays within the active 14-day date range
-        const matchingHolidays = PREDEFINED_HOLIDAYS.filter(
-          (h) => h.date >= startDate && h.date <= endDate
-        );
-
-        matchingHolidays.forEach((holiday) => {
-          const hDate = holiday.date;
-          // Determine day of week: 0=Sun, 1=Mon ('M'), 2=Tue ('T'), 3=Wed ('W'), 4=Thu ('R'), 5=Fri ('F')
-          const [y, m, d] = hDate.split('-').map(Number);
-          const dayOfWeek = new Date(y, m - 1, d).getDay();
-          const DOW_CHARS = ['', 'M', 'T', 'W', 'R', 'F', ''];
-          const dow = DOW_CHARS[dayOfWeek];
-
-          // Only process weekday holidays (school routes normally run M-F)
-          if (dow) {
-            activeRoutes.forEach((rt) => {
-              // Route must have an active assigned driver
-              const driverId = rt.driverId;
-              const driverName = rt.driverName || `Driver (${rt.routeNo})`;
-
-              if (driverId && rt.active !== false) {
-                // Calculate shifts scheduled on this day of week
-                let shiftsCount = 0;
-                if (Array.isArray(rt.shifts) && rt.shifts.length > 0) {
-                  shiftsCount = rt.shifts.filter((s) => {
-                    const runDays = (s.runDays || 'MTWRF').toUpperCase();
-                    return runDays.includes(dow);
-                  }).length;
-                } else {
-                  // Standard default: 2 shifts (AM + PM) for full school bus routes
-                  shiftsCount = 2;
-                }
-
-                if (shiftsCount > 0) {
-                  // Determine appropriate rate (e.g. $25.00 for CEPEO or route's standard rate)
-                  const rate = rt.schoolBoardCode?.toUpperCase().includes('CEPEO') ? 25.0 : 44.4;
-                  const eiHours = 3.0;
-
-                  // Check if this driver already has shifts logged for this date in payroll_logs
-                  const alreadyLogged = validRecords.filter(
-                    (rec) => rec.dispatchDate === hDate && rec.employeeId === driverId
-                  );
-
-                  if (alreadyLogged.length < shiftsCount) {
-                    const shiftsNeeded = shiftsCount - alreadyLogged.length;
-
-                    creditedShifts.push({
-                      date: hDate,
-                      holidayName: holiday.name,
-                      routeNo: rt.routeNo,
-                      driverId,
-                      driverName,
-                      shiftsCount: shiftsNeeded,
-                      rate,
-                      eiHours,
-                    });
-
-                    // Add synthetic holiday entitlement records
-                    for (let sIdx = 1; sIdx <= shiftsNeeded; sIdx++) {
-                      holidayEntitlementRecords.push({
-                        id: `HOLIDAY-${driverId}-${rt.routeNo}-${hDate}-${sIdx}`,
-                        dispatchPayrollId: `DP-HOLIDAY-${driverId}-${rt.routeNo}-${hDate}-${sIdx}`,
-                        dispatchDate: hDate,
-                        shiftId: `SHIFT-HOLIDAY-${rt.routeNo}-${sIdx}`,
-                        routeNo: rt.routeNo,
-                        routeName: rt.routeName,
-                        shiftType: sIdx === 1 ? 'AM' : 'PM',
-                        schoolBoardCode: rt.schoolBoardCode,
-                        employeeId: driverId,
-                        employeeName: driverName,
-                        role: 'driver',
-                        payOption: 'STANDARD',
-                        originalPayRate: rate,
-                        payAmount: rate,
-                        originalEiHours: eiHours,
-                        eiHours,
-                        rateSource: 'holiday_route_assignment',
-                        rateDescription: `Stat Holiday Pay: ${holiday.name} (${shiftsCount} assigned shifts)`,
-                        status: 'approved',
-                        checkInTime: '00:00',
-                        syncedAt: new Date().toISOString(),
-                      });
-                    }
-                  }
-                }
-              }
-            });
-          }
-        });
-      }
-
-      setCreditedHolidayShifts(creditedShifts);
-      setRawRecords([...validRecords, ...holidayEntitlementRecords]);
-
-      // Auto-expand all employees initially
       const initialExpanded: Record<string, boolean> = {};
-      [...validRecords, ...holidayEntitlementRecords].forEach((r) => {
-        initialExpanded[r.employeeId] = true;
+      validRecords.forEach((record) => {
+        initialExpanded[record.employeeId] = true;
       });
       setExpandedMap((prev) => ({ ...initialExpanded, ...prev }));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load bi-weekly payroll data:', err);
-      setRawRecords(SCREENSHOT_SAMPLE_RECORDS);
+      try {
+        const { SCREENSHOT_SAMPLE_RECORDS } = await import('./biweeklyPayrollDemoData');
+        setBaseRecords(SCREENSHOT_SAMPLE_RECORDS);
+      } catch {
+        setBaseRecords([]);
+      }
+      setError('Failed to load bi-weekly payroll data. Showing sample fallback when available.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadBiweeklyData();
-  }, [startDate, includeHolidayEntitlements]);
+    void loadBiweeklyData();
+  }, [startDate]);
 
   // =========================================================================
   // REQUIREMENT 2: APPROVED EXPENSE REIMBURSEMENTS PER EMPLOYEE
@@ -991,27 +252,30 @@ export const BiweeklyPayrollView: React.FC = () => {
 
   // 4. Data Aggregation per Employee and per (Route, Rate)
   const groupedData: BiweeklyEmployeeGroup[] = useMemo(() => {
+    const searchTerm = deferredSearchQuery.trim().toLowerCase();
+    const boardTerm = selectedBoard === 'all' ? '' : selectedBoard.toLowerCase();
+    const roleTerm = selectedRole === 'all' ? '' : selectedRole.toLowerCase();
+
     // 1) Filter raw records based on board & employee filters & search
     const filtered = rawRecords.filter((rec) => {
-      if (selectedBoard !== 'all') {
+      if (boardTerm) {
         const boardMatch =
-          rec.schoolBoardCode?.toLowerCase() === selectedBoard.toLowerCase() ||
-          rec.routeNo.toLowerCase().startsWith(selectedBoard.toLowerCase());
+          rec.schoolBoardCode?.toLowerCase() === boardTerm ||
+          rec.routeNo.toLowerCase().startsWith(boardTerm);
         if (!boardMatch) return false;
       }
       if (selectedEmployee !== 'all') {
         if (rec.employeeId !== selectedEmployee) return false;
       }
-      if (selectedRole !== 'all') {
+      if (roleTerm) {
         const rRole = (rec.role || 'driver').toLowerCase();
-        if (rRole !== selectedRole.toLowerCase()) return false;
+        if (rRole !== roleTerm) return false;
       }
-      if (searchQuery.trim() !== '') {
-        const q = searchQuery.toLowerCase().trim();
+      if (searchTerm) {
         const empName = (rec.employeeName || '').toLowerCase();
         const empId = (rec.employeeId || '').toLowerCase();
         const rt = (rec.routeNo || '').toLowerCase();
-        if (!empName.includes(q) && !empId.includes(q) && !rt.includes(q)) {
+        if (!empName.includes(searchTerm) && !empId.includes(searchTerm) && !rt.includes(searchTerm)) {
           return false;
         }
       }
@@ -1240,7 +504,7 @@ export const BiweeklyPayrollView: React.FC = () => {
     employees,
     selectedBoard,
     selectedEmployee,
-    searchQuery,
+    deferredSearchQuery,
     startDate,
     week1EndDate,
     week2StartDate,
@@ -1394,6 +658,7 @@ export const BiweeklyPayrollView: React.FC = () => {
     }
     setIsExportingExcel(true);
     try {
+      const { exportBiweeklyPayrollToExcel } = await import('../utils/payrollExcelExporter');
       await exportBiweeklyPayrollToExcel({
         startDate,
         endDate,
@@ -2586,15 +1851,17 @@ export const BiweeklyPayrollView: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() =>
-                      exportDriverTimesheetToPDF({
-                        empGroup: selectedDetailGroup,
-                        startDate,
-                        endDate,
-                        week1EndDate,
-                        week2StartDate,
-                      })
-                    }
+                    onClick={() => {
+                      void import('../utils/timesheetPdfExporter').then(({ exportDriverTimesheetToPDF }) =>
+                        exportDriverTimesheetToPDF({
+                          empGroup: selectedDetailGroup,
+                          startDate,
+                          endDate,
+                          week1EndDate,
+                          week2StartDate,
+                        })
+                      );
+                    }}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold transition-colors cursor-pointer shadow-2xs"
                   >
                     <FileText className="w-3.5 h-3.5" />
@@ -3008,15 +2275,17 @@ export const BiweeklyPayrollView: React.FC = () => {
                   key={opt.format}
                   type="button"
                   onClick={() => {
-                    exportPayrollForQuickBooks({
-                      format: opt.format,
-                      startDate,
-                      endDate,
-                      groupedData: qbExportTarget,
-                      includeExpenses,
-                      singleEmployeeSuffix: qbExportSingleSuffix,
+                    void import('../utils/quickbooksPayrollExporter').then(({ exportPayrollForQuickBooks }) => {
+                      exportPayrollForQuickBooks({
+                        format: opt.format,
+                        startDate,
+                        endDate,
+                        groupedData: qbExportTarget,
+                        includeExpenses,
+                        singleEmployeeSuffix: qbExportSingleSuffix,
+                      });
+                      setQbExportTarget(null);
                     });
-                    setQbExportTarget(null);
                   }}
                   className="w-full text-left p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50/40 dark:hover:bg-blue-950/20 transition-all group cursor-pointer"
                 >
@@ -3049,4 +2318,4 @@ export const BiweeklyPayrollView: React.FC = () => {
       )}
     </div>
   );
-};
+});

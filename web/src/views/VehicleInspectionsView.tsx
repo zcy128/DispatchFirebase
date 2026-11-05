@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Vehicle } from '../types/vehicle';
 import {
@@ -20,9 +20,21 @@ import {
   isOverdue,
   isOlderThanTwoYears
 } from '../utils/inspectionDateUtils';
-import { InspectionAttachmentModal } from '../components/inspections/InspectionAttachmentModal';
-import { PreventiveMaintenanceFormModal } from '../components/inspections/PreventiveMaintenanceFormModal';
-import { WrittenMaintenancePlanPrintModal } from '../components/inspections/WrittenMaintenancePlanPrintModal';
+const InspectionAttachmentModal = React.lazy(() =>
+  import('../components/inspections/InspectionAttachmentModal').then((m) => ({
+    default: m.InspectionAttachmentModal,
+  }))
+);
+const PreventiveMaintenanceFormModal = React.lazy(() =>
+  import('../components/inspections/PreventiveMaintenanceFormModal').then((m) => ({
+    default: m.PreventiveMaintenanceFormModal,
+  }))
+);
+const WrittenMaintenancePlanPrintModal = React.lazy(() =>
+  import('../components/inspections/WrittenMaintenancePlanPrintModal').then((m) => ({
+    default: m.WrittenMaintenancePlanPrintModal,
+  }))
+);
 import {
   ShieldCheck,
   Search,
@@ -71,6 +83,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
   const [pmFilterTab, setPmFilterTab] = useState<'due_soon' | 'violation' | 'all' | 'bigquery'>('due_soon');
 
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [yardFilter, setYardFilter] = useState('ALL');
 
   // Attachment Modal State (shared by both Sticker Inspections and PM Records)
@@ -244,12 +257,13 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
   };
 
   // Load both Semi-Annual Inspections and Preventive Maintenance records
-  const loadData = async () => {
+  const loadData = async (opts?: { isCancelled?: () => boolean }) => {
     try {
       const [inspList, pmList] = await Promise.all([
         VehicleInspectionService.getInspections(vehicles),
         VehicleInspectionService.getPMRecords(vehicles)
       ]);
+      if (opts?.isCancelled?.()) return;
       setInspections(inspList);
       setPmRecords(pmList);
     } catch (err) {
@@ -258,14 +272,20 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
   };
 
   useEffect(() => {
-    loadData();
+    let isCancelled = false;
+    void loadData({ isCancelled: () => isCancelled });
     const unsubInsp = VehicleInspectionService.subscribe((updated) => {
-      setInspections(updated);
+      if (!isCancelled) {
+        setInspections(updated);
+      }
     });
     const unsubPM = VehicleInspectionService.subscribePM((updated) => {
-      setPmRecords(updated);
+      if (!isCancelled) {
+        setPmRecords(updated);
+      }
     });
     return () => {
+      isCancelled = true;
       unsubInsp();
       unsubPM();
     };
@@ -273,8 +293,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData();
-    setTimeout(() => setRefreshing(false), 500);
+    try {
+      await loadData();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   // Open attachment modal for either Inspection or PM Record
@@ -430,8 +453,8 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
         return false;
       }
 
-      if (searchTerm.trim()) {
-        const term = searchTerm.trim().toLowerCase();
+      if (deferredSearchTerm.trim()) {
+        const term = deferredSearchTerm.trim().toLowerCase();
         const matchUnit = r.unitNumber.toLowerCase().includes(term);
         const matchPlate = (r.plateNumber || '').toLowerCase().includes(term);
         const matchVin = (r.vin || '').toLowerCase().includes(term);
@@ -444,7 +467,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
 
       return true;
     });
-  }, [inspections, activeFilterTab, yardFilter, searchTerm]);
+  }, [inspections, activeFilterTab, yardFilter, deferredSearchTerm]);
 
   // Filtered Preventive Maintenance records
   const filteredPMRecords = useMemo(() => {
@@ -470,8 +493,8 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
         return false;
       }
 
-      if (searchTerm.trim()) {
-        const term = searchTerm.trim().toLowerCase();
+      if (deferredSearchTerm.trim()) {
+        const term = deferredSearchTerm.trim().toLowerCase();
         return (
           r.unitNumber.toLowerCase().includes(term) ||
           r.plateNumber.toLowerCase().includes(term) ||
@@ -485,7 +508,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
 
       return true;
     });
-  }, [pmRecords, pmFilterTab, yardFilter, searchTerm]);
+  }, [pmRecords, pmFilterTab, yardFilter, deferredSearchTerm]);
 
   const inspectionTableRef = useRef<HTMLDivElement>(null);
   const pmTableRef = useRef<HTMLDivElement>(null);
@@ -1006,8 +1029,15 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                       const isExp = daysLeft < 0;
                       const isDue30 = daysLeft >= 0 && daysLeft <= 30;
                       const atts = r.attachments || [];
-                      const pdfCount = atts.filter((a) => a.type === 'pdf').length;
-                      const imgCount = atts.filter((a) => a.type === 'image').length;
+                      let pdfCount = 0;
+                      let imgCount = 0;
+                      for (const a of atts) {
+                        if (a.type === 'pdf') {
+                          pdfCount++;
+                        } else if (a.type === 'image') {
+                          imgCount++;
+                        }
+                      }
                       const isOver2Years = isOlderThanTwoYears(r.inspectionDate);
 
                       return (
@@ -1906,38 +1936,48 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
 
       {/* Attachment Modal (Shared by Sticker Inspections & Preventive Maintenance) */}
       {isAttachmentModalOpen && selectedRecordForAtt && (
-        <InspectionAttachmentModal
-          isOpen={isAttachmentModalOpen}
-          onClose={() => {
-            setIsAttachmentModalOpen(false);
-            setSelectedRecordForAtt(null);
-          }}
-          inspection={selectedRecordForAtt}
-          onAddAttachment={handleAddAttachment}
-          onDeleteAttachment={handleDeleteAttachment}
-        />
+        <Suspense fallback={null}>
+          <InspectionAttachmentModal
+            isOpen={isAttachmentModalOpen}
+            onClose={() => {
+              setIsAttachmentModalOpen(false);
+              setSelectedRecordForAtt(null);
+            }}
+            inspection={selectedRecordForAtt}
+            onAddAttachment={handleAddAttachment}
+            onDeleteAttachment={handleDeleteAttachment}
+          />
+        </Suspense>
       )}
 
       {/* Log / Edit Preventive Maintenance Form Modal */}
-      <PreventiveMaintenanceFormModal
-        isOpen={isPMFormOpen}
-        onClose={() => {
-          setIsPMFormOpen(false);
-          setEditingPMRecord(null);
-        }}
-        vehicles={vehicles}
-        complianceConfig={complianceConfig}
-        initialRecord={editingPMRecord}
-        onSave={handleSavePMRecord}
-      />
+      {isPMFormOpen && (
+        <Suspense fallback={null}>
+          <PreventiveMaintenanceFormModal
+            isOpen={isPMFormOpen}
+            onClose={() => {
+              setIsPMFormOpen(false);
+              setEditingPMRecord(null);
+            }}
+            vehicles={vehicles}
+            complianceConfig={complianceConfig}
+            initialRecord={editingPMRecord}
+            onSave={handleSavePMRecord}
+          />
+        </Suspense>
+      )}
 
       {/* Print Written Maintenance Plan & 5-Element Audit Dossier Modal */}
-      <WrittenMaintenancePlanPrintModal
-        isOpen={isPrintPlanModalOpen}
-        onClose={() => setIsPrintPlanModalOpen(false)}
-        complianceConfig={complianceConfig}
-        pmRecords={pmRecords}
-      />
+      {isPrintPlanModalOpen && (
+        <Suspense fallback={null}>
+          <WrittenMaintenancePlanPrintModal
+            isOpen={isPrintPlanModalOpen}
+            onClose={() => setIsPrintPlanModalOpen(false)}
+            complianceConfig={complianceConfig}
+            pmRecords={pmRecords}
+          />
+        </Suspense>
+      )}
 
       {/* Schedule / Log Periodic Sticker Inspection Modal */}
       {isInspFormOpen && (

@@ -6,8 +6,10 @@ import { getSentParentNotifications } from '../../utils/dispatchDelayUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { logDispatchAction } from '../../utils/dispatchLogger';
 import { Student } from '../../types/student';
-import { ShiftGoogleMapView } from '../routes/ShiftGoogleMapView';
+import { LazyShiftGoogleMapView } from '../routes/LazyShiftGoogleMapView';
 import { convertDispatchShiftToRouteShift } from '../../utils/dispatchShiftToRoute';
+
+const EMPTY_STUDENTS_MAP: Record<number, Student> = {};
 
 interface DispatchStopModalProps {
   isOpen: boolean;
@@ -22,8 +24,18 @@ interface DispatchStopModalProps {
   studentsMap?: Record<number, Student>;
 }
 
-export const DispatchStopModal: React.FC<DispatchStopModalProps> = ({
-  isOpen,
+export const DispatchStopModal: React.FC<DispatchStopModalProps> = (props) => {
+  if (!props.isOpen || !props.shift) return null;
+  return (
+    <DispatchStopModalContent
+      {...props}
+      shift={props.shift}
+      studentsMap={props.studentsMap ?? EMPTY_STUDENTS_MAP}
+    />
+  );
+};
+
+const DispatchStopModalContent: React.FC<DispatchStopModalProps & { shift: DispatchShift }> = ({
   onClose,
   shift,
   initialStopId,
@@ -32,12 +44,10 @@ export const DispatchStopModal: React.FC<DispatchStopModalProps> = ({
   onOpenNotification,
   onOpenHistory,
   initialTab = 'stops',
-  studentsMap = {},
+  studentsMap = EMPTY_STUDENTS_MAP,
 }) => {
   const { currentUser } = useAuth();
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
-
-  if (!isOpen || !shift) return null;
 
   const stops = Array.isArray(shift.stops) ? shift.stops : [];
 
@@ -241,7 +251,7 @@ export const DispatchStopModal: React.FC<DispatchStopModalProps> = ({
         {/* Content body: Map view or Stops list */}
         {activeTab === 'map' && routeShift && route ? (
           <div className="flex-1 w-full bg-slate-950 min-h-[500px] p-2 flex flex-col overflow-hidden">
-            <ShiftGoogleMapView
+            <LazyShiftGoogleMapView
               shift={routeShift}
               route={route}
               studentsMap={studentsMap}

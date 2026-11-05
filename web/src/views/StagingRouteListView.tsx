@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback, useDeferredValue, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Bus, ChevronDown, ChevronRight, Clock, Copy, MapPin, RefreshCw, Search, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -46,30 +46,46 @@ export const StagingRouteListView: React.FC = () => {
     load();
   }, []);
 
+  const searchIndex = useMemo(() => {
+    const index = new Map<string, string>();
+    for (const route of routes) {
+      const parts: string[] = [route.routeNo, route.routeName, route.operatorId];
+      for (const shift of route.shifts) {
+        parts.push(shift.shiftType, shift.description, shift.schools, shift.runDays);
+        for (const stop of shift.stops) {
+          parts.push(stop.location);
+          for (const student of stop.students) {
+            parts.push(student.name);
+          }
+        }
+      }
+      index.set(route.id, parts.join(' ').toLowerCase());
+    }
+    return index;
+  }, [routes]);
+
+  const deferredSearch = useDeferredValue(search);
+
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = deferredSearch.trim().toLowerCase();
     return routes.filter((route) => {
       if (shiftFilter !== 'ALL' && !route.shifts.some((shift) => shift.shiftType === shiftFilter)) {
         return false;
       }
       if (!term) return true;
-      const haystack = [
-        route.routeNo,
-        route.routeName,
-        route.operatorId,
-        ...route.shifts.flatMap((shift) => [
-          shift.shiftType,
-          shift.description,
-          shift.schools,
-          shift.runDays,
-          ...shift.stops.flatMap((stop) => [stop.location, ...stop.students.map((student) => student.name)]),
-        ]),
-      ].join(' ').toLowerCase();
-      return haystack.includes(term);
+      return (searchIndex.get(route.id) || '').includes(term);
     });
-  }, [routes, search, shiftFilter]);
+  }, [routes, searchIndex, shiftFilter, deferredSearch]);
 
-  const copyRoute = async (route: StagingRoute) => {
+  const toggleRoute = useCallback((routeId: string) => {
+    setExpanded((prev) => ({ ...prev, [routeId]: !prev[routeId] }));
+  }, []);
+
+  const selectShift = useCallback((routeId: string, shiftId: string) => {
+    setActiveShift((prev) => ({ ...prev, [routeId]: shiftId }));
+  }, []);
+
+  const copyRoute = useCallback(async (route: StagingRoute) => {
     const windows = (route.applyWindows || [])
       .map((window) => `${window.effectiveDate} → ${window.applyDate} ${window.applyTime}`)
       .join(', ');
@@ -96,7 +112,7 @@ export const StagingRouteListView: React.FC = () => {
     } finally {
       setCopyingId(null);
     }
-  };
+  }, [isFrench]);
 
   // Virtual scrolling container for 1,000+ staging routes
   const stagingContainerRef = useRef<HTMLDivElement>(null);
@@ -201,7 +217,7 @@ export const StagingRouteListView: React.FC = () => {
                 const route = filtered[virtualRow.index];
                 if (!route) return null;
                 const isOpen = !!expanded[route.id];
-                const shift = openShift(route);
+                const shift = isOpen ? openShift(route) : undefined;
                 return (
                   <div
                     key={route.id}
@@ -215,13 +231,67 @@ export const StagingRouteListView: React.FC = () => {
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
                   >
-                    <div className="border-b border-slate-800/60">
-                      <div className="px-4 py-3 hover:bg-slate-800/40 flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setExpanded((prev) => ({ ...prev, [route.id]: !prev[route.id] }))}
-                      className="min-w-0 flex-1 text-left flex items-center gap-3"
-                    >
+                    <StagingRouteRow
+                      route={route}
+                      isOpen={isOpen}
+                      shift={shift}
+                      isFrench={isFrench}
+                      canCopy={canCopy}
+                      isCopying={copyingId === route.id}
+                      copyNote={copyNote[route.id]}
+                      onToggle={toggleRoute}
+                      onSelectShift={selectShift}
+                      onCopy={copyRoute}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+interface StagingCopyNote {
+  text: string;
+  error?: boolean;
+}
+
+interface StagingRouteRowProps {
+  route: StagingRoute;
+  isOpen: boolean;
+  shift?: StagingShift;
+  isFrench: boolean;
+  canCopy: boolean;
+  isCopying: boolean;
+  copyNote?: StagingCopyNote;
+  onToggle: (routeId: string) => void;
+  onSelectShift: (routeId: string, shiftId: string) => void;
+  onCopy: (route: StagingRoute) => void;
+}
+
+const StagingRouteRow = memo(function StagingRouteRow({
+  route,
+  isOpen,
+  shift,
+  isFrench,
+  canCopy,
+  isCopying,
+  copyNote,
+  onToggle,
+  onSelectShift,
+  onCopy,
+}: StagingRouteRowProps) {
+  return (
+    <div className="border-b border-slate-800/60">
+      <div className="px-4 py-3 hover:bg-slate-800/40 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => onToggle(route.id)}
+          className="min-w-0 flex-1 text-left flex items-center gap-3"
+        >
                       <span className={`p-1 rounded-lg border ${isOpen ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
                         {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                       </span>
@@ -243,9 +313,9 @@ export const StagingRouteListView: React.FC = () => {
                               : `Effective ${window.effectiveDate} · update ${window.applyDate} at ${window.applyTime}`}
                           </span>
                         ))}
-                        {copyNote[route.id] && (
-                          <span className={`block text-[11px] mt-1 ${copyNote[route.id].error ? 'text-rose-300' : 'text-emerald-300'}`}>
-                            {copyNote[route.id].text}
+                        {copyNote && (
+                          <span className={`block text-[11px] mt-1 ${copyNote.error ? 'text-rose-300' : 'text-emerald-300'}`}>
+                            {copyNote.text}
                           </span>
                         )}
                       </span>
@@ -266,12 +336,12 @@ export const StagingRouteListView: React.FC = () => {
                     {canCopy && (
                       <button
                         type="button"
-                        onClick={() => copyRoute(route)}
-                        disabled={copyingId === route.id || route.shifts.length === 0}
+                        onClick={() => onCopy(route)}
+                        disabled={isCopying || route.shifts.length === 0}
                         className="shrink-0 px-2.5 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-200 text-[11px] font-bold hover:bg-amber-500/20 disabled:opacity-50 flex items-center gap-1"
                       >
                         <Copy className="w-3.5 h-3.5" />
-                        {copyingId === route.id
+                        {isCopying
                           ? (isFrench ? 'Copie...' : 'Copying...')
                           : (isFrench ? 'Copier en service' : 'Copy to live')}
                       </button>
@@ -284,7 +354,7 @@ export const StagingRouteListView: React.FC = () => {
                           <button
                             key={item.id}
                             type="button"
-                            onClick={() => setActiveShift((prev) => ({ ...prev, [route.id]: item.id }))}
+                            onClick={() => onSelectShift(route.id, item.id)}
                             className={`px-2 py-1 rounded-lg text-[11px] font-bold border ${
                               shift.id === item.id
                                 ? 'bg-amber-500 text-slate-950 border-amber-400'
@@ -353,20 +423,12 @@ export const StagingRouteListView: React.FC = () => {
                       </div>
                     </div>
                   )}
-                  {isOpen && !shift && (
-                    <div className="px-4 pb-4 text-xs text-slate-500">{isFrench ? 'Aucun quart' : 'No shifts'}</div>
-                  )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
+      {isOpen && !shift && (
+        <div className="px-4 pb-4 text-xs text-slate-500">{isFrench ? 'Aucun quart' : 'No shifts'}</div>
+      )}
     </div>
   );
-};
+});
 
 function Metric({ icon, tone, value, label }: { icon: React.ReactNode; tone: string; value: number; label: string }) {
   return (

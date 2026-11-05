@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useI18n } from '../contexts/I18nContext';
 import {
@@ -31,14 +31,46 @@ import { DefectService } from '../services/defectService';
 import { DispatchService } from '../services/dispatchService';
 import { useAuth } from '../contexts/AuthContext';
 import { OperationalSafetyLogService } from '../services/operationalSafetyLogService';
-import { VehicleDefectPdfModal } from '../components/defects/VehicleDefectPdfModal';
-import { VehicleDefectSummaryModal } from '../components/defects/VehicleDefectSummaryModal';
+import { ExportLoadingOverlay } from '../components/common/ExportLoadingOverlay';
+
+const VehicleDefectPdfModal = React.lazy(() =>
+  import('../components/defects/VehicleDefectPdfModal').then((module) => ({
+    default: module.VehicleDefectPdfModal,
+  }))
+);
+const VehicleDefectSummaryModal = React.lazy(() =>
+  import('../components/defects/VehicleDefectSummaryModal').then((module) => ({
+    default: module.VehicleDefectSummaryModal,
+  }))
+);
+
+const STATUS_TABS = [
+  { id: 'all', label: 'All' },
+  { id: 'submitted', label: 'Submitted' },
+  { id: 'under_assessment', label: 'Under Assessment' },
+  { id: 'under_repair', label: 'Under Repair' },
+  { id: 'resolved', label: 'Resolved' },
+] as const;
+
+const TIME_RANGE_OPTIONS = [
+  { id: '6months', label: '6 Months (Hot)' },
+  { id: '1year', label: '1 Year (Hybrid)' },
+  { id: 'all', label: 'All History' },
+] as const;
+
+const LIFECYCLE_STATUS_OPTIONS = [
+  { id: 'submitted', label: 'Submitted' },
+  { id: 'under_assessment', label: 'Under Assessment' },
+  { id: 'under_repair', label: 'Under Repair' },
+  { id: 'resolved', label: 'Resolved' },
+] as const;
 
 export const DefectReportsView: React.FC = () => {
   const { currentUser } = useAuth();
   const [reports, setReports] = useState<VehicleDefectReport[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedReport, setSelectedReport] = useState<VehicleDefectReport | null>(null);
   const [isAssessmentModalOpen, setIsAssessmentModalOpen] = useState<boolean>(false);
@@ -76,11 +108,13 @@ export const DefectReportsView: React.FC = () => {
     return d < cutoff.toISOString().slice(0, 10);
   };
 
-  const loadDefects = async (overrideQuery?: string) => {
+  const loadDefects = async (overrideQuery?: string, opts?: { isCancelled?: () => boolean }) => {
     const q = (overrideQuery !== undefined ? overrideQuery : searchQuery).trim();
     if (timeRange === 'all' && !q) {
-      setReports([]);
-      setLoading(false);
+      if (!opts?.isCancelled?.()) {
+        setReports([]);
+        setLoading(false);
+      }
       return;
     }
     setLoading(true);
@@ -91,56 +125,85 @@ export const DefectReportsView: React.FC = () => {
         params.query = q;
       }
       const data = await DefectService.listDefects(params);
+      if (opts?.isCancelled?.()) return;
       setReports(data);
     } catch (err) {
       console.error('Failed to load defect reports:', err);
-      setReports([]);
+      if (!opts?.isCancelled?.()) {
+        setReports([]);
+      }
     } finally {
-      setLoading(false);
+      if (!opts?.isCancelled?.()) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
+    let isCancelled = false;
     if (timeRange === '6months') {
       setLoading(true);
       const unsubscribe = DefectService.subscribeToDefects((data) => {
-        setReports(data);
-        setLoading(false);
+        if (!isCancelled) {
+          setReports(data);
+          setLoading(false);
+        }
       });
-      return () => unsubscribe();
+      return () => {
+        isCancelled = true;
+        unsubscribe();
+      };
     } else if (timeRange === '1year') {
-      loadDefects();
+      void loadDefects(undefined, { isCancelled: () => isCancelled });
     } else {
       // 'all' history mode requires a targeted query
       if (searchQuery.trim()) {
-        loadDefects(searchQuery.trim());
+        void loadDefects(searchQuery.trim(), { isCancelled: () => isCancelled });
       } else {
         setReports([]);
         setLoading(false);
       }
     }
+    return () => {
+      isCancelled = true;
+    };
   }, [timeRange]);
 
   const refreshData = async () => {
     loadDefects();
   };
 
-  // KPIs
+  // KPIs: single-pass iteration across defect statuses
   const stats = useMemo(() => {
-    const total = reports.length;
-    const submitted = reports.filter((r) => r.status === 'submitted').length;
-    const underAssessment = reports.filter((r) => r.status === 'under_assessment').length;
-    const underRepair = reports.filter((r) => r.status === 'under_repair').length;
-    const resolved = reports.filter((r) => r.status === 'resolved').length;
-    return { total, submitted, underAssessment, underRepair, resolved };
+    let submitted = 0;
+    let underAssessment = 0;
+    let underRepair = 0;
+    let resolved = 0;
+    for (const r of reports) {
+      switch (r.status) {
+        case 'submitted':
+          submitted++;
+          break;
+        case 'under_assessment':
+          underAssessment++;
+          break;
+        case 'under_repair':
+          underRepair++;
+          break;
+        case 'resolved':
+          resolved++;
+          break;
+      }
+    }
+    return { total: reports.length, submitted, underAssessment, underRepair, resolved };
   }, [reports]);
 
-  // Filtered reports
+  // Filtered reports: decoupled from high-frequency typing with deferredSearchQuery
   const filteredReports = useMemo(() => {
     return reports.filter((r) => {
       if (statusFilter !== 'all' && r.status !== statusFilter) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (deferredSearchQuery.trim()) {
+        const q = deferredSearchQuery.toLowerCase();
         const unit = (r.vehicleUnitNumber || '').toLowerCase();
         const driver = (r.reportedByName || '').toLowerCase();
         const notes = (r.defectNotes || '').toLowerCase();
@@ -149,7 +212,7 @@ export const DefectReportsView: React.FC = () => {
       }
       return true;
     });
-  }, [reports, statusFilter, searchQuery]);
+  }, [reports, statusFilter, deferredSearchQuery]);
 
   const { isFrench } = useI18n();
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -530,13 +593,7 @@ export const DefectReportsView: React.FC = () => {
         {/* Status Tabs & Time Range Tabs */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-            {[
-              { id: 'all', label: 'All' },
-              { id: 'submitted', label: 'Submitted' },
-              { id: 'under_assessment', label: 'Under Assessment' },
-              { id: 'under_repair', label: 'Under Repair' },
-              { id: 'resolved', label: 'Resolved' },
-            ].map((tab) => (
+            {STATUS_TABS.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setStatusFilter(tab.id)}
@@ -557,11 +614,7 @@ export const DefectReportsView: React.FC = () => {
               <Clock className="w-3.5 h-3.5 text-blue-500" />
               Range:
             </span>
-            {[
-              { id: '6months', label: '6 Months (Hot)' },
-              { id: '1year', label: '1 Year (Hybrid)' },
-              { id: 'all', label: 'All History' },
-            ].map((r) => (
+            {TIME_RANGE_OPTIONS.map((r) => (
               <button
                 key={r.id}
                 onClick={() => setTimeRange(r.id as any)}
@@ -919,12 +972,7 @@ export const DefectReportsView: React.FC = () => {
                   Update Lifecycle Status
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { id: 'submitted', label: 'Submitted' },
-                    { id: 'under_assessment', label: 'Under Assessment' },
-                    { id: 'under_repair', label: 'Under Repair' },
-                    { id: 'resolved', label: 'Resolved' },
-                  ].map((s) => (
+                  {LIFECYCLE_STATUS_OPTIONS.map((s) => (
                     <button
                       key={s.id}
                       type="button"
@@ -1083,22 +1131,28 @@ export const DefectReportsView: React.FC = () => {
         </div>
       )}
 
-      {/* Individual Defect Report & Work Order PDF / Print Modal */}
-      <VehicleDefectPdfModal
-        isOpen={pdfModalOpen}
-        onClose={() => setPdfModalOpen(false)}
-        report={pdfSelectedReport}
-        allReports={reports}
-      />
+      {pdfModalOpen && (
+        <React.Suspense fallback={<ExportLoadingOverlay />}>
+          <VehicleDefectPdfModal
+            isOpen={pdfModalOpen}
+            onClose={() => setPdfModalOpen(false)}
+            report={pdfSelectedReport}
+            allReports={reports}
+          />
+        </React.Suspense>
+      )}
 
-      {/* Fleet Defect Summary & Maintenance Status Print Modal */}
-      <VehicleDefectSummaryModal
-        isOpen={summaryModalOpen}
-        onClose={() => setSummaryModalOpen(false)}
-        reports={filteredReports}
-        statusFilter={statusFilter}
-        searchQuery={searchQuery}
-      />
+      {summaryModalOpen && (
+        <React.Suspense fallback={<ExportLoadingOverlay />}>
+          <VehicleDefectSummaryModal
+            isOpen={summaryModalOpen}
+            onClose={() => setSummaryModalOpen(false)}
+            reports={filteredReports}
+            statusFilter={statusFilter}
+            searchQuery={searchQuery}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

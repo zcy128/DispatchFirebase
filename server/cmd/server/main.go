@@ -85,7 +85,14 @@ func main() {
 		app, err = firebase.NewApp(ctx, &firebase.Config{ProjectID: cfg.ProjectID}, opt)
 	} else {
 		log.Printf("[INIT] No service account key file found. Attempting Application Default Credentials (ADC) for project: %s", cfg.ProjectID)
-		app, err = firebase.NewApp(ctx, &firebase.Config{ProjectID: cfg.ProjectID})
+		saEmail := os.Getenv("SERVICE_ACCOUNT_EMAIL")
+		if saEmail == "" {
+			saEmail = "337919645491-compute@developer.gserviceaccount.com"
+		}
+		app, err = firebase.NewApp(ctx, &firebase.Config{
+			ProjectID:        cfg.ProjectID,
+			ServiceAccountID: saEmail,
+		})
 	}
 
 	if err == nil {

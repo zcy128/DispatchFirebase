@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { ShiftEditModal } from './ShiftEditModal';
 import { StopEditModal } from './StopEditModal';
-import { ShiftGoogleMapView } from './ShiftGoogleMapView';
+import { LazyShiftGoogleMapView } from './LazyShiftGoogleMapView';
 
 interface RouteDetailDrawerProps {
   route: BusRoute | null;
@@ -520,7 +520,7 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
               </div>
 
               {drawerMode === 'map' ? (
-                <ShiftGoogleMapView
+                <LazyShiftGoogleMapView
                   shift={currentShift}
                   route={route}
                   studentsMap={studentsMap}

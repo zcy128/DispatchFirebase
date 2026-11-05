@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Employee, UserRole } from '../types/employee';
 import {
   USER_ROLES,
@@ -8,29 +8,25 @@ import {
   isRoleDefaultCustomized,
   subscribeToRolePermissionChanges
 } from '../utils/permissions';
-import { RolePermissionsModal } from '../components/roles/RolePermissionsModal';
+import { ROLE_THEMES } from '../components/roles/roleThemes';
+import { StaffRoleCard, StaffRoleRow } from '../components/roles/StaffRoleListItems';
 import {
   ShieldCheck,
-  ShieldAlert,
   Users,
   Search,
   RefreshCw,
-  Building2,
-  Mail,
-  Phone,
-  Edit,
   Sliders,
   Truck,
-  Wrench,
-  DollarSign,
-  Award,
-  GraduationCap,
-  Briefcase,
   Radio,
-  Eye,
   LayoutGrid,
   List
 } from 'lucide-react';
+
+const RolePermissionsModal = React.lazy(() =>
+  import('../components/roles/RolePermissionsModal').then((module) => ({
+    default: module.RolePermissionsModal,
+  }))
+);
 
 interface RoleManagementViewProps {
   employees: Employee[];
@@ -41,126 +37,6 @@ interface RoleManagementViewProps {
   onRefresh?: () => void;
   refreshing?: boolean;
 }
-
-// Visual themes for roles
-const ROLE_THEMES: Record<UserRole, {
-  color: string;
-  bgColor: string;
-  borderColor: string;
-  badgeBg: string;
-  badgeText: string;
-  icon: React.ComponentType<{ className?: string }>;
-  tag: string;
-}> = {
-  admin: {
-    color: 'text-rose-400',
-    bgColor: 'bg-rose-500/10',
-    borderColor: 'border-rose-500/30',
-    badgeBg: 'bg-rose-500/20',
-    badgeText: 'text-rose-300',
-    icon: ShieldAlert,
-    tag: 'Full Administrator'
-  },
-  manager: {
-    color: 'text-purple-400',
-    bgColor: 'bg-purple-500/10',
-    borderColor: 'border-purple-500/30',
-    badgeBg: 'bg-purple-500/20',
-    badgeText: 'text-purple-300',
-    icon: Briefcase,
-    tag: 'Executive Read-Only'
-  },
-  dispatcher: {
-    color: 'text-blue-400',
-    bgColor: 'bg-blue-500/10',
-    borderColor: 'border-blue-500/30',
-    badgeBg: 'bg-blue-500/20',
-    badgeText: 'text-blue-300',
-    icon: Radio,
-    tag: 'Operations & Routes'
-  },
-  supervisor: {
-    color: 'text-cyan-400',
-    bgColor: 'bg-cyan-500/10',
-    borderColor: 'border-cyan-500/30',
-    badgeBg: 'bg-cyan-500/20',
-    badgeText: 'text-cyan-300',
-    icon: Eye,
-    tag: 'Yard Supervision'
-  },
-  'office staff': {
-    color: 'text-slate-300',
-    bgColor: 'bg-slate-700/30',
-    borderColor: 'border-slate-600/40',
-    badgeBg: 'bg-slate-700/50',
-    badgeText: 'text-slate-200',
-    icon: Building2,
-    tag: 'Office Support'
-  },
-  studentcare: {
-    color: 'text-violet-400',
-    bgColor: 'bg-violet-500/10',
-    borderColor: 'border-violet-500/30',
-    badgeBg: 'bg-violet-500/20',
-    badgeText: 'text-violet-300',
-    icon: GraduationCap,
-    tag: 'Student Safety'
-  },
-  fleet: {
-    color: 'text-emerald-400',
-    bgColor: 'bg-emerald-500/10',
-    borderColor: 'border-emerald-500/30',
-    badgeBg: 'bg-emerald-500/20',
-    badgeText: 'text-emerald-300',
-    icon: Wrench,
-    tag: 'Maintenance & Assets'
-  },
-  HR: {
-    color: 'text-pink-400',
-    bgColor: 'bg-pink-500/10',
-    borderColor: 'border-pink-500/30',
-    badgeBg: 'bg-pink-500/20',
-    badgeText: 'text-pink-300',
-    icon: Users,
-    tag: 'Human Resources'
-  },
-  payroll: {
-    color: 'text-teal-400',
-    bgColor: 'bg-teal-500/10',
-    borderColor: 'border-teal-500/30',
-    badgeBg: 'bg-teal-500/20',
-    badgeText: 'text-teal-300',
-    icon: DollarSign,
-    tag: 'Compensation & Payroll'
-  },
-  training: {
-    color: 'text-amber-400',
-    bgColor: 'bg-amber-500/10',
-    borderColor: 'border-amber-500/30',
-    badgeBg: 'bg-amber-500/20',
-    badgeText: 'text-amber-300',
-    icon: Award,
-    tag: 'Safety & Recertification'
-  },
-  driver: {
-    color: 'text-amber-400',
-    bgColor: 'bg-amber-500/10',
-    borderColor: 'border-amber-500/30',
-    badgeBg: 'bg-amber-500/20',
-    badgeText: 'text-amber-300',
-    icon: Truck,
-    tag: 'Driver Mobile App'
-  },
-  helper: {
-    color: 'text-lime-400',
-    bgColor: 'bg-lime-500/10',
-    borderColor: 'border-lime-500/30',
-    badgeBg: 'bg-lime-500/20',
-    badgeText: 'text-lime-300',
-    icon: Users,
-    tag: 'Bus Attendant / Helper'
-  }
-};
 
 export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
   employees,
@@ -179,16 +55,24 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
   const [reassigningId, setReassigningId] = useState<string | null>(null);
   const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
   const [permissionsModalRole, setPermissionsModalRole] = useState<UserRole>('dispatcher');
-  const [, setTick] = useState(0);
+  const [permissionTick, setPermissionTick] = useState(0);
+  const deferredSearchTerm = useDeferredValue(searchTerm);
 
   useEffect(() => {
     return subscribeToRolePermissionChanges(() => {
-      setTick((t) => t + 1);
+      setPermissionTick((tick) => tick + 1);
     });
   }, []);
 
-  // Group employees by normalized role
-  const roleCounts = useMemo(() => {
+  const customizedRoles = useMemo(() => {
+    const customized = new Set<UserRole>();
+    for (const role of USER_ROLES) {
+      if (isRoleDefaultCustomized(role)) customized.add(role);
+    }
+    return customized;
+  }, [permissionTick]);
+
+  const rosterStats = useMemo(() => {
     const counts: Record<UserRole, number> = {
       admin: 0,
       manager: 0,
@@ -203,70 +87,56 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
       driver: 0,
       helper: 0
     };
+    const yardSet = new Set<string>();
+    let overrides = 0;
 
-    employees.forEach((emp) => {
-      const r = normalizeRole(emp.role);
-      counts[r] = (counts[r] || 0) + 1;
-    });
+    for (const emp of employees) {
+      const role = normalizeRole(emp.role);
+      counts[role] = (counts[role] || 0) + 1;
+      if (emp.yardId) yardSet.add(emp.yardId);
+      if (emp.pagePermissions && Object.keys(emp.pagePermissions).length > 0) {
+        overrides += 1;
+      }
+    }
 
-    return counts;
+    return {
+      counts,
+      yards: Array.from(yardSet).sort(),
+      overrides,
+    };
   }, [employees]);
 
-  // Overall Stats
+  const roleCounts = rosterStats.counts;
+  const yards = rosterStats.yards;
+  const totalWithOverrides = rosterStats.overrides;
   const totalEmployees = employees.length;
   const totalDriversAndHelpers = (roleCounts.driver || 0) + (roleCounts.helper || 0);
   const totalOperations = (roleCounts.admin || 0) + (roleCounts.dispatcher || 0) + (roleCounts.fleet || 0) + (roleCounts.supervisor || 0) + (roleCounts.manager || 0);
-  const totalWithOverrides = useMemo(() => {
-    return employees.filter((e) => e.pagePermissions && Object.keys(e.pagePermissions).length > 0).length;
-  }, [employees]);
 
-  // Unique Yards for dropdown
-  const yards = useMemo(() => {
-    const set = new Set<string>();
-    employees.forEach((e) => {
-      if (e.yardId) set.add(e.yardId);
-    });
-    return Array.from(set).sort();
-  }, [employees]);
-
-  // Filtered staff list
   const filteredEmployees = useMemo(() => {
+    const term = deferredSearchTerm.trim().toLowerCase();
     return employees.filter((emp) => {
       const empRole = normalizeRole(emp.role);
+      if (selectedRole !== 'ALL' && empRole !== selectedRole) return false;
+      if (selectedYard !== 'ALL' && emp.yardId !== selectedYard) return false;
 
-      // Role filter
-      if (selectedRole !== 'ALL' && empRole !== selectedRole) {
-        return false;
-      }
-
-      // Yard filter
-      if (selectedYard !== 'ALL' && emp.yardId !== selectedYard) {
-        return false;
-      }
-
-      // Override filter
-      const hasOverrides = emp.pagePermissions && Object.keys(emp.pagePermissions).length > 0;
+      const hasOverrides = Boolean(emp.pagePermissions && Object.keys(emp.pagePermissions).length > 0);
       if (overrideFilter === 'OVERRIDES' && !hasOverrides) return false;
       if (overrideFilter === 'STANDARD' && hasOverrides) return false;
 
-      // Search term
-      if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase().trim();
+      if (term) {
         const matchName = (emp.fullName || `${emp.firstName} ${emp.lastName}`).toLowerCase().includes(term);
         const matchNum = (emp.employeeNumber || '').toLowerCase().includes(term);
         const matchUser = (emp.username || '').toLowerCase().includes(term);
         const matchPos = (emp.jobPosition || '').toLowerCase().includes(term);
         const matchEmail = (emp.workEmail || '').toLowerCase().includes(term);
-        if (!matchName && !matchNum && !matchUser && !matchPos && !matchEmail) {
-          return false;
-        }
+        if (!matchName && !matchNum && !matchUser && !matchPos && !matchEmail) return false;
       }
-
       return true;
     });
-  }, [employees, selectedRole, selectedYard, overrideFilter, searchTerm]);
+  }, [employees, selectedRole, selectedYard, overrideFilter, deferredSearchTerm]);
 
-  const handleRoleChange = async (emp: Employee, newRole: UserRole) => {
+  const handleRoleChange = useCallback(async (emp: Employee, newRole: UserRole) => {
     if (!onQuickReassignRole) {
       onEditEmployee(emp, 'profile');
       return;
@@ -279,7 +149,21 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
     } finally {
       setReassigningId(null);
     }
-  };
+  }, [onEditEmployee, onQuickReassignRole]);
+
+  const handleSelectEmployee = useCallback((emp: Employee) => {
+    onSelectEmployee?.(emp);
+  }, [onSelectEmployee]);
+
+  const handleEditPermissions = useCallback((emp: Employee) => {
+    onEditEmployee(emp, 'permissions');
+  }, [onEditEmployee]);
+
+  const handleEditProfile = useCallback((emp: Employee) => {
+    onEditEmployee(emp, 'profile');
+  }, [onEditEmployee]);
+
+  const closePermissionsModal = useCallback(() => setIsPermissionsModalOpen(false), []);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-6 text-slate-100">
@@ -406,7 +290,7 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
                     <Icon className="w-4 h-4" />
                   </div>
                   <div className="flex items-center space-x-1.5">
-                    {isRoleDefaultCustomized(r) && (
+                    {customizedRoles.has(r) && (
                       <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Customized default permissions" />
                     )}
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${theme.badgeBg} ${theme.color}`}>
@@ -443,7 +327,7 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800/80 text-slate-300 border border-slate-700">
                     role: &quot;{selectedRole}&quot;
                   </span>
-                  {isRoleDefaultCustomized(selectedRole) && (
+                  {customizedRoles.has(selectedRole) && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
                       Customized Defaults
                     </span>
@@ -715,146 +599,17 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
       ) : viewMode === 'grid' ? (
         /* GRID CARD VIEW */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredEmployees.map((emp) => {
-            const role = normalizeRole(emp.role);
-            const theme = ROLE_THEMES[role];
-            const RoleIcon = theme.icon;
-            const overrideCount = emp.pagePermissions ? Object.keys(emp.pagePermissions).length : 0;
-            const isReassigning = reassigningId === emp.id;
-
-            return (
-              <div
-                key={emp.id}
-                className="bg-slate-900/80 border border-slate-800 hover:border-slate-700 rounded-xl p-4 flex flex-col justify-between transition-all duration-150 space-y-4 hover:shadow-lg"
-              >
-                {/* Employee Header */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start space-x-3">
-                    <div className="relative">
-                      <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-slate-200 text-sm">
-                        {emp.firstName ? emp.firstName[0].toUpperCase() : 'E'}
-                        {emp.lastName ? emp.lastName[0].toUpperCase() : ''}
-                      </div>
-                      <span
-                        className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900 ${
-                          emp.isActive ? 'bg-emerald-500' : 'bg-slate-500'
-                        }`}
-                        title={emp.isActive ? 'Active Staff' : 'Inactive'}
-                      />
-                    </div>
-
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => onSelectEmployee && onSelectEmployee(emp)}
-                        className="text-left font-bold text-sm text-white hover:text-amber-400 transition"
-                      >
-                        {emp.fullName || `${emp.firstName} ${emp.lastName}`}
-                      </button>
-                      <div className="text-[11px] text-slate-400 font-mono">
-                        #{emp.employeeNumber || emp.id}
-                        {emp.username && (
-                          <span className="text-slate-500 ml-1.5 font-sans">
-                            @{emp.username}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-slate-300 font-medium mt-0.5 truncate max-w-[200px]">
-                        {emp.jobPosition}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Role Badge */}
-                  <div className={`px-2 py-1 rounded-md text-[10px] font-bold flex items-center space-x-1 border ${theme.badgeBg} ${theme.color} ${theme.borderColor}`}>
-                    <RoleIcon className="w-3 h-3" />
-                    <span className="truncate max-w-[90px]">{ROLE_LABELS[role]}</span>
-                  </div>
-                </div>
-
-                {/* Yard and Permissions Summary */}
-                <div className="pt-2 border-t border-slate-800/80 space-y-2">
-                  <div className="flex items-center justify-between text-[11px] text-slate-400">
-                    <span className="flex items-center space-x-1">
-                      <Building2 className="w-3 h-3 text-slate-500" />
-                      <span>{emp.yardId || 'HQ-Central'}</span>
-                    </span>
-
-                    {overrideCount > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => onEditEmployee(emp, 'permissions')}
-                        className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition flex items-center space-x-1"
-                      >
-                        <Sliders className="w-2.5 h-2.5" />
-                        <span>{overrideCount} Page Overrides</span>
-                      </button>
-                    ) : (
-                      <span className="text-[10px] text-slate-500 font-medium">
-                        Standard Role Permissions
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Contact Snippets */}
-                  <div className="flex items-center space-x-3 text-[11px] text-slate-400 pt-1">
-                    {(emp.mobilePhone || emp.workPhonePhone) && (
-                      <span className="flex items-center space-x-1 truncate" title={emp.mobilePhone || emp.workPhonePhone}>
-                        <Phone className="w-3 h-3 text-slate-500" />
-                        <span>{emp.mobilePhone || emp.workPhonePhone}</span>
-                      </span>
-                    )}
-                    {emp.workEmail && (
-                      <span className="flex items-center space-x-1 truncate max-w-[150px]" title={emp.workEmail}>
-                        <Mail className="w-3 h-3 text-slate-500" />
-                        <span>{emp.workEmail}</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Card Actions */}
-                <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
-                  {/* Quick Role Reassignment Selector */}
-                  <div className="flex-1">
-                    <select
-                      value={role}
-                      disabled={isReassigning}
-                      onChange={(e) => handleRoleChange(emp, e.target.value as UserRole)}
-                      className="w-full bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-slate-200 focus:outline-none focus:border-amber-500 transition"
-                      title="Quick reassign role"
-                    >
-                      {USER_ROLES.map((r) => (
-                        <option key={r} value={r}>
-                          Role: {ROLE_LABELS[r]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex items-center space-x-1">
-                    <button
-                      type="button"
-                      onClick={() => onEditEmployee(emp, 'permissions')}
-                      className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 transition"
-                      title="Configure page authorizations"
-                    >
-                      <Sliders className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onEditEmployee(emp, 'profile')}
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
-                      title="Edit employee record"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {filteredEmployees.map((emp) => (
+            <StaffRoleCard
+              key={emp.id}
+              employee={emp}
+              isReassigning={reassigningId === emp.id}
+              onSelect={handleSelectEmployee}
+              onEditPermissions={handleEditPermissions}
+              onEditProfile={handleEditProfile}
+              onRoleChange={handleRoleChange}
+            />
+          ))}
         </div>
       ) : (
         /* TABLE / LIST VIEW */
@@ -872,125 +627,32 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {filteredEmployees.map((emp) => {
-                  const role = normalizeRole(emp.role);
-                  const theme = ROLE_THEMES[role];
-                  const RoleIcon = theme.icon;
-                  const overrideCount = emp.pagePermissions ? Object.keys(emp.pagePermissions).length : 0;
-                  const isReassigning = reassigningId === emp.id;
-
-                  return (
-                    <tr key={emp.id} className="hover:bg-slate-800/40 transition">
-                      {/* Name & ID */}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-slate-200 text-xs">
-                            {emp.firstName ? emp.firstName[0].toUpperCase() : 'E'}
-                            {emp.lastName ? emp.lastName[0].toUpperCase() : ''}
-                          </div>
-                          <div>
-                            <button
-                              type="button"
-                              onClick={() => onSelectEmployee && onSelectEmployee(emp)}
-                              className="font-bold text-white hover:text-amber-400 transition"
-                            >
-                              {emp.fullName || `${emp.firstName} ${emp.lastName}`}
-                            </button>
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              #{emp.employeeNumber || emp.id}
-                              {emp.username && <span> &bull; @{emp.username}</span>}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Role Dropdown / Badge */}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center space-x-2">
-                          <div className={`p-1 rounded ${theme.badgeBg}`}>
-                            <RoleIcon className={`w-3.5 h-3.5 ${theme.color}`} />
-                          </div>
-                          <select
-                            value={role}
-                            disabled={isReassigning}
-                            onChange={(e) => handleRoleChange(emp, e.target.value as UserRole)}
-                            className="bg-slate-800 border border-slate-700 rounded-md px-2 py-1 text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500"
-                          >
-                            {USER_ROLES.map((r) => (
-                              <option key={r} value={r}>
-                                {ROLE_LABELS[r]}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </td>
-
-                      {/* Yard */}
-                      <td className="py-3 px-4 text-slate-300">
-                        {emp.yardId || 'HQ-Central'}
-                      </td>
-
-                      {/* Position */}
-                      <td className="py-3 px-4 text-slate-300">
-                        {emp.jobPosition}
-                      </td>
-
-                      {/* Permissions */}
-                      <td className="py-3 px-4">
-                        {overrideCount > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => onEditEmployee(emp, 'permissions')}
-                            className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition flex items-center space-x-1"
-                          >
-                            <Sliders className="w-2.5 h-2.5" />
-                            <span>{overrideCount} Custom Overrides</span>
-                          </button>
-                        ) : (
-                          <span className="text-[11px] text-slate-500">
-                            Default ({ROLE_LABELS[role]})
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => onEditEmployee(emp, 'permissions')}
-                            className="px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-semibold border border-amber-500/20 transition flex items-center space-x-1"
-                            title="Configure page authorizations"
-                          >
-                            <Sliders className="w-3 h-3" />
-                            <span>Access</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onEditEmployee(emp, 'profile')}
-                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition flex items-center space-x-1"
-                            title="Edit employee record"
-                          >
-                            <Edit className="w-3 h-3" />
-                            <span>Edit</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {filteredEmployees.map((emp) => (
+                  <StaffRoleRow
+                    key={emp.id}
+                    employee={emp}
+                    isReassigning={reassigningId === emp.id}
+                    onSelect={handleSelectEmployee}
+                    onEditPermissions={handleEditPermissions}
+                    onEditProfile={handleEditProfile}
+                    onRoleChange={handleRoleChange}
+                  />
+                ))}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* Role Default Permissions Editor Modal */}
-      <RolePermissionsModal
-        isOpen={isPermissionsModalOpen}
-        onClose={() => setIsPermissionsModalOpen(false)}
-        role={permissionsModalRole}
-      />
+      {isPermissionsModalOpen && (
+        <React.Suspense fallback={null}>
+          <RolePermissionsModal
+            isOpen
+            onClose={closePermissionsModal}
+            role={permissionsModalRole}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

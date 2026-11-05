@@ -1,8 +1,6 @@
 import {
   collection,
   addDoc,
-  query,
-  orderBy,
   onSnapshot
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -13,20 +11,33 @@ import {
 } from '../types/entityOperationLog';
 import { Student } from '../types/student';
 import { Vehicle } from '../types/vehicle';
+import {
+  capLogList,
+  isTimestampInBounds,
+  timestampLogQuery,
+  type TimestampLogBounds,
+} from './timestampLogQuery';
 
 const LOCAL_STORAGE_KEY = 'dispatch_entity_operation_logs';
+let memoryLogs: EntityOperationLog[] | null = null;
 
 export const EntityOperationLogService = {
   /**
    * Read stored logs from localStorage, excluding placeholder demo records
    */
   getStoredLogs(): EntityOperationLog[] {
+    if (memoryLogs) return memoryLogs;
     try {
       const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (!raw) return [];
+      if (!raw) {
+        memoryLogs = [];
+        return memoryLogs;
+      }
       const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-      return parsed.filter((item) => item && typeof item.id === 'string' && !item.id.startsWith('eol-seed-') && !item.id.startsWith('eol-init-'));
+      memoryLogs = Array.isArray(parsed)
+        ? parsed.filter((item) => item && typeof item.id === 'string' && !item.id.startsWith('eol-seed-') && !item.id.startsWith('eol-init-'))
+        : [];
+      return memoryLogs;
     } catch (e) {
       console.warn('[EntityOperationLogService] Failed to read localStorage logs:', e);
       return [];
@@ -37,6 +48,7 @@ export const EntityOperationLogService = {
    * Save an array of logs to localStorage
    */
   saveStoredLogs(logs: EntityOperationLog[]): void {
+    memoryLogs = logs;
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(logs));
     } catch (e) {
@@ -87,7 +99,8 @@ export const EntityOperationLogService = {
   subscribeToLogs(
     filter: EntityOperationLogFilter = {},
     onUpdate: (logs: EntityOperationLog[]) => void,
-    onError?: (err: Error) => void
+    onError?: (err: Error) => void,
+    bounds?: TimestampLogBounds
   ): () => void {
     const applyFilter = (allLogs: EntityOperationLog[]): EntityOperationLog[] => {
       return allLogs
@@ -139,16 +152,20 @@ export const EntityOperationLogService = {
         .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     };
 
+    const publish = (logs: EntityOperationLog[]) => {
+      const windowed = logs.filter((item) => isTimestampInBounds(item.timestamp, bounds));
+      onUpdate(capLogList(applyFilter(windowed), bounds?.limitCount));
+    };
+
     if (!db) {
-      const local = EntityOperationLogService.getStoredLogs();
-      onUpdate(applyFilter(local));
+      publish(EntityOperationLogService.getStoredLogs());
       return () => {};
     }
 
     try {
-      const q = query(collection(db, 'entity_operation_logs'), orderBy('timestamp', 'desc'));
+      const logQuery = timestampLogQuery(collection(db, 'entity_operation_logs'), bounds);
       const unsub = onSnapshot(
-        q,
+        logQuery,
         (snap) => {
           const remoteList: EntityOperationLog[] = [];
           snap.forEach((doc) => {
@@ -160,8 +177,10 @@ export const EntityOperationLogService = {
             });
           });
 
-          // Merge local seed or cached logs with Firestore remote logs
-          const localList = EntityOperationLogService.getStoredLogs();
+          // Merge local cached logs that fall inside the same timestamp window.
+          const localList = EntityOperationLogService.getStoredLogs().filter((item) =>
+            isTimestampInBounds(item.timestamp, bounds)
+          );
           const seen = new Set<string>();
           const combined: EntityOperationLog[] = [];
 
@@ -179,20 +198,18 @@ export const EntityOperationLogService = {
             }
           });
 
-          onUpdate(applyFilter(combined));
+          publish(combined);
         },
         (err) => {
           console.warn('[EntityOperationLogService] onSnapshot error, falling back to local storage:', err);
           if (onError) onError(err);
-          const local = EntityOperationLogService.getStoredLogs();
-          onUpdate(applyFilter(local));
+          publish(EntityOperationLogService.getStoredLogs());
         }
       );
       return unsub;
     } catch (err: any) {
       console.warn('[EntityOperationLogService] Failed to establish listener, falling back:', err);
-      const local = EntityOperationLogService.getStoredLogs();
-      onUpdate(applyFilter(local));
+      publish(EntityOperationLogService.getStoredLogs());
       return () => {};
     }
   },

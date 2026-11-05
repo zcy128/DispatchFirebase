@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
@@ -25,7 +25,6 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-// Log Services & Types
 import { DispatchService } from '../services/dispatchService';
 import { DispatchChangeLog } from '../types/dispatch';
 
@@ -42,84 +41,550 @@ import { OperationalSafetyLogService } from '../services/operationalSafetyLogSer
 import { OperationalSafetyLog } from '../types/operationalSafetyLog';
 
 export type AuditLogCategory =
-  | 'dispatch'  // Daily Dispatch Operations
-  | 'routes'    // Route & Stop Modifications
-  | 'master'    // Student & Vehicle Master CRUD
-  | 'payroll'   // Payroll Operations
-  | 'safety';   // Safety & Field Operations (Time off, defects, hazards, incidents)
+  | 'dispatch'
+  | 'routes'
+  | 'master'
+  | 'payroll'
+  | 'safety';
+
+const AUDIT_LOG_LIMIT = 2000;
+
+type LoadedRanges = Partial<Record<AuditLogCategory, string>>;
+
+type AuditFeed =
+  | { category: 'dispatch'; logs: DispatchChangeLog[] }
+  | { category: 'routes'; logs: RouteChangeLog[] }
+  | { category: 'master'; logs: EntityOperationLog[] }
+  | { category: 'payroll'; logs: PayrollOperationLog[] }
+  | { category: 'safety'; logs: OperationalSafetyLog[] };
+
+interface FieldDiff {
+  fieldLabel?: string;
+  oldValue?: unknown;
+  newValue?: unknown;
+}
+
+const localDay = (iso?: string): string => {
+  if (!iso) return '';
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso.slice(0, 10);
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${parsed.getFullYear()}-${month}-${day}`;
+};
+
+const calculateDaysDiff = (from: string, to: string): number => {
+  try {
+    const [y1, m1, d1] = from.split('-').map(Number);
+    const [y2, m2, d2] = to.split('-').map(Number);
+    const time1 = new Date(y1, m1 - 1, d1).getTime();
+    const time2 = new Date(y2, m2 - 1, d2).getTime();
+    return Math.round((time2 - time1) / (1000 * 3600 * 24)) + 1;
+  } catch {
+    return 1;
+  }
+};
+
+const csvCell = (value: string) => {
+  const raw = value || '';
+  const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replace(/"/g, '""')}"`;
+};
+
+const diffMatches = (diffs: FieldDiff[] | undefined, keyword: string): boolean => {
+  if (!diffs || diffs.length === 0) return false;
+  return diffs.some((diff) =>
+    (diff.fieldLabel || '').toLowerCase().includes(keyword) ||
+    String(diff.oldValue).toLowerCase().includes(keyword) ||
+    String(diff.newValue).toLowerCase().includes(keyword)
+  );
+};
+
+const AuditDiffList = memo(function AuditDiffList({
+  diffs,
+  isFrench,
+}: {
+  diffs: FieldDiff[];
+  isFrench: boolean;
+}) {
+  const emptyLabel = isFrench ? 'aucun' : 'none';
+  return (
+    <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
+      {diffs.map((diff, index) => (
+        <div key={`${diff.fieldLabel || 'field'}-${index}`} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+          <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
+          <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || emptyLabel)}</span>
+          <span className="text-emerald-400 font-bold">{String(diff.newValue || emptyLabel)}</span>
+        </div>
+      ))}
+    </div>
+  );
+});
+
+const DiffToggle = memo(function DiffToggle({
+  expanded,
+  count,
+  isFrench,
+  onToggle,
+}: {
+  expanded: boolean;
+  count: number;
+  isFrench: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
+    >
+      <span>
+        {expanded
+          ? (isFrench ? 'Masquer les écarts' : 'Hide Diffs')
+          : (isFrench ? 'Voir les écarts' : 'View Diffs')}{' '}
+        ({count})
+      </span>
+      {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+    </button>
+  );
+});
+
+const DispatchAuditCard = memo(function DispatchAuditCard({
+  log,
+  isFrench,
+}: {
+  log: DispatchChangeLog;
+  isFrench: boolean;
+}) {
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center space-x-2">
+          <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            {log.type}
+          </span>
+          <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+            {log.routeNo} ({log.shiftType})
+          </span>
+        </div>
+        <div className="flex items-center space-x-2 text-xs text-slate-400 font-mono">
+          <Clock className="w-3.5 h-3.5 text-slate-500" />
+          <span>{log.dispatchDate} {log.time}</span>
+        </div>
+      </div>
+      <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+        {log.detail}
+      </p>
+      <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
+        <div className="flex items-center space-x-1.5">
+          <User className="w-3.5 h-3.5 text-slate-500" />
+          <span className="font-semibold text-slate-300">
+            {isFrench ? 'Opérateur :' : 'Operator:'} {log.user}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+const RouteAuditCard = memo(function RouteAuditCard({
+  log,
+  expanded,
+  isFrench,
+  onToggle,
+}: {
+  log: RouteChangeLog;
+  expanded: boolean;
+  isFrench: boolean;
+  onToggle: (id: string) => void;
+}) {
+  const diffs = log.diffs || [];
+  const hasDiffs = diffs.length > 0;
+  const toggle = useCallback(() => onToggle(log.id), [onToggle, log.id]);
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center space-x-2">
+          <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-sky-500/10 text-sky-400 border border-sky-500/20">
+            {log.category} • {log.action}
+          </span>
+          <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+            {log.routeNo}
+          </span>
+        </div>
+        <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
+          <Clock className="w-3.5 h-3.5 text-slate-500" />
+          <span>{new Date(log.timestamp).toLocaleString()}</span>
+        </div>
+      </div>
+      <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+        {log.summary}
+      </p>
+      <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
+        <div className="flex items-center space-x-1.5">
+          <User className="w-3.5 h-3.5 text-slate-500" />
+          <span className="font-semibold text-slate-300">{log.userName}</span>
+          {log.userRole && (
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              {log.userRole}
+            </span>
+          )}
+        </div>
+        {hasDiffs && (
+          <DiffToggle expanded={expanded} count={diffs.length} isFrench={isFrench} onToggle={toggle} />
+        )}
+      </div>
+      {hasDiffs && expanded && <AuditDiffList diffs={diffs} isFrench={isFrench} />}
+    </div>
+  );
+});
+
+const MasterAuditCard = memo(function MasterAuditCard({
+  log,
+  expanded,
+  isFrench,
+  onToggle,
+}: {
+  log: EntityOperationLog;
+  expanded: boolean;
+  isFrench: boolean;
+  onToggle: (id: string) => void;
+}) {
+  const diffs = log.diffs || [];
+  const hasDiffs = diffs.length > 0;
+  const isStudent = log.targetType === 'student';
+  const toggle = useCallback(() => onToggle(log.id), [onToggle, log.id]);
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center space-x-2">
+          <span
+            className={`px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase border ${
+              log.action === 'create'
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                : log.action === 'update'
+                ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+                : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+            }`}
+          >
+            {log.action}
+          </span>
+          <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+            {isStudent ? (isFrench ? 'Élève' : 'Student') : (isFrench ? 'Véhicule' : 'Vehicle')} #{log.targetIdentifier}
+          </span>
+          <span className="text-xs text-slate-300 font-semibold">{log.targetName}</span>
+        </div>
+        <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
+          <Clock className="w-3.5 h-3.5 text-slate-500" />
+          <span>{new Date(log.timestamp).toLocaleString()}</span>
+        </div>
+      </div>
+      <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+        {log.summary}
+      </p>
+      <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
+        <div className="flex items-center space-x-1.5">
+          <User className="w-3.5 h-3.5 text-slate-500" />
+          <span className="font-semibold text-slate-300">{log.actor?.userName || '—'}</span>
+          {log.actor?.userRole && (
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              {log.actor.userRole}
+            </span>
+          )}
+        </div>
+        {hasDiffs && (
+          <DiffToggle expanded={expanded} count={diffs.length} isFrench={isFrench} onToggle={toggle} />
+        )}
+      </div>
+      {hasDiffs && expanded && <AuditDiffList diffs={diffs} isFrench={isFrench} />}
+    </div>
+  );
+});
+
+const PayrollAuditCard = memo(function PayrollAuditCard({
+  log,
+  expanded,
+  isFrench,
+  onToggle,
+}: {
+  log: PayrollOperationLog;
+  expanded: boolean;
+  isFrench: boolean;
+  onToggle: (id: string) => void;
+}) {
+  const diffs = log.diffs || [];
+  const hasDiffs = diffs.length > 0;
+  const toggle = useCallback(() => onToggle(log.id), [onToggle, log.id]);
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center space-x-2">
+          <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            {(log.category || 'payroll').split('_').join(' ')} • {log.action}
+          </span>
+          <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+            {log.targetIdentifier}
+          </span>
+          {log.amount !== undefined && (
+            <span className="font-mono font-bold text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+              ${log.amount.toFixed(2)}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
+          <Clock className="w-3.5 h-3.5 text-slate-500" />
+          <span>{new Date(log.timestamp).toLocaleString()}</span>
+        </div>
+      </div>
+      <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+        {log.summary}
+      </p>
+      <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
+        <div className="flex items-center space-x-1.5">
+          <User className="w-3.5 h-3.5 text-slate-500" />
+          <span className="font-semibold text-slate-300">{log.actor?.userName || '—'}</span>
+          {log.actor?.userRole && (
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              {log.actor.userRole}
+            </span>
+          )}
+        </div>
+        {hasDiffs && (
+          <DiffToggle expanded={expanded} count={diffs.length} isFrench={isFrench} onToggle={toggle} />
+        )}
+      </div>
+      {hasDiffs && expanded && <AuditDiffList diffs={diffs} isFrench={isFrench} />}
+    </div>
+  );
+});
+
+const SafetyAuditCard = memo(function SafetyAuditCard({
+  log,
+  expanded,
+  isFrench,
+  onToggle,
+}: {
+  log: OperationalSafetyLog;
+  expanded: boolean;
+  isFrench: boolean;
+  onToggle: (id: string) => void;
+}) {
+  const diffs = log.diffs || [];
+  const hasDiffs = diffs.length > 0;
+  const toggle = useCallback(() => onToggle(log.id), [onToggle, log.id]);
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center space-x-2">
+          <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-rose-500/10 text-rose-400 border border-rose-500/20">
+            {(log.module || 'safety').split('_').join(' ')} • {log.action}
+          </span>
+          <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+            {log.targetIdentifier}
+          </span>
+          {log.severity && (
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300">
+              {log.severity}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
+          <Clock className="w-3.5 h-3.5 text-slate-500" />
+          <span>{new Date(log.timestamp).toLocaleString()}</span>
+        </div>
+      </div>
+      <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+        {log.summary}
+      </p>
+      <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
+        <div className="flex items-center space-x-1.5">
+          <User className="w-3.5 h-3.5 text-slate-500" />
+          <span className="font-semibold text-slate-300">{log.actor?.userName || '—'}</span>
+          {log.actor?.userRole && (
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              {log.actor.userRole}
+            </span>
+          )}
+        </div>
+        {hasDiffs && (
+          <DiffToggle expanded={expanded} count={diffs.length} isFrench={isFrench} onToggle={toggle} />
+        )}
+      </div>
+      {hasDiffs && expanded && <AuditDiffList diffs={diffs} isFrench={isFrench} />}
+    </div>
+  );
+});
+
+const AuditLogScroller = memo(function AuditLogScroller({
+  feed,
+  expandedIds,
+  isFrench,
+  onToggle,
+}: {
+  feed: AuditFeed;
+  expandedIds: Set<string>;
+  isFrench: boolean;
+  onToggle: (id: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const logs = feed.logs;
+  const virtualizer = useVirtualizer({
+    count: logs.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => 140,
+    overscan: 6,
+    getItemKey: (index) => logs[index]?.id ?? index,
+  });
+
+  return (
+    <div ref={containerRef} className="overflow-y-auto max-h-[calc(100vh-270px)] pr-1">
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const index = virtualRow.index;
+          let card: React.ReactNode = null;
+          if (feed.category === 'dispatch') {
+            const log = feed.logs[index];
+            if (log) card = <DispatchAuditCard log={log} isFrench={isFrench} />;
+          } else if (feed.category === 'routes') {
+            const log = feed.logs[index];
+            if (log) {
+              card = (
+                <RouteAuditCard
+                  log={log}
+                  expanded={expandedIds.has(log.id)}
+                  isFrench={isFrench}
+                  onToggle={onToggle}
+                />
+              );
+            }
+          } else if (feed.category === 'master') {
+            const log = feed.logs[index];
+            if (log) {
+              card = (
+                <MasterAuditCard
+                  log={log}
+                  expanded={expandedIds.has(log.id)}
+                  isFrench={isFrench}
+                  onToggle={onToggle}
+                />
+              );
+            }
+          } else if (feed.category === 'payroll') {
+            const log = feed.logs[index];
+            if (log) {
+              card = (
+                <PayrollAuditCard
+                  log={log}
+                  expanded={expandedIds.has(log.id)}
+                  isFrench={isFrench}
+                  onToggle={onToggle}
+                />
+              );
+            }
+          } else {
+            const log = feed.logs[index];
+            if (log) {
+              card = (
+                <SafetyAuditCard
+                  log={log}
+                  expanded={expandedIds.has(log.id)}
+                  isFrench={isFrench}
+                  onToggle={onToggle}
+                />
+              );
+            }
+          }
+
+          return (
+            <div
+              key={logs[index]?.id ?? index}
+              data-index={index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+                paddingBottom: '12px',
+              }}
+            >
+              {card}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+const collectDates = (dateFrom: string, dateTo: string): string[] => {
+  const dates: string[] = [];
+  let cursor = dateFrom;
+  while (cursor <= dateTo && dates.length < 8) {
+    dates.push(cursor);
+    cursor = addDaysToDateString(cursor, 1);
+  }
+  return dates;
+};
 
 export const AuditLogsView: React.FC = () => {
   const { currentUser } = useAuth();
   const { isFrench } = useI18n();
   const isAdmin = currentUser?.role?.toLowerCase() === 'admin';
 
-  // Active Log Category
   const [activeCategory, setActiveCategory] = useState<AuditLogCategory>('dispatch');
-
-  // Date Range: Default is today, with strict 7-day maximum restriction
-  const today = getLocalTodayString();
-  const defaultFrom = today; // Default is today
-
-  const [dateFrom, setDateFrom] = useState<string>(defaultFrom);
-  const [dateTo, setDateTo] = useState<string>(today);
+  const [today, setToday] = useState(getLocalTodayString);
+  const [dateFrom, setDateFrom] = useState(getLocalTodayString);
+  const [dateTo, setDateTo] = useState(getLocalTodayString);
   const [rangeWarning, setRangeWarning] = useState<string | null>(null);
 
-  // Common Filters
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedActor, setSelectedActor] = useState<string>('');
-  const [selectedAction, setSelectedAction] = useState<string>('all');
-  const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedActor, setSelectedActor] = useState('');
+  const [selectedAction, setSelectedAction] = useState('all');
+  const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(() => new Set());
 
-  // Loading States
-  const [loading, setLoading] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [loadedRange, setLoadedRange] = useState<LoadedRanges>({});
 
-  // Log States for the 5 categories
   const [dispatchLogs, setDispatchLogs] = useState<DispatchChangeLog[]>([]);
   const [routeLogs, setRouteLogs] = useState<RouteChangeLog[]>([]);
   const [masterLogs, setMasterLogs] = useState<EntityOperationLog[]>([]);
   const [payrollLogs, setPayrollLogs] = useState<PayrollOperationLog[]>([]);
   const [safetyLogs, setSafetyLogs] = useState<OperationalSafetyLog[]>([]);
 
-  // Calculate day difference between two dates
-  const localDay = (iso?: string): string => {
-    if (!iso) return '';
-    const parsed = new Date(iso);
-    if (Number.isNaN(parsed.getTime())) return iso.slice(0, 10);
-    const month = String(parsed.getMonth() + 1).padStart(2, '0');
-    const day = String(parsed.getDate()).padStart(2, '0');
-    return `${parsed.getFullYear()}-${month}-${day}`;
-  };
+  const requestSeqRef = useRef(0);
+  const deferredSearch = useDeferredValue(searchQuery);
 
-  const calculateDaysDiff = (from: string, to: string): number => {
-    try {
-      const [y1, m1, d1] = from.split('-').map(Number);
-      const [y2, m2, d2] = to.split('-').map(Number);
-      const time1 = new Date(y1, m1 - 1, d1).getTime();
-      const time2 = new Date(y2, m2 - 1, d2).getTime();
-      return Math.round((time2 - time1) / (1000 * 3600 * 24)) + 1;
-    } catch {
-      return 1;
-    }
-  };
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      const next = getLocalTodayString();
+      setToday((current) => (current === next ? current : next));
+    }, 60000);
+    return () => window.clearInterval(timerId);
+  }, []);
 
   const handleDateFromChange = (newFrom: string) => {
     if (!newFrom) return;
     setDateFrom(newFrom);
 
-    // If dateTo is before dateFrom, align it
     if (dateTo < newFrom) {
       setDateTo(newFrom);
       setRangeWarning(null);
       return;
     }
 
-    // Check if range exceeds 7 days
     const diffDays = calculateDaysDiff(newFrom, dateTo);
     if (diffDays > 7) {
-      const clampedTo = addDaysToDateString(newFrom, 6);
-      setDateTo(clampedTo);
+      setDateTo(addDaysToDateString(newFrom, 6));
       setRangeWarning(
         isFrench
           ? 'La période a été ajustée automatiquement à la limite maximale autorisée de 7 jours.'
@@ -142,8 +607,7 @@ export const AuditLogsView: React.FC = () => {
 
     const diffDays = calculateDaysDiff(dateFrom, newTo);
     if (diffDays > 7) {
-      const clampedFrom = addDaysToDateString(newTo, -6);
-      setDateFrom(clampedFrom);
+      setDateFrom(addDaysToDateString(newTo, -6));
       setDateTo(newTo);
       setRangeWarning(
         isFrench
@@ -162,138 +626,187 @@ export const AuditLogsView: React.FC = () => {
       setDateFrom(currentToday);
       setDateTo(currentToday);
     } else {
-      const newFrom = addDaysToDateString(currentToday, -(days - 1));
-      setDateFrom(newFrom);
+      setDateFrom(addDaysToDateString(currentToday, -(days - 1)));
       setDateTo(currentToday);
     }
     setRangeWarning(null);
   };
 
-  // Subscribe to real-time logs across the 5 categories
   useEffect(() => {
-    if (!isAdmin) return;
-
-    setLoading(true);
-
-    // Collect dates in [dateFrom, dateTo] (up to 7 days)
-    const dates: string[] = [];
-    let cur = dateFrom;
-    while (cur <= dateTo && dates.length < 8) {
-      dates.push(cur);
-      cur = addDaysToDateString(cur, 1);
+    if (!isAdmin) {
+      setLoading(false);
+      return;
     }
 
-    let isSubscribed = true;
+    const seq = ++requestSeqRef.current;
+    const category = activeCategory;
+    const rangeKey = `${dateFrom}|${dateTo}`;
+    const bounds = { dateFrom, dateTo, limitCount: AUDIT_LOG_LIMIT };
+    const todayInRange = today >= dateFrom && today <= dateTo;
+    setLoading(true);
 
-    // 1. Dispatch Logs across the selected dates
-    Promise.all(dates.map((d) => DispatchService.listChangeLogs(d, { scope: 'all' })))
-      .then((results) => {
-        if (!isSubscribed) return;
-        const allLogs: DispatchChangeLog[] = [];
-        const seen = new Set<string>();
-        results.forEach((dayLogs) => {
-          if (Array.isArray(dayLogs)) {
-            dayLogs.forEach((l) => {
-              const uid = l.id || `${l.dispatchDate}-${l.timestamp}-${l.detail}`;
-              if (!seen.has(uid)) {
+    let unsubscribe = () => {};
+    const isCurrent = () => seq === requestSeqRef.current;
+    const finish = () => {
+      if (!isCurrent()) return;
+      setLoadedRange((prev) => (prev[category] === rangeKey ? prev : { ...prev, [category]: rangeKey }));
+      setLoading(false);
+      setRefreshing(false);
+    };
+    const logIdentity = (entry: DispatchChangeLog) => entry.id || `${entry.dispatchDate}-${entry.timestamp}-${entry.detail}`;
+
+    if (category === 'dispatch') {
+      let detailReady = false;
+      if (todayInRange) {
+        unsubscribe = DispatchService.subscribeToChangeLogs(
+          today,
+          (todayLogs) => {
+            if (!isCurrent() || todayLogs.length === 0) return;
+            detailReady = true;
+            setDispatchLogs((prev) => {
+              const others = prev.filter((entry) => entry.dispatchDate !== today);
+              const seen = new Set(others.map(logIdentity));
+              const merged = [...others];
+              todayLogs.forEach((entry) => {
+                const uid = logIdentity(entry);
+                if (seen.has(uid)) return;
                 seen.add(uid);
-                allLogs.push(l);
-              }
+                merged.push(entry);
+              });
+              merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+              return merged;
             });
+            finish();
+          },
+          (err) => {
+            console.error('Failed to subscribe to dispatch audit logs:', err);
+          },
+          { scope: 'detail' }
+        );
+      }
+
+      Promise.all(collectDates(dateFrom, dateTo).map((day) => DispatchService.listChangeLogs(day, { scope: 'all' })))
+        .then((results) => {
+          if (!isCurrent()) return;
+          const allLogs: DispatchChangeLog[] = [];
+          const seen = new Set<string>();
+          results.forEach((dayLogs) => {
+            if (!Array.isArray(dayLogs)) return;
+            dayLogs.forEach((entry) => {
+              const uid = logIdentity(entry);
+              if (seen.has(uid)) return;
+              seen.add(uid);
+              allLogs.push(entry);
+            });
+          });
+          allLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+          if (detailReady) {
+            setDispatchLogs((prev) => {
+              const liveToday = prev.filter((entry) => entry.dispatchDate === today);
+              const rest = allLogs.filter((entry) => entry.dispatchDate !== today);
+              const merged = [...liveToday, ...rest];
+              merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+              return merged;
+            });
+          } else {
+            setDispatchLogs(allLogs);
           }
-        });
-        allLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        setDispatchLogs(allLogs);
-        setLoading(false);
-        setRefreshing(false);
-      })
-      .catch((err) => {
-        console.error('Failed to load dispatch logs for range:', err);
-        if (isSubscribed) {
+          finish();
+        })
+        .catch((err) => {
+          console.error('Failed to load dispatch logs for range:', err);
+          if (!isCurrent()) return;
+          if (detailReady) {
+            finish();
+            return;
+          }
           setLoading(false);
           setRefreshing(false);
-        }
-      });
-
-    // If today is in dates, maintain real-time listener for today's logs
-    let unsubToday = () => {};
-    if (dates.includes(today)) {
-      unsubToday = DispatchService.subscribeToChangeLogs(
-        today,
-        (todayLogs) => {
-          if (!isSubscribed) return;
-          setDispatchLogs((prev) => {
-            const map = new Map<string, DispatchChangeLog>();
-            prev.filter((l) => l.dispatchDate !== today).forEach((l) => {
-              map.set(l.id || `${l.dispatchDate}-${l.timestamp}-${l.detail}`, l);
-            });
-            todayLogs.forEach((l) => {
-              map.set(l.id || `${l.dispatchDate}-${l.timestamp}-${l.detail}`, l);
-            });
-            const merged = Array.from(map.values());
-            merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-            return merged;
-          });
+        });
+    } else if (category === 'routes') {
+      unsubscribe = RouteAuditService.subscribeToAllLogs(
+        (logs) => {
+          if (!isCurrent()) return;
+          setRouteLogs(logs);
+          finish();
         },
-        () => {}
+        (err) => {
+          console.error('Failed to subscribe to route audit logs:', err);
+          if (!isCurrent()) return;
+          setLoading(false);
+          setRefreshing(false);
+        },
+        bounds
+      );
+    } else if (category === 'master') {
+      unsubscribe = EntityOperationLogService.subscribeToLogs(
+        {},
+        (logs) => {
+          if (!isCurrent()) return;
+          setMasterLogs(logs);
+          finish();
+        },
+        (err) => {
+          console.error('Failed to subscribe to master audit logs:', err);
+          if (!isCurrent()) return;
+          setLoading(false);
+          setRefreshing(false);
+        },
+        bounds
+      );
+    } else if (category === 'payroll') {
+      unsubscribe = PayrollOperationLogService.subscribeToLogs(
+        {},
+        (logs) => {
+          if (!isCurrent()) return;
+          setPayrollLogs(logs);
+          finish();
+        },
+        (err) => {
+          console.error('Failed to subscribe to payroll audit logs:', err);
+          if (!isCurrent()) return;
+          setLoading(false);
+          setRefreshing(false);
+        },
+        bounds
+      );
+    } else {
+      unsubscribe = OperationalSafetyLogService.subscribeToLogs(
+        {},
+        (logs) => {
+          if (!isCurrent()) return;
+          setSafetyLogs(logs);
+          finish();
+        },
+        (err) => {
+          console.error('Failed to subscribe to safety audit logs:', err);
+          if (!isCurrent()) return;
+          setLoading(false);
+          setRefreshing(false);
+        },
+        bounds
       );
     }
 
-    // 2. Route Logs
-    const unsubRoute = RouteAuditService.subscribeToAllLogs((logs) => {
-      if (isSubscribed) setRouteLogs(logs);
-    });
-
-    // 3. Master Entity Logs
-    const unsubMaster = EntityOperationLogService.subscribeToLogs(
-      {},
-      (logs) => {
-        if (isSubscribed) setMasterLogs(logs);
-      }
-    );
-
-    // 4. Payroll Logs
-    const unsubPayroll = PayrollOperationLogService.subscribeToLogs(
-      {},
-      (logs) => {
-        if (isSubscribed) setPayrollLogs(logs);
-      }
-    );
-
-    // 5. Safety Logs
-    const unsubSafety = OperationalSafetyLogService.subscribeToLogs(
-      {},
-      (logs) => {
-        if (isSubscribed) setSafetyLogs(logs);
-      }
-    );
-
     return () => {
-      isSubscribed = false;
-      unsubToday();
-      unsubRoute();
-      unsubMaster();
-      unsubPayroll();
-      unsubSafety();
+      requestSeqRef.current += 1;
+      unsubscribe();
     };
-  }, [isAdmin, dateFrom, dateTo, today, reloadKey]);
+  }, [isAdmin, activeCategory, dateFrom, dateTo, today, reloadKey]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     setReloadKey((key) => key + 1);
   };
 
-  const toggleExpand = (id: string) => {
+  const toggleExpand = useCallback((id: string) => {
     setExpandedLogIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
-  };
+  }, []);
 
   const handleResetFilters = () => {
     setSearchQuery('');
@@ -301,284 +814,256 @@ export const AuditLogsView: React.FC = () => {
     setSelectedAction('all');
   };
 
-  // Filter 1: Dispatch Logs
+  const rangeKey = `${dateFrom}|${dateTo}`;
+  const dispatchReady = loadedRange.dispatch === rangeKey;
+  const routesReady = loadedRange.routes === rangeKey;
+  const masterReady = loadedRange.master === rangeKey;
+  const payrollReady = loadedRange.payroll === rangeKey;
+  const safetyReady = loadedRange.safety === rangeKey;
+  const keyword = deferredSearch.trim().toLowerCase();
+  const actorQuery = selectedActor.trim().toLowerCase();
+
   const filteredDispatchLogs = useMemo(() => {
+    if (!dispatchReady) return [];
     return dispatchLogs.filter((log) => {
-      const d = log.dispatchDate || '';
-      if (d && (d < dateFrom || d > dateTo)) return false;
-
-      if (selectedActor && log.user && !log.user.toLowerCase().includes(selectedActor.toLowerCase())) {
-        return false;
-      }
-      if (selectedAction !== 'all' && log.type !== selectedAction) {
-        return false;
-      }
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const matchRoute = log.routeNo?.toLowerCase().includes(q);
-        const matchShift = log.shiftType?.toLowerCase().includes(q);
-        const matchType = log.type?.toLowerCase().includes(q);
-        const matchDetail = log.detail?.toLowerCase().includes(q);
-        const matchUser = log.user?.toLowerCase().includes(q);
-        if (!matchRoute && !matchShift && !matchType && !matchDetail && !matchUser) {
-          return false;
-        }
+      const day = log.dispatchDate || '';
+      if (day && (day < dateFrom || day > dateTo)) return false;
+      if (actorQuery && log.user && !log.user.toLowerCase().includes(actorQuery)) return false;
+      if (selectedAction !== 'all' && log.type !== selectedAction) return false;
+      if (keyword) {
+        const matched = [log.routeNo, log.shiftType, log.type, log.detail, log.user].some((value) =>
+          (value || '').toLowerCase().includes(keyword)
+        );
+        if (!matched) return false;
       }
       return true;
     });
-  }, [dispatchLogs, dateFrom, dateTo, selectedActor, selectedAction, searchQuery]);
+  }, [dispatchReady, dispatchLogs, dateFrom, dateTo, actorQuery, selectedAction, keyword]);
 
-  // Filter 2: Route Audit Logs
   const filteredRouteLogs = useMemo(() => {
+    if (!routesReady) return [];
     return routeLogs.filter((log) => {
-      const d = localDay(log.timestamp);
-      if (d && (d < dateFrom || d > dateTo)) return false;
-
-      if (selectedActor && log.userId !== selectedActor && log.userName !== selectedActor) {
-        return false;
-      }
-      if (selectedAction !== 'all' && log.action !== selectedAction && log.category !== selectedAction) {
-        return false;
-      }
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const matchRoute = log.routeNo?.toLowerCase().includes(q) || log.routeName?.toLowerCase().includes(q);
-        const matchSummary = log.summary?.toLowerCase().includes(q);
-        const matchActor = log.userName?.toLowerCase().includes(q);
-        const matchDiff = log.diffs?.some(
-          (diff) =>
-            (diff.fieldLabel || '').toLowerCase().includes(q) ||
-            String(diff.oldValue).toLowerCase().includes(q) ||
-            String(diff.newValue).toLowerCase().includes(q)
-        );
-        if (!matchRoute && !matchSummary && !matchActor && !matchDiff) {
-          return false;
-        }
+      const day = localDay(log.timestamp);
+      if (day && (day < dateFrom || day > dateTo)) return false;
+      if (selectedActor && log.userId !== selectedActor && log.userName !== selectedActor) return false;
+      if (selectedAction !== 'all' && log.action !== selectedAction && log.category !== selectedAction) return false;
+      if (keyword) {
+        const matched =
+          (log.routeNo || '').toLowerCase().includes(keyword) ||
+          (log.routeName || '').toLowerCase().includes(keyword) ||
+          (log.summary || '').toLowerCase().includes(keyword) ||
+          (log.userName || '').toLowerCase().includes(keyword) ||
+          diffMatches(log.diffs, keyword);
+        if (!matched) return false;
       }
       return true;
     });
-  }, [routeLogs, dateFrom, dateTo, selectedActor, selectedAction, searchQuery]);
+  }, [routesReady, routeLogs, dateFrom, dateTo, selectedActor, selectedAction, keyword]);
 
-  // Filter 3: Master Entity Logs
   const filteredMasterLogs = useMemo(() => {
+    if (!masterReady) return [];
     return masterLogs.filter((log) => {
-      const d = localDay(log.timestamp);
-      if (d && (d < dateFrom || d > dateTo)) return false;
-
-      if (selectedActor && log.actor?.userId !== selectedActor && log.actor?.userName !== selectedActor) {
-        return false;
-      }
-      if (selectedAction !== 'all' && log.action !== selectedAction && log.targetType !== selectedAction) {
-        return false;
-      }
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const matchTarget =
-          (log.targetName || '').toLowerCase().includes(q) ||
-          (log.targetIdentifier || '').toLowerCase().includes(q) ||
-          (log.targetId || '').toLowerCase().includes(q);
-        const matchSummary = (log.summary || '').toLowerCase().includes(q);
-        const matchActor = (log.actor?.userName || '').toLowerCase().includes(q);
-        const matchDiff = log.diffs?.some(
-          (diff) =>
-            (diff.fieldLabel || '').toLowerCase().includes(q) ||
-            String(diff.oldValue).toLowerCase().includes(q) ||
-            String(diff.newValue).toLowerCase().includes(q)
-        );
-        if (!matchTarget && !matchSummary && !matchActor && !matchDiff) {
-          return false;
-        }
+      const day = localDay(log.timestamp);
+      if (day && (day < dateFrom || day > dateTo)) return false;
+      if (selectedActor && log.actor?.userId !== selectedActor && log.actor?.userName !== selectedActor) return false;
+      if (selectedAction !== 'all' && log.action !== selectedAction && log.targetType !== selectedAction) return false;
+      if (keyword) {
+        const matched =
+          (log.targetName || '').toLowerCase().includes(keyword) ||
+          (log.targetIdentifier || '').toLowerCase().includes(keyword) ||
+          (log.targetId || '').toLowerCase().includes(keyword) ||
+          (log.summary || '').toLowerCase().includes(keyword) ||
+          (log.actor?.userName || '').toLowerCase().includes(keyword) ||
+          diffMatches(log.diffs, keyword);
+        if (!matched) return false;
       }
       return true;
     });
-  }, [masterLogs, dateFrom, dateTo, selectedActor, selectedAction, searchQuery]);
+  }, [masterReady, masterLogs, dateFrom, dateTo, selectedActor, selectedAction, keyword]);
 
-  // Filter 4: Payroll Logs
   const filteredPayrollLogs = useMemo(() => {
+    if (!payrollReady) return [];
     return payrollLogs.filter((log) => {
-      const d = localDay(log.timestamp);
-      if (d && (d < dateFrom || d > dateTo)) return false;
-
-      if (selectedActor && log.actor?.userId !== selectedActor && log.actor?.userName !== selectedActor) {
-        return false;
-      }
-      if (selectedAction !== 'all' && log.action !== selectedAction && log.category !== selectedAction) {
-        return false;
-      }
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const matchTarget =
-          (log.targetName || '').toLowerCase().includes(q) ||
-          (log.targetIdentifier || '').toLowerCase().includes(q) ||
-          (log.targetId || '').toLowerCase().includes(q);
-        const matchSummary = (log.summary || '').toLowerCase().includes(q);
-        const matchActor = (log.actor?.userName || '').toLowerCase().includes(q);
-        const matchDiff = log.diffs?.some(
-          (diff) =>
-            (diff.fieldLabel || '').toLowerCase().includes(q) ||
-            String(diff.oldValue).toLowerCase().includes(q) ||
-            String(diff.newValue).toLowerCase().includes(q)
-        );
-        if (!matchTarget && !matchSummary && !matchActor && !matchDiff) {
-          return false;
-        }
+      const day = localDay(log.timestamp);
+      if (day && (day < dateFrom || day > dateTo)) return false;
+      if (selectedActor && log.actor?.userId !== selectedActor && log.actor?.userName !== selectedActor) return false;
+      if (selectedAction !== 'all' && log.action !== selectedAction && log.category !== selectedAction) return false;
+      if (keyword) {
+        const matched =
+          (log.targetName || '').toLowerCase().includes(keyword) ||
+          (log.targetIdentifier || '').toLowerCase().includes(keyword) ||
+          (log.targetId || '').toLowerCase().includes(keyword) ||
+          (log.summary || '').toLowerCase().includes(keyword) ||
+          (log.actor?.userName || '').toLowerCase().includes(keyword) ||
+          diffMatches(log.diffs, keyword);
+        if (!matched) return false;
       }
       return true;
     });
-  }, [payrollLogs, dateFrom, dateTo, selectedActor, selectedAction, searchQuery]);
+  }, [payrollReady, payrollLogs, dateFrom, dateTo, selectedActor, selectedAction, keyword]);
 
-  // Filter 5: Safety Logs
   const filteredSafetyLogs = useMemo(() => {
+    if (!safetyReady) return [];
     return safetyLogs.filter((log) => {
-      const d = localDay(log.timestamp);
-      if (d && (d < dateFrom || d > dateTo)) return false;
-
-      if (selectedActor && log.actor?.userId !== selectedActor && log.actor?.userName !== selectedActor) {
-        return false;
-      }
-      if (selectedAction !== 'all' && log.action !== selectedAction && log.module !== selectedAction) {
-        return false;
-      }
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const matchTarget =
-          (log.targetIdentifier || '').toLowerCase().includes(q) ||
-          (log.targetId || '').toLowerCase().includes(q);
-        const matchSummary = (log.summary || '').toLowerCase().includes(q);
-        const matchActor = (log.actor?.userName || '').toLowerCase().includes(q);
-        const matchModule = log.module.toLowerCase().includes(q);
-        const matchDiff = log.diffs?.some(
-          (diff) =>
-            (diff.fieldLabel || '').toLowerCase().includes(q) ||
-            String(diff.oldValue).toLowerCase().includes(q) ||
-            String(diff.newValue).toLowerCase().includes(q)
-        );
-        if (!matchTarget && !matchSummary && !matchActor && !matchModule && !matchDiff) {
-          return false;
-        }
+      const day = localDay(log.timestamp);
+      if (day && (day < dateFrom || day > dateTo)) return false;
+      if (selectedActor && log.actor?.userId !== selectedActor && log.actor?.userName !== selectedActor) return false;
+      if (selectedAction !== 'all' && log.action !== selectedAction && log.module !== selectedAction) return false;
+      if (keyword) {
+        const matched =
+          (log.targetIdentifier || '').toLowerCase().includes(keyword) ||
+          (log.targetId || '').toLowerCase().includes(keyword) ||
+          (log.summary || '').toLowerCase().includes(keyword) ||
+          (log.actor?.userName || '').toLowerCase().includes(keyword) ||
+          (log.module || '').toLowerCase().includes(keyword) ||
+          diffMatches(log.diffs, keyword);
+        if (!matched) return false;
       }
       return true;
     });
-  }, [safetyLogs, dateFrom, dateTo, selectedActor, selectedAction, searchQuery]);
+  }, [safetyReady, safetyLogs, dateFrom, dateTo, selectedActor, selectedAction, keyword]);
 
-  // Distinct actors for dropdown filtering
   const activeActors = useMemo(() => {
-    const set = new Set<string>();
+    const names = new Set<string>();
+    if (activeCategory === 'dispatch' && dispatchReady) {
+      dispatchLogs.forEach((log) => log.user && names.add(log.user));
+    } else if (activeCategory === 'routes' && routesReady) {
+      routeLogs.forEach((log) => log.userName && names.add(log.userName));
+    } else if (activeCategory === 'master' && masterReady) {
+      masterLogs.forEach((log) => log.actor?.userName && names.add(log.actor.userName));
+    } else if (activeCategory === 'payroll' && payrollReady) {
+      payrollLogs.forEach((log) => log.actor?.userName && names.add(log.actor.userName));
+    } else if (activeCategory === 'safety' && safetyReady) {
+      safetyLogs.forEach((log) => log.actor?.userName && names.add(log.actor.userName));
+    }
+    return Array.from(names).sort();
+  }, [
+    activeCategory,
+    dispatchReady,
+    routesReady,
+    masterReady,
+    payrollReady,
+    safetyReady,
+    dispatchLogs,
+    routeLogs,
+    masterLogs,
+    payrollLogs,
+    safetyLogs,
+  ]);
+
+  const feed = useMemo<AuditFeed>(() => {
     switch (activeCategory) {
       case 'dispatch':
-        dispatchLogs.forEach((l) => l.user && set.add(l.user));
-        break;
+        return { category: 'dispatch', logs: filteredDispatchLogs };
       case 'routes':
-        routeLogs.forEach((l) => l.userName && set.add(l.userName));
-        break;
+        return { category: 'routes', logs: filteredRouteLogs };
       case 'master':
-        masterLogs.forEach((l) => l.actor?.userName && set.add(l.actor.userName));
-        break;
+        return { category: 'master', logs: filteredMasterLogs };
       case 'payroll':
-        payrollLogs.forEach((l) => l.actor?.userName && set.add(l.actor.userName));
-        break;
-      case 'safety':
-        safetyLogs.forEach((l) => l.actor?.userName && set.add(l.actor.userName));
-        break;
+        return { category: 'payroll', logs: filteredPayrollLogs };
+      default:
+        return { category: 'safety', logs: filteredSafetyLogs };
     }
-    return Array.from(set).sort();
-  }, [activeCategory, dispatchLogs, routeLogs, masterLogs, payrollLogs, safetyLogs]);
+  }, [activeCategory, filteredDispatchLogs, filteredRouteLogs, filteredMasterLogs, filteredPayrollLogs, filteredSafetyLogs]);
 
-  // Export to CSV for active category
+  const activeReady = loadedRange[activeCategory] === rangeKey;
+  const activeLogsCount = feed.logs.length;
+  const selectedDaysCount = calculateDaysDiff(dateFrom, dateTo);
+
   const handleExportCSV = () => {
     let rows: string[][] = [];
-    let filename = `audit_${activeCategory}_${dateFrom}_to_${dateTo}.csv`;
+    const filename = `audit_${activeCategory}_${dateFrom}_to_${dateTo}.csv`;
 
     switch (activeCategory) {
       case 'dispatch':
         rows = [
           ['Type', 'Route', 'Shift', 'Date', 'Time', 'Detail', 'User'],
-          ...filteredDispatchLogs.map((l) => [
-            `"${l.type}"`,
-            `"${l.routeNo || ''}"`,
-            `"${l.shiftType || ''}"`,
-            `"${l.dispatchDate || ''}"`,
-            `"${l.time || ''}"`,
-            `"${(l.detail || '').replace(/"/g, '""')}"`,
-            `"${l.user || ''}"`,
+          ...filteredDispatchLogs.map((log) => [
+            csvCell(log.type),
+            csvCell(log.routeNo || ''),
+            csvCell(log.shiftType || ''),
+            csvCell(log.dispatchDate || ''),
+            csvCell(log.time || ''),
+            csvCell(log.detail || ''),
+            csvCell(log.user || ''),
           ]),
         ];
         break;
       case 'routes':
         rows = [
           ['ID', 'Timestamp', 'Route No', 'Category', 'Action', 'Summary', 'User', 'Diffs'],
-          ...filteredRouteLogs.map((l) => [
-            `"${l.id}"`,
-            `"${l.timestamp}"`,
-            `"${l.routeNo || ''}"`,
-            `"${l.category}"`,
-            `"${l.action}"`,
-            `"${l.summary.replace(/"/g, '""')}"`,
-            `"${l.userName} (${l.userRole})"`,
-            `"${(l.diffs || []).map((d) => `${d.fieldLabel}: ${d.oldValue} -> ${d.newValue}`).join('; ').replace(/"/g, '""')}"`,
+          ...filteredRouteLogs.map((log) => [
+            csvCell(log.id),
+            csvCell(log.timestamp),
+            csvCell(log.routeNo || ''),
+            csvCell(log.category),
+            csvCell(log.action),
+            csvCell(log.summary || ''),
+            csvCell(`${log.userName} (${log.userRole})`),
+            csvCell((log.diffs || []).map((diff) => `${diff.fieldLabel}: ${diff.oldValue} -> ${diff.newValue}`).join('; ')),
           ]),
         ];
         break;
       case 'master':
         rows = [
           ['ID', 'Timestamp', 'Target Type', 'Target ID', 'Target Name', 'Action', 'Summary', 'Actor'],
-          ...filteredMasterLogs.map((l) => [
-            `"${l.id}"`,
-            `"${l.timestamp}"`,
-            `"${l.targetType}"`,
-            `"${l.targetIdentifier}"`,
-            `"${l.targetName}"`,
-            `"${l.action}"`,
-            `"${l.summary.replace(/"/g, '""')}"`,
-            `"${l.actor?.userName || ''} (${l.actor?.userRole || ''})"`,
+          ...filteredMasterLogs.map((log) => [
+            csvCell(log.id),
+            csvCell(log.timestamp),
+            csvCell(log.targetType),
+            csvCell(log.targetIdentifier),
+            csvCell(log.targetName),
+            csvCell(log.action),
+            csvCell(log.summary || ''),
+            csvCell(`${log.actor?.userName || ''} (${log.actor?.userRole || ''})`),
           ]),
         ];
         break;
       case 'payroll':
         rows = [
           ['ID', 'Timestamp', 'Category', 'Target', 'Action', 'Amount', 'Summary', 'Actor'],
-          ...filteredPayrollLogs.map((l) => [
-            `"${l.id}"`,
-            `"${l.timestamp}"`,
-            `"${l.category}"`,
-            `"${l.targetIdentifier}"`,
-            `"${l.action}"`,
-            `"${l.amount !== undefined ? l.amount : ''}"`,
-            `"${l.summary.replace(/"/g, '""')}"`,
-            `"${l.actor?.userName || ''} (${l.actor?.userRole || ''})"`,
+          ...filteredPayrollLogs.map((log) => [
+            csvCell(log.id),
+            csvCell(log.timestamp),
+            csvCell(log.category),
+            csvCell(log.targetIdentifier),
+            csvCell(log.action),
+            csvCell(log.amount !== undefined ? log.amount.toFixed(2) : ''),
+            csvCell(log.summary || ''),
+            csvCell(`${log.actor?.userName || ''} (${log.actor?.userRole || ''})`),
           ]),
         ];
         break;
       case 'safety':
         rows = [
           ['ID', 'Timestamp', 'Module', 'Target ID', 'Action', 'Severity', 'Summary', 'Actor'],
-          ...filteredSafetyLogs.map((l) => [
-            `"${l.id}"`,
-            `"${l.timestamp}"`,
-            `"${l.module}"`,
-            `"${l.targetIdentifier}"`,
-            `"${l.action}"`,
-            `"${l.severity || ''}"`,
-            `"${l.summary.replace(/"/g, '""')}"`,
-            `"${l.actor?.userName || ''} (${l.actor?.userRole || ''})"`,
+          ...filteredSafetyLogs.map((log) => [
+            csvCell(log.id),
+            csvCell(log.timestamp),
+            csvCell(log.module),
+            csvCell(log.targetIdentifier),
+            csvCell(log.action),
+            csvCell(log.severity || ''),
+            csvCell(log.summary || ''),
+            csvCell(`${log.actor?.userName || ''} (${log.actor?.userRole || ''})`),
           ]),
         ];
         break;
     }
 
-    if (rows.length === 0) return;
-    const csvContent = rows.map((r) => r.join(',')).join('\n');
+    if (rows.length <= 1) return;
+    const csvContent = rows.map((row) => row.join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
+    link.href = url;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
-  // If user is not admin, deny access immediately
   if (!isAdmin) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
@@ -597,32 +1082,10 @@ export const AuditLogsView: React.FC = () => {
     );
   }
 
-  const selectedDaysCount = calculateDaysDiff(dateFrom, dateTo);
-
-  // Virtual scrolling container for 1,000+ audit logs
-  const logContainerRef = useRef<HTMLDivElement>(null);
-
-  const activeLogsCount = useMemo(() => {
-    switch (activeCategory) {
-      case 'dispatch': return filteredDispatchLogs.length;
-      case 'routes': return filteredRouteLogs.length;
-      case 'master': return filteredMasterLogs.length;
-      case 'payroll': return filteredPayrollLogs.length;
-      case 'safety': return filteredSafetyLogs.length;
-      default: return 0;
-    }
-  }, [activeCategory, filteredDispatchLogs.length, filteredRouteLogs.length, filteredMasterLogs.length, filteredPayrollLogs.length, filteredSafetyLogs.length]);
-
-  const logVirtualizer = useVirtualizer({
-    count: activeLogsCount,
-    getScrollElement: () => logContainerRef.current,
-    estimateSize: () => 140,
-    overscan: 6,
-  });
+  const countLabel = (ready: boolean, count: number) => (ready ? String(count) : '–');
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
-      {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
         <div className="flex items-center space-x-3.5">
           <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-500 to-sky-400 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
@@ -642,6 +1105,7 @@ export const AuditLogsView: React.FC = () => {
 
         <div className="flex items-center space-x-2">
           <button
+            type="button"
             onClick={handleRefresh}
             disabled={refreshing}
             className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
@@ -651,8 +1115,9 @@ export const AuditLogsView: React.FC = () => {
           </button>
 
           <button
+            type="button"
             onClick={handleExportCSV}
-            disabled={activeLogsCount === 0}
+            disabled={!activeReady || activeLogsCount === 0}
             className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition disabled:opacity-40"
           >
             <Download className="w-3.5 h-3.5" />
@@ -661,7 +1126,6 @@ export const AuditLogsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Date Range Selection Bar with Max 7 Days Constraint & Default Today */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
           <div className="flex items-center space-x-2 text-xs font-bold text-slate-300">
@@ -672,7 +1136,6 @@ export const AuditLogsView: React.FC = () => {
                 : 'Audit Query Window (Maximum 7 Days Allowed)'}
             </span>
           </div>
-
           <div className="flex items-center space-x-2">
             <span
               className={`text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
@@ -688,15 +1151,14 @@ export const AuditLogsView: React.FC = () => {
           </div>
         </div>
 
-        {rangeWarning && (
+        {rangeWarning ? (
           <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center space-x-2 text-xs text-amber-300">
             <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
             <span>{rangeWarning}</span>
           </div>
-        )}
+        ) : null}
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Inputs for Date From and Date To */}
           <div className="flex flex-wrap items-center gap-3">
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
@@ -710,7 +1172,6 @@ export const AuditLogsView: React.FC = () => {
                 className="px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-amber-500/50"
               />
             </div>
-
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
                 {isFrench ? 'Date de fin (Au)' : 'End Date (To)'}
@@ -726,7 +1187,6 @@ export const AuditLogsView: React.FC = () => {
             </div>
           </div>
 
-          {/* Quick Presets with Today as the prominent default */}
           <div className="flex items-center space-x-2 pt-1 md:pt-0">
             <span className="text-xs text-slate-400 font-medium mr-1">
               {isFrench ? 'Préréglages :' : 'Presets:'}
@@ -768,10 +1228,9 @@ export const AuditLogsView: React.FC = () => {
         </div>
       </div>
 
-      {/* The 5 Primary Log Category Switcher Tabs */}
       <div className="flex items-center space-x-2 border-b border-slate-800 pb-2 overflow-x-auto">
-        {/* 1. Daily Dispatch */}
         <button
+          type="button"
           onClick={() => {
             setActiveCategory('dispatch');
             handleResetFilters();
@@ -785,12 +1244,11 @@ export const AuditLogsView: React.FC = () => {
           <Radio className="w-3.5 h-3.5" />
           <span>{isFrench ? '1. Opérations de régulation' : '1. Daily Dispatch Logs'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
-            {filteredDispatchLogs.length}
+            {countLabel(dispatchReady, filteredDispatchLogs.length)}
           </span>
         </button>
-
-        {/* 2. Routes & Schedules */}
         <button
+          type="button"
           onClick={() => {
             setActiveCategory('routes');
             handleResetFilters();
@@ -804,12 +1262,11 @@ export const AuditLogsView: React.FC = () => {
           <Navigation className="w-3.5 h-3.5" />
           <span>{isFrench ? '2. Circuits & Horaires' : '2. Route & Stops Audit'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
-            {filteredRouteLogs.length}
+            {countLabel(routesReady, filteredRouteLogs.length)}
           </span>
         </button>
-
-        {/* 3. Students & Vehicles Master */}
         <button
+          type="button"
           onClick={() => {
             setActiveCategory('master');
             handleResetFilters();
@@ -823,12 +1280,11 @@ export const AuditLogsView: React.FC = () => {
           <GraduationCap className="w-3.5 h-3.5" />
           <span>{isFrench ? '3. Référentiel Élèves & Véhicules' : '3. Student & Vehicle Master'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
-            {filteredMasterLogs.length}
+            {countLabel(masterReady, filteredMasterLogs.length)}
           </span>
         </button>
-
-        {/* 4. Payroll Operations */}
         <button
+          type="button"
           onClick={() => {
             setActiveCategory('payroll');
             handleResetFilters();
@@ -842,12 +1298,11 @@ export const AuditLogsView: React.FC = () => {
           <DollarSign className="w-3.5 h-3.5" />
           <span>{isFrench ? '4. Opérations de paie' : '4. Payroll Operations'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
-            {filteredPayrollLogs.length}
+            {countLabel(payrollReady, filteredPayrollLogs.length)}
           </span>
         </button>
-
-        {/* 5. Safety & Operational Records */}
         <button
+          type="button"
           onClick={() => {
             setActiveCategory('safety');
             handleResetFilters();
@@ -861,12 +1316,11 @@ export const AuditLogsView: React.FC = () => {
           <ShieldAlert className="w-3.5 h-3.5" />
           <span>{isFrench ? '5. Sécurité & Opérations terrain' : '5. Safety & Field Operations'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
-            {filteredSafetyLogs.length}
+            {countLabel(safetyReady, filteredSafetyLogs.length)}
           </span>
         </button>
       </div>
 
-      {/* Query Filters (Keywords, Operator, Action) */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
           <div className="flex items-center space-x-2 text-xs font-bold text-slate-300">
@@ -879,6 +1333,7 @@ export const AuditLogsView: React.FC = () => {
           </div>
           {(searchQuery || selectedActor || selectedAction !== 'all') && (
             <button
+              type="button"
               onClick={handleResetFilters}
               className="text-xs font-semibold text-rose-400 hover:text-rose-300 transition"
             >
@@ -888,7 +1343,6 @@ export const AuditLogsView: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {/* Keyword Search */}
           <div className="relative">
             <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500" />
             <input
@@ -899,8 +1353,6 @@ export const AuditLogsView: React.FC = () => {
               className="w-full pl-9 pr-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
             />
           </div>
-
-          {/* Operator / User Dropdown */}
           <div>
             <select
               value={selectedActor}
@@ -915,8 +1367,6 @@ export const AuditLogsView: React.FC = () => {
               ))}
             </select>
           </div>
-
-          {/* Action / Category Dropdown */}
           <div>
             <select
               value={selectedAction}
@@ -975,8 +1425,7 @@ export const AuditLogsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Log Feed Display */}
-      {loading ? (
+      {!activeReady && loading ? (
         <div className="py-16 flex flex-col items-center justify-center space-y-2 text-slate-500 text-xs">
           <RefreshCw className="w-6 h-6 animate-spin text-amber-400" />
           <span>{isFrench ? 'Chargement des journaux d\'audit...' : 'Loading audit log records...'}</span>
@@ -996,363 +1445,13 @@ export const AuditLogsView: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div ref={logContainerRef} className="overflow-y-auto max-h-[calc(100vh-270px)] pr-1">
-          <div
-            style={{
-              height: `${logVirtualizer.getTotalSize()}px`,
-              width: '100%',
-              position: 'relative',
-            }}
-          >
-            {logVirtualizer.getVirtualItems().map((virtualRow) => {
-              const idx = virtualRow.index;
-              return (
-                <div
-                  key={`${activeCategory}-${idx}`}
-                  data-index={idx}
-                  ref={logVirtualizer.measureElement}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
-                    paddingBottom: '12px',
-                  }}
-                >
-                  {/* CATEGORY 1: Daily Dispatch Logs */}
-                  {activeCategory === 'dispatch' && (() => {
-                    const log = filteredDispatchLogs[idx];
-                    if (!log) return null;
-                    return (
-                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2 shadow-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center space-x-2">
-                            <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                              {log.type}
-                            </span>
-                            <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                              {log.routeNo} ({log.shiftType})
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-2 text-xs text-slate-400 font-mono">
-                            <Clock className="w-3.5 h-3.5 text-slate-500" />
-                            <span>{log.dispatchDate} {log.time}</span>
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                          {log.detail}
-                        </p>
-
-                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
-                          <div className="flex items-center space-x-1.5">
-                            <User className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="font-semibold text-slate-300">
-                              {isFrench ? 'Opérateur :' : 'Operator:'} {log.user}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* CATEGORY 2: Route & Stops Audit Logs */}
-                  {activeCategory === 'routes' && (() => {
-                    const log = filteredRouteLogs[idx];
-                    if (!log) return null;
-                    const isExpanded = expandedLogIds.has(log.id);
-                    const hasDiffs = log.diffs && log.diffs.length > 0;
-                    return (
-                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center space-x-2">
-                            <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                              {log.category} • {log.action}
-                            </span>
-                            <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                              {log.routeNo}
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
-                            <Clock className="w-3.5 h-3.5 text-slate-500" />
-                            <span>{new Date(log.timestamp).toLocaleString()}</span>
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                          {log.summary}
-                        </p>
-
-                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
-                          <div className="flex items-center space-x-1.5">
-                            <User className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="font-semibold text-slate-300">{log.userName}</span>
-                            {log.userRole && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                {log.userRole}
-                              </span>
-                            )}
-                          </div>
-                          {hasDiffs && (
-                            <button
-                              onClick={() => toggleExpand(log.id)}
-                              className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
-                            >
-                              <span>
-                                {isExpanded
-                                  ? (isFrench ? 'Masquer les écarts' : 'Hide Diffs')
-                                  : (isFrench ? 'Voir les écarts' : 'View Diffs')}{' '}
-                                ({log.diffs?.length})
-                              </span>
-                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                            </button>
-                          )}
-                        </div>
-
-                        {hasDiffs && isExpanded && (
-                          <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
-                            {log.diffs?.map((diff, i) => (
-                              <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-                                <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
-                                <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || (isFrench ? 'aucun' : 'none'))}</span>
-                                <span className="text-emerald-400 font-bold">{String(diff.newValue || (isFrench ? 'aucun' : 'none'))}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* CATEGORY 3: Student & Vehicle Master Logs */}
-                  {activeCategory === 'master' && (() => {
-                    const log = filteredMasterLogs[idx];
-                    if (!log) return null;
-                    const isExpanded = expandedLogIds.has(log.id);
-                    const hasDiffs = log.diffs && log.diffs.length > 0;
-                    const isStudent = log.targetType === 'student';
-                    return (
-                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center space-x-2">
-                            <span
-                              className={`px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase border ${
-                                log.action === 'create'
-                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                  : log.action === 'update'
-                                  ? 'bg-sky-500/10 text-sky-400 border-sky-500/30'
-                                  : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                              }`}
-                            >
-                              {log.action}
-                            </span>
-                            <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                              {isStudent ? (isFrench ? 'Élève' : 'Student') : (isFrench ? 'Véhicule' : 'Vehicle')} #{log.targetIdentifier}
-                            </span>
-                            <span className="text-xs text-slate-300 font-semibold">{log.targetName}</span>
-                          </div>
-                          <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
-                            <Clock className="w-3.5 h-3.5 text-slate-500" />
-                            <span>{new Date(log.timestamp).toLocaleString()}</span>
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                          {log.summary}
-                        </p>
-
-                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
-                          <div className="flex items-center space-x-1.5">
-                            <User className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="font-semibold text-slate-300">{log.actor?.userName || '—'}</span>
-                            {log.actor?.userRole && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                {log.actor.userRole}
-                              </span>
-                            )}
-                          </div>
-                          {hasDiffs && (
-                            <button
-                              onClick={() => toggleExpand(log.id)}
-                              className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
-                            >
-                              <span>
-                                {isExpanded
-                                  ? (isFrench ? 'Masquer les écarts' : 'Hide Diffs')
-                                  : (isFrench ? 'Voir les écarts' : 'View Diffs')}{' '}
-                                ({log.diffs?.length})
-                              </span>
-                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                            </button>
-                          )}
-                        </div>
-
-                        {hasDiffs && isExpanded && (
-                          <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
-                            {log.diffs?.map((diff, i) => (
-                              <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-                                <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
-                                <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || (isFrench ? 'aucun' : 'none'))}</span>
-                                <span className="text-emerald-400 font-bold">{String(diff.newValue || (isFrench ? 'aucun' : 'none'))}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* CATEGORY 4: Payroll Operation Logs */}
-                  {activeCategory === 'payroll' && (() => {
-                    const log = filteredPayrollLogs[idx];
-                    if (!log) return null;
-                    const isExpanded = expandedLogIds.has(log.id);
-                    const hasDiffs = log.diffs && log.diffs.length > 0;
-                    return (
-                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center space-x-2">
-                            <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              {(log.category || 'payroll').split('_').join(' ')} • {log.action}
-                            </span>
-                            <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                              {log.targetIdentifier}
-                            </span>
-                            {log.amount !== undefined && (
-                              <span className="font-mono font-bold text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                                ${log.amount.toFixed(2)}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
-                            <Clock className="w-3.5 h-3.5 text-slate-500" />
-                            <span>{new Date(log.timestamp).toLocaleString()}</span>
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                          {log.summary}
-                        </p>
-
-                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
-                          <div className="flex items-center space-x-1.5">
-                            <User className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="font-semibold text-slate-300">{log.actor?.userName || '—'}</span>
-                            {log.actor?.userRole && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                {log.actor.userRole}
-                              </span>
-                            )}
-                          </div>
-                          {hasDiffs && (
-                            <button
-                              onClick={() => toggleExpand(log.id)}
-                              className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
-                            >
-                              <span>
-                                {isExpanded
-                                  ? (isFrench ? 'Masquer les écarts' : 'Hide Diffs')
-                                  : (isFrench ? 'Voir les écarts' : 'View Diffs')}{' '}
-                                ({log.diffs?.length})
-                              </span>
-                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                            </button>
-                          )}
-                        </div>
-
-                        {hasDiffs && isExpanded && (
-                          <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
-                            {log.diffs?.map((diff, i) => (
-                              <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-                                <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
-                                <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || (isFrench ? 'aucun' : 'none'))}</span>
-                                <span className="text-emerald-400 font-bold">{String(diff.newValue || (isFrench ? 'aucun' : 'none'))}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* CATEGORY 5: Safety & Operational Logs */}
-                  {activeCategory === 'safety' && (() => {
-                    const log = filteredSafetyLogs[idx];
-                    if (!log) return null;
-                    const isExpanded = expandedLogIds.has(log.id);
-                    const hasDiffs = log.diffs && log.diffs.length > 0;
-                    return (
-                      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2.5 shadow-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center space-x-2">
-                            <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                              {(log.module || 'safety').split('_').join(' ')} • {log.action}
-                            </span>
-                            <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                              {log.targetIdentifier}
-                            </span>
-                            {log.severity && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300">
-                                {log.severity}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-mono">
-                            <Clock className="w-3.5 h-3.5 text-slate-500" />
-                            <span>{new Date(log.timestamp).toLocaleString()}</span>
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-slate-200 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                          {log.summary}
-                        </p>
-
-                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
-                          <div className="flex items-center space-x-1.5">
-                            <User className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="font-semibold text-slate-300">{log.actor?.userName || '—'}</span>
-                            {log.actor?.userRole && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                {log.actor.userRole}
-                              </span>
-                            )}
-                          </div>
-                          {hasDiffs && (
-                            <button
-                              onClick={() => toggleExpand(log.id)}
-                              className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
-                            >
-                              <span>
-                                {isExpanded
-                                  ? (isFrench ? 'Masquer les écarts' : 'Hide Diffs')
-                                  : (isFrench ? 'Voir les écarts' : 'View Diffs')}{' '}
-                                ({log.diffs?.length})
-                              </span>
-                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                            </button>
-                          )}
-                        </div>
-
-                        {hasDiffs && isExpanded && (
-                          <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
-                            {log.diffs?.map((diff, i) => (
-                              <div key={i} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-                                <span className="font-semibold text-amber-300">{diff.fieldLabel}: </span>
-                                <span className="text-rose-400 line-through mr-2">{String(diff.oldValue || (isFrench ? 'aucun' : 'none'))}</span>
-                                <span className="text-emerald-400 font-bold">{String(diff.newValue || (isFrench ? 'aucun' : 'none'))}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <AuditLogScroller
+          key={activeCategory}
+          feed={feed}
+          expandedIds={expandedLogIds}
+          isFrench={isFrench}
+          onToggle={toggleExpand}
+        />
       )}
     </div>
   );

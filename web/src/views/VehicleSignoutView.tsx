@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useI18n } from '../contexts/I18nContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,6 +35,31 @@ import {
   Info
 } from 'lucide-react';
 
+const TIME_RANGE_OPTIONS = [
+  { id: '1year', label: '1 Year (Live)' },
+  { id: 'all', label: 'All History' },
+] as const;
+
+const DOCUMENT_PACK_ITEMS = [
+  { key: 'docRegistrationSignIn', label: 'Vehicle Registration' },
+  { key: 'docInsuranceSignIn', label: 'Pink Card / Insurance' },
+  { key: 'docSafetyFitnessSignIn', label: 'Safety Fitness Certificate' },
+  { key: 'docCollisionReportSignIn', label: 'Collision Report Forms' },
+  { key: 'docScheduleMaintenanceSignIn', label: 'Schedule 2 Maintenance' },
+  { key: 'docSdsSignIn', label: 'SDS Safety Binder' },
+] as const;
+
+const SAFETY_EQUIPMENT_ITEMS = [
+  { key: 'checkFireExtinguisher', label: 'Fire Extinguisher' },
+  { key: 'checkFirstAidKit', label: 'First Aid Kit' },
+  { key: 'checkTriangles', label: 'Warning Triangles (3)' },
+  { key: 'checkSeatBeltCutter', label: 'Seat Belt Cutter' },
+  { key: 'checkBroom', label: 'Broom' },
+  { key: 'checkSnowbrush', label: 'Snowbrush' },
+  { key: 'checkCleankit', label: 'Body Fluid / Spill Kit' },
+  { key: 'checkQstraints', label: 'Wheelchair Q-Straints' },
+] as const;
+
 export const VehicleSignoutView: React.FC = () => {
   const { currentUser } = useAuth();
 
@@ -47,6 +72,7 @@ export const VehicleSignoutView: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [typeFilter, setTypeFilter] = useState<'all' | 'sign_out' | 'sign_in'>('all');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [timeRange, setTimeRange] = useState<'1year' | 'all'>('1year');
@@ -116,8 +142,25 @@ export const VehicleSignoutView: React.FC = () => {
   const [uploadingPhoto, setUploadingPhoto] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
+  // Fast hash maps for O(1) vehicle and driver lookups
+  const vehiclesByUnit = useMemo(() => {
+    const map = new Map<string, Vehicle>();
+    for (const v of vehicles) {
+      map.set(v.unitNumber, v);
+    }
+    return map;
+  }, [vehicles]);
+
+  const employeesByFullName = useMemo(() => {
+    const map = new Map<string, Employee>();
+    for (const emp of employees) {
+      map.set(`${emp.firstName} ${emp.lastName}`.toLowerCase(), emp);
+    }
+    return map;
+  }, [employees]);
+
   // Fetch initial data
-  const fetchData = async () => {
+  const fetchData = async (opts?: { isCancelled?: () => boolean }) => {
     if (!isFleetRole) return;
     setLoading(true);
     try {
@@ -126,22 +169,27 @@ export const VehicleSignoutView: React.FC = () => {
         VehicleService.list().catch(() => []),
         EmployeeService.list().catch(() => [])
       ]);
+      if (opts?.isCancelled?.()) return;
       setRecords(signouts);
       setVehicles(vList);
       setEmployees(eList);
     } catch (err) {
       console.error('Error fetching handover data:', err);
     } finally {
-      setLoading(false);
+      if (!opts?.isCancelled?.()) {
+        setLoading(false);
+      }
     }
   };
 
-  const loadRecords = async (targetQuery?: string) => {
+  const loadRecords = async (targetQuery?: string, opts?: { isCancelled?: () => boolean }) => {
     if (!isFleetRole) return;
     const q = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
     if (timeRange === 'all' && !q && !dateFilter) {
-      setRecords([]);
-      setLoading(false);
+      if (!opts?.isCancelled?.()) {
+        setRecords([]);
+        setLoading(false);
+      }
       return;
     }
     setLoading(true);
@@ -153,37 +201,51 @@ export const VehicleSignoutView: React.FC = () => {
         params.endDate = dateFilter;
       }
       const signouts = await VehicleSignoutService.list(params);
+      if (opts?.isCancelled?.()) return;
       setRecords(signouts);
     } catch (err) {
       console.error('Error fetching handover data:', err);
-      setRecords([]);
+      if (!opts?.isCancelled?.()) {
+        setRecords([]);
+      }
     } finally {
-      setLoading(false);
+      if (!opts?.isCancelled?.()) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     if (!isFleetRole) return;
+    let isCancelled = false;
     if (timeRange === '1year') {
-      fetchData();
+      void fetchData({ isCancelled: () => isCancelled });
       const unsub = VehicleSignoutService.subscribeToLive((live) => {
-        setRecords(live);
-        setLoading(false);
+        if (!isCancelled) {
+          setRecords(live);
+          setLoading(false);
+        }
       });
-      return () => unsub();
+      return () => {
+        isCancelled = true;
+        unsub();
+      };
     } else {
       if (searchQuery.trim() || dateFilter) {
-        loadRecords(searchQuery.trim());
+        void loadRecords(searchQuery.trim(), { isCancelled: () => isCancelled });
       } else {
         setRecords([]);
         setLoading(false);
       }
     }
+    return () => {
+      isCancelled = true;
+    };
   }, [isFleetRole, timeRange]);
 
   // Vehicle selection auto-fill
   const handleSelectVehicle = (unitNum: string) => {
-    const v = vehicles.find((item) => item.unitNumber === unitNum);
+    const v = vehiclesByUnit.get(unitNum);
     if (v) {
       setFormData((prev) => ({
         ...prev,
@@ -291,14 +353,14 @@ export const VehicleSignoutView: React.FC = () => {
     }));
   };
 
-  // Filtered list
+  // Filtered list: decoupled from rapid keystrokes with deferredSearchQuery
   const filteredRecords = useMemo(() => {
     return records.filter((r) => {
       if (typeFilter === 'sign_in' && !r.isSignIn) return false;
       if (typeFilter === 'sign_out' && r.isSignIn) return false;
       if (dateFilter && !r.signDate.startsWith(dateFilter)) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      if (deferredSearchQuery) {
+        const q = deferredSearchQuery.toLowerCase();
         const matchUnit = r.unitNumber.toLowerCase().includes(q);
         const matchDriver = r.employeeName.toLowerCase().includes(q);
         const matchRoute = (r.routeId || '').toLowerCase().includes(q) || (r.routeName || '').toLowerCase().includes(q);
@@ -306,7 +368,7 @@ export const VehicleSignoutView: React.FC = () => {
       }
       return true;
     });
-  }, [records, typeFilter, dateFilter, searchQuery]);
+  }, [records, typeFilter, dateFilter, deferredSearchQuery]);
 
   const { isFrench } = useI18n();
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -322,14 +384,23 @@ export const VehicleSignoutView: React.FC = () => {
   const paddingBottom =
     virtualRows.length > 0 ? totalHeight - (virtualRows[virtualRows.length - 1]?.end ?? 0) : 0;
 
-  // Statistics
+  // Statistics: single-pass iteration across records
   const stats = useMemo(() => {
-    const total = records.length;
-    const signedOut = records.filter((r) => !r.isSignIn).length;
-    const signedIn = records.filter((r) => r.isSignIn).length;
     const todayStr = new Date().toISOString().split('T')[0];
-    const todayCount = records.filter((r) => r.signDate.startsWith(todayStr)).length;
-    return { total, signedOut, signedIn, todayCount };
+    let signedOut = 0;
+    let signedIn = 0;
+    let todayCount = 0;
+    for (const r of records) {
+      if (r.isSignIn) {
+        signedIn++;
+      } else {
+        signedOut++;
+      }
+      if (r.signDate.startsWith(todayStr)) {
+        todayCount++;
+      }
+    }
+    return { total: records.length, signedOut, signedIn, todayCount };
   }, [records]);
 
   // ── Access Denied for Non-Fleet Roles ─────────────────────────────────────
@@ -544,10 +615,7 @@ export const VehicleSignoutView: React.FC = () => {
             <Clock className="w-3.5 h-3.5 text-blue-400" />
             Range:
           </span>
-          {[
-            { id: '1year', label: '1 Year (Live)' },
-            { id: 'all', label: 'All History' },
-          ].map((rng) => (
+          {TIME_RANGE_OPTIONS.map((rng) => (
             <button
               key={rng.id}
               type="button"
@@ -974,7 +1042,7 @@ export const VehicleSignoutView: React.FC = () => {
                         onChange={(e) => {
                           const val = e.target.value;
                           setFormData((p) => ({ ...p, employeeName: val }));
-                          const match = employees.find((emp) => `${emp.firstName} ${emp.lastName}`.toLowerCase() === val.toLowerCase());
+                          const match = employeesByFullName.get(val.toLowerCase());
                           if (match) handleSelectEmployee(match.id);
                         }}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
@@ -1101,14 +1169,7 @@ export const VehicleSignoutView: React.FC = () => {
                       Vehicle Document Packet
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-                      {[
-                        { key: 'docRegistrationSignIn', label: 'Vehicle Registration' },
-                        { key: 'docInsuranceSignIn', label: 'Pink Card / Insurance' },
-                        { key: 'docSafetyFitnessSignIn', label: 'Safety Fitness Certificate' },
-                        { key: 'docCollisionReportSignIn', label: 'Collision Report Forms' },
-                        { key: 'docScheduleMaintenanceSignIn', label: 'Schedule 2 Maintenance' },
-                        { key: 'docSdsSignIn', label: 'SDS Safety Binder' }
-                      ].map((item) => (
+                      {DOCUMENT_PACK_ITEMS.map((item) => (
                         <label
                           key={item.key}
                           className="flex items-center gap-2.5 p-2.5 bg-slate-900 border border-slate-800/80 rounded-xl cursor-pointer hover:border-slate-700"
@@ -1132,16 +1193,7 @@ export const VehicleSignoutView: React.FC = () => {
                       Safety Equipment Checklist
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                      {[
-                        { key: 'checkFireExtinguisher', label: 'Fire Extinguisher' },
-                        { key: 'checkFirstAidKit', label: 'First Aid Kit' },
-                        { key: 'checkTriangles', label: 'Warning Triangles (3)' },
-                        { key: 'checkSeatBeltCutter', label: 'Seat Belt Cutter' },
-                        { key: 'checkBroom', label: 'Broom' },
-                        { key: 'checkSnowbrush', label: 'Snowbrush' },
-                        { key: 'checkCleankit', label: 'Body Fluid / Spill Kit' },
-                        { key: 'checkQstraints', label: 'Wheelchair Q-Straints' }
-                      ].map((item) => (
+                      {SAFETY_EQUIPMENT_ITEMS.map((item) => (
                         <label
                           key={item.key}
                           className="flex items-center gap-2.5 p-2.5 bg-slate-900 border border-slate-800/80 rounded-xl cursor-pointer hover:border-slate-700"

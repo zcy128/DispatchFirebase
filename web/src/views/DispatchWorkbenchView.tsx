@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, memo, Suspense } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Calendar as CalendarIcon,
@@ -45,14 +45,6 @@ import {
   filterAvailableVehicles,
   getUniqueUnavailableVehicleList
 } from '../utils/vehicleAvailabilityUtils';
-import { DispatchStopModal } from '../components/dispatch/DispatchStopModal';
-import { DispatchCrewModal } from '../components/dispatch/DispatchCrewModal';
-import { DispatchSplitModal } from '../components/dispatch/DispatchSplitModal';
-import { DispatchPayrollModal } from '../components/dispatch/DispatchPayrollModal';
-import { ParentNotificationModal } from '../components/dispatch/ParentNotificationModal';
-import { ParentNotificationHistoryModal } from '../components/dispatch/ParentNotificationHistoryModal';
-import { RecordStudentAbsenceModal } from '../components/dispatch/RecordStudentAbsenceModal';
-import { CheckInReminderSettingsModal } from '../components/dispatch/CheckInReminderSettingsModal';
 import { Employee } from '../types/employee';
 import { Vehicle } from '../types/vehicle';
 import { Yard } from '../types/yard';
@@ -61,11 +53,68 @@ import { getLocalTodayString, addDaysToDateString } from '../utils/dateUtils';
 import {
   getCurrentHHmm,
   calculateDynamicShiftLateness,
-  getSentParentNotifications
+  getSentParentNotifications,
+  type ShiftLatenessInfo,
 } from '../utils/dispatchDelayUtils';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { logDispatchAction } from '../utils/dispatchLogger';
+
+const EMPTY_STUDENTS_MAP: Record<number, Student> = {};
+
+const loadDispatchStopModal = () => import('../components/dispatch/DispatchStopModal');
+const loadDispatchCrewModal = () => import('../components/dispatch/DispatchCrewModal');
+const loadDispatchSplitModal = () => import('../components/dispatch/DispatchSplitModal');
+const loadDispatchPayrollModal = () => import('../components/dispatch/DispatchPayrollModal');
+const loadParentNotificationModal = () => import('../components/dispatch/ParentNotificationModal');
+const loadParentNotificationHistoryModal = () => import('../components/dispatch/ParentNotificationHistoryModal');
+const loadRecordStudentAbsenceModal = () => import('../components/dispatch/RecordStudentAbsenceModal');
+const loadCheckInReminderSettingsModal = () => import('../components/dispatch/CheckInReminderSettingsModal');
+
+const DispatchStopModal = React.lazy(() =>
+  loadDispatchStopModal().then((module) => ({ default: module.DispatchStopModal }))
+);
+const DispatchCrewModal = React.lazy(() =>
+  loadDispatchCrewModal().then((module) => ({ default: module.DispatchCrewModal }))
+);
+const DispatchSplitModal = React.lazy(() =>
+  loadDispatchSplitModal().then((module) => ({ default: module.DispatchSplitModal }))
+);
+const DispatchPayrollModal = React.lazy(() =>
+  loadDispatchPayrollModal().then((module) => ({ default: module.DispatchPayrollModal }))
+);
+const ParentNotificationModal = React.lazy(() =>
+  loadParentNotificationModal().then((module) => ({ default: module.ParentNotificationModal }))
+);
+const ParentNotificationHistoryModal = React.lazy(() =>
+  loadParentNotificationHistoryModal().then((module) => ({ default: module.ParentNotificationHistoryModal }))
+);
+const RecordStudentAbsenceModal = React.lazy(() =>
+  loadRecordStudentAbsenceModal().then((module) => ({ default: module.RecordStudentAbsenceModal }))
+);
+const CheckInReminderSettingsModal = React.lazy(() =>
+  loadCheckInReminderSettingsModal().then((module) => ({ default: module.CheckInReminderSettingsModal }))
+);
+
+let workbenchModalsPreloaded = false;
+function preloadWorkbenchModals() {
+  if (workbenchModalsPreloaded) return;
+  workbenchModalsPreloaded = true;
+  void loadDispatchStopModal();
+  void loadDispatchCrewModal();
+  void loadDispatchSplitModal();
+  void loadDispatchPayrollModal();
+  void loadParentNotificationModal();
+  void loadParentNotificationHistoryModal();
+}
+
+function ModalLoadingOverlay() {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 text-sm text-white">
+      Loading...
+    </div>
+  );
+}
 
 const DISPATCH_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -94,11 +143,11 @@ interface DispatchWorkbenchViewProps {
   onMessageDriver?: (driverId: string) => void;
 }
 
-export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
+const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
   employees,
   vehicles,
   yards,
-  studentsMap = {},
+  studentsMap = EMPTY_STUDENTS_MAP,
   onNavigateToChangeLog,
   onNavigateToTemporaryAssignments,
   onNavigateToAbsences,
@@ -134,7 +183,10 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
   const [pmRecords, setPmRecords] = useState<PreventiveMaintenanceRecord[]>([]);
   const scrubbedShiftKeysRef = React.useRef<Set<string>>(new Set());
 
+  const authUid = currentUser?.uid;
   useEffect(() => {
+    if (!authUid) return;
+
     const unsubDefects = DefectService.subscribeToDefects((data) => {
       setDefectReports(Array.isArray(data) ? data : []);
     });
@@ -148,21 +200,12 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
 
     return () => {
       setTimeout(() => {
-        try { unsubDefects(); } catch {}
-        try { unsubInsp(); } catch {}
-        try { unsubPM(); } catch {}
+        try { unsubDefects(); } catch { /* listener already closed */ }
+        try { unsubInsp(); } catch { /* listener already closed */ }
+        try { unsubPM(); } catch { /* listener already closed */ }
       }, 150);
     };
-  }, []);
-
-  useEffect(() => {
-    VehicleInspectionService.getInspections(vehicles)
-      .then((list) => setInspectionRecords(Array.isArray(list) ? list : []))
-      .catch(() => {});
-    VehicleInspectionService.getPMRecords(vehicles)
-      .then((list) => setPmRecords(Array.isArray(list) ? list : []))
-      .catch(() => {});
-  }, [vehicles]);
+  }, [authUid]);
 
   const unavailableVehiclesMap = useMemo(
     () =>
@@ -261,18 +304,6 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
   const [selectedShiftForStops, setSelectedShiftForStops] = useState<DispatchShift | null>(null);
   const [initialStopsTab, setInitialStopsTab] = useState<'stops' | 'map'>('stops');
   const [initialStopId, setInitialStopId] = useState<number | null>(null);
-
-  const handleOpenMap = (shift: DispatchShift) => {
-    setSelectedShiftForStops(shift);
-    setInitialStopsTab('map');
-    setInitialStopId(null);
-  };
-
-  const handleOpenStops = (shift: DispatchShift, stopId?: number) => {
-    setSelectedShiftForStops(shift);
-    setInitialStopsTab('stops');
-    setInitialStopId(stopId || null);
-  };
   const [selectedShiftForCrew, setSelectedShiftForCrew] = useState<DispatchShift | null>(null);
   const [selectedShiftForSplit, setSelectedShiftForSplit] = useState<DispatchShift | null>(null);
   const [selectedShiftForPayroll, setSelectedShiftForPayroll] = useState<DispatchShift | null>(null);
@@ -281,6 +312,34 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
   const [selectedShiftForHistory, setSelectedShiftForHistory] = useState<DispatchShift | null>(null);
   const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
   const [isReminderSettingsOpen, setIsReminderSettingsOpen] = useState(false);
+
+  const handleOpenMap = useCallback((shift: DispatchShift) => {
+    setSelectedShiftForStops(shift);
+    setInitialStopsTab('map');
+    setInitialStopId(null);
+  }, []);
+
+  const handleOpenStops = useCallback((shift: DispatchShift, stopId?: number) => {
+    setSelectedShiftForStops(shift);
+    setInitialStopsTab('stops');
+    setInitialStopId(stopId || null);
+  }, []);
+  const handleOpenCrew = useCallback((shift: DispatchShift) => {
+    setSelectedShiftForCrew(shift);
+  }, []);
+  const handleOpenSplit = useCallback((shift: DispatchShift) => {
+    setSelectedShiftForSplit(shift);
+  }, []);
+  const handleOpenPayroll = useCallback((shift: DispatchShift) => {
+    setSelectedShiftForPayroll(shift);
+  }, []);
+  const handleOpenNotification = useCallback((shift: DispatchShift, stopId?: number) => {
+    setSelectedShiftForNotification(shift);
+    setSelectedStopForNotification(stopId ?? null);
+  }, []);
+  const handleOpenHistory = useCallback((shift: DispatchShift) => {
+    setSelectedShiftForHistory(shift);
+  }, []);
 
   // Real-time Firestore subscription to dispatch_shifts for the selectedDate
   useEffect(() => {
@@ -351,27 +410,21 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
   // Keep open modals in sync if real-time shift updates arrive
   useEffect(() => {
     const safeShifts = Array.isArray(effectiveShifts) ? effectiveShifts : [];
-    if (selectedShiftForStops) {
-      const refreshed = safeShifts.find((s) => s.id === selectedShiftForStops.id);
-      if (refreshed) setSelectedShiftForStops(refreshed);
-    }
-    if (selectedShiftForCrew) {
-      const refreshed = safeShifts.find((s) => s.id === selectedShiftForCrew.id);
-      if (refreshed) setSelectedShiftForCrew(refreshed);
-    }
-    if (selectedShiftForPayroll) {
-      const refreshed = safeShifts.find((s) => s.id === selectedShiftForPayroll.id);
-      if (refreshed) setSelectedShiftForPayroll(refreshed);
-    }
-    if (selectedShiftForNotification) {
-      const refreshed = safeShifts.find((s) => s.id === selectedShiftForNotification.id);
-      if (refreshed) setSelectedShiftForNotification(refreshed);
-    }
-    if (selectedShiftForHistory) {
-      const refreshed = safeShifts.find((s) => s.id === selectedShiftForHistory.id);
-      if (refreshed) setSelectedShiftForHistory(refreshed);
-    }
-  }, [effectiveShifts]);
+    const byId = new Map(safeShifts.map((shift) => [shift.id, shift]));
+    const refreshOpenShift = (
+      current: DispatchShift | null,
+      apply: (shift: DispatchShift) => void
+    ) => {
+      if (!current) return;
+      const refreshed = byId.get(current.id);
+      if (refreshed && refreshed !== current) apply(refreshed);
+    };
+    refreshOpenShift(selectedShiftForStops, setSelectedShiftForStops);
+    refreshOpenShift(selectedShiftForCrew, setSelectedShiftForCrew);
+    refreshOpenShift(selectedShiftForPayroll, setSelectedShiftForPayroll);
+    refreshOpenShift(selectedShiftForNotification, setSelectedShiftForNotification);
+    refreshOpenShift(selectedShiftForHistory, setSelectedShiftForHistory);
+  }, [effectiveShifts, selectedShiftForStops, selectedShiftForCrew, selectedShiftForPayroll, selectedShiftForNotification, selectedShiftForHistory]);
 
   // Date navigation handlers
   const handlePrevDay = () => {
@@ -398,14 +451,16 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
       // Drop any in-flight list from the empty day so it cannot overwrite the new shifts.
       shiftLoadGen.current += 1;
       const res = await DispatchService.createDay(date, false);
-      await logDispatchAction({
-        date,
-        type: 'Day Generated',
-        detail: `Generated dispatch day with ${res.created} shifts (${res.skippedExisting} already existed)`,
-        user: actorName,
-      });
       const gen = ++shiftLoadGen.current;
-      const list = await DispatchService.list(date);
+      const [, list] = await Promise.all([
+        logDispatchAction({
+          date,
+          type: 'Day Generated',
+          detail: `Generated dispatch day with ${res.created} shifts (${res.skippedExisting} already existed)`,
+          user: actorName,
+        }),
+        DispatchService.list(date),
+      ]);
       if (gen === shiftLoadGen.current) {
         setShifts(Array.isArray(list) ? list : []);
         setLoading(false);
@@ -447,7 +502,7 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
     }
   };
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     if (!DISPATCH_DATE_RE.test(selectedDate)) {
       shiftLoadGen.current += 1;
       setShifts([]);
@@ -468,10 +523,10 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
     } finally {
       if (gen === shiftLoadGen.current) setLoading(false);
     }
-  };
+  }, [selectedDate]);
 
   // Quick Driver Check-In toggle
-  const handleQuickCheckIn = async (shift: DispatchShift, undo: boolean = false) => {
+  const handleQuickCheckIn = useCallback(async (shift: DispatchShift, undo: boolean = false) => {
     try {
       const nowTime = getCurrentHHmm();
       // Optimistic update
@@ -500,10 +555,10 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
       alert('Check-in failed: ' + (err as Error).message);
       handleRefresh();
     }
-  };
+  }, [actorName, handleRefresh, selectedDate]);
 
   // Quick Attendant Check-In toggle
-  const handleQuickAttendantCheckIn = async (shift: DispatchShift, undo: boolean = false) => {
+  const handleQuickAttendantCheckIn = useCallback(async (shift: DispatchShift, undo: boolean = false) => {
     try {
       const nowTime = getCurrentHHmm();
       // Optimistic update
@@ -532,7 +587,7 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
       alert('Attendant check-in failed: ' + (err as Error).message);
       handleRefresh();
     }
-  };
+  }, [actorName, handleRefresh, selectedDate]);
 
   // Check-Out Modal state
   const [checkoutModal, setCheckoutModal] = useState<{
@@ -544,7 +599,7 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
   } | null>(null);
 
   // Quick Crew Check-Out toggle / submission
-  const handleQuickCheckOut = async (
+  const handleQuickCheckOut = useCallback(async (
     shift: DispatchShift,
     role: 'driver' | 'attendant',
     undo: boolean = false,
@@ -595,9 +650,9 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
       alert('Check-out failed: ' + (err as Error).message);
       handleRefresh();
     }
-  };
+  }, [actorName, handleRefresh, selectedDate]);
 
-  const handleOpenCheckOutModal = (shift: DispatchShift, role: 'driver' | 'attendant') => {
+  const handleOpenCheckOutModal = useCallback((shift: DispatchShift, role: 'driver' | 'attendant') => {
     setCheckoutModal({
       isOpen: true,
       shift,
@@ -605,12 +660,24 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
       checkOutTime: getCurrentHHmm(),
       comments: '',
     });
-  };
+  }, []);
+
+  const deferredRouteFilter = useDeferredValue(routeFilter);
+  const deferredDriverFilter = useDeferredValue(driverFilter);
+  const deferredStopFilter = useDeferredValue(stopFilter);
+  const deferredVehicleFilter = useDeferredValue(vehicleFilter);
+
+  const latenessByShiftId = useMemo(() => {
+    const map = new Map<string, ShiftLatenessInfo>();
+    const safeShifts = Array.isArray(effectiveShifts) ? effectiveShifts : [];
+    for (const shift of safeShifts) {
+      map.set(shift.id, calculateDynamicShiftLateness(shift, currentTimeStr, isToday));
+    }
+    return map;
+  }, [effectiveShifts, currentTimeStr, isToday]);
 
   // Real-time dynamic metrics computation (zero Firestore writes)
   const metrics = useMemo(() => {
-    const safeShifts = Array.isArray(effectiveShifts) ? effectiveShifts : [];
-    const total = safeShifts.length;
     let onTrack = 0;
     let attention = 0;
     let missingDriver = 0;
@@ -619,8 +686,7 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
     let checkInOverdue = 0;
     let stopDelayed = 0;
 
-    for (const s of safeShifts) {
-      const info = calculateDynamicShiftLateness(s, currentTimeStr, isToday);
+    for (const info of latenessByShiftId.values()) {
       if (info.isMissingDriver) missingDriver++;
       if (info.isMissingVehicle) missingVehicle++;
       if (info.isMissingCrewOrVehicle) unassignedTotal++;
@@ -634,7 +700,7 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
       }
     }
     return {
-      total,
+      total: latenessByShiftId.size,
       onTrack,
       attention,
       missingDriver,
@@ -643,83 +709,72 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
       checkInOverdue,
       stopDelayed,
     };
-  }, [effectiveShifts, currentTimeStr, isToday]);
+  }, [latenessByShiftId]);
 
-  // Filtered shifts
+  const latenessForHealthFilter = healthFilter === 'ALL' ? null : latenessByShiftId;
+
+  // Filtered shifts. Text queries are deferred so typing stays responsive.
   const filteredShifts = useMemo(() => {
     const safeShifts = Array.isArray(effectiveShifts) ? effectiveShifts : [];
+    const routeQuery = deferredRouteFilter.trim().toLowerCase();
+    const driverQuery = deferredDriverFilter.trim().toLowerCase();
+    const vehicleQuery = deferredVehicleFilter.trim().toLowerCase();
+    const stopQuery = deferredStopFilter.trim().toLowerCase();
+    const shiftTypeQuery = shiftTypeFilter === 'ALL' ? '' : shiftTypeFilter.toUpperCase();
+
     return safeShifts.filter((shift) => {
-      // Route filter
-      if (routeFilter) {
-        const q = routeFilter.toLowerCase();
+      if (routeQuery) {
         const match =
-          shift.routeNo.toLowerCase().includes(q) ||
-          shift.routeName.toLowerCase().includes(q);
+          shift.routeNo.toLowerCase().includes(routeQuery) ||
+          shift.routeName.toLowerCase().includes(routeQuery);
         if (!match) return false;
       }
 
-      // Driver filter
-      if (driverFilter) {
-        const q = driverFilter.toLowerCase();
-        const match = (shift.driverName || '').toLowerCase().includes(q);
-        if (!match) return false;
-      }
+      if (driverQuery && !(shift.driverName || '').toLowerCase().includes(driverQuery)) return false;
 
-      // Vehicle filter
-      if (vehicleFilter) {
-        const q = vehicleFilter.toLowerCase();
+      if (vehicleQuery) {
         const match =
-          (shift.unitNumber || '').toLowerCase().includes(q) ||
-          (shift.plateNumber || '').toLowerCase().includes(q);
+          (shift.unitNumber || '').toLowerCase().includes(vehicleQuery) ||
+          (shift.plateNumber || '').toLowerCase().includes(vehicleQuery);
         if (!match) return false;
       }
 
-      // Stop filter
-      if (stopFilter) {
-        const q = stopFilter.toLowerCase();
+      if (stopQuery) {
         const hasStop = shift.stops.some(
           (st) =>
-            st.stopLocation.toLowerCase().includes(q) ||
-            (st.schoolName || '').toLowerCase().includes(q)
+            st.stopLocation.toLowerCase().includes(stopQuery) ||
+            (st.schoolName || '').toLowerCase().includes(stopQuery)
         );
         if (!hasStop) return false;
       }
 
-      // Shift type filter
-      if (shiftTypeFilter !== 'ALL') {
-        if (shift.shiftType.toUpperCase() !== shiftTypeFilter.toUpperCase()) {
-          return false;
-        }
-      }
+      if (shiftTypeQuery && shift.shiftType.toUpperCase() !== shiftTypeQuery) return false;
 
-      // Yard filter
-      if (yardFilter !== 'ALL') {
-        if (String(shift.yardId) !== yardFilter) {
-          return false;
-        }
-      }
+      if (yardFilter !== 'ALL' && String(shift.yardId) !== yardFilter) return false;
 
-      // Health filter with real-time dynamic lateness
-      if (healthFilter === 'green') {
-        const info = calculateDynamicShiftLateness(shift, currentTimeStr, isToday);
-        if (info.effectiveHealth !== 'green') return false;
-      } else if (healthFilter === 'attention') {
-        const info = calculateDynamicShiftLateness(shift, currentTimeStr, isToday);
-        if (info.effectiveHealth === 'green') return false;
-      } else if (healthFilter === 'unassigned') {
-        const info = calculateDynamicShiftLateness(shift, currentTimeStr, isToday);
-        if (!info.isMissingCrewOrVehicle) return false;
-      } else if (healthFilter === 'checkin_overdue') {
-        const info = calculateDynamicShiftLateness(shift, currentTimeStr, isToday);
-        if (!info.isCheckInOverdue) return false;
-      } else if (healthFilter === 'stop_delayed') {
-        const info = calculateDynamicShiftLateness(shift, currentTimeStr, isToday);
-        if (!info.hasStopDelay) return false;
+      if (latenessForHealthFilter) {
+        const info = latenessForHealthFilter.get(shift.id);
+        if (!info) return false;
+        if (healthFilter === 'green' && info.effectiveHealth !== 'green') return false;
+        if (healthFilter === 'attention' && info.effectiveHealth === 'green') return false;
+        if (healthFilter === 'unassigned' && !info.isMissingCrewOrVehicle) return false;
+        if (healthFilter === 'checkin_overdue' && !info.isCheckInOverdue) return false;
+        if (healthFilter === 'stop_delayed' && !info.hasStopDelay) return false;
       }
 
       return true;
     });
-  }, [effectiveShifts, routeFilter, driverFilter, stopFilter, vehicleFilter, shiftTypeFilter, yardFilter, healthFilter, currentTimeStr, isToday]);
+  }, [
+    effectiveShifts,
+    deferredRouteFilter,
+    deferredDriverFilter,
+    deferredStopFilter,
+    deferredVehicleFilter,
+    shiftTypeFilter,
+    yardFilter,
+    healthFilter,
+    latenessForHealthFilter,
+  ]);
 
   // Virtual scrolling containers for high-density dispatch shifts (1,000+ items)
   const cardContainerRef = useRef<HTMLDivElement>(null);
@@ -821,6 +876,8 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
           {/* Log Student Absence Button */}
           <button
             onClick={() => setIsAbsenceModalOpen(true)}
+            onMouseEnter={() => { void loadRecordStudentAbsenceModal(); }}
+            onFocus={() => { void loadRecordStudentAbsenceModal(); }}
             title="Log parent notification of student absence (Today / Tomorrow / Future date)"
             className="px-3 py-1 text-xs font-bold rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 shadow-2xs transition flex items-center gap-1.5"
           >
@@ -841,6 +898,8 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
           {/* Check-in Reminder Settings Button */}
           <button
             onClick={() => setIsReminderSettingsOpen(true)}
+            onMouseEnter={() => { void loadCheckInReminderSettingsModal(); }}
+            onFocus={() => { void loadCheckInReminderSettingsModal(); }}
             title="Configure crew late check-in FCM reminder timing and grace period"
             className="px-2.5 sm:px-3 py-1 text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1.5"
           >
@@ -1496,11 +1555,16 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
                 {virtualSheetItems.map((virtualRow) => {
                   const shift = filteredShifts[virtualRow.index];
                   if (!shift) return null;
-                  const lateness = calculateDynamicShiftLateness(shift, currentTimeStr, isToday);
+                  const lateness = latenessByShiftId.get(shift.id);
+                  if (!lateness) return null;
                   const isYellow = lateness.effectiveHealth === 'yellow';
                   const isRed = lateness.effectiveHealth === 'red';
                   return (
-                    <tr key={shift.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                    <tr
+                      key={shift.id}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition"
+                      onPointerEnter={preloadWorkbenchModals}
+                    >
                       <td className="px-3.5 py-2">
                         <span className={`inline-block w-2.5 h-2.5 rounded-full ${
                           isRed ? 'bg-rose-500 ring-2 ring-rose-300' : isYellow ? 'bg-amber-400 ring-2 ring-amber-200' : 'bg-emerald-500'
@@ -1834,37 +1898,23 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <div className="pb-2">
+                  <div className="pb-2" onPointerEnter={preloadWorkbenchModals}>
                     <WorkbenchShiftRow
                       shift={shift}
+                      lateness={latenessByShiftId.get(shift.id)!}
                       currentTimeStr={currentTimeStr}
                       isToday={isToday}
                       onQuickCheckIn={handleQuickCheckIn}
                       onQuickAttendantCheckIn={handleQuickAttendantCheckIn}
                       onQuickCheckOut={handleQuickCheckOut}
                       onOpenCheckOutModal={handleOpenCheckOutModal}
-                      onOpenNotification={(stopId) => {
-                        setSelectedShiftForNotification(shift);
-                        setSelectedStopForNotification(stopId || null);
-                      }}
-                      onOpenMap={() => {
-                        handleOpenMap(shift);
-                      }}
-                      onOpenStops={(stopId) => {
-                        handleOpenStops(shift, stopId);
-                      }}
-                      onOpenCrew={() => {
-                        setSelectedShiftForCrew(shift);
-                      }}
-                      onOpenSplit={() => {
-                        setSelectedShiftForSplit(shift);
-                      }}
-                      onOpenPayroll={() => {
-                        setSelectedShiftForPayroll(shift);
-                      }}
-                      onOpenHistory={() => {
-                        setSelectedShiftForHistory(shift);
-                      }}
+                      onOpenNotification={handleOpenNotification}
+                      onOpenMap={handleOpenMap}
+                      onOpenStops={handleOpenStops}
+                      onOpenCrew={handleOpenCrew}
+                      onOpenSplit={handleOpenSplit}
+                      onOpenPayroll={handleOpenPayroll}
+                      onOpenHistory={handleOpenHistory}
                     />
                   </div>
                 </div>
@@ -1874,120 +1924,140 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
         </div>
       )}
 
-      {/* Modal for Stop Itinerary & Arrival Logging & Live Map */}
-      <DispatchStopModal
-        isOpen={!!selectedShiftForStops}
-        onClose={() => {
-          setSelectedShiftForStops(null);
-          setInitialStopId(null);
-        }}
-        shift={selectedShiftForStops}
-        initialStopId={initialStopId}
-        initialTab={initialStopsTab}
-        studentsMap={studentsMap}
-        isToday={isToday}
-        onOpenNotification={(s, stop) => {
-          setSelectedShiftForNotification(s);
-          setSelectedStopForNotification(stop ? stop.stopId : null);
-        }}
-        onOpenHistory={(s) => {
-          setSelectedShiftForHistory(s);
-        }}
-        onShiftUpdated={(updated) => {
-          setSelectedShiftForStops(updated);
-          setShifts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-        }}
-      />
+      {selectedShiftForStops && (
+        <Suspense fallback={<ModalLoadingOverlay />}>
+          <DispatchStopModal
+            isOpen
+            onClose={() => {
+              setSelectedShiftForStops(null);
+              setInitialStopId(null);
+            }}
+            shift={selectedShiftForStops}
+            initialStopId={initialStopId}
+            initialTab={initialStopsTab}
+            studentsMap={studentsMap}
+            isToday={isToday}
+            onOpenNotification={(openedShift, stop) => {
+              handleOpenNotification(openedShift, stop ? stop.stopId : undefined);
+            }}
+            onOpenHistory={handleOpenHistory}
+            onShiftUpdated={(updated) => {
+              setSelectedShiftForStops(updated);
+              setShifts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+            }}
+          />
+        </Suspense>
+      )}
 
-      {/* Modal for Assigning Crew & Vehicle */}
-      <DispatchCrewModal
-        isOpen={!!selectedShiftForCrew}
-        onClose={() => setSelectedShiftForCrew(null)}
-        shift={selectedShiftForCrew}
-        employees={employees}
-        vehicles={availableVehiclesForDate}
-        onShiftUpdated={(updated) => {
-          setSelectedShiftForCrew(updated);
-          setShifts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-        }}
-      />
+      {selectedShiftForCrew && (
+        <Suspense fallback={<ModalLoadingOverlay />}>
+          <DispatchCrewModal
+            isOpen
+            onClose={() => setSelectedShiftForCrew(null)}
+            shift={selectedShiftForCrew}
+            employees={employees}
+            vehicles={availableVehiclesForDate}
+            onShiftUpdated={(updated) => {
+              setSelectedShiftForCrew(updated);
+              setShifts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+            }}
+          />
+        </Suspense>
+      )}
 
-      {/* Modal for Splitting Shift */}
-      <DispatchSplitModal
-        isOpen={!!selectedShiftForSplit}
-        onClose={() => setSelectedShiftForSplit(null)}
-        shift={selectedShiftForSplit}
-        employees={employees}
-        vehicles={availableVehiclesForDate}
-        onSplitComplete={(newShifts) => {
-          setSelectedShiftForSplit(null);
-          setShifts((prev) => {
-            const newShiftIds = new Set(newShifts.map((s) => s.id));
-            const filtered = prev.filter((s) => !newShiftIds.has(s.id));
-            return [...filtered, ...newShifts];
-          });
-        }}
-      />
+      {selectedShiftForSplit && (
+        <Suspense fallback={<ModalLoadingOverlay />}>
+          <DispatchSplitModal
+            isOpen
+            onClose={() => setSelectedShiftForSplit(null)}
+            shift={selectedShiftForSplit}
+            employees={employees}
+            vehicles={availableVehiclesForDate}
+            onSplitComplete={(newShifts) => {
+              setSelectedShiftForSplit(null);
+              setShifts((prev) => {
+                const newShiftIds = new Set(newShifts.map((s) => s.id));
+                const filtered = prev.filter((s) => !newShiftIds.has(s.id));
+                return [...filtered, ...newShifts];
+              });
+            }}
+          />
+        </Suspense>
+      )}
 
-      {/* Modal for Dispatch Payroll Comment & Rates */}
-      <DispatchPayrollModal
-        isOpen={!!selectedShiftForPayroll}
-        onClose={() => setSelectedShiftForPayroll(null)}
-        shift={selectedShiftForPayroll}
-        employees={employees}
-        onShiftUpdated={(updated) => {
-          setSelectedShiftForPayroll(updated);
-          setShifts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-        }}
-      />
+      {selectedShiftForPayroll && (
+        <Suspense fallback={<ModalLoadingOverlay />}>
+          <DispatchPayrollModal
+            isOpen
+            onClose={() => setSelectedShiftForPayroll(null)}
+            shift={selectedShiftForPayroll}
+            employees={employees}
+            onShiftUpdated={(updated) => {
+              setSelectedShiftForPayroll(updated);
+              setShifts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+            }}
+          />
+        </Suspense>
+      )}
 
-      {/* Modal for Parent Delay Notification */}
-      <ParentNotificationModal
-        isOpen={!!selectedShiftForNotification}
-        onClose={() => {
-          setSelectedShiftForNotification(null);
-          setSelectedStopForNotification(null);
-        }}
-        shift={selectedShiftForNotification}
-        targetStopId={selectedStopForNotification}
-        studentsMap={studentsMap}
-        onNotificationSent={(updated) => {
-          setSelectedShiftForNotification(updated);
-          setShifts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-        }}
-      />
+      {selectedShiftForNotification && (
+        <Suspense fallback={<ModalLoadingOverlay />}>
+          <ParentNotificationModal
+            isOpen
+            onClose={() => {
+              setSelectedShiftForNotification(null);
+              setSelectedStopForNotification(null);
+            }}
+            shift={selectedShiftForNotification}
+            targetStopId={selectedStopForNotification}
+            studentsMap={studentsMap}
+            onNotificationSent={(updated) => {
+              setSelectedShiftForNotification(updated);
+              setShifts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+            }}
+          />
+        </Suspense>
+      )}
 
-      {/* Modal for Viewing Dispatched Parent Alerts History */}
-      <ParentNotificationHistoryModal
-        isOpen={!!selectedShiftForHistory}
-        onClose={() => setSelectedShiftForHistory(null)}
-        shift={selectedShiftForHistory}
-        isToday={isToday}
-        onOpenSendNewAlert={(s) => {
-          setSelectedShiftForHistory(null);
-          setSelectedShiftForNotification(s);
-          setSelectedStopForNotification(null);
-        }}
-      />
+      {selectedShiftForHistory && (
+        <Suspense fallback={<ModalLoadingOverlay />}>
+          <ParentNotificationHistoryModal
+            isOpen
+            onClose={() => setSelectedShiftForHistory(null)}
+            shift={selectedShiftForHistory}
+            isToday={isToday}
+            onOpenSendNewAlert={(openedShift) => {
+              setSelectedShiftForHistory(null);
+              handleOpenNotification(openedShift);
+            }}
+          />
+        </Suspense>
+      )}
 
-      {/* Modal for Recording Student Absence */}
-      <RecordStudentAbsenceModal
-        isOpen={isAbsenceModalOpen}
-        onClose={() => setIsAbsenceModalOpen(false)}
-        shifts={shifts}
-        initialDate={selectedDate}
-        onAbsenceRecorded={(date) => {
-          if (date === selectedDate) {
-            handleRefresh();
-          }
-        }}
-      />
+      {isAbsenceModalOpen && (
+        <Suspense fallback={<ModalLoadingOverlay />}>
+          <RecordStudentAbsenceModal
+            isOpen
+            onClose={() => setIsAbsenceModalOpen(false)}
+            shifts={shifts}
+            initialDate={selectedDate}
+            onAbsenceRecorded={(date) => {
+              if (date === selectedDate) {
+                handleRefresh();
+              }
+            }}
+          />
+        </Suspense>
+      )}
 
-      {/* Modal for Crew Check-in Reminder Settings */}
-      <CheckInReminderSettingsModal
-        isOpen={isReminderSettingsOpen}
-        onClose={() => setIsReminderSettingsOpen(false)}
-      />
+      {isReminderSettingsOpen && (
+        <Suspense fallback={<ModalLoadingOverlay />}>
+          <CheckInReminderSettingsModal
+            isOpen
+            onClose={() => setIsReminderSettingsOpen(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Modal for Crew Check-Out */}
       {checkoutModal && checkoutModal.isOpen && (
@@ -2094,24 +2164,27 @@ export const DispatchWorkbenchView: React.FC<DispatchWorkbenchViewProps> = ({
   );
 };
 
+export const DispatchWorkbenchView = memo(DispatchWorkbenchViewInner);
+
 /* ========================================================================= */
 /* Individual Shift Row Component matching media_1790353122813.png           */
 /* ========================================================================= */
 interface WorkbenchShiftRowProps {
   shift: DispatchShift;
+  lateness: ShiftLatenessInfo;
   currentTimeStr: string;
   isToday: boolean;
-  onOpenMap?: () => void;
-  onOpenStops: (stopId?: number) => void;
-  onOpenCrew: () => void;
-  onOpenSplit: () => void;
-  onOpenPayroll: () => void;
+  onOpenMap: (shift: DispatchShift) => void;
+  onOpenStops: (shift: DispatchShift, stopId?: number) => void;
+  onOpenCrew: (shift: DispatchShift) => void;
+  onOpenSplit: (shift: DispatchShift) => void;
+  onOpenPayroll: (shift: DispatchShift) => void;
   onQuickCheckIn: (shift: DispatchShift, undo?: boolean) => void;
-  onQuickAttendantCheckIn?: (shift: DispatchShift, undo?: boolean) => void;
-  onQuickCheckOut?: (shift: DispatchShift, role: 'driver' | 'attendant', undo?: boolean) => void;
-  onOpenCheckOutModal?: (shift: DispatchShift, role: 'driver' | 'attendant') => void;
-  onOpenNotification: (stopId?: number) => void;
-  onOpenHistory: () => void;
+  onQuickAttendantCheckIn: (shift: DispatchShift, undo?: boolean) => void;
+  onQuickCheckOut: (shift: DispatchShift, role: 'driver' | 'attendant', undo?: boolean) => void;
+  onOpenCheckOutModal: (shift: DispatchShift, role: 'driver' | 'attendant') => void;
+  onOpenNotification: (shift: DispatchShift, stopId?: number) => void;
+  onOpenHistory: (shift: DispatchShift) => void;
 }
 
 const StopBubbleChain: React.FC<{
@@ -2177,8 +2250,9 @@ const StopBubbleChain: React.FC<{
   );
 };
 
-const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
+const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
   shift,
+  lateness,
   currentTimeStr,
   isToday,
   onOpenMap,
@@ -2192,8 +2266,10 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
   onOpenCheckOutModal,
   onOpenNotification,
   onOpenHistory,
-}) => {
-  const lateness = calculateDynamicShiftLateness(shift, currentTimeStr, isToday);
+}: WorkbenchShiftRowProps) {
+  const openStop = useCallback((stopId?: number) => {
+    onOpenStops(shift, stopId);
+  }, [onOpenStops, shift]);
   const isYellow = lateness.effectiveHealth === 'yellow';
   const isRed = lateness.effectiveHealth === 'red';
   const sentParentNotifications = getSentParentNotifications(shift);
@@ -2253,7 +2329,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
           {/* Section 1: Driver & Check-In */}
           <div className="flex items-center gap-2.5 min-w-[220px] max-w-[320px]">
             <div
-              onClick={onOpenCrew}
+              onClick={() => onOpenCrew(shift)}
               className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 cursor-pointer transition ${
                 lateness.isMissingDriver
                   ? 'bg-rose-100 dark:bg-rose-950/80 border border-rose-400 text-rose-700 dark:text-rose-300 ring-2 ring-rose-200 dark:ring-rose-900 animate-pulse'
@@ -2267,7 +2343,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
               <div className="flex items-center gap-1.5 flex-wrap">
                 {lateness.isMissingDriver ? (
                   <button
-                    onClick={onOpenCrew}
+                    onClick={() => onOpenCrew(shift)}
                     className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 hover:bg-rose-200 transition animate-pulse"
                     title="Missing driver! Click to assign crew"
                   >
@@ -2276,7 +2352,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
                   </button>
                 ) : (
                   <span
-                    onClick={onOpenCrew}
+                    onClick={() => onOpenCrew(shift)}
                     className="text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer hover:underline inline-flex items-center gap-1"
                     title="Click to edit crew"
                   >
@@ -2370,7 +2446,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
                   <span
                     onClick={(e) => {
                       e.stopPropagation();
-                      onOpenCrew();
+                      onOpenCrew(shift);
                     }}
                     className="cursor-pointer hover:underline inline-flex items-center gap-1"
                   >
@@ -2471,14 +2547,14 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
             </div>
 
             {/* Interactive Stop Bubble Chain */}
-            <StopBubbleChain stops={stops} currentTimeStr={currentTimeStr} isToday={isToday} onOpenStops={onOpenStops} />
+            <StopBubbleChain stops={stops} currentTimeStr={currentTimeStr} isToday={isToday} onOpenStops={openStop} />
 
             {/* Rider Boarding Badge */}
             {totalStudents > 0 && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onOpenStops();
+                  openStop();
                 }}
                 title={`Passenger Boarding: ${pickedUpStudents}/${totalStudents} picked up. Click to view manifest.`}
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border transition shrink-0 cursor-pointer ${
@@ -2533,7 +2609,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onOpenNotification();
+                    onOpenNotification(shift);
                   }}
                   title="Notify parents of delay (vehicle breakdown, traffic delay)"
                   className="px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-900 dark:text-amber-100 bg-amber-100/90 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 hover:bg-amber-200 dark:hover:bg-amber-900 transition flex items-center gap-1.5 shrink-0 shadow-2xs"
@@ -2551,7 +2627,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
           {/* Section 3: Vehicle Unit Badge */}
           {lateness.isMissingVehicle ? (
             <button
-              onClick={onOpenCrew}
+              onClick={() => onOpenCrew(shift)}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-100 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-700 text-xs font-bold text-rose-800 dark:text-rose-200 shrink-0 cursor-pointer hover:bg-rose-200 transition animate-pulse shadow-2xs"
               title="Missing vehicle! Click to assign unit"
             >
@@ -2560,7 +2636,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
             </button>
           ) : (
             <div
-              onClick={onOpenCrew}
+              onClick={() => onOpenCrew(shift)}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 shrink-0 cursor-pointer hover:border-amber-400 transition"
               title={`Vehicle Unit: ${shift.unitNumber}`}
             >
@@ -2574,7 +2650,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onOpenHistory();
+                onOpenHistory(shift);
               }}
               title={`View ${sentParentNotifications.length} dispatched alert(s) sent to parents`}
               className="px-2.5 py-1 rounded-lg text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition shrink-0 flex items-center gap-1.5 shadow-2xs"
@@ -2589,7 +2665,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
 
           {/* Dispatch Payroll Comment Button */}
           <button
-            onClick={onOpenPayroll}
+            onClick={() => onOpenPayroll(shift)}
             title="Dispatch Payroll Comment"
             className="px-2 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 transition shrink-0 flex items-center gap-1"
           >
@@ -2599,7 +2675,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
 
           {/* Split Shift Button */}
           <button
-            onClick={onOpenSplit}
+            onClick={() => onOpenSplit(shift)}
             title="Split shift into 2 or more routes"
             className="px-2 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-slate-200 dark:border-slate-700 hover:border-amber-300 transition shrink-0 flex items-center gap-1"
           >
@@ -2611,7 +2687,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onOpenMap?.();
+              onOpenMap(shift);
             }}
             title="View Live Google Map"
             className="px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-800 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition shrink-0 flex items-center gap-1.5 cursor-pointer shadow-2xs"
@@ -2622,7 +2698,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
 
           {/* Action Menu Button */}
           <button
-            onClick={() => onOpenStops()}
+            onClick={() => openStop()}
             title="Open Itinerary & Actions"
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition shrink-0"
           >
@@ -2642,7 +2718,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
         {/* Unassigned Warning Banner on Mobile */}
         {lateness.isMissingCrewOrVehicle && (
           <div
-            onClick={onOpenCrew}
+            onClick={() => onOpenCrew(shift)}
             className="bg-rose-100/90 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-700 rounded-xl px-2.5 py-1.5 flex items-center justify-between gap-2 cursor-pointer animate-pulse"
           >
             <div className="flex items-center gap-1.5 text-xs font-bold text-rose-800 dark:text-rose-200">
@@ -2688,7 +2764,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
 
           <div className="flex items-center gap-1.5">
             <button
-              onClick={onOpenPayroll}
+              onClick={() => onOpenPayroll(shift)}
               title="Dispatch Payroll Comment"
               className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold text-emerald-800 dark:text-emerald-300 transition"
             >
@@ -2696,7 +2772,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
               <span>Pay</span>
             </button>
             <button
-              onClick={onOpenSplit}
+              onClick={() => onOpenSplit(shift)}
               title="Split Shift"
               className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs font-semibold text-amber-800 dark:text-amber-300 transition"
             >
@@ -2704,7 +2780,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
               <span>Split</span>
             </button>
             <button
-              onClick={() => (onOpenMap ? onOpenMap() : onOpenStops())}
+              onClick={() => onOpenMap(shift)}
               className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/30 text-xs font-semibold text-amber-800 dark:text-amber-300 transition"
               title="View Shift Map"
             >
@@ -2713,7 +2789,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
             </button>
             {lateness.isMissingVehicle ? (
               <button
-                onClick={onOpenCrew}
+                onClick={() => onOpenCrew(shift)}
                 className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-100 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-700 text-xs font-bold text-rose-800 dark:text-rose-200 animate-pulse"
                 title="Missing vehicle! Click to assign"
               >
@@ -2722,7 +2798,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
               </button>
             ) : (
               <div
-                onClick={onOpenCrew}
+                onClick={() => onOpenCrew(shift)}
                 className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
               >
                 <Truck className="w-3 h-3 text-slate-400" />
@@ -2730,7 +2806,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
               </div>
             )}
             <button
-              onClick={() => onOpenStops()}
+              onClick={() => openStop()}
               className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition"
             >
               <MoreHorizontal className="w-4 h-4" />
@@ -2742,7 +2818,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
         <div className="bg-white/70 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 space-y-1.5">
           <div className="flex items-center gap-2">
             <div
-              onClick={onOpenCrew}
+              onClick={() => onOpenCrew(shift)}
               className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 cursor-pointer transition ${
                 lateness.isMissingDriver
                   ? 'bg-rose-100 dark:bg-rose-950/80 border border-rose-400 text-rose-700 dark:text-rose-300 ring-1 ring-rose-200'
@@ -2753,7 +2829,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
             </div>
             {lateness.isMissingDriver ? (
               <button
-                onClick={onOpenCrew}
+                onClick={() => onOpenCrew(shift)}
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 animate-pulse hover:bg-rose-200 transition"
                 title="Missing driver! Click to assign"
               >
@@ -2762,7 +2838,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
               </button>
             ) : (
               <span
-                onClick={onOpenCrew}
+                onClick={() => onOpenCrew(shift)}
                 className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate cursor-pointer hover:underline"
               >
                 {shift.driverName}
@@ -2852,13 +2928,13 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
           <div className="bg-white/70 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 space-y-1.5">
             <div className="flex items-center gap-2">
               <div
-                onClick={onOpenCrew}
+                onClick={() => onOpenCrew(shift)}
                 className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 cursor-pointer bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300"
               >
                 A
               </div>
               <span
-                onClick={onOpenCrew}
+                onClick={() => onOpenCrew(shift)}
                 className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate cursor-pointer hover:underline"
               >
                 Attendant: {shift.attendantName}
@@ -2963,12 +3039,12 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
 
           {/* Bubble chain & Rider status */}
           <div className="pt-0.5 flex items-center justify-between gap-2">
-            <StopBubbleChain stops={stops} currentTimeStr={currentTimeStr} isToday={isToday} onOpenStops={onOpenStops} />
+            <StopBubbleChain stops={stops} currentTimeStr={currentTimeStr} isToday={isToday} onOpenStops={openStop} />
             {totalStudents > 0 && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onOpenStops();
+                  openStop();
                 }}
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border shrink-0 cursor-pointer ${
                   pickedUpStudents > 0
@@ -2988,7 +3064,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onOpenHistory();
+                onOpenHistory(shift);
               }}
               className="w-full mt-2 py-1.5 rounded-xl text-xs font-semibold text-blue-900 dark:text-blue-100 bg-blue-50 dark:bg-blue-950/70 border border-blue-300 dark:border-blue-700 flex items-center justify-center gap-1.5 transition"
             >
@@ -3002,7 +3078,7 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onOpenNotification();
+                onOpenNotification(shift);
               }}
               className="w-full mt-2 py-1.5 rounded-xl text-xs font-semibold text-amber-900 dark:text-amber-100 bg-amber-100/90 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 flex items-center justify-center gap-1.5 transition"
             >
@@ -3014,4 +3090,4 @@ const WorkbenchShiftRow: React.FC<WorkbenchShiftRowProps> = ({
       </div>
     </>
   );
-};
+});

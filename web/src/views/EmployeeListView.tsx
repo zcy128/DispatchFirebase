@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Employee } from '../types/employee';
 import {
@@ -16,215 +16,48 @@ import {
   ChevronRight
 } from 'lucide-react';
 
-interface EmployeeListViewProps {
-  employees: Employee[];
-  loading: boolean;
-  onSelectEmployee: (emp: Employee) => void;
-  onEditEmployee: (emp: Employee) => void;
-  onDeleteEmployee: (id: string) => void;
-  onOpenCreate: () => void;
-  onRefresh?: () => void;
-  refreshing?: boolean;
+function useIsMdUp() {
+  const [isMdUp, setIsMdUp] = useState(() => window.matchMedia('(min-width: 768px)').matches);
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 768px)');
+    const onChange = () => setIsMdUp(media.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  return isMdUp;
 }
 
-export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
+interface EmployeeRosterListProps {
+  employees: Employee[];
+  onSelectEmployee: (emp: Employee) => void;
+  onEditEmployee: (emp: Employee) => void;
+}
+
+interface EmployeeDesktopTableProps extends EmployeeRosterListProps {
+  onDeleteEmployee: (id: string) => void;
+}
+
+const EmployeeDesktopTable = memo(function EmployeeDesktopTable({
   employees,
-  loading,
   onSelectEmployee,
   onEditEmployee,
   onDeleteEmployee,
-  onOpenCreate,
-  onRefresh,
-  refreshing
-}) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedYard, setSelectedYard] = useState('ALL');
-  const [selectedPosition, setSelectedPosition] = useState('ALL');
-  const [activeOnly, setActiveOnly] = useState(false);
-  const [filterLicenseDue, setFilterLicenseDue] = useState(false);
-
-  // Filtered and deduplicated employees
-  const filtered = React.useMemo(() => {
-    const seen = new Set<string>();
-    return employees.filter((emp) => {
-      const key = emp.id || emp.employeeNumber;
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-
-      if (activeOnly && !emp.isActive) return false;
-      if (selectedYard !== 'ALL' && emp.yardId !== selectedYard) return false;
-      if (selectedPosition !== 'ALL' && emp.jobPosition !== selectedPosition) return false;
-
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        const matchName = (emp.fullName || '').toLowerCase().includes(term);
-        const matchNum = (emp.employeeNumber || '').toLowerCase().includes(term);
-        const matchPos = (emp.jobPosition || '').toLowerCase().includes(term);
-        const matchPhone =
-          (emp.mobilePhone && emp.mobilePhone.includes(term)) ||
-          (emp.workPhonePhone && emp.workPhonePhone.includes(term));
-        if (!matchName && !matchNum && !matchPos && !matchPhone) return false;
-      }
-
-      if (filterLicenseDue) {
-        if (!emp.driverLicense?.expirationDate) return false;
-        const diff =
-          (new Date(emp.driverLicense.expirationDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-        if (diff > 30 || diff < 0) return false;
-      }
-
-      return true;
-    });
-  }, [employees, activeOnly, selectedYard, selectedPosition, searchTerm, filterLicenseDue]);
-
-  const uniquePositions = Array.from(new Set(employees.map((e) => e.jobPosition).filter(Boolean)));
-
-  // Virtual scrolling containers for 1,000+ employees
+}: EmployeeDesktopTableProps) {
   const employeeTableContainerRef = useRef<HTMLDivElement>(null);
-  const employeeMobileContainerRef = useRef<HTMLDivElement>(null);
-
   const employeeTableVirtualizer = useVirtualizer({
-    count: filtered.length,
+    count: employees.length,
     getScrollElement: () => employeeTableContainerRef.current,
     estimateSize: () => 64,
     overscan: 8,
   });
-
   const virtualEmployees = employeeTableVirtualizer.getVirtualItems();
   const empPaddingTop = virtualEmployees.length > 0 ? virtualEmployees[0]?.start || 0 : 0;
   const empPaddingBottom = virtualEmployees.length > 0
     ? employeeTableVirtualizer.getTotalSize() - (virtualEmployees[virtualEmployees.length - 1]?.end || 0)
     : 0;
 
-  const employeeMobileVirtualizer = useVirtualizer({
-    count: filtered.length,
-    getScrollElement: () => employeeMobileContainerRef.current,
-    estimateSize: () => 140,
-    overscan: 6,
-  });
-  const virtualMobileEmployees = employeeMobileVirtualizer.getVirtualItems();
-
   return (
-    <div className="p-6 space-y-5 max-w-7xl mx-auto">
-      {/* Top Controls: Search & Filters */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Search Input */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search by name, employee number (EMP-...), phone, position..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500 transition placeholder:text-slate-500"
-            />
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center space-x-2">
-            {onRefresh && (
-              <button
-                onClick={onRefresh}
-                disabled={refreshing}
-                title="Refresh employee roster from cloud"
-                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${refreshing ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Refresh Roster</span>
-              </button>
-            )}
-
-            <button
-              onClick={onOpenCreate}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition shadow-md shadow-amber-500/20 flex items-center space-x-1.5"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Employee</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Filter Pills */}
-        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-800/80 text-xs">
-          <span className="text-slate-400 flex items-center space-x-1 mr-1">
-            <Filter className="w-3.5 h-3.5" />
-            <span>Filter:</span>
-          </span>
-
-          {/* Yard Select */}
-          <select
-            value={selectedYard}
-            onChange={(e) => setSelectedYard(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-amber-500"
-          >
-            <option value="ALL">All Yards</option>
-            <option value="HQ-Central">HQ-Central</option>
-            <option value="Yard-East">Yard-East</option>
-            <option value="Yard-West">Yard-West</option>
-          </select>
-
-          {/* Position Select */}
-          <select
-            value={selectedPosition}
-            onChange={(e) => setSelectedPosition(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-amber-500 max-w-[160px] truncate"
-          >
-            <option value="ALL">All Job Titles</option>
-            {uniquePositions.map((pos) => (
-              <option key={pos} value={pos}>
-                {pos}
-              </option>
-            ))}
-          </select>
-
-          {/* License Due toggle */}
-          <button
-            onClick={() => setFilterLicenseDue(!filterLicenseDue)}
-            className={`px-2.5 py-1 rounded-lg border text-xs font-semibold transition flex items-center space-x-1 ${
-              filterLicenseDue
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
-            }`}
-          >
-            <AlertTriangle className="w-3 h-3 text-amber-400" />
-            <span>CDL Expiring Soon (&le;30d)</span>
-          </button>
-
-          {/* Active Only Toggle */}
-          <button
-            onClick={() => setActiveOnly(!activeOnly)}
-            className={`px-2.5 py-1 rounded-lg border text-xs font-semibold transition ${
-              activeOnly
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
-            }`}
-          >
-            Active Only
-          </button>
-
-          <span className="text-slate-500 ml-auto font-mono text-[11px]">
-            Showing {filtered.length} of {employees.length} records
-          </span>
-        </div>
-      </div>
-
-      {/* Roster Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="py-16 text-center text-slate-400 text-sm">
-            <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            Loading master employee database...
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="py-16 text-center text-slate-400 text-sm space-y-2">
-            <p className="font-semibold text-slate-300">No employees match the specified filters</p>
-            <p className="text-xs text-slate-500">Try clearing your search keyword or yard filter.</p>
-          </div>
-        ) : (
-          <>
-            {/* Desktop Table View */}
-            <div ref={employeeTableContainerRef} className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+            <div ref={employeeTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
               <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1030px]">
                 <colgroup>
                   <col style={{ width: '240px' }} />
@@ -251,7 +84,7 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                     </tr>
                   )}
                   {virtualEmployees.map((virtualRow) => {
-                    const emp = filtered[virtualRow.index];
+                    const emp = employees[virtualRow.index];
                     if (!emp) return null;
                     const daysToExpiration = emp.driverLicense?.expirationDate
                       ? Math.ceil(
@@ -432,9 +265,25 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                 </tbody>
               </table>
             </div>
+  );
+});
 
-            {/* Mobile Touch Cards Stream */}
-            <div ref={employeeMobileContainerRef} className="md:hidden overflow-y-auto max-h-[calc(100vh-270px)]">
+const EmployeeMobileCards = memo(function EmployeeMobileCards({
+  employees,
+  onSelectEmployee,
+  onEditEmployee,
+}: EmployeeRosterListProps) {
+  const employeeMobileContainerRef = useRef<HTMLDivElement>(null);
+  const employeeMobileVirtualizer = useVirtualizer({
+    count: employees.length,
+    getScrollElement: () => employeeMobileContainerRef.current,
+    estimateSize: () => 140,
+    overscan: 6,
+  });
+  const virtualMobileEmployees = employeeMobileVirtualizer.getVirtualItems();
+
+  return (
+            <div ref={employeeMobileContainerRef} className="overflow-y-auto max-h-[calc(100vh-270px)]">
               <div
                 style={{
                   height: `${employeeMobileVirtualizer.getTotalSize()}px`,
@@ -443,7 +292,7 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
                 }}
               >
                 {virtualMobileEmployees.map((virtualRow) => {
-                  const emp = filtered[virtualRow.index];
+                  const emp = employees[virtualRow.index];
                   if (!emp) return null;
                 const daysToExpiration = emp.driverLicense?.expirationDate
                   ? Math.ceil(
@@ -592,9 +441,199 @@ export const EmployeeListView: React.FC<EmployeeListViewProps> = ({
               })}
               </div>
             </div>
-          </>
+  );
+});
+
+interface EmployeeListViewProps {
+  employees: Employee[];
+  loading: boolean;
+  onSelectEmployee: (emp: Employee) => void;
+  onEditEmployee: (emp: Employee) => void;
+  onDeleteEmployee: (id: string) => void;
+  onOpenCreate: () => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}
+
+export const EmployeeListView = memo(function EmployeeListView({
+  employees,
+  loading,
+  onSelectEmployee,
+  onEditEmployee,
+  onDeleteEmployee,
+  onOpenCreate,
+  onRefresh,
+  refreshing
+}: EmployeeListViewProps) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedYard, setSelectedYard] = useState('ALL');
+  const [selectedPosition, setSelectedPosition] = useState('ALL');
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [filterLicenseDue, setFilterLicenseDue] = useState(false);
+  const deferredSearch = useDeferredValue(searchTerm);
+  const isMdUp = useIsMdUp();
+
+  const filtered = useMemo(() => {
+    const seen = new Set<string>();
+    const term = deferredSearch.trim().toLowerCase();
+    return employees.filter((emp) => {
+      const key = emp.id || emp.employeeNumber;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+
+      if (activeOnly && !emp.isActive) return false;
+      if (selectedYard !== 'ALL' && emp.yardId !== selectedYard) return false;
+      if (selectedPosition !== 'ALL' && emp.jobPosition !== selectedPosition) return false;
+
+      if (term) {
+        const matchName = (emp.fullName || '').toLowerCase().includes(term);
+        const matchNum = (emp.employeeNumber || '').toLowerCase().includes(term);
+        const matchPos = (emp.jobPosition || '').toLowerCase().includes(term);
+        const matchPhone =
+          (emp.mobilePhone && emp.mobilePhone.includes(term)) ||
+          (emp.workPhonePhone && emp.workPhonePhone.includes(term));
+        if (!matchName && !matchNum && !matchPos && !matchPhone) return false;
+      }
+
+      if (filterLicenseDue) {
+        if (!emp.driverLicense?.expirationDate) return false;
+        const diff =
+          (new Date(emp.driverLicense.expirationDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+        if (diff > 30 || diff < 0) return false;
+      }
+
+      return true;
+    });
+  }, [employees, activeOnly, selectedYard, selectedPosition, deferredSearch, filterLicenseDue]);
+
+  const uniquePositions = useMemo(
+    () => Array.from(new Set(employees.map((emp) => emp.jobPosition).filter(Boolean))),
+    [employees]
+  );
+
+  return (
+    <div className="p-6 space-y-5 max-w-7xl mx-auto">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search by name, employee number (EMP-...), phone, position..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500 transition placeholder:text-slate-500"
+            />
+          </div>
+
+          <div className="flex items-center space-x-2">
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                disabled={refreshing}
+                title="Refresh employee roster from cloud"
+                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${refreshing ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Refresh Roster</span>
+              </button>
+            )}
+
+            <button
+              onClick={onOpenCreate}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition shadow-md shadow-amber-500/20 flex items-center space-x-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Employee</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-800/80 text-xs">
+          <span className="text-slate-400 flex items-center space-x-1 mr-1">
+            <Filter className="w-3.5 h-3.5" />
+            <span>Filter:</span>
+          </span>
+
+          <select
+            value={selectedYard}
+            onChange={(e) => setSelectedYard(e.target.value)}
+            className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-amber-500"
+          >
+            <option value="ALL">All Yards</option>
+            <option value="HQ-Central">HQ-Central</option>
+            <option value="Yard-East">Yard-East</option>
+            <option value="Yard-West">Yard-West</option>
+          </select>
+
+          <select
+            value={selectedPosition}
+            onChange={(e) => setSelectedPosition(e.target.value)}
+            className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-amber-500 max-w-[160px] truncate"
+          >
+            <option value="ALL">All Job Titles</option>
+            {uniquePositions.map((pos) => (
+              <option key={pos} value={pos}>
+                {pos}
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => setFilterLicenseDue(!filterLicenseDue)}
+            className={`px-2.5 py-1 rounded-lg border text-xs font-semibold transition flex items-center space-x-1 ${
+              filterLicenseDue
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+            }`}
+          >
+            <AlertTriangle className="w-3 h-3 text-amber-400" />
+            <span>CDL Expiring Soon (&le;30d)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveOnly(!activeOnly)}
+            className={`px-2.5 py-1 rounded-lg border text-xs font-semibold transition ${
+              activeOnly
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+            }`}
+          >
+            Active Only
+          </button>
+
+          <span className="text-slate-500 ml-auto font-mono text-[11px]">
+            Showing {filtered.length} of {employees.length} records
+          </span>
+        </div>
+      </div>
+
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="py-16 text-center text-slate-400 text-sm">
+            <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            Loading master employee database...
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="py-16 text-center text-slate-400 text-sm space-y-2">
+            <p className="font-semibold text-slate-300">No employees match the specified filters</p>
+            <p className="text-xs text-slate-500">Try clearing your search keyword or yard filter.</p>
+          </div>
+        ) : isMdUp ? (
+          <EmployeeDesktopTable
+            employees={filtered}
+            onSelectEmployee={onSelectEmployee}
+            onEditEmployee={onEditEmployee}
+            onDeleteEmployee={onDeleteEmployee}
+          />
+        ) : (
+          <EmployeeMobileCards
+            employees={filtered}
+            onSelectEmployee={onSelectEmployee}
+            onEditEmployee={onEditEmployee}
+          />
         )}
       </div>
     </div>
   );
-};
+});

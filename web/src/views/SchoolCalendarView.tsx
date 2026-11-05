@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { School, SchoolBoard } from '../types/school';
 import type {
   CalendarEvent,
@@ -6,8 +6,27 @@ import type {
 } from '../types/calendar';
 import { EVENT_TYPE_CONFIGS } from '../types/calendar';
 import { CalendarService } from '../services/calendarService';
-import { CalendarEventModal } from '../components/calendar/CalendarEventModal';
-import { CalendarPdfExportModal } from '../components/calendar/CalendarPdfExportModal';
+import { ExportLoadingOverlay } from '../components/common/ExportLoadingOverlay';
+
+const CalendarEventModal = React.lazy(() =>
+  import('../components/calendar/CalendarEventModal').then((module) => ({
+    default: module.CalendarEventModal,
+  }))
+);
+
+const CalendarPdfExportModal = React.lazy(() =>
+  import('../components/calendar/CalendarPdfExportModal').then((module) => ({
+    default: module.CalendarPdfExportModal,
+  }))
+);
+
+// Hoisted static constants for calendar labels
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+] as const;
+
+const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 import { useI18n } from '../contexts/I18nContext';
 import {
   Calendar as CalendarIcon,
@@ -102,6 +121,7 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
 
   // 5. Bottom Table Search & Type Filter State
   const [tableSearch, setTableSearch] = useState('');
+  const deferredTableSearch = useDeferredValue(tableSearch);
   const [tableTypeFilter, setTableTypeFilter] = useState<string>('ALL');
 
   // Resolve from cached calendars if available
@@ -132,7 +152,7 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
   };
 
   // Load Calendar Data
-  const loadCalendar = async (isManual = false) => {
+  const loadCalendar = async (isManual = false, opts?: { isCancelled?: () => boolean }) => {
     if (isManual) setRefreshing(true);
     else setLoading(true);
     setFeedback(null);
@@ -141,7 +161,9 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
     if (!isManual && cachedCalendars && cachedCalendars.length > 0) {
       const resolved = resolveFromCache(cachedCalendars);
       if (resolved) {
-        setLoading(false);
+        if (!opts?.isCancelled || !opts.isCancelled()) {
+          setLoading(false);
+        }
         return;
       }
     }
@@ -153,6 +175,7 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
         boardId: selectedBoardId,
         year: schoolYear
       });
+      if (opts?.isCancelled && opts.isCancelled()) return;
       setBoardCalendar(bCal);
 
       // 2. If viewing a school, load school calendar (falls back to board if not custom)
@@ -163,28 +186,36 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
           schoolId: currentSchoolId,
           year: schoolYear
         });
+        if (opts?.isCancelled && opts.isCancelled()) return;
         setCalendar(sCal);
       } else {
         setCalendar(bCal);
       }
     } catch (err: any) {
+      if (opts?.isCancelled && opts.isCancelled()) return;
       console.error('Failed to load calendar:', err);
       setFeedback({
         type: 'error',
         message: err.message || 'Failed to load school calendar.'
       });
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!opts?.isCancelled || !opts.isCancelled()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
   useEffect(() => {
+    let isCancelled = false;
     if (cachedCalendars && cachedCalendars.length > 0) {
       const resolved = resolveFromCache(cachedCalendars);
       if (resolved) return;
     }
-    loadCalendar();
+    void loadCalendar(false, { isCancelled: () => isCancelled });
+    return () => {
+      isCancelled = true;
+    };
   }, [selectedBoardId, selectedScope, currentSchoolId, schoolYear, cachedCalendars]);
 
   // Handler: Create Custom School Calendar by copying board calendar events
@@ -454,25 +485,30 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
   // Filtered events for bottom key dates table
   const filteredTableEvents = useMemo(() => {
     if (!calendar?.events) return [];
+    const q = deferredTableSearch.trim().toLowerCase();
+    const hasSearch = q.length > 0;
+    const isTypeFiltered = tableTypeFilter !== 'ALL';
+
     return calendar.events.filter((ev) => {
       // Type filter
-      if (tableTypeFilter !== 'ALL' && ev.type !== tableTypeFilter) {
+      if (isTypeFiltered && ev.type !== tableTypeFilter) {
         return false;
       }
       // Search term
-      if (tableSearch.trim()) {
-        const q = tableSearch.toLowerCase().trim();
-        const matchesTitle = ev.title.toLowerCase().includes(q);
-        const matchesDate = ev.startDate.toLowerCase().includes(q) || (ev.endDate && ev.endDate.toLowerCase().includes(q));
-        const matchesGrades = ev.grades && ev.grades.toLowerCase().includes(q);
-        const matchesDesc = ev.description && ev.description.toLowerCase().includes(q);
+      if (hasSearch) {
+        const matchesTitle = (ev.title || '').toLowerCase().includes(q);
+        const matchesDate =
+          (ev.startDate || '').toLowerCase().includes(q) ||
+          Boolean(ev.endDate && ev.endDate.toLowerCase().includes(q));
+        const matchesGrades = Boolean(ev.grades && ev.grades.toLowerCase().includes(q));
+        const matchesDesc = Boolean(ev.description && ev.description.toLowerCase().includes(q));
         return matchesTitle || matchesDate || matchesGrades || matchesDesc;
       }
       return true;
     });
-  }, [calendar, tableTypeFilter, tableSearch]);
+  }, [calendar, tableTypeFilter, deferredTableSearch]);
 
-  // Stats calculation
+  // Stats calculation (single pass loop)
   const stats = useMemo(() => {
     const events = calendar?.events || [];
     let pdDays = 0;
@@ -481,23 +517,16 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
     let exams = 0;
     let custom = 0;
 
-    events.forEach((e) => {
+    for (const e of events) {
       if (e.type === 'pd_day') pdDays++;
       else if (e.type === 'holiday') holidays++;
       else if (e.type === 'break') breaks++;
       else if (e.type === 'exam') exams++;
       else if (e.type === 'custom') custom++;
-    });
+    }
 
     return { total: events.length, pdDays, holidays, breaks, exams, custom };
   }, [calendar]);
-
-  const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-
-  const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-150">
@@ -548,7 +577,7 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
             </button>
 
             <button
-              onClick={() => loadCalendar(true)}
+              onClick={() => void loadCalendar(true)}
               disabled={refreshing}
               className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
               title="Refresh Calendar"
@@ -755,7 +784,7 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
               <ChevronLeft className="w-4 h-4" />
             </button>
             <h2 className="text-lg font-bold text-white min-w-[180px] text-center">
-              {monthNames[currentMonthDate.getMonth()]} {currentMonthDate.getFullYear()}
+              {MONTH_NAMES[currentMonthDate.getMonth()]} {currentMonthDate.getFullYear()}
             </h2>
             <button
               onClick={handleNextMonth}
@@ -812,7 +841,7 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
           <div className="border border-slate-800 rounded-xl overflow-hidden shadow-inner bg-slate-950">
             {/* Weekday Headers */}
             <div className="grid grid-cols-7 border-b border-slate-800 bg-slate-900/80 text-center py-2.5">
-              {weekdayNames.map((d, idx) => (
+              {WEEKDAY_NAMES.map((d, idx) => (
                 <span
                   key={d}
                   className={`text-xs font-bold uppercase tracking-wider ${
@@ -1035,25 +1064,31 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
       </div>
 
       {/* 6. Event Creation & Edit Modal */}
-      <CalendarEventModal
-        isOpen={isModalOpen}
-        event={editingEvent}
-        initialDate={modalInitialDate}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveEvent}
-        onDelete={handleDeleteEvent}
-      />
+      {isModalOpen && (
+        <React.Suspense fallback={null}>
+          <CalendarEventModal
+            isOpen={isModalOpen}
+            event={editingEvent}
+            initialDate={modalInitialDate}
+            onClose={() => setIsModalOpen(false)}
+            onSave={handleSaveEvent}
+            onDelete={handleDeleteEvent}
+          />
+        </React.Suspense>
+      )}
 
       {/* 7. PDF Export & Landscape Printable Poster Modal */}
       {isPdfExportOpen && calendar && (
-        <CalendarPdfExportModal
-          isOpen={isPdfExportOpen}
-          onClose={() => setIsPdfExportOpen(false)}
-          calendar={calendar}
-          board={currentBoard}
-          school={currentSchool}
-          schoolYear={schoolYear}
-        />
+        <React.Suspense fallback={<ExportLoadingOverlay />}>
+          <CalendarPdfExportModal
+            isOpen={isPdfExportOpen}
+            onClose={() => setIsPdfExportOpen(false)}
+            calendar={calendar}
+            board={currentBoard}
+            school={currentSchool}
+            schoolYear={schoolYear}
+          />
+        </React.Suspense>
       )}
     </div>
   );

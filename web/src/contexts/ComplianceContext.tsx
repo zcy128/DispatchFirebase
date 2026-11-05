@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   OperatingProvince,
   ProvinceComplianceConfig,
@@ -22,6 +22,8 @@ const ComplianceContext = createContext<ComplianceContextType | undefined>(undef
 export const ComplianceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [config, setConfig] = useState<ProvinceComplianceConfig>(ONTARIO_COMPLIANCE_DEFAULTS);
   const [loading, setLoading] = useState<boolean>(true);
+  const configRef = useRef(config);
+  configRef.current = config;
 
   const refreshConfig = useCallback(async () => {
     try {
@@ -42,7 +44,7 @@ export const ComplianceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return () => unsub();
   }, [refreshConfig]);
 
-  const setProvince = async (newProvince: OperatingProvince) => {
+  const setProvince = useCallback(async (newProvince: OperatingProvince) => {
     setLoading(true);
     try {
       const updated = await ComplianceSettingsService.switchProvince(newProvince);
@@ -50,22 +52,22 @@ export const ComplianceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const updateConfig = async (patch: Partial<ProvinceComplianceConfig>) => {
+  const updateConfig = useCallback(async (patch: Partial<ProvinceComplianceConfig>) => {
     setLoading(true);
     try {
       const updated = await ComplianceSettingsService.saveConfig({
-        ...config,
-        ...patch
+        ...configRef.current,
+        ...patch,
       });
       setConfig(updated);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const value: ComplianceContextType = {
+  const value = useMemo<ComplianceContextType>(() => ({
     province: config.province,
     config,
     isOntario: config.province === 'ON',
@@ -73,8 +75,8 @@ export const ComplianceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     loading,
     setProvince,
     updateConfig,
-    refreshConfig
-  };
+    refreshConfig,
+  }), [config, loading, refreshConfig, setProvince, updateConfig]);
 
   return (
     <ComplianceContext.Provider value={value}>

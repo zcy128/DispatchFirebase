@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   X,
   Users,
@@ -37,21 +37,21 @@ export const RouteOpeningApplicantsDrawer: React.FC<RouteOpeningApplicantsDrawer
   const [isAwarding, setIsAwarding] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  const sortedApplicants = useMemo(() => {
+    const applicants = opening?.applicants || [];
+    return [...applicants].sort((a, b) => {
+      if (a.status === 'selected') return -1;
+      if (b.status === 'selected') return 1;
+      if (a.status === 'withdrawn' && b.status !== 'withdrawn') return 1;
+      if (b.status === 'withdrawn' && a.status !== 'withdrawn') return -1;
+
+      const kmA = typeof a.deadheadKm === 'number' ? a.deadheadKm : 9999;
+      const kmB = typeof b.deadheadKm === 'number' ? b.deadheadKm : 9999;
+      return kmA - kmB;
+    });
+  }, [opening?.applicants]);
+
   if (!isOpen || !opening) return null;
-
-  const applicants = opening.applicants || [];
-
-  // Sort applicants: pending first, then by deadhead km ascending
-  const sortedApplicants = [...applicants].sort((a, b) => {
-    if (a.status === 'selected') return -1;
-    if (b.status === 'selected') return 1;
-    if (a.status === 'withdrawn' && b.status !== 'withdrawn') return 1;
-    if (b.status === 'withdrawn' && a.status !== 'withdrawn') return -1;
-
-    const kmA = typeof a.deadheadKm === 'number' ? a.deadheadKm : 9999;
-    const kmB = typeof b.deadheadKm === 'number' ? b.deadheadKm : 9999;
-    return kmA - kmB;
-  });
 
   const handleConfirmAward = async () => {
     if (!awardingApplicant) return;
@@ -103,7 +103,7 @@ export const RouteOpeningApplicantsDrawer: React.FC<RouteOpeningApplicantsDrawer
                   </span>
                 )}
                 <span className="text-xs text-slate-400">
-                  ({applicants.length} {t.routeOpenings?.applicantsCount || 'Applicants'})
+                  ({sortedApplicants.length} {t.routeOpenings?.applicantsCount || 'Applicants'})
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
