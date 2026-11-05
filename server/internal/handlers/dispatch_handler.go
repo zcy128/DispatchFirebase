@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -669,6 +670,17 @@ func (h *DispatchHandler) CheckInDriver(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		if err == repository.ErrDispatchShiftNotFound {
 			http.Error(w, `{"error":"dispatch shift not found"}`, http.StatusNotFound)
+			return
+		}
+		var blocked *repository.CheckInBlockedError
+		if errors.As(err, &blocked) {
+			payload, marshalErr := json.Marshal(map[string]string{"error": blocked.Error()})
+			if marshalErr != nil {
+				http.Error(w, `{"error":"check-in blocked"}`, http.StatusConflict)
+				return
+			}
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write(payload)
 			return
 		}
 		http.Error(w, `{"error":"failed to check in driver: `+err.Error()+`"}`, http.StatusInternalServerError)

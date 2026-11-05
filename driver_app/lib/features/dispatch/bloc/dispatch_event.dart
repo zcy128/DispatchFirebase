@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import '../models/dispatch_model.dart';
 
@@ -11,8 +13,9 @@ abstract class DispatchEvent extends Equatable {
 class LoadDispatchesForDate extends DispatchEvent {
   final DateTime date;
   final String? driverId;
+  final Completer<void>? ready;
 
-  const LoadDispatchesForDate(this.date, {this.driverId});
+  const LoadDispatchesForDate(this.date, {this.driverId, this.ready});
 
   @override
   List<Object?> get props => [date, driverId];
@@ -103,11 +106,21 @@ class AutoSyncDispatchesEvent extends DispatchEvent {
   const AutoSyncDispatchesEvent();
 }
 
-class FirestoreDispatchesUpdatedEvent extends DispatchEvent {
-  final List<DispatchRecord> dispatches;
+class SetDispatchSyncActive extends DispatchEvent {
+  final bool active;
 
-  const FirestoreDispatchesUpdatedEvent(this.dispatches);
+  const SetDispatchSyncActive(this.active);
 
   @override
-  List<Object?> get props => [dispatches];
+  List<Object?> get props => [active];
+}
+
+class FirestoreDispatchesUpdatedEvent extends DispatchEvent {
+  final List<DispatchRecord> dispatches;
+  final int epoch;
+
+  const FirestoreDispatchesUpdatedEvent(this.dispatches, {this.epoch = 0});
+
+  @override
+  List<Object?> get props => [dispatches, epoch];
 }

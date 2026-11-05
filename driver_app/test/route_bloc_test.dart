@@ -1,10 +1,30 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'package:driver_app/features/route/bloc/route_bloc.dart';
 import 'package:driver_app/features/route/bloc/route_event.dart';
 import 'package:driver_app/features/route/bloc/route_state.dart';
 import 'package:driver_app/features/route/repository/route_repository.dart';
+
+class _ScriptedClient extends http.BaseClient {
+  final List<http.Response> responses;
+  int _index = 0;
+
+  _ScriptedClient(this.responses);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final response = responses[_index++];
+    return http.StreamedResponse(
+      Stream<List<int>>.value(utf8.encode(response.body)),
+      response.statusCode,
+      request: request,
+    );
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -66,16 +86,79 @@ void main() {
     });
 
     test('syncRouteFromBackend pulls live updated stop times from backend API', () async {
-      final liveRoute = await repository.syncRouteFromBackend('driver1d');
-      if (liveRoute != null) {
-        expect(liveRoute.routeNo, equals('OCDSB-001'));
-        final amShift = liveRoute.shifts.firstWhere((s) => s.shiftType == 'AM');
-        expect(amShift.stops.first.pullawayTime, equals('07:31 AM'));
+      try {
+        final liveRoute = await repository.syncRouteFromBackend('driver1d');
+        if (liveRoute != null) {
+          expect(liveRoute.routeNo, equals('OCDSB-001'));
+          final amShift = liveRoute.shifts.firstWhere((s) => s.shiftType == 'AM');
+          expect(amShift.stops.first.pullawayTime, equals('07:31 AM'));
+        }
+      } on RouteSyncException {
+        expect(await repository.getRouteForDriver('driver1d'), isNotNull);
       }
+    });
+
+    test('a failed route sync keeps the cached assignment', () async {
+      final scripted = RouteRepository(
+        apiBaseUrl: 'http://example.test',
+        httpClient: _ScriptedClient([http.Response('unavailable', 503)]),
+      );
+      await scripted.init();
+
+      await expectLater(
+        scripted.syncRouteFromBackend('driver1d'),
+        throwsA(isA<RouteSyncException>()),
+      );
+      expect(await scripted.getRouteForDriver('driver1d'), isNotNull);
+    });
+
+    test('a confirmed empty route list clears the cached assignment', () async {
+      final scripted = RouteRepository(
+        apiBaseUrl: 'http://example.test',
+        httpClient: _ScriptedClient([http.Response('[]', 200)]),
+      );
+      await scripted.init();
+
+      final liveRoute = await scripted.syncRouteFromBackend('driver1d');
+      expect(liveRoute, isNull);
+      expect(await scripted.getRouteForDriver('driver1d'), isNull);
+    });
+
+    test('a non-list route response is a sync failure', () async {
+      final scripted = RouteRepository(
+        apiBaseUrl: 'http://example.test',
+        httpClient: _ScriptedClient([http.Response('{"ok":true}', 200)]),
+      );
+      await scripted.init();
+
+      await expectLater(
+        scripted.syncRouteFromBackend('driver1d'),
+        throwsA(isA<RouteSyncException>()),
+      );
+      expect(await scripted.getRouteForDriver('driver1d'), isNotNull);
     });
   });
 
   group('RouteBloc Tests', () {
+    test('LoadRouteEvent clears a cached route when the server confirms none', () async {
+      final scripted = RouteRepository(
+        apiBaseUrl: 'http://example.test',
+        httpClient: _ScriptedClient([http.Response('[]', 200)]),
+      );
+      await scripted.init();
+      final bloc = RouteBloc(repository: scripted);
+      final ready = Completer<void>();
+      bloc.add(LoadRouteEvent('driver1d', ready: ready));
+      await ready.future;
+
+      final loaded = bloc.state as RouteLoaded;
+      expect(loaded.isAssigned, isFalse);
+      expect(loaded.route, isNull);
+      expect(await scripted.getRouteForDriver('driver1d'), isNull);
+
+      await bloc.close();
+    });
+
     test('LoadRouteEvent loads assigned route successfully for driver1d', () async {
       final bloc = RouteBloc(repository: repository);
       expect(bloc.state, isA<RouteInitial>());
@@ -143,7 +226,10 @@ void main() {
         bloc.stream,
         emits(isA<RouteLoaded>()
             .having((s) => s.searchQuery, 'searchQuery', 'Noah')
-            .having((s) => s.filteredStudents.length, 'Noah matches', 2)),
+            .having((s) => s.filteredStudents.length, 'Noah matches', 2)
+            .having((s) => s.rosterStudents.length, 'roster count stays full', 6)
+            .having((s) => s.displayedStops.length, 'matching stops', lessThan(7))
+            .having((s) => s.shiftStops.length, 'shift stop count stays full', 7)),
       );
 
       // Search by student ID "0009"
@@ -204,14 +290,20 @@ void main() {
 
     test('FirestoreRouteUpdatedEvent seamlessly updates active route in state', () async {
       final bloc = RouteBloc(repository: repository);
-      bloc.add(const LoadRouteEvent('driver1d'));
-
-      await bloc.stream.firstWhere((s) => s is RouteLoaded);
+      final ready = Completer<void>();
+      bloc.add(LoadRouteEvent('driver1d', ready: ready));
+      await ready.future;
 
       final initialLoaded = bloc.state as RouteLoaded;
       final originalRoute = initialLoaded.route!;
+      expect(originalRoute, isNotNull);
 
-      // Create an updated route representing real-time updates from Firestore
+      // An empty snapshot before a live route has been seen does not wipe the cache.
+      bloc.add(const FirestoreRouteUpdatedEvent(null));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect((bloc.state as RouteLoaded).route, isNotNull);
+      expect((bloc.state as RouteLoaded).isAssigned, isTrue);
+
       final updatedRoute = originalRoute.copyWith(
         routeName: 'Route 001 - Hillcrest (Live Firestore Realtime Stream)',
       );
@@ -228,11 +320,17 @@ void main() {
       bloc.add(FirestoreRouteUpdatedEvent(updatedRoute));
       await updateExpectation;
 
-      // When null is received from Firestore snapshot, RouteBloc safely ignores it to prevent dropping active route
+      // A later empty snapshot means the live assignment was removed.
+      final clearExpectation = expectLater(
+        bloc.stream,
+        emits(
+          isA<RouteLoaded>()
+              .having((s) => s.route, 'route', isNull)
+              .having((s) => s.isAssigned, 'isAssigned', isFalse),
+        ),
+      );
       bloc.add(const FirestoreRouteUpdatedEvent(null));
-      await Future.delayed(const Duration(milliseconds: 50));
-      expect((bloc.state as RouteLoaded).route, isNotNull);
-      expect((bloc.state as RouteLoaded).isAssigned, isTrue);
+      await clearExpectation;
 
       await bloc.close();
     });

@@ -9,6 +9,17 @@ import '../../../core/api_config.dart';
 import '../../../core/network/api_client.dart';
 import '../models/route_model.dart';
 
+/// The route API responded, but the body or status cannot be treated as
+/// "this driver has no route".
+class RouteSyncException implements Exception {
+  final String message;
+
+  const RouteSyncException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class RouteRepository {
   static const String boxName = 'driver_routes_v1';
   static String get defaultApiBase => ApiConfig.baseUrl;
@@ -148,6 +159,16 @@ class RouteRepository {
 
   Future<void> deleteRoute(String routeId) async {
     await box.delete(routeId);
+  }
+
+  /// Drops every cached route for this driver after the server confirms
+  /// the driver is no longer assigned.
+  Future<void> clearAssignedRoute(String driverId) async {
+    while (true) {
+      final existing = await getAssignedRoute(driverId);
+      if (existing == null) return;
+      await deleteRoute(existing.id);
+    }
   }
 
   Future<void> toggleAssignment(String driverId, bool shouldBeAssigned) async {
@@ -320,11 +341,9 @@ class RouteRepository {
               shiftsSub?.cancel();
               shiftsSub = null;
               currentListeningRouteId = null;
-              if (!controller.isClosed) {
-                getAssignedRoute(driverId).then((cached) {
-                  if (!controller.isClosed) controller.add(cached);
-                });
-              }
+              // Do not replay the Hive route. A missing document is an empty
+              // update; replaying the cache would put a removed assignment back.
+              if (!controller.isClosed) controller.add(null);
               return;
             }
 
@@ -381,53 +400,67 @@ class RouteRepository {
     }
   }
 
-  /// Synchronizes live route and stop times directly from backend Dispatch API.
-  /// Automatically updates local Hive cache so offline access remains functional.
+  /// Synchronizes live route and stop times from the Dispatch API.
+  ///
+  /// Returns the assigned route, or null when the server list confirms this
+  /// driver has no route. Throws [RouteSyncException] when the response cannot
+  /// be trusted. A failure is not the same as "no assignment".
   Future<DriverRouteInfo?> syncRouteFromBackend(String driverId) async {
-    try {
-      final normalized = driverId.toLowerCase().trim();
-      var urlStr = '$apiBaseUrl/api/public/routes';
-      if (normalized.isNotEmpty) {
-        urlStr += '?driver=${Uri.encodeComponent(normalized)}';
+    final normalized = driverId.toLowerCase().trim();
+    var urlStr = '$apiBaseUrl/api/public/routes';
+    if (normalized.isNotEmpty) {
+      urlStr += '?driver=${Uri.encodeComponent(normalized)}';
+    }
+    final routesUri = Uri.parse(urlStr);
+    final res = await _httpClient.get(routesUri).timeout(const Duration(seconds: 12));
+    if (res.statusCode != 200) {
+      throw RouteSyncException('Route sync failed (${res.statusCode}).');
+    }
+
+    final decodedRoutes = jsonDecode(res.body);
+    if (decodedRoutes is! List) {
+      throw const RouteSyncException(
+        'Route sync failed because the server response was not a route list.',
+      );
+    }
+    Map<String, dynamic>? matchingRoute;
+
+    for (final r in decodedRoutes) {
+      if (r is! Map) continue;
+      final row = Map<String, dynamic>.from(r);
+      final rDriverId = (row['driverId'] ?? '').toString();
+      final rDriverName = (row['driverName'] ?? '').toString();
+      final matches = matchesDriver(rDriverId, normalized) ||
+          matchesDriver(rDriverName, normalized);
+      if (matches) {
+        matchingRoute = row;
+        break;
       }
-      final routesUri = Uri.parse(urlStr);
-      final res = await _httpClient.get(routesUri).timeout(const Duration(seconds: 12));
-      if (res.statusCode != 200) return null;
+    }
 
-      final decodedRoutes = jsonDecode(res.body);
-      final List<dynamic> routesJson = decodedRoutes is List ? decodedRoutes : const [];
-      Map<String, dynamic>? matchingRoute;
-
-      for (final r in routesJson) {
-        final rDriverId = (r['driverId'] ?? '').toString();
-        final rDriverName = (r['driverName'] ?? '').toString();
-        final matches = matchesDriver(rDriverId, normalized) ||
-            matchesDriver(rDriverName, normalized);
-        if (matches) {
-          matchingRoute = Map<String, dynamic>.from(r as Map);
-          break;
-        }
-      }
-
-      if (matchingRoute == null) return null;
-      final routeId = matchingRoute['id'].toString();
-      await _fillMissingPlate(matchingRoute);
-
-      // Fetch live shifts with detailed stops and updated pullaway times
-      final shiftsUri = Uri.parse('$apiBaseUrl/api/public/routes/$routeId/shifts');
-      final shiftsRes = await _httpClient.get(shiftsUri).timeout(const Duration(seconds: 12));
-      if (shiftsRes.statusCode != 200) return null;
-
-      final decodedShifts = jsonDecode(shiftsRes.body);
-      final List<dynamic> shiftsJson = decodedShifts is List ? decodedShifts : const [];
-      final liveRoute = buildRouteInfoFromMap(matchingRoute, shiftsJson, normalized);
-
-      await cacheLiveRoute(liveRoute);
-      return liveRoute;
-    } catch (_) {
-      // Offline fallback: returns null, calling layers will use cached Hive route
+    if (matchingRoute == null) {
+      await clearAssignedRoute(driverId);
       return null;
     }
+    final routeId = matchingRoute['id'].toString();
+    await _fillMissingPlate(matchingRoute);
+
+    final shiftsUri = Uri.parse('$apiBaseUrl/api/public/routes/$routeId/shifts');
+    final shiftsRes = await _httpClient.get(shiftsUri).timeout(const Duration(seconds: 12));
+    if (shiftsRes.statusCode != 200) {
+      throw RouteSyncException('Route stop sync failed (${shiftsRes.statusCode}).');
+    }
+
+    final decodedShifts = jsonDecode(shiftsRes.body);
+    if (decodedShifts is! List) {
+      throw const RouteSyncException(
+        'Route stop sync failed because the server response was not a stop list.',
+      );
+    }
+    final liveRoute = buildRouteInfoFromMap(matchingRoute, decodedShifts, normalized);
+
+    await cacheLiveRoute(liveRoute);
+    return liveRoute;
   }
 
   /// Route documents often omit plateNumber. The assigned bus still has one.

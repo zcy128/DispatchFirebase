@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -6,6 +8,7 @@ import '../../../core/phone_link.dart';
 import '../../../core/theme.dart';
 import '../../../core/feedback_utils.dart';
 import '../../../core/widgets/google_route_map_card.dart';
+import '../../pretrip/repository/pretrip_repository.dart';
 import '../bloc/dispatch_bloc.dart';
 import '../bloc/dispatch_event.dart';
 import '../bloc/dispatch_state.dart';
@@ -17,11 +20,13 @@ import '../../company_contacts/presentation/company_contacts_page.dart';
 class DispatchPage extends StatelessWidget {
   final String driverId;
   final VoidCallback? onOpenChat;
+  final bool isActive;
 
   const DispatchPage({
     super.key,
     this.driverId = 'driver1d',
     this.onOpenChat,
+    this.isActive = true,
   });
 
   @override
@@ -29,27 +34,73 @@ class DispatchPage extends StatelessWidget {
     return BlocProvider(
       create: (context) {
         final repo = context.read<DispatchRepository>();
-        final bloc = DispatchBloc(repository: repo);
+        final preTrip = context.read<PreTripRepository>();
+        final bloc = DispatchBloc(
+          repository: repo,
+          isVehicleInspected: preTrip.isVehicleInspectedToday,
+        );
         bloc.add(LoadDispatchesForDate(DateTime.now(), driverId: driverId));
-        bloc.startAutoSync(interval: const Duration(seconds: 4));
         return bloc;
       },
-      child: _DispatchPageView(driverId: driverId, onOpenChat: onOpenChat),
+      child: _DispatchPageView(
+        driverId: driverId,
+        onOpenChat: onOpenChat,
+        isActive: isActive,
+      ),
     );
   }
 }
 
-class _DispatchPageView extends StatelessWidget {
+class _DispatchPageView extends StatefulWidget {
   final String driverId;
   final VoidCallback? onOpenChat;
+  final bool isActive;
 
-  const _DispatchPageView({required this.driverId, this.onOpenChat});
+  const _DispatchPageView({
+    required this.driverId,
+    required this.isActive,
+    this.onOpenChat,
+  });
+
+  @override
+  State<_DispatchPageView> createState() => _DispatchPageViewState();
+}
+
+class _DispatchPageViewState extends State<_DispatchPageView> {
+  String get driverId => widget.driverId;
+  VoidCallback? get onOpenChat => widget.onOpenChat;
+
+  @override
+  void initState() {
+    super.initState();
+    _setSyncActive(widget.isActive);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DispatchPageView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive != widget.isActive) {
+      _setSyncActive(widget.isActive);
+    }
+  }
+
+  void _setSyncActive(bool active) {
+    context.read<DispatchBloc>().add(SetDispatchSyncActive(active));
+  }
+
+  Future<void> _reload(DateTime date) {
+    final ready = Completer<void>();
+    context.read<DispatchBloc>().add(
+          LoadDispatchesForDate(date, driverId: driverId, ready: ready),
+        );
+    return ready.future;
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return BlocConsumer<DispatchBloc, DispatchState>(
+    return BlocListener<DispatchBloc, DispatchState>(
       listenWhen: (previous, current) {
         if (previous is DispatchLoaded && current is DispatchLoaded) {
           return previous.errorMessage != current.errorMessage ||
@@ -73,116 +124,64 @@ class _DispatchPageView extends StatelessWidget {
           }
         }
       },
-      builder: (context, state) {
-        return Scaffold(
-          appBar: AppBar(
-            elevation: 0,
-            backgroundColor: isDark ? AppColors.darkCard : Colors.white,
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Daily Dispatch Hub',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.success.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: AppColors.success,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Text(
-                            'LIVE',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.success,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                Text(
-                  state is DispatchLoaded
-                      ? DateFormat('EEEE, MMM d, yyyy').format(state.selectedDate)
-                      : 'Loading schedule...',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
-                  ),
-                ),
-              ],
+      child: Scaffold(
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: isDark ? AppColors.darkCard : Colors.white,
+          title: _DispatchHubTitle(isDark: isDark),
+          actions: [
+            _DispatchDateActions(
+              onReload: _reload,
+              onPickDate: (date) => _pickCalendarDate(context, date),
             ),
-            actions: [
-              if (state is DispatchLoaded) ...[
-                IconButton(
-                  icon: const Icon(Icons.refresh_rounded),
-                  tooltip: 'Sync Dispatch Data',
-                  onPressed: () {
-                    context.read<DispatchBloc>().add(
-                          LoadDispatchesForDate(state.selectedDate, driverId: driverId),
-                        );
+            IconButton(
+              tooltip: 'Company Contacts',
+              icon: const Icon(Icons.phone_in_talk_rounded, color: AppColors.primary),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const CompanyContactsPage(),
+                  ),
+                );
+              },
+            ),
+            if (onOpenChat != null)
+              IconButton(
+                tooltip: 'Operations Chat',
+                onPressed: onOpenChat,
+                icon: ValueListenableBuilder<int>(
+                  valueListenable: ChatNotificationService().unreadCountNotifier,
+                  builder: (context, unreadCount, child) {
+                    return Badge(
+                      isLabelVisible: unreadCount > 0,
+                      label: Text('$unreadCount'),
+                      child: const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        color: AppColors.primary,
+                      ),
+                    );
                   },
                 ),
-                IconButton(
-                  icon: const Icon(Icons.calendar_month_rounded),
-                  tooltip: 'Pick date (within 2 weeks)',
-                  onPressed: () => _pickCalendarDate(context, state.selectedDate),
-                ),
-              ],
-              IconButton(
-                tooltip: 'Company Contacts',
-                icon: const Icon(Icons.phone_in_talk_rounded, color: AppColors.primary),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const CompanyContactsPage(),
-                    ),
-                  );
-                },
               ),
-              if (onOpenChat != null)
-                IconButton(
-                  tooltip: 'Operations Chat',
-                  onPressed: onOpenChat,
-                  icon: ValueListenableBuilder<int>(
-                    valueListenable: ChatNotificationService().unreadCountNotifier,
-                    builder: (context, unreadCount, child) {
-                      return Badge(
-                        isLabelVisible: unreadCount > 0,
-                        label: Text('$unreadCount'),
-                        child: const Icon(
-                          Icons.chat_bubble_outline_rounded,
-                          color: AppColors.primary,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-            ],
-          ),
-          body: _buildBody(context, state, isDark),
-        );
-      },
+          ],
+        ),
+        body: BlocBuilder<DispatchBloc, DispatchState>(
+          buildWhen: (previous, current) => previous != current,
+          builder: (context, state) {
+            return _limitDispatchWidth(_buildBody(context, state, isDark));
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _limitDispatchWidth(Widget child) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: child,
+      ),
     );
   }
 
@@ -241,16 +240,28 @@ class _DispatchPageView extends StatelessWidget {
                 ? _buildEmptyState(isDark)
                 : RefreshIndicator(
                     color: AppColors.primary,
-                    onRefresh: () async {
-                      context.read<DispatchBloc>().add(
-                            LoadDispatchesForDate(state.selectedDate, driverId: driverId),
-                          );
-                    },
-                    child: ListView(
+                    onRefresh: () => _reload(state.selectedDate),
+                    child: ListView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(16),
-                      children: [
-                      // Shift Selector, Run Summary & Crew Presence Card
+                      itemCount: active.stops.length + 2,
+                      itemBuilder: (context, index) {
+                        if (index == active.stops.length + 1) {
+                          return const SizedBox(height: 32);
+                        }
+                        if (index > 0) {
+                          final stop = active.stops[index - 1];
+                          return _StopCard(
+                            key: ValueKey('stop_${stop.stopId}'),
+                            stop: stop,
+                            dispatch: active,
+                            isReadOnly: state.isReadOnly,
+                            isDark: isDark,
+                          );
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                       _ShiftSelectorCard(
                         state: state,
                         activeDispatch: active,
@@ -258,7 +269,6 @@ class _DispatchPageView extends StatelessWidget {
                       ),
                       const SizedBox(height: 14),
 
-                      // Interactive Google Maps Route & Stops Card
                       GoogleRouteMapCard(
                         routeTitle: 'Route ${active.routeNo}',
                         shiftLabel: active.shiftType,
@@ -329,17 +339,10 @@ class _DispatchPageView extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 12),
-
-                      ...active.stops.map((stop) => _StopCard(
-                            key: ValueKey('stop_${stop.stopId}_${stop.isArrived}'),
-                            stop: stop,
-                            dispatch: active,
-                            isReadOnly: state.isReadOnly,
-                            isDark: isDark,
-                          )),
-                      const SizedBox(height: 32),
-                    ],
-                  ),
+                          ],
+                        );
+                      },
+                    ),
                 ),
           ),
         ],
@@ -456,6 +459,156 @@ class _DispatchPageView extends StatelessWidget {
     if (picked != null && context.mounted) {
       context.read<DispatchBloc>().add(LoadDispatchesForDate(picked, driverId: driverId));
     }
+  }
+}
+
+class _DispatchChrome {
+  final bool showActions;
+  final bool showLive;
+  final DateTime? selectedDate;
+
+  const _DispatchChrome({
+    required this.showActions,
+    required this.showLive,
+    this.selectedDate,
+  });
+
+  static _DispatchChrome fromState(DispatchState state) {
+    if (state is DispatchLoaded) {
+      return _DispatchChrome(
+        showActions: true,
+        showLive: state.isToday,
+        selectedDate: state.selectedDate,
+      );
+    }
+    return const _DispatchChrome(showActions: false, showLive: false);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is _DispatchChrome &&
+        other.showActions == showActions &&
+        other.showLive == showLive &&
+        other.selectedDate == selectedDate;
+  }
+
+  @override
+  int get hashCode => Object.hash(showActions, showLive, selectedDate);
+}
+
+class _DispatchHubTitle extends StatelessWidget {
+  final bool isDark;
+
+  const _DispatchHubTitle({required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocSelector<DispatchBloc, DispatchState, _DispatchChrome>(
+      selector: _DispatchChrome.fromState,
+      builder: (context, chrome) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Flexible(
+                  child: Text(
+                    'Daily Dispatch Hub',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (chrome.showLive) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 6,
+                          height: 6,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: AppColors.success,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'LIVE',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.success,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            Text(
+              chrome.selectedDate == null
+                  ? 'Loading schedule...'
+                  : DateFormat('EEEE, MMM d, yyyy').format(chrome.selectedDate!),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _DispatchDateActions extends StatelessWidget {
+  final Future<void> Function(DateTime date) onReload;
+  final Future<void> Function(DateTime date) onPickDate;
+
+  const _DispatchDateActions({
+    required this.onReload,
+    required this.onPickDate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocSelector<DispatchBloc, DispatchState, _DispatchChrome>(
+      selector: _DispatchChrome.fromState,
+      builder: (context, chrome) {
+        final selectedDate = chrome.selectedDate;
+        if (!chrome.showActions || selectedDate == null) {
+          return const SizedBox.shrink();
+        }
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              tooltip: 'Sync Dispatch Data',
+              onPressed: () => onReload(selectedDate),
+            ),
+            IconButton(
+              icon: const Icon(Icons.calendar_month_rounded),
+              tooltip: 'Pick date (within 2 weeks)',
+              onPressed: () => onPickDate(selectedDate),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -609,6 +762,8 @@ class _OperatingDaysSelector extends StatelessWidget {
           children: [
             Text(
               title.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
@@ -623,6 +778,8 @@ class _OperatingDaysSelector extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               dateStr,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -702,6 +859,9 @@ class _ShiftSelectorCard extends StatelessWidget {
                     ),
                     child: Text(
                       '${disp.shiftType} Run (${disp.stops.length} Stops)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                   ),
@@ -856,9 +1016,13 @@ class _ShiftSelectorCard extends StatelessWidget {
                         children: [
                           Row(
                             children: [
-                              Text(
-                                activeDispatch.attendantName!,
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                              Flexible(
+                                child: Text(
+                                  activeDispatch.attendantName!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                ),
                               ),
                               const SizedBox(width: 6),
                               Container(
@@ -1409,19 +1573,29 @@ class _StopCardState extends State<_StopCard> {
     return activeIdx >= 0 && stops[activeIdx].stopId == widget.stop.stopId;
   }
 
+  bool _isActiveOn(DispatchRecord dispatch, DispatchStop stop) {
+    if (!dispatch.isCheckedIn || dispatch.isCheckedOut || stop.isArrived) return false;
+    final activeIdx = dispatch.stops.indexWhere((item) => !item.isArrived);
+    return activeIdx >= 0 && dispatch.stops[activeIdx].stopId == stop.stopId;
+  }
+
   @override
   void initState() {
     super.initState();
-    _isExpanded = _isCurrentActiveStop || (!widget.stop.isArrived && widget.dispatch.isCheckedIn && !widget.dispatch.isCheckedOut);
+    _isExpanded = _isActiveOn(widget.dispatch, widget.stop);
   }
 
   @override
   void didUpdateWidget(covariant _StopCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.dispatch.isCheckedIn && widget.dispatch.isCheckedIn) {
-      _isExpanded = _isCurrentActiveStop;
-    } else if (!oldWidget.dispatch.isCheckedOut && widget.dispatch.isCheckedOut) {
+    final becameCheckedOut = !oldWidget.dispatch.isCheckedOut && widget.dispatch.isCheckedOut;
+    final becameArrived = !oldWidget.stop.isArrived && widget.stop.isArrived;
+    final wasActive = _isActiveOn(oldWidget.dispatch, oldWidget.stop);
+    final isActive = _isActiveOn(widget.dispatch, widget.stop);
+    if (becameCheckedOut || becameArrived) {
       _isExpanded = false;
+    } else if ((!wasActive && isActive) || (!oldWidget.dispatch.isCheckedIn && widget.dispatch.isCheckedIn)) {
+      _isExpanded = isActive;
     }
   }
 
@@ -1626,6 +1800,14 @@ class _StopCardState extends State<_StopCard> {
 
           // If Expanded: reveal School Actions & Student Attendance Manifest
           if (_isExpanded) ...[
+            if (!stop.isSchoolStop && !stop.isArrived)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _buildArrivalButton(context, canOperate, 'Arrival at Stop'),
+                ),
+              ),
             if (stop.isSchoolStop)
               _buildSchoolActionBar(context, canOperate),
             Padding(
@@ -1686,6 +1868,31 @@ class _StopCardState extends State<_StopCard> {
     );
   }
 
+  Widget _buildArrivalButton(BuildContext context, bool canOperate, String label) {
+    final stop = widget.stop;
+    final dispatch = widget.dispatch;
+    return ElevatedButton.icon(
+      onPressed: canOperate
+          ? () {
+              context.read<DispatchBloc>().add(
+                    RecordStopArrivalEvent(
+                      dispatchId: dispatch.id,
+                      stopId: stop.stopId,
+                    ),
+                  );
+            }
+          : null,
+      icon: const Icon(Icons.place_rounded, size: 16),
+      label: Text(label),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.primary,
+        foregroundColor: const Color(0xFF0F172A),
+        minimumSize: const Size(0, 36),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+      ),
+    );
+  }
+
   Widget _buildSchoolActionBar(BuildContext context, bool canOperate) {
     final isMorningRun = widget.dispatch.shiftType == 'AM';
     final stop = widget.stop;
@@ -1707,27 +1914,7 @@ class _StopCardState extends State<_StopCard> {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           // Arrival Button
-          if (!stop.isArrived)
-            ElevatedButton.icon(
-              onPressed: canOperate
-                  ? () {
-                      context.read<DispatchBloc>().add(
-                            RecordStopArrivalEvent(
-                              dispatchId: dispatch.id,
-                              stopId: stop.stopId,
-                            ),
-                          );
-                    }
-                  : null,
-              icon: const Icon(Icons.place_rounded, size: 16),
-              label: const Text('Arrival at School'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: const Color(0xFF0F172A),
-                minimumSize: const Size(0, 36),
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-              ),
-            )
+          if (!stop.isArrived) _buildArrivalButton(context, canOperate, 'Arrival at School')
           else
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

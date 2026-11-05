@@ -40,15 +40,22 @@ class DispatchLoaded extends DispatchState {
     String? actionFeedback,
     String? errorMessage,
     bool clearMessages = false,
+    bool clearActiveDispatch = false,
   }) {
+    final nextFeedback = clearMessages
+        ? null
+        : actionFeedback ?? (errorMessage != null ? null : this.actionFeedback);
+    final nextError = clearMessages
+        ? null
+        : errorMessage ?? (actionFeedback != null ? null : this.errorMessage);
     return DispatchLoaded(
       selectedDate: selectedDate ?? this.selectedDate,
       isToday: isToday ?? this.isToday,
       isReadOnly: isReadOnly ?? this.isReadOnly,
       dispatches: dispatches ?? this.dispatches,
-      activeDispatch: activeDispatch ?? this.activeDispatch,
-      actionFeedback: clearMessages ? null : (actionFeedback ?? this.actionFeedback),
-      errorMessage: clearMessages ? null : (errorMessage ?? this.errorMessage),
+      activeDispatch: clearActiveDispatch ? null : (activeDispatch ?? this.activeDispatch),
+      actionFeedback: nextFeedback,
+      errorMessage: nextError,
     );
   }
 

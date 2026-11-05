@@ -25,7 +25,7 @@ class RouteLoaded extends RouteState {
     this.searchQuery = '',
   });
 
-  List<DriverRouteStop> get displayedStops {
+  List<DriverRouteStop> get shiftStops {
     if (route == null) return [];
     final stops = <DriverRouteStop>[];
     for (final shift in route!.shifts) {
@@ -36,7 +36,14 @@ class RouteLoaded extends RouteState {
     return stops;
   }
 
-  List<DriverRouteStudent> get allUniqueStudents {
+  List<DriverRouteStop> get displayedStops {
+    final stops = shiftStops;
+    final q = searchQuery.toLowerCase().trim();
+    if (q.isEmpty) return stops;
+    return stops.where((stop) => _stopMatchesQuery(stop, q)).toList();
+  }
+
+  List<DriverRouteStudent> get rosterStudents {
     if (route == null) return [];
     final map = <int, DriverRouteStudent>{};
     for (final shift in route!.shifts) {
@@ -48,19 +55,14 @@ class RouteLoaded extends RouteState {
         }
       }
     }
+    return map.values.toList();
+  }
 
-    final list = map.values.toList();
-    if (searchQuery.trim().isEmpty) {
-      return list;
-    }
-
+  List<DriverRouteStudent> get allUniqueStudents {
+    final list = rosterStudents;
     final q = searchQuery.toLowerCase().trim();
-    return list.where((s) {
-      return s.name.toLowerCase().contains(q) ||
-          s.studentNo.toLowerCase().contains(q) ||
-          s.schoolName.toLowerCase().contains(q) ||
-          s.address.toLowerCase().contains(q);
-    }).toList();
+    if (q.isEmpty) return list;
+    return list.where((student) => _studentMatchesQuery(student, q)).toList();
   }
 
   List<DriverRouteStudent> get filteredStudents => allUniqueStudents;
@@ -87,6 +89,21 @@ class RouteLoaded extends RouteState {
         selectedShiftType,
         searchQuery,
       ];
+}
+
+bool _studentMatchesQuery(DriverRouteStudent student, String query) {
+  return student.name.toLowerCase().contains(query) ||
+      student.studentNo.toLowerCase().contains(query) ||
+      student.schoolName.toLowerCase().contains(query) ||
+      student.address.toLowerCase().contains(query);
+}
+
+bool _stopMatchesQuery(DriverRouteStop stop, String query) {
+  if (stop.location.toLowerCase().contains(query)) return true;
+  if ((stop.schoolName ?? '').toLowerCase().contains(query)) return true;
+  if ((stop.instruction ?? '').toLowerCase().contains(query)) return true;
+  if (stop.stopType.toLowerCase().contains(query)) return true;
+  return stop.students.any((student) => _studentMatchesQuery(student, query));
 }
 
 class RouteError extends RouteState {

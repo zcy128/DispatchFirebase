@@ -148,6 +148,7 @@ class DispatchStop extends Equatable {
     String? arrivedTime,
     bool? isArrived,
     List<StudentAttendance>? students,
+    bool clearArrivedTime = false,
   }) {
     return DispatchStop(
       stopId: stopId ?? this.stopId,
@@ -157,7 +158,7 @@ class DispatchStop extends Equatable {
       isSchoolStop: isSchoolStop ?? this.isSchoolStop,
       schoolName: schoolName ?? this.schoolName,
       plannedTime: plannedTime ?? this.plannedTime,
-      arrivedTime: arrivedTime ?? this.arrivedTime,
+      arrivedTime: clearArrivedTime ? null : (arrivedTime ?? this.arrivedTime),
       isArrived: isArrived ?? this.isArrived,
       students: students ?? this.students,
     );
@@ -301,6 +302,9 @@ class DispatchRecord extends Equatable {
     String? payOption,
     String? driverCheckoutComments,
     List<DispatchStop>? stops,
+    bool clearCheckInTime = false,
+    bool clearCheckOutTime = false,
+    bool clearCheckoutComments = false,
   }) {
     return DispatchRecord(
       id: id ?? this.id,
@@ -318,11 +322,13 @@ class DispatchRecord extends Equatable {
       vehicleUnit: vehicleUnit ?? this.vehicleUnit,
       yardName: yardName ?? this.yardName,
       status: status ?? this.status,
-      checkInTime: checkInTime ?? this.checkInTime,
-      checkOutTime: checkOutTime ?? this.checkOutTime,
+      checkInTime: clearCheckInTime ? null : (checkInTime ?? this.checkInTime),
+      checkOutTime: clearCheckOutTime ? null : (checkOutTime ?? this.checkOutTime),
       payrollRate: payrollRate ?? this.payrollRate,
       payOption: payOption ?? this.payOption,
-      driverCheckoutComments: driverCheckoutComments ?? this.driverCheckoutComments,
+      driverCheckoutComments: clearCheckoutComments
+          ? null
+          : (driverCheckoutComments ?? this.driverCheckoutComments),
       stops: stops ?? this.stops,
     );
   }
