@@ -1,0 +1,272 @@
+# Demo deploy for pushes to main.
+#
+# API (Cloud Run) runs only when server or Cloud Build config changes.
+# The office console, driver web app, and parent web app share one Firebase
+# Hosting site, so any frontend change rebuilds all three and deploys Hosting
+# once. Unchanged frontends are rebuilt from the same commit.
+#
+# This workflow deploys the public demo (APP_MODE=demo). It does not deploy
+# Firestore rules, Storage rules, or native store builds.
+#
+# One-time GitHub secrets:
+#   GCP_WORKLOAD_IDENTITY_PROVIDER  Workload Identity Provider resource name
+#   GCP_SERVICE_ACCOUNT             Deployer service account email
+#   VITE_FIREBASE_API_KEY
+#   VITE_FIREBASE_AUTH_DOMAIN
+#   VITE_FIREBASE_PROJECT_ID
+#   VITE_FIREBASE_STORAGE_BUCKET
+#   VITE_FIREBASE_MESSAGING_SENDER_ID
+#   VITE_FIREBASE_APP_ID
+#   VITE_FIREBASE_MEASUREMENT_ID    optional
+#   VITE_GOOGLE_MAPS_API_KEY        optional
+#   DRIVER_FIREBASE_OPTIONS         optional Dart source for driver_app/lib/firebase_options.dart
+#
+# The service account needs Cloud Build, Cloud Run, and Firebase Hosting deploy
+# permissions on schoolbusdispatchapp. Do not store a service account key in the repo.
+
+name: Deploy demo
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-demo-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: schoolbusdispatchapp
+
+jobs:
+  changes:
+    name: Detect changed apps
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api == 'true' || github.event_name == 'workflow_dispatch' }}
+      hosting: ${{ steps.filter.outputs.hosting == 'true' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            api:
+              - 'server/**'
+              - 'deploy/cloudbuild.yaml'
+              - '.github/workflows/deploy-demo.yml'
+            hosting:
+              - 'web/**'
+              - 'driver_app/**'
+              - 'parent_app/**'
+              - 'firebase.json'
+              - '.firebaserc'
+              - '.github/workflows/deploy-demo.yml'
+
+  deploy-api:
+    name: Test and deploy API
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Test API
+        working-directory: server
+        run: go test ./...
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy API to Cloud Run
+        run: gcloud builds submit --project "$GCP_PROJECT_ID" --config deploy/cloudbuild.yaml --substitutions=COMMIT_SHA="${{ github.sha }}" .
+
+  driver-web:
+    name: Test and build driver web
+    needs: changes
+    if: needs.changes.outputs.hosting == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Prepare driver Firebase client files
+        env:
+          DRIVER_FIREBASE_OPTIONS: ${{ secrets.DRIVER_FIREBASE_OPTIONS }}
+        run: |
+          set -euo pipefail
+          cp driver_app/lib/firebase_options.dart.example driver_app/lib/firebase_options.dart
+          cp driver_app/web/firebase-messaging-sw.js.example driver_app/web/firebase-messaging-sw.js
+          if [ -n "${DRIVER_FIREBASE_OPTIONS}" ]; then
+            printf '%s\n' "${DRIVER_FIREBASE_OPTIONS}" > driver_app/lib/firebase_options.dart
+          fi
+
+      - name: Test driver app
+        working-directory: driver_app
+        run: flutter test
+
+      - name: Build driver web
+        working-directory: driver_app
+        run: flutter build web --release --base-href /driver/
+
+      - name: Upload driver web
+        uses: actions/upload-artifact@v4
+        with:
+          name: driver-web
+          path: driver_app/build/web
+          retention-days: 1
+          if-no-files-found: error
+
+  parent-web:
+    name: Test and build parent web
+    needs: changes
+    if: needs.changes.outputs.hosting == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Test parent app
+        working-directory: parent_app
+        run: flutter test
+
+      - name: Build parent web
+        working-directory: parent_app
+        run: flutter build web --release --base-href /parent/
+
+      - name: Upload parent web
+        uses: actions/upload-artifact@v4
+        with:
+          name: parent-web
+          path: parent_app/build/web
+          retention-days: 1
+          if-no-files-found: error
+
+  web-test:
+    name: Test office web
+    needs: changes
+    if: needs.changes.outputs.hosting == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Test office web
+        working-directory: web
+        run: |
+          npm ci
+          npm test
+
+  deploy-hosting:
+    name: Build office web and deploy Hosting
+    needs: [changes, deploy-api, driver-web, parent-web, web-test]
+    if: >-
+      always() &&
+      !cancelled() &&
+      (needs.changes.outputs.hosting == 'true' || needs.changes.outputs.hosting == true) &&
+      needs.driver-web.result == 'success' &&
+      needs.parent-web.result == 'success' &&
+      needs.web-test.result == 'success' &&
+      (needs.changes.outputs.api != 'true' || needs.deploy-api.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download driver web
+        uses: actions/download-artifact@v4
+        with:
+          name: driver-web
+          path: driver_app/build/web
+
+      - name: Download parent web
+        uses: actions/download-artifact@v4
+        with:
+          name: parent-web
+          path: parent_app/build/web
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build office web
+        working-directory: web
+        env:
+          VITE_APP_MODE: demo
+          VITE_API_BASE_URL: /api
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -f ../driver_app/build/web/index.html
+          test -f ../parent_app/build/web/index.html
+          npm ci
+          npm run build
+          test -f dist/index.html
+          test -f dist/driver/index.html
+          test -f dist/parent/index.html
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Deploy Firebase Hosting
+        run: npx --yes firebase-tools@14 deploy --only hosting --project "$GCP_PROJECT_ID" --non-interactive
