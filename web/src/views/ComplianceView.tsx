@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Employee } from '../types/employee';
 import { Vehicle } from '../types/vehicle';
 import { useCompliance } from '../contexts/ComplianceContext';
@@ -32,41 +32,115 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
     return Math.ceil((new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   };
 
-  // Drivers CDL calculations
-  const drivers = employees.filter((e) => e.driverLicense != null);
-  const driverExpiredList = drivers.filter((d) => getDaysDiff(d.driverLicense!.expirationDate) <= 0);
-  const driverUrgentList = drivers.filter((d) => {
-    const days = getDaysDiff(d.driverLicense!.expirationDate);
-    return days > 0 && days <= 30;
-  });
-  const driverCompliantList = drivers.filter((d) => getDaysDiff(d.driverLicense!.expirationDate) > 30);
+  // Drivers CDL calculations & classifications with single-pass iteration and memoization
+  const {
+    drivers,
+    sortedDrivers,
+    driverExpiredList,
+    driverUrgentList,
+    driverCompliantList
+  } = useMemo(() => {
+    const now = Date.now();
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    const driversArr: Employee[] = [];
+    const expired: Employee[] = [];
+    const urgent: Employee[] = [];
+    const compliant: Employee[] = [];
 
-  // Vehicle Semi-Annual Safety Inspection calculations
-  const preInspectionWindow = complianceConfig.advancePreInspectionDays || 21;
-  const vehiclesWithInspection = vehicles.map((v) => {
-    const dueStr = v.nextInspectionDue || v.licenseExpiry || '2026-11-30';
-    const daysLeft = getDaysDiff(dueStr);
-    const isExpired = daysLeft <= 0;
-    const isPreDue = !isExpired && daysLeft <= preInspectionWindow;
-    const isArchived =
-      v.hasInVehicleCertificate !== false &&
-      v.hasDetailedMeasurementsArchived !== false &&
-      v.hasProofOfRepairsAttached !== false;
+    for (const e of employees) {
+      if (!e.driverLicense) continue;
+      driversArr.push(e);
+      const days = Math.ceil((new Date(e.driverLicense.expirationDate).getTime() - now) / MS_PER_DAY);
+      if (days <= 0) {
+        expired.push(e);
+      } else if (days <= 30) {
+        urgent.push(e);
+      } else {
+        compliant.push(e);
+      }
+    }
+
+    const sorted = [...driversArr].sort(
+      (a, b) =>
+        new Date(a.driverLicense!.expirationDate).getTime() -
+        new Date(b.driverLicense!.expirationDate).getTime()
+    );
+
     return {
-      vehicle: v,
-      dueStr,
-      daysLeft,
-      isExpired,
-      isPreDue,
-      isCompliant: !isExpired && !isPreDue,
-      isArchived
+      drivers: driversArr,
+      sortedDrivers: sorted,
+      driverExpiredList: expired,
+      driverUrgentList: urgent,
+      driverCompliantList: compliant
     };
-  });
+  }, [employees]);
 
-  const vehExpired = vehiclesWithInspection.filter((v) => v.isExpired);
-  const vehPreDue = vehiclesWithInspection.filter((v) => v.isPreDue);
-  const vehCompliant = vehiclesWithInspection.filter((v) => v.isCompliant);
-  const vehArchived = vehiclesWithInspection.filter((v) => v.isArchived);
+  // Vehicle Semi-Annual Safety Inspection calculations with single-pass iteration and memoization
+  const preInspectionWindow = complianceConfig.advancePreInspectionDays || 21;
+
+  const {
+    sortedVehiclesWithInspection,
+    vehExpired,
+    vehPreDue,
+    vehCompliant,
+    vehArchived
+  } = useMemo(() => {
+    const now = Date.now();
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    const list: Array<{
+      vehicle: Vehicle;
+      dueStr: string;
+      daysLeft: number;
+      isExpired: boolean;
+      isPreDue: boolean;
+      isCompliant: boolean;
+      isArchived: boolean;
+    }> = [];
+    const expired: typeof list = [];
+    const preDue: typeof list = [];
+    const compliant: typeof list = [];
+    const archived: typeof list = [];
+
+    for (const v of vehicles) {
+      const dueStr = v.nextInspectionDue || v.licenseExpiry || '2026-11-30';
+      const daysLeft = Math.ceil((new Date(dueStr).getTime() - now) / MS_PER_DAY);
+      const isExpired = daysLeft <= 0;
+      const isPreDue = !isExpired && daysLeft <= preInspectionWindow;
+      const isArchived =
+        v.hasInVehicleCertificate !== false &&
+        v.hasDetailedMeasurementsArchived !== false &&
+        v.hasProofOfRepairsAttached !== false;
+
+      const item = {
+        vehicle: v,
+        dueStr,
+        daysLeft,
+        isExpired,
+        isPreDue,
+        isCompliant: !isExpired && !isPreDue,
+        isArchived
+      };
+
+      list.push(item);
+      if (isExpired) expired.push(item);
+      if (isPreDue) preDue.push(item);
+      if (item.isCompliant) compliant.push(item);
+      if (isArchived) archived.push(item);
+    }
+
+    const sorted = [...list].sort(
+      (a, b) => new Date(a.dueStr).getTime() - new Date(b.dueStr).getTime()
+    );
+
+    return {
+      vehiclesWithInspection: list,
+      sortedVehiclesWithInspection: sorted,
+      vehExpired: expired,
+      vehPreDue: preDue,
+      vehCompliant: compliant,
+      vehArchived: archived
+    };
+  }, [vehicles, preInspectionWindow]);
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -265,9 +339,7 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {vehiclesWithInspection
-                    .sort((a, b) => new Date(a.dueStr).getTime() - new Date(b.dueStr).getTime())
-                    .map(({ vehicle: v, dueStr, daysLeft, isExpired, isPreDue }) => {
+                  {sortedVehiclesWithInspection.map(({ vehicle: v, dueStr, daysLeft, isExpired, isPreDue }) => {
                       return (
                         <tr
                           key={v.id}
@@ -507,13 +579,7 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {drivers
-                    .sort(
-                      (a, b) =>
-                        new Date(a.driverLicense!.expirationDate).getTime() -
-                        new Date(b.driverLicense!.expirationDate).getTime()
-                    )
-                    .map((d) => {
+                  {sortedDrivers.map((d) => {
                       const days = getDaysDiff(d.driverLicense!.expirationDate);
                       return (
                         <tr

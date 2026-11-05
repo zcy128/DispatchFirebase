@@ -32,6 +32,7 @@ interface OptimizeRouteModalProps {
   onClose: () => void;
   shift: BusRouteShift;
   route: BusRoute;
+  employees: Employee[];
   onApplyOptimizedStops: (optimizedStops: RouteStop[]) => Promise<void>;
 }
 
@@ -40,6 +41,7 @@ export const OptimizeRouteModal: React.FC<OptimizeRouteModalProps> = ({
   onClose,
   shift,
   route,
+  employees,
   onApplyOptimizedStops
 }) => {
   const { t } = useI18n();
@@ -78,17 +80,25 @@ export const OptimizeRouteModal: React.FC<OptimizeRouteModalProps> = ({
       .catch(console.error);
 
     const driverId = shift?.driverId || route?.driverId;
-    if (driverId) {
-      EmployeeService.list()
-        .then((emps) => {
-          const match = emps.find(
-            (e) => e.id === driverId || e.employeeNumber === driverId || String(e.employeeId) === driverId
-          );
-          if (match) setDriver(match);
-        })
-        .catch(console.error);
+    if (!driverId) return;
+    const matchesDriver = (employee: Employee) =>
+      employee.id === driverId ||
+      employee.employeeNumber === driverId ||
+      String(employee.employeeId) === driverId;
+    const knownDriver = employees.find(matchesDriver);
+    if (knownDriver) {
+      setDriver(knownDriver);
+      return;
     }
-  }, [isOpen, shift, route]);
+    if (employees.length > 0) return;
+
+    EmployeeService.list()
+      .then((emps) => {
+        const match = emps.find(matchesDriver);
+        if (match) setDriver(match);
+      })
+      .catch(console.error);
+  }, [isOpen, shift, route, employees]);
 
   // Compute driver coords if available
   const driverCoords = useMemo(() => {
@@ -100,6 +110,17 @@ export const OptimizeRouteModal: React.FC<OptimizeRouteModalProps> = ({
 
   // Run the initial 2-Opt optimization
   const initialOptimizationResult = useMemo<OptimizationResult>(() => {
+    if (!isOpen) {
+      return {
+        optimizedStops: originalStops,
+        originalDistanceMeters: 0,
+        optimizedDistanceMeters: 0,
+        savedDistanceMeters: 0,
+        savingsPercentage: 0,
+        originalDurationMinutes: 0,
+        optimizedDurationMinutes: 0,
+      };
+    }
     return optimizeStopSequence(originalStops, {
       shiftType: shift?.shiftType || 'AM',
       driverCoords,
@@ -109,12 +130,13 @@ export const OptimizeRouteModal: React.FC<OptimizeRouteModalProps> = ({
       averageSpeedKmH: settings.averageSpeedKmH,
       schoolBoardOrRouteName: route?.schoolBoardCode || route?.routeName
     });
-  }, [originalStops, shift?.shiftType, driverCoords, includeDriverHome, recalculateTimes, settings, route]);
+  }, [isOpen, originalStops, shift?.shiftType, driverCoords, includeDriverHome, recalculateTimes, settings, route]);
 
   // Sync workingStops when optimization result changes
   useEffect(() => {
+    if (!isOpen) return;
     setWorkingStops(initialOptimizationResult.optimizedStops);
-  }, [initialOptimizationResult]);
+  }, [isOpen, initialOptimizationResult]);
 
   // Re-calculate metrics live based on current workingStops
   const currentMetrics = useMemo(() => {

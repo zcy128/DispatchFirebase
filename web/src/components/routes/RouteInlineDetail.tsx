@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { BusRoute, BusRouteShift, RouteStop, getShiftBadgeStyle, formatOpDays, isAutoMarryupEnabled } from '../../types/route';
 import { Student } from '../../types/student';
 import { School } from '../../types/school';
+import { Employee } from '../../types/employee';
 import { RouteService } from '../../services/routeService';
-import { SchoolService } from '../../services/schoolService';
 import { StudentService } from '../../services/studentService';
 import { useAuth } from '../../contexts/AuthContext';
 import { RouteAuditService } from '../../services/routeAuditService';
@@ -38,7 +38,7 @@ import {
 import { RouteStudentItineraryView } from './RouteStudentItineraryView';
 import { ShiftEditModal } from './ShiftEditModal';
 import { StopEditModal } from './StopEditModal';
-import { ShiftGoogleMapView } from './ShiftGoogleMapView';
+import { LazyShiftGoogleMapView, preloadShiftGoogleMapView } from './LazyShiftGoogleMapView';
 import { OptimizeRouteModal } from './OptimizeRouteModal';
 import { RouteSettingsService } from '../../services/routeSettingsService';
 import { recalculateStopTimes } from '../../utils/routeOptimizer';
@@ -46,18 +46,22 @@ import { recalculateStopTimes } from '../../utils/routeOptimizer';
 interface RouteInlineDetailProps {
   route: BusRoute;
   studentsMap: Record<number, Student>;
+  schools: School[];
+  employees: Employee[];
   onSelectStudent?: (student: Student) => void;
   onOpenDrawer?: (route: BusRoute) => void;
   onRouteUpdated?: (route: BusRoute) => void;
 }
 
-export const RouteInlineDetail: React.FC<RouteInlineDetailProps> = ({
+export const RouteInlineDetail = memo(function RouteInlineDetail({
   route,
   studentsMap,
+  schools,
+  employees,
   onSelectStudent,
   onOpenDrawer,
   onRouteUpdated
-}) => {
+}: RouteInlineDetailProps) {
   const { t } = useI18n();
   const { currentUser } = useAuth();
   const [viewMode, setViewMode] = useState<'students' | 'stops' | 'map'>('students');
@@ -69,7 +73,6 @@ export const RouteInlineDetail: React.FC<RouteInlineDetailProps> = ({
   const [expandedStopIds, setExpandedStopIds] = useState<Record<number, boolean>>({});
 
   // Add Student modal states
-  const [schools, setSchools] = useState<School[]>([]);
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<number | ''>('');
   const [targetScope, setTargetScope] = useState<'shift' | 'route'>('shift');
@@ -93,9 +96,8 @@ export const RouteInlineDetail: React.FC<RouteInlineDetailProps> = ({
     const targetShift = shifts.find((r) => r.id === shiftId);
 
     await RouteService.updateShift(shiftId, updates);
-    await handleRefreshShifts();
 
-    // Audit Log: Shift Changes
+    // Audit does not depend on the refreshed shift list, so start it before the reload.
     if (targetShift) {
       const diffs: RouteChangeFieldDiff[] = [];
       if (updates.runDays !== undefined && updates.runDays !== targetShift.runDays) {
@@ -134,6 +136,8 @@ export const RouteInlineDetail: React.FC<RouteInlineDetailProps> = ({
         }).catch((err) => console.warn('[RouteInlineDetail] Shift audit warning:', err));
       }
     }
+
+    await handleRefreshShifts();
 
     if (onRouteUpdated) {
       const updatedShifts = (route.shifts || []).map((s) => {
@@ -338,15 +342,6 @@ export const RouteInlineDetail: React.FC<RouteInlineDetailProps> = ({
       })
       .finally(() => {
         if (isMounted) setLoading(false);
-      });
-
-    // Pre-fetch schools for accurate bell times & locations
-    SchoolService.list()
-      .then((schoolList) => {
-        if (isMounted) setSchools(schoolList || []);
-      })
-      .catch((err) => {
-        console.warn('Failed to load schools for stop assignment:', err);
       });
 
     return () => {
@@ -637,6 +632,8 @@ export const RouteInlineDetail: React.FC<RouteInlineDetailProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('map')}
+              onMouseEnter={preloadShiftGoogleMapView}
+              onFocus={preloadShiftGoogleMapView}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 ${
                 viewMode === 'map'
                   ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
@@ -682,10 +679,11 @@ export const RouteInlineDetail: React.FC<RouteInlineDetailProps> = ({
           }}
         />
       ) : viewMode === 'map' ? (
-        <ShiftGoogleMapView
+        <LazyShiftGoogleMapView
           shift={activeShift}
           route={route}
           studentsMap={studentsMap}
+          employees={employees}
           showBus={false}
           onSelectStudent={onSelectStudent}
           onUpdateShift={(updatedShift) => {
@@ -1266,15 +1264,16 @@ export const RouteInlineDetail: React.FC<RouteInlineDetailProps> = ({
       />
 
       {/* Stop Sequence Optimization Modal */}
-      {activeShift && (
+      {isOptimizeModalOpen && activeShift && (
         <OptimizeRouteModal
-          isOpen={isOptimizeModalOpen}
+          isOpen
           onClose={() => setIsOptimizeModalOpen(false)}
           shift={activeShift}
           route={route}
+          employees={employees}
           onApplyOptimizedStops={handleApplyOptimizedStopsFromModal}
         />
       )}
     </div>
   );
-};
+});

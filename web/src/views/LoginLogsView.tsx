@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
@@ -30,6 +30,12 @@ const getTodayStr = (): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+const csvCell = (value: string) => {
+  const raw = value || '';
+  const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replace(/"/g, '""')}"`;
+};
+
 const changeDateByDays = (dateStr: string, days: number): string => {
   try {
     const [year, month, day] = dateStr.split('-').map(Number);
@@ -41,6 +47,168 @@ const changeDateByDays = (dateStr: string, days: number): string => {
   }
 };
 
+const LoginLogRow = memo(function LoginLogRow({ log }: { log: LoginLogEntry }) {
+  const isSuccess = log.status === 'success';
+  const isDriverApp = (log.app || '').toLowerCase().includes('driver');
+  const timeStr = log.timestamp.includes('T') ? log.timestamp.split('T')[1].slice(0, 8) : log.timestamp;
+
+  return (
+    <tr className="hover:bg-slate-800/40 transition-colors h-[54px]">
+      <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">
+        <div className="text-[10px] text-slate-500">{log.date}</div>
+        <div className="text-white font-medium flex items-center space-x-1 mt-0.5">
+          <Clock className="w-3 h-3 text-amber-500/70" />
+          <span>{timeStr}</span>
+        </div>
+      </td>
+      <td className="py-3 px-4 whitespace-nowrap">
+        {isSuccess ? (
+          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Success</span>
+          </span>
+        ) : (
+          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+            <XCircle className="w-3.5 h-3.5" />
+            <span>Failure</span>
+          </span>
+        )}
+      </td>
+      <td className="py-3 px-4">
+        <span className="font-mono text-amber-300 font-semibold text-xs">{log.username}</span>
+        {log.employeeId && (
+          <span className="text-[10px] text-slate-400 block font-mono">ID: {log.employeeId}</span>
+        )}
+      </td>
+      <td className="py-3 px-4 font-medium text-white">
+        {log.employeeName ? (
+          <div className="flex items-center space-x-2">
+            <div className="w-6 h-6 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-amber-400 font-bold">
+              {log.employeeName.charAt(0)}
+            </div>
+            <span>{log.employeeName}</span>
+          </div>
+        ) : (
+          <span className="text-slate-500 italic text-[11px]">—</span>
+        )}
+      </td>
+      <td className="py-3 px-4">
+        <div className="flex items-center space-x-1.5 font-medium text-white">
+          {isDriverApp ? (
+            <Smartphone className="w-3.5 h-3.5 text-sky-400" />
+          ) : (
+            <Monitor className="w-3.5 h-3.5 text-purple-400" />
+          )}
+          <span>{log.app}</span>
+        </div>
+        <span className="text-[10px] text-amber-400 font-mono block mt-0.5">{log.appVersion}</span>
+      </td>
+      <td className="py-3 px-4 whitespace-nowrap">
+        {log.role ? (
+          <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-slate-800 border border-slate-700 text-slate-300">
+            {log.role}
+          </span>
+        ) : (
+          <span className="text-slate-500 text-[11px]">—</span>
+        )}
+      </td>
+      <td className="py-3 px-4 text-[11px]">
+        {!isSuccess && log.failureReason ? (
+          <span className="text-rose-400 font-medium">{log.failureReason}</span>
+        ) : log.deviceInfo ? (
+          <span className="text-slate-400 truncate max-w-xs block" title={log.deviceInfo}>
+            {log.deviceInfo}
+          </span>
+        ) : (
+          <span className="text-emerald-400">Authorized Session</span>
+        )}
+      </td>
+    </tr>
+  );
+});
+
+const LoginLogTable = memo(function LoginLogTable({
+  logs,
+  selectedDate,
+}: {
+  logs: LoginLogEntry[];
+  selectedDate: string;
+}) {
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: logs.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 54,
+    overscan: 12,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start || 0 : 0;
+  const paddingBottom =
+    virtualRows.length > 0
+      ? rowVirtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1]?.end || 0)
+      : 0;
+  const windowLabel =
+    virtualRows.length > 0
+      ? `${virtualRows[0].index + 1} - ${virtualRows[virtualRows.length - 1].index + 1}`
+      : '0';
+
+  return (
+    <>
+      <div className="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center space-x-2">
+          <span className="text-xs font-bold text-white uppercase tracking-wider">
+            Audit Trail Records ({selectedDate})
+          </span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
+            {logs.length} matching
+          </span>
+        </div>
+        <div className="flex items-center space-x-3 text-[11px] text-slate-400">
+          <span className="flex items-center gap-1.5 text-sky-400 font-medium">
+            <Zap className="w-3.5 h-3.5" />
+            Virtual Scroll: {windowLabel} of {logs.length}
+          </span>
+          <span className="hidden sm:inline text-slate-500">|</span>
+          <span className="hidden sm:inline">Real-time sync active</span>
+        </div>
+      </div>
+      <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[640px] scrollbar-thin">
+        <table className="w-full text-left border-collapse">
+          <thead className="sticky top-0 z-10 bg-slate-950 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800 shadow-md">
+            <tr>
+              <th className="py-3 px-4 whitespace-nowrap">Time</th>
+              <th className="py-3 px-4 whitespace-nowrap">Status</th>
+              <th className="py-3 px-4 whitespace-nowrap">Username / Identity</th>
+              <th className="py-3 px-4 whitespace-nowrap">Employee Full Name</th>
+              <th className="py-3 px-4 whitespace-nowrap">App & Version</th>
+              <th className="py-3 px-4 whitespace-nowrap">Role</th>
+              <th className="py-3 px-4">Details / Failure Note / Device</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/60 text-xs text-slate-300">
+            {paddingTop > 0 && (
+              <tr>
+                <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={7} />
+              </tr>
+            )}
+            {virtualRows.map((virtualRow) => {
+              const log = logs[virtualRow.index];
+              if (!log) return null;
+              return <LoginLogRow key={log.id} log={log} />;
+            })}
+            {paddingBottom > 0 && (
+              <tr>
+                <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={7} />
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+});
+
 export const LoginLogsView: React.FC = () => {
   const { currentUser } = useAuth();
   const { isFrench } = useI18n();
@@ -49,8 +217,18 @@ export const LoginLogsView: React.FC = () => {
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
   // Date Selection: default to today (daily logs ~1,000 records)
-  const todayStr = useMemo(() => getTodayStr(), []);
+  const [todayStr, setTodayStr] = useState(getTodayStr);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const dateSeqRef = useRef(0);
+  const refreshSeqRef = useRef(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const next = getTodayStr();
+      setTodayStr((current) => (current === next ? current : next));
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -59,23 +237,35 @@ export const LoginLogsView: React.FC = () => {
   const [appFilter, setAppFilter] = useState<string>('all');
   const [versionFilter, setVersionFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<LoginStatus | 'all'>('all');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const deferredUsernameFilter = useDeferredValue(usernameFilter);
+  const deferredEmployeeNameFilter = useDeferredValue(employeeNameFilter);
+  const deferredVersionFilter = useDeferredValue(versionFilter);
 
   // Strict Admin Access Check
   const isAdmin = currentUser?.role?.toLowerCase() === 'admin';
 
   // Load and listen to logs for the selected date
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
 
+    const dateSeq = ++dateSeqRef.current;
+    refreshSeqRef.current += 1;
     setLoading(true);
+    setLogs([]);
     const unsubscribe = LoginLogService.subscribeToLogs(
       selectedDate,
       (updatedLogs) => {
+        if (dateSeq !== dateSeqRef.current) return;
         setLogs(updatedLogs);
         setLoading(false);
         setRefreshing(false);
       },
       () => {
+        if (dateSeq !== dateSeqRef.current) return;
         setLoading(false);
         setRefreshing(false);
       }
@@ -85,10 +275,19 @@ export const LoginLogsView: React.FC = () => {
   }, [isAdmin, selectedDate]);
 
   const handleManualRefresh = async () => {
+    const dateSeq = dateSeqRef.current;
+    const refreshSeq = ++refreshSeqRef.current;
+    const date = selectedDate;
     setRefreshing(true);
-    const fetched = await LoginLogService.getLogs(selectedDate);
-    setLogs(fetched);
-    setRefreshing(false);
+    try {
+      const fetched = await LoginLogService.getLogs(date);
+      if (dateSeq !== dateSeqRef.current || refreshSeq !== refreshSeqRef.current) return;
+      setLogs(fetched);
+    } finally {
+      if (dateSeq === dateSeqRef.current && refreshSeq === refreshSeqRef.current) {
+        setRefreshing(false);
+      }
+    }
   };
 
   // Recent 7 days for quick day tabs
@@ -111,60 +310,30 @@ export const LoginLogsView: React.FC = () => {
 
   // Filtered logs
   const filteredLogs = useMemo(() => {
+    const keyword = deferredSearchQuery.trim().toLowerCase();
+    const usernameQuery = deferredUsernameFilter.trim().toLowerCase();
+    const employeeQuery = deferredEmployeeNameFilter.trim().toLowerCase();
+    const versionQuery = deferredVersionFilter.trim().toLowerCase();
+    const appQuery = appFilter === 'all' ? '' : appFilter.toLowerCase();
+
     return logs.filter((log) => {
-      // Date filter (safety check)
-      if (selectedDate && log.date && log.date !== selectedDate) {
-        return false;
-      }
-
-      // Status filter
-      if (statusFilter !== 'all' && log.status !== statusFilter) {
-        return false;
-      }
-
-      // App filter
-      if (appFilter !== 'all' && (log.app || '').toLowerCase() !== appFilter.toLowerCase()) {
-        return false;
-      }
-
-      // Version filter
-      if (versionFilter.trim()) {
-        const vQuery = versionFilter.trim().toLowerCase();
-        if (!log.appVersion?.toLowerCase().includes(vQuery)) {
-          return false;
-        }
-      }
-
-      // Username filter
-      if (usernameFilter.trim()) {
-        const uQuery = usernameFilter.trim().toLowerCase();
-        if (!log.username?.toLowerCase().includes(uQuery)) {
-          return false;
-        }
-      }
-
-      // Employee name filter
-      if (employeeNameFilter.trim()) {
-        const eQuery = employeeNameFilter.trim().toLowerCase();
-        if (!log.employeeName?.toLowerCase().includes(eQuery)) {
-          return false;
-        }
-      }
-
-      // Global freeform search
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
+      if (selectedDate && log.date && log.date !== selectedDate) return false;
+      if (statusFilter !== 'all' && log.status !== statusFilter) return false;
+      if (appQuery && (log.app || '').toLowerCase() !== appQuery) return false;
+      if (versionQuery && !log.appVersion?.toLowerCase().includes(versionQuery)) return false;
+      if (usernameQuery && !log.username?.toLowerCase().includes(usernameQuery)) return false;
+      if (employeeQuery && !log.employeeName?.toLowerCase().includes(employeeQuery)) return false;
+      if (keyword) {
         const match =
-          log.username?.toLowerCase().includes(q) ||
-          log.employeeName?.toLowerCase().includes(q) ||
-          log.app?.toLowerCase().includes(q) ||
-          log.appVersion?.toLowerCase().includes(q) ||
-          log.failureReason?.toLowerCase().includes(q) ||
-          log.role?.toLowerCase().includes(q) ||
-          log.deviceInfo?.toLowerCase().includes(q);
+          log.username?.toLowerCase().includes(keyword) ||
+          log.employeeName?.toLowerCase().includes(keyword) ||
+          log.app?.toLowerCase().includes(keyword) ||
+          log.appVersion?.toLowerCase().includes(keyword) ||
+          log.failureReason?.toLowerCase().includes(keyword) ||
+          log.role?.toLowerCase().includes(keyword) ||
+          log.deviceInfo?.toLowerCase().includes(keyword);
         if (!match) return false;
       }
-
       return true;
     });
   }, [
@@ -172,61 +341,51 @@ export const LoginLogsView: React.FC = () => {
     selectedDate,
     statusFilter,
     appFilter,
-    versionFilter,
-    usernameFilter,
-    employeeNameFilter,
-    searchQuery
+    deferredVersionFilter,
+    deferredUsernameFilter,
+    deferredEmployeeNameFilter,
+    deferredSearchQuery,
   ]);
 
-  // Aggregate statistics for the selected date
   const stats = useMemo(() => {
+    let successes = 0;
+    let failures = 0;
+    for (const log of filteredLogs) {
+      if (log.status === 'success') successes += 1;
+      else if (log.status === 'failure') failures += 1;
+    }
     const total = filteredLogs.length;
-    const successes = filteredLogs.filter((l) => l.status === 'success').length;
-    const failures = filteredLogs.filter((l) => l.status === 'failure').length;
     const successRate = total > 0 ? Math.round((successes / total) * 100) : null;
     return { total, successes, failures, successRate };
   }, [filteredLogs]);
 
-  // Virtual Scrolling for ~1000 daily login logs
-  const tableContainerRef = useRef<HTMLDivElement>(null);
-  const rowVirtualizer = useVirtualizer({
-    count: filteredLogs.length,
-    getScrollElement: () => tableContainerRef.current,
-    estimateSize: () => 54, // Approximate row height in px
-    overscan: 12,
-  });
-
-  const virtualRows = rowVirtualizer.getVirtualItems();
-  const paddingTop = virtualRows.length > 0 ? virtualRows[0]?.start || 0 : 0;
-  const paddingBottom = virtualRows.length > 0
-    ? rowVirtualizer.getTotalSize() - (virtualRows[virtualRows.length - 1]?.end || 0)
-    : 0;
-
   const handleExportCSV = () => {
     if (filteredLogs.length === 0) return;
     const headers = ['Timestamp', 'Date', 'Status', 'Username', 'Employee Name', 'Role', 'App', 'Version', 'Failure Reason', 'Device Info', 'IP Address'];
-    const rows = filteredLogs.map((l) => [
-      `"${l.timestamp}"`,
-      `"${l.date}"`,
-      `"${l.status}"`,
-      `"${l.username}"`,
-      `"${l.employeeName || ''}"`,
-      `"${l.role || ''}"`,
-      `"${l.app}"`,
-      `"${l.appVersion}"`,
-      `"${l.failureReason || ''}"`,
-      `"${l.deviceInfo || ''}"`,
-      `"${l.ipAddress || ''}"`
+    const rows = filteredLogs.map((log) => [
+      csvCell(log.timestamp),
+      csvCell(log.date),
+      csvCell(log.status),
+      csvCell(log.username),
+      csvCell(log.employeeName || ''),
+      csvCell(log.role || ''),
+      csvCell(log.app),
+      csvCell(log.appVersion),
+      csvCell(log.failureReason || ''),
+      csvCell(log.deviceInfo || ''),
+      csvCell(log.ipAddress || ''),
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = `\uFEFF${[headers.join(','), ...rows.map((row) => row.join(','))].join('\n')}`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `login_logs_${selectedDate}.csv`);
+    link.href = url;
+    link.download = `login_logs_${selectedDate}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleClearFilters = () => {
@@ -536,27 +695,7 @@ export const LoginLogsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Logs Table with Virtual Scrolling */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-        <div className="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-bold text-white uppercase tracking-wider">
-              Audit Trail Records ({selectedDate})
-            </span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
-              {filteredLogs.length} matching
-            </span>
-          </div>
-          <div className="flex items-center space-x-3 text-[11px] text-slate-400">
-            <span className="flex items-center gap-1.5 text-sky-400 font-medium">
-              <Zap className="w-3.5 h-3.5" />
-              Virtual Scroll: {virtualRows.length > 0 ? `${virtualRows[0].index + 1} - ${virtualRows[virtualRows.length - 1].index + 1}` : 0} of {filteredLogs.length}
-            </span>
-            <span className="hidden sm:inline text-slate-500">|</span>
-            <span className="hidden sm:inline">Real-time sync active</span>
-          </div>
-        </div>
-
         {loading ? (
           <div className="p-16 text-center text-slate-400 text-xs">
             <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-amber-500" />
@@ -575,149 +714,7 @@ export const LoginLogsView: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div
-            ref={tableContainerRef}
-            className="overflow-x-auto overflow-y-auto max-h-[640px] scrollbar-thin"
-          >
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 z-10 bg-slate-950 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800 shadow-md">
-                <tr>
-                  <th className="py-3 px-4 whitespace-nowrap">Time</th>
-                  <th className="py-3 px-4 whitespace-nowrap">Status</th>
-                  <th className="py-3 px-4 whitespace-nowrap">Username / Identity</th>
-                  <th className="py-3 px-4 whitespace-nowrap">Employee Full Name</th>
-                  <th className="py-3 px-4 whitespace-nowrap">App & Version</th>
-                  <th className="py-3 px-4 whitespace-nowrap">Role</th>
-                  <th className="py-3 px-4">Details / Failure Note / Device</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 text-xs text-slate-300">
-                {/* Top spacer for virtual scrolling */}
-                {paddingTop > 0 && (
-                  <tr>
-                    <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={7} />
-                  </tr>
-                )}
-
-                {/* Rendered virtual items */}
-                {virtualRows.map((virtualRow) => {
-                  const log = filteredLogs[virtualRow.index];
-                  if (!log) return null;
-
-                  const isSuccess = log.status === 'success';
-                  const isDriverApp = log.app.toLowerCase().includes('driver');
-                  const timeStr = log.timestamp.includes('T')
-                    ? log.timestamp.split('T')[1].slice(0, 8)
-                    : log.timestamp;
-
-                  return (
-                    <tr
-                      key={log.id}
-                      className="hover:bg-slate-800/40 transition-colors h-[54px]"
-                    >
-                      {/* Timestamp */}
-                      <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">
-                        <div className="text-[10px] text-slate-500">{log.date}</div>
-                        <div className="text-white font-medium flex items-center space-x-1 mt-0.5">
-                          <Clock className="w-3 h-3 text-amber-500/70" />
-                          <span>{timeStr}</span>
-                        </div>
-                      </td>
-
-                      {/* Status */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {isSuccess ? (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Success</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                            <XCircle className="w-3.5 h-3.5" />
-                            <span>Failure</span>
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Username */}
-                      <td className="py-3 px-4">
-                        <span className="font-mono text-amber-300 font-semibold text-xs">
-                          {log.username}
-                        </span>
-                        {log.employeeId && (
-                          <span className="text-[10px] text-slate-400 block font-mono">
-                            ID: {log.employeeId}
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Employee Name */}
-                      <td className="py-3 px-4 font-medium text-white">
-                        {log.employeeName ? (
-                          <div className="flex items-center space-x-2">
-                            <div className="w-6 h-6 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-amber-400 font-bold">
-                              {log.employeeName.charAt(0)}
-                            </div>
-                            <span>{log.employeeName}</span>
-                          </div>
-                        ) : (
-                          <span className="text-slate-500 italic text-[11px]">—</span>
-                        )}
-                      </td>
-
-                      {/* App & Version */}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center space-x-1.5 font-medium text-white">
-                          {isDriverApp ? (
-                            <Smartphone className="w-3.5 h-3.5 text-sky-400" />
-                          ) : (
-                            <Monitor className="w-3.5 h-3.5 text-purple-400" />
-                          )}
-                          <span>{log.app}</span>
-                        </div>
-                        <span className="text-[10px] text-amber-400 font-mono block mt-0.5">
-                          {log.appVersion}
-                        </span>
-                      </td>
-
-                      {/* Role */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {log.role ? (
-                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-slate-800 border border-slate-700 text-slate-300">
-                            {log.role}
-                          </span>
-                        ) : (
-                          <span className="text-slate-500 text-[11px]">—</span>
-                        )}
-                      </td>
-
-                      {/* Details / Failure Reason */}
-                      <td className="py-3 px-4 text-[11px]">
-                        {!isSuccess && log.failureReason ? (
-                          <span className="text-rose-400 font-medium">
-                            {log.failureReason}
-                          </span>
-                        ) : log.deviceInfo ? (
-                          <span className="text-slate-400 truncate max-w-xs block" title={log.deviceInfo}>
-                            {log.deviceInfo}
-                          </span>
-                        ) : (
-                          <span className="text-emerald-400">Authorized Session</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {/* Bottom spacer for virtual scrolling */}
-                {paddingBottom > 0 && (
-                  <tr>
-                    <td style={{ height: `${paddingBottom}px`, padding: 0, border: 0 }} colSpan={7} />
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <LoginLogTable logs={filteredLogs} selectedDate={selectedDate} />
         )}
       </div>
     </div>

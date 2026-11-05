@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   DollarSign,
   Plus,
@@ -25,12 +25,6 @@ import {
   RateCalculationResponse,
 } from '../types/payroll';
 import { PayrollService } from '../services/payrollService';
-import { CustomRateModal } from '../components/payroll/CustomRateModal';
-import { BoardBaseRateModal } from '../components/payroll/BoardBaseRateModal';
-import { DispatchPaySettingsTab } from '../components/payroll/DispatchPaySettingsTab';
-import { DispatchDailyPayrollTab } from '../components/payroll/DispatchDailyPayrollTab';
-import { PayrollDepartmentLogView } from './PayrollDepartmentLogView';
-import { BiweeklyPayrollView } from './BiweeklyPayrollView';
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalTodayString } from '../utils/dateUtils';
 import { PayrollOperationLogService } from '../services/payrollOperationLogService';
@@ -38,6 +32,29 @@ import { PayrollOperationActor, PayrollFieldDiff } from '../types/payrollOperati
 import { SchoolBoard } from '../types/school';
 import { BusRoute } from '../types/route';
 import { Employee } from '../types/employee';
+
+const CustomRateModal = React.lazy(() =>
+  import('../components/payroll/CustomRateModal').then((m) => ({ default: m.CustomRateModal }))
+);
+const BoardBaseRateModal = React.lazy(() =>
+  import('../components/payroll/BoardBaseRateModal').then((m) => ({ default: m.BoardBaseRateModal }))
+);
+const DispatchPaySettingsTab = React.lazy(() =>
+  import('../components/payroll/DispatchPaySettingsTab').then((m) => ({ default: m.DispatchPaySettingsTab }))
+);
+const DispatchDailyPayrollTab = React.lazy(() =>
+  import('../components/payroll/DispatchDailyPayrollTab').then((m) => ({ default: m.DispatchDailyPayrollTab }))
+);
+const PayrollDepartmentLogView = React.lazy(() =>
+  import('./PayrollDepartmentLogView').then((m) => ({ default: m.PayrollDepartmentLogView }))
+);
+const BiweeklyPayrollView = React.lazy(() =>
+  import('./BiweeklyPayrollView').then((m) => ({ default: m.BiweeklyPayrollView }))
+);
+
+const TabFallback = (
+  <div className="p-8 text-sm text-slate-500 dark:text-slate-400">Loading payroll tab...</div>
+);
 
 interface PayrollRateViewProps {
   initialBoardRates?: SchoolBoardBaseRatesDTO[];
@@ -61,6 +78,9 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
   const [activeTab, setActiveTab] = useState<'board-rates' | 'custom-rates' | 'calculator' | 'dispatch-rates' | 'dispatch-payroll' | 'payroll-dept-log' | 'biweekly-payroll'>(
     currentUser?.role === 'payroll' ? 'payroll-dept-log' : 'board-rates'
   );
+  const openPayrollFinanceLog = useCallback(() => {
+    setActiveTab('payroll-dept-log');
+  }, []);
 
   // Data states initialized from permanent cache
   const [boardRates, setBoardRates] = useState<SchoolBoardBaseRatesDTO[]>(() => {
@@ -248,7 +268,28 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
   };
 
   useEffect(() => {
-    loadData();
+    const hasRateCache =
+      boardRates.length > 0 ||
+      customRates.length > 0 ||
+      (cachedRates && cachedRates.length > 0) ||
+      PayrollService.getCachedBoardRates().length > 0 ||
+      PayrollService.getCachedCustomRates().length > 0;
+
+    if (!hasRateCache) {
+      void loadData();
+      return;
+    }
+
+    setLoading(false);
+    if (!PayrollService.getCachedLookups()) {
+      PayrollService.getLookups()
+        .then((data) => {
+          if (data) setLookups(data);
+        })
+        .catch((err) => {
+          console.warn('Payroll lookups hydrate notice:', err);
+        });
+    }
   }, []);
 
   // Save handler for Custom Rate Modal
@@ -287,7 +328,7 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
           newValue: ratePayload.effectiveDate,
         });
       }
-      await PayrollOperationLogService.logOperation({
+      void PayrollOperationLogService.logOperation({
         category: 'custom_rate',
         action: 'update',
         targetId: String(editingCustomRate.id),
@@ -297,21 +338,21 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
         summary: `Updated custom payroll rate override rule for ${editingCustomRate.routeName || editingCustomRate.employeeName || 'custom route'}.`,
         actor,
         diffs,
-      });
-    } else {
-      await PayrollService.createRate(ratePayload);
-      await PayrollOperationLogService.logOperation({
-        category: 'custom_rate',
-        action: 'create',
-        targetId: 'new',
-        targetIdentifier: 'RATE-NEW',
-        targetName: ratePayload.routeName || ratePayload.employeeName || 'New Rate Rule',
-        amount: ratePayload.payRate,
-        summary: `Created custom payroll rate override rule with rate $${ratePayload.payRate ?? 0} for ${ratePayload.jobTitle || 'staff'}.`,
-        actor,
-      });
+      }).catch((err) => console.warn('Payroll rate update audit log failed:', err));
+      return;
     }
-    await loadData();
+
+    await PayrollService.createRate(ratePayload);
+    void PayrollOperationLogService.logOperation({
+      category: 'custom_rate',
+      action: 'create',
+      targetId: 'new',
+      targetIdentifier: 'RATE-NEW',
+      targetName: ratePayload.routeName || ratePayload.employeeName || 'New Rate Rule',
+      amount: ratePayload.payRate,
+      summary: `Created custom payroll rate override rule with rate $${ratePayload.payRate ?? 0} for ${ratePayload.jobTitle || 'staff'}.`,
+      actor,
+    }).catch((err) => console.warn('Payroll rate create audit log failed:', err));
   };
 
   // Delete handler for Custom Rate
@@ -322,13 +363,14 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
     const targetRate = customRates.find((r) => String(r.id) === String(id));
     try {
       await PayrollService.deleteRate(id);
+      setCustomRates((prev) => prev.filter((r) => String(r.id) !== String(id)));
       const actor: PayrollOperationActor = {
         userId: currentUser?.uid || 'dispatcher-1',
         userName: currentUser?.displayName || currentUser?.email || 'Dispatcher',
         userEmail: currentUser?.email,
         userRole: currentUser?.role || 'dispatcher',
       };
-      await PayrollOperationLogService.logOperation({
+      void PayrollOperationLogService.logOperation({
         category: 'custom_rate',
         action: 'delete',
         targetId: String(id),
@@ -337,14 +379,13 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
         amount: targetRate?.payRate,
         summary: `Deleted custom rate override rule for ${targetRate?.routeName || targetRate?.employeeName || id}.`,
         actor,
-      });
-      await loadData();
+      }).catch((err) => console.warn('Payroll rate delete audit log failed:', err));
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to delete rate');
     }
   };
 
-  // Run Rate Simulation
+  // Run Rate Simulation (manual only — do not auto-fire on lookups hydrate)
   const handleRunSimulation = async () => {
     setIsCalculating(true);
     try {
@@ -366,24 +407,20 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
     }
   };
 
-  // Trigger initial simulation when lookups or board are ready
-  useEffect(() => {
-    if (lookups.schoolBoards.length > 0) {
-      handleRunSimulation();
-    }
-  }, [lookups]);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   // Filtered custom rates
   const filteredCustomRates = useMemo(() => {
+    const q = deferredSearchQuery.trim().toLowerCase();
+    const jobFilter = filterJobTitle === 'all' ? '' : filterJobTitle.toLowerCase();
     return customRates.filter((rate) => {
       if (filterBoardId !== 'all' && rate.schoolBoardId !== Number(filterBoardId)) {
         return false;
       }
-      if (filterJobTitle !== 'all' && rate.jobTitle && rate.jobTitle.toLowerCase() !== filterJobTitle.toLowerCase()) {
+      if (jobFilter && rate.jobTitle && rate.jobTitle.toLowerCase() !== jobFilter) {
         return false;
       }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (q) {
         const routeMatch = (rate.routeNo || '').toLowerCase().includes(q) || (rate.routeName || '').toLowerCase().includes(q);
         const empMatch = (rate.employeeName || '').toLowerCase().includes(q);
         const boardMatch = (rate.schoolBoardName || '').toLowerCase().includes(q) || (rate.schoolBoardCode || '').toLowerCase().includes(q);
@@ -394,7 +431,7 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
       }
       return true;
     });
-  }, [customRates, filterBoardId, filterJobTitle, searchQuery]);
+  }, [customRates, filterBoardId, filterJobTitle, deferredSearchQuery]);
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
@@ -1183,59 +1220,85 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
       )}
 
       {/* TAB 4: DISPATCH SHIFT PAY RATES */}
-      {activeTab === 'dispatch-rates' && <DispatchPaySettingsTab />}
+      {activeTab === 'dispatch-rates' && (
+        <Suspense fallback={TabFallback}>
+          <DispatchPaySettingsTab />
+        </Suspense>
+      )}
 
       {/* TAB 5: DAILY DISPATCH PAYROLL */}
       {activeTab === 'dispatch-payroll' && (
-        <DispatchDailyPayrollTab onNavigateToFinanceLog={() => setActiveTab('payroll-dept-log')} />
+        <Suspense fallback={TabFallback}>
+          <DispatchDailyPayrollTab onNavigateToFinanceLog={openPayrollFinanceLog} />
+        </Suspense>
       )}
 
       {/* TAB 6: PAYROLL DEPARTMENT LOG */}
-      {activeTab === 'payroll-dept-log' && <PayrollDepartmentLogView />}
+      {activeTab === 'payroll-dept-log' && (
+        <Suspense fallback={TabFallback}>
+          <PayrollDepartmentLogView />
+        </Suspense>
+      )}
 
       {/* TAB 7: BI-WEEKLY PAYROLL SUMMARY */}
-      {activeTab === 'biweekly-payroll' && <BiweeklyPayrollView />}
+      {activeTab === 'biweekly-payroll' && (
+        <Suspense fallback={TabFallback}>
+          <BiweeklyPayrollView
+            boards={propsBoards}
+            employees={propsEmployees}
+            routes={propsRoutes}
+          />
+        </Suspense>
+      )}
 
       {/* Modals */}
-      <CustomRateModal
-        isOpen={isCustomModalOpen}
-        onClose={() => {
-          setIsCustomModalOpen(false);
-          setEditingCustomRate(null);
-        }}
-        onSave={handleSaveCustomRate}
-        editingRate={editingCustomRate}
-        lookups={lookups}
-      />
+      {isCustomModalOpen && (
+        <Suspense fallback={null}>
+          <CustomRateModal
+            isOpen
+            onClose={() => {
+              setIsCustomModalOpen(false);
+              setEditingCustomRate(null);
+            }}
+            onSave={handleSaveCustomRate}
+            editingRate={editingCustomRate}
+            lookups={lookups}
+          />
+        </Suspense>
+      )}
 
-      <BoardBaseRateModal
-        isOpen={isBoardModalOpen}
-        onClose={() => {
-          setIsBoardModalOpen(false);
-          setEditingBoardDTO(null);
-        }}
-        boardDTO={editingBoardDTO}
-        onSaveRate={async (rate) => {
-          await PayrollService.createRate(rate);
-          const actor: PayrollOperationActor = {
-            userId: currentUser?.uid || 'dispatcher-1',
-            userName: currentUser?.displayName || currentUser?.email || 'Dispatcher',
-            userEmail: currentUser?.email,
-            userRole: currentUser?.role || 'dispatcher',
-          };
-          await PayrollOperationLogService.logOperation({
-            category: 'base_rate',
-            action: 'create',
-            targetId: String(rate.schoolBoardId ?? 'board'),
-            targetIdentifier: `BOARD-${rate.schoolBoardId}`,
-            targetName: rate.schoolBoardName || `Board #${rate.schoolBoardId}`,
-            amount: rate.payRate,
-            summary: `Updated School Board Base Rate: $${rate.payRate ?? 0} for ${rate.jobTitle || 'staff'} (${rate.shiftType || 'AM'}).`,
-            actor,
-          });
-        }}
-        onRefresh={loadData}
-      />
+      {isBoardModalOpen && (
+        <Suspense fallback={null}>
+          <BoardBaseRateModal
+            isOpen
+            onClose={() => {
+              setIsBoardModalOpen(false);
+              setEditingBoardDTO(null);
+            }}
+            boardDTO={editingBoardDTO}
+            onSaveRate={async (rate) => {
+              await PayrollService.createRate(rate);
+              const actor: PayrollOperationActor = {
+                userId: currentUser?.uid || 'dispatcher-1',
+                userName: currentUser?.displayName || currentUser?.email || 'Dispatcher',
+                userEmail: currentUser?.email,
+                userRole: currentUser?.role || 'dispatcher',
+              };
+              void PayrollOperationLogService.logOperation({
+                category: 'base_rate',
+                action: 'create',
+                targetId: String(rate.schoolBoardId ?? 'board'),
+                targetIdentifier: `BOARD-${rate.schoolBoardId}`,
+                targetName: rate.schoolBoardName || `Board #${rate.schoolBoardId}`,
+                amount: rate.payRate,
+                summary: `Updated School Board Base Rate: $${rate.payRate ?? 0} for ${rate.jobTitle || 'staff'} (${rate.shiftType || 'AM'}).`,
+                actor,
+              }).catch((err) => console.warn('Payroll base rate audit log failed:', err));
+            }}
+            onRefresh={() => loadData(true)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

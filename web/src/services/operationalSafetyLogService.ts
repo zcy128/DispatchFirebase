@@ -1,8 +1,6 @@
 import {
   collection,
   addDoc,
-  query,
-  orderBy,
   onSnapshot
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -10,6 +8,12 @@ import {
   OperationalSafetyLog,
   OperationalSafetyLogFilter
 } from '../types/operationalSafetyLog';
+import {
+  capLogList,
+  isTimestampInBounds,
+  timestampLogQuery,
+  type TimestampLogBounds,
+} from './timestampLogQuery';
 
 const LOCAL_STORAGE_KEY = 'dispatch_operational_safety_logs';
 
@@ -71,7 +75,8 @@ export const OperationalSafetyLogService = {
   subscribeToLogs(
     filter: OperationalSafetyLogFilter = {},
     onUpdate: (logs: OperationalSafetyLog[]) => void,
-    onError?: (err: Error) => void
+    onError?: (err: Error) => void,
+    bounds?: TimestampLogBounds
   ): () => void {
     const applyFilter = (allLogs: OperationalSafetyLog[]): OperationalSafetyLog[] => {
       return allLogs
@@ -117,15 +122,20 @@ export const OperationalSafetyLogService = {
         .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     };
 
+    const publish = (logs: OperationalSafetyLog[]) => {
+      const windowed = logs.filter((item) => isTimestampInBounds(item.timestamp, bounds));
+      onUpdate(capLogList(applyFilter(windowed), bounds?.limitCount));
+    };
+
     if (!db) {
-      onUpdate(applyFilter(OperationalSafetyLogService.getStoredLogs()));
+      publish(OperationalSafetyLogService.getStoredLogs());
       return () => {};
     }
 
     try {
-      const q = query(collection(db, 'operational_safety_logs'), orderBy('timestamp', 'desc'));
+      const logQuery = timestampLogQuery(collection(db, 'operational_safety_logs'), bounds);
       const unsub = onSnapshot(
-        q,
+        logQuery,
         (snap) => {
           const remoteList: OperationalSafetyLog[] = [];
           snap.forEach((doc) => {
@@ -136,7 +146,7 @@ export const OperationalSafetyLogService = {
               id: doc.id
             });
           });
-          onUpdate(applyFilter(remoteList));
+          publish(remoteList);
         },
         (err) => {
           console.warn('[OperationalSafetyLogService] onSnapshot fallback:', err);

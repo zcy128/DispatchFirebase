@@ -28,6 +28,8 @@ import {
   calculateAttendantDeadhead
 } from '../../utils/deadheadCalculator';
 
+const EMPTY_ROUTES: BusRoute[] = [];
+
 interface RouteAssignModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -44,7 +46,7 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
   route,
   employees,
   vehicles,
-  allRoutes = [],
+  allRoutes = EMPTY_ROUTES,
   onSave
 }) => {
   const { currentUser } = useAuth();
@@ -121,6 +123,7 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
 
   // Ranked drivers sorted by deadhead distance
   const rankedDrivers = React.useMemo(() => {
+    if (!isOpen) return [];
     if (routeReferenceStops.length === 0 || !sortByDeadhead) {
       return driversList.map((d) => ({
         employee: d,
@@ -128,7 +131,7 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
       }));
     }
     return sortDriversByDeadhead(driversList, routeReferenceStops);
-  }, [driversList, routeReferenceStops, sortByDeadhead]);
+  }, [isOpen, driversList, routeReferenceStops, sortByDeadhead]);
 
   // Active vehicles sorted by unit number
   const activeVehicles = React.useMemo(() => {

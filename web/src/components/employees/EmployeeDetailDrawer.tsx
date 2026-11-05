@@ -41,15 +41,40 @@ export const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
       setAssignments([]);
       return;
     }
-    const unsub = AssignmentHistoryService.subscribeToHistory((all) => {
-      const empId = employee.id;
-      const empNum = employee.employeeNumber;
-      const filtered = all.filter(
-        (r) => r.driverId === empId || (empNum && r.driverId === empNum) || (r.driverNumber && r.driverNumber === empNum)
-      );
-      setAssignments(filtered);
-    });
-    return () => unsub();
+    let cancelled = false;
+    const empId = employee.id;
+    const empNum = employee.employeeNumber || '';
+    const driverIds = Array.from(new Set([empId, empNum].filter((id) => id)));
+    Promise.all(
+      driverIds.map((driverId) =>
+        AssignmentHistoryService.listHistory({ timeRange: '1year', driverId })
+      )
+    )
+      .then((groups) => {
+        if (cancelled) return;
+        const seen = new Set<string>();
+        const matched: AssignmentHistoryRecord[] = [];
+        for (const records of groups) {
+          for (const record of records) {
+            const matches =
+              record.driverId === empId ||
+              (empNum !== '' && record.driverId === empNum) ||
+              (empNum !== '' && record.driverNumber === empNum);
+            const key = record.id || `${record.timestamp}-${record.routeNo}-${record.driverId}`;
+            if (!matches || seen.has(key)) continue;
+            seen.add(key);
+            matched.push(record);
+          }
+        }
+        setAssignments(matched);
+      })
+      .catch((err) => {
+        console.warn('Employee assignment history load failed:', err);
+        if (!cancelled) setAssignments([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [employee]);
 
   if (!employee) return null;

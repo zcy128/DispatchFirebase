@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   CalendarOff,
@@ -30,31 +30,65 @@ import { BusRoute } from '../types/route';
 import { Employee } from '../types/employee';
 import { Vehicle } from '../types/vehicle';
 import { TimeOffService } from '../services/timeOffService';
-import { TimeOffModal } from '../components/time_off/TimeOffModal';
-import { TimeOffReviewModal } from '../components/time_off/TimeOffReviewModal';
-import { TimeOffSettingsModal } from '../components/time_off/TimeOffSettingsModal';
-import { TimeOffPdfModal } from '../components/time_off/TimeOffPdfModal';
-import { TimeOffMonthlyReport } from '../components/time_off/TimeOffMonthlyReport';
-import { TemporaryAssignmentModal } from '../components/dispatch/TemporaryAssignmentModal';
-import { RouteOpeningCreateModal } from '../components/dispatch/RouteOpeningCreateModal';
+import { ExportLoadingOverlay } from '../components/common/ExportLoadingOverlay';
 import { RouteOpeningRole } from '../types/routeOpening';
 import { TemporaryAssignment } from '../types/dispatch';
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalTodayString, safeFormatDate, addDaysToDateString, calculateDefaultDeadline } from '../utils/dateUtils';
 
+const TimeOffModal = React.lazy(() =>
+  import('../components/time_off/TimeOffModal').then((module) => ({
+    default: module.TimeOffModal,
+  }))
+);
+const TimeOffReviewModal = React.lazy(() =>
+  import('../components/time_off/TimeOffReviewModal').then((module) => ({
+    default: module.TimeOffReviewModal,
+  }))
+);
+const TimeOffSettingsModal = React.lazy(() =>
+  import('../components/time_off/TimeOffSettingsModal').then((module) => ({
+    default: module.TimeOffSettingsModal,
+  }))
+);
+const TemporaryAssignmentModal = React.lazy(() =>
+  import('../components/dispatch/TemporaryAssignmentModal').then((module) => ({
+    default: module.TemporaryAssignmentModal,
+  }))
+);
+const RouteOpeningCreateModal = React.lazy(() =>
+  import('../components/dispatch/RouteOpeningCreateModal').then((module) => ({
+    default: module.RouteOpeningCreateModal,
+  }))
+);
+const TimeOffPdfModal = React.lazy(() =>
+  import('../components/time_off/TimeOffPdfModal').then((module) => ({
+    default: module.TimeOffPdfModal,
+  }))
+);
+const TimeOffMonthlyReport = React.lazy(() =>
+  import('../components/time_off/TimeOffMonthlyReport').then((module) => ({
+    default: module.TimeOffMonthlyReport,
+  }))
+);
+
+const EMPTY_EMPLOYEES: Employee[] = [];
+const EMPTY_ROUTES: BusRoute[] = [];
+const EMPTY_VEHICLES: Vehicle[] = [];
+
 interface TimeOffViewProps {
-  employees: Employee[];
-  routes: BusRoute[];
-  vehicles: Vehicle[];
+  employees?: Employee[];
+  routes?: BusRoute[];
+  vehicles?: Vehicle[];
   onNavigateToTemporaryAssignments?: () => void;
 }
 
-export const TimeOffView: React.FC<TimeOffViewProps> = ({
-  employees,
-  routes,
-  vehicles,
+export const TimeOffView = memo(function TimeOffView({
+  employees = EMPTY_EMPLOYEES,
+  routes = EMPTY_ROUTES,
+  vehicles = EMPTY_VEHICLES,
   onNavigateToTemporaryAssignments
-}) => {
+}: TimeOffViewProps) {
   const { currentUser } = useAuth();
   const todayStr = getLocalTodayString();
 
@@ -183,15 +217,16 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
   };
 
   useEffect(() => {
-    loadData();
-
     const unsubscribe = TimeOffService.subscribeToTimeOffRequests(
       (updated) => {
         setRequests(Array.isArray(updated) ? updated : []);
         setLoading(false);
+        setError(null);
       },
       (err) => {
         console.error('Subscription error:', err);
+        setLoading(false);
+        setError('Failed to load time off requests. Please try again.');
       }
     );
 
@@ -320,51 +355,52 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
     setIsCreateOpeningModalOpen(true);
   };
 
-  // KPI Metrics (Pending excludes expired unapproved leaves)
-  const pendingCount = useMemo(() => {
-    return (effectiveRequests || []).filter((r) => r.status === 'pending' && r.endDate >= todayStr).length;
-  }, [effectiveRequests, todayStr]);
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const hotCount = requests.length;
+  const allCount = effectiveRequests.length;
 
-  const needsCoverageCount = useMemo(() => {
-    return (effectiveRequests || []).filter(
-      (r) =>
-        r.status === 'approved' &&
-        r.endDate >= todayStr &&
-        !r.coverageAssigned &&
-        r.startDate <= horizonLimitDateStr
-    ).length;
-  }, [effectiveRequests, todayStr, horizonLimitDateStr]);
-
-  const advanceBookingCount = useMemo(() => {
-    return (effectiveRequests || []).filter(
-      (r) =>
-        r.status === 'approved' &&
-        r.endDate >= todayStr &&
-        !r.coverageAssigned &&
-        r.startDate > horizonLimitDateStr
-    ).length;
-  }, [effectiveRequests, todayStr, horizonLimitDateStr]);
-
-  const activeTodayCount = useMemo(() => {
-    return (effectiveRequests || []).filter(
-      (r) => r.status === 'approved' && r.startDate <= todayStr && todayStr <= r.endDate
-    ).length;
-  }, [effectiveRequests, todayStr]);
-
-  const hotCount = useMemo(() => requests.length, [requests]);
-  const coldCount = useMemo(() => {
-    return (archivedRequests || []).filter((r) => r.isArchivedToBigQuery || r.endDate < thirtyDaysAgoStr).length;
-  }, [archivedRequests, thirtyDaysAgoStr]);
-
-  const allCount = useMemo(() => {
-    return (effectiveRequests || []).length;
-  }, [effectiveRequests]);
+  const {
+    pendingCount,
+    needsCoverageCount,
+    advanceBookingCount,
+    activeTodayCount,
+    coldCount,
+  } = useMemo(() => {
+    let pending = 0;
+    let needsCoverage = 0;
+    let advanceBooking = 0;
+    let activeToday = 0;
+    for (const r of effectiveRequests) {
+      if (r.status === 'pending' && r.endDate >= todayStr) {
+        pending += 1;
+      }
+      if (r.status === 'approved' && r.endDate >= todayStr && !r.coverageAssigned) {
+        if (r.startDate <= horizonLimitDateStr) needsCoverage += 1;
+        else advanceBooking += 1;
+      }
+      if (r.status === 'approved' && r.startDate <= todayStr && todayStr <= r.endDate) {
+        activeToday += 1;
+      }
+    }
+    let cold = 0;
+    for (const r of archivedRequests) {
+      if (r.isArchivedToBigQuery || r.endDate < thirtyDaysAgoStr) cold += 1;
+    }
+    return {
+      pendingCount: pending,
+      needsCoverageCount: needsCoverage,
+      advanceBookingCount: advanceBooking,
+      activeTodayCount: activeToday,
+      coldCount: cold,
+    };
+  }, [effectiveRequests, archivedRequests, todayStr, horizonLimitDateStr, thirtyDaysAgoStr]);
 
   // Filtering
   const filteredRequests = useMemo(() => {
-    const isSearching = searchTerm.trim().length > 0;
+    const term = deferredSearchTerm.trim().toLowerCase();
+    const isSearching = term.length > 0;
 
-    return (effectiveRequests || []).filter((r) => {
+    return effectiveRequests.filter((r) => {
       // Scope filter: My requests vs All
       if (viewScope === 'mine') {
         const isMine =
@@ -416,7 +452,6 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
 
       // Search term
       if (isSearching) {
-        const term = searchTerm.toLowerCase();
         const empMatch = (r.employeeName || '').toLowerCase().includes(term);
         const empNumMatch = (r.employeeNumber || '').toLowerCase().includes(term);
         const typeMatch = (LEAVE_TYPE_LABELS[r.leaveType] || r.leaveType).toLowerCase().includes(term);
@@ -439,7 +474,7 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
     filterSpecificDate,
     filterRangeStart,
     filterRangeEnd,
-    searchTerm,
+    deferredSearchTerm,
     currentUser,
     todayStr,
     horizonLimitDateStr,
@@ -579,13 +614,15 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
       </div>
 
       {viewMode === 'monthly_report' ? (
-        <TimeOffMonthlyReport
-          requests={effectiveRequests}
-          employees={employees}
-          routes={routes}
-          vehicles={vehicles}
-          onExportPdf={(r) => handleOpenPdfExport(r)}
-        />
+        <Suspense fallback={<ExportLoadingOverlay />}>
+          <TimeOffMonthlyReport
+            requests={effectiveRequests}
+            employees={employees}
+            routes={routes}
+            vehicles={vehicles}
+            onExportPdf={(r) => handleOpenPdfExport(r)}
+          />
+        </Suspense>
       ) : (
         <>
           {/* KPI Cards / Quick Category Filter */}
@@ -1294,122 +1331,128 @@ export const TimeOffView: React.FC<TimeOffViewProps> = ({
 
       {/* Submit / Edit Modal */}
       {isSubmitModalOpen && (
-        <TimeOffModal
-          isOpen={isSubmitModalOpen}
-          onClose={() => setIsSubmitModalOpen(false)}
-          request={editingRequest}
-          employees={employees}
-          onSaved={() => {
-            loadData();
-          }}
-        />
+        <Suspense fallback={null}>
+          <TimeOffModal
+            isOpen={isSubmitModalOpen}
+            onClose={() => setIsSubmitModalOpen(false)}
+            request={editingRequest}
+            employees={employees}
+            onSaved={() => {}}
+          />
+        </Suspense>
       )}
 
       {/* HR Review Modal */}
       {isReviewModalOpen && reviewingRequest && (
-        <TimeOffReviewModal
-          isOpen={isReviewModalOpen}
-          onClose={() => {
-            setIsReviewModalOpen(false);
-            setReviewingRequest(null);
-          }}
-          request={reviewingRequest}
-          employees={employees}
-          onDecisionCompleted={() => {
-            loadData();
-          }}
-        />
+        <Suspense fallback={null}>
+          <TimeOffReviewModal
+            isOpen={isReviewModalOpen}
+            onClose={() => {
+              setIsReviewModalOpen(false);
+              setReviewingRequest(null);
+            }}
+            request={reviewingRequest}
+            employees={employees}
+            onDecisionCompleted={() => {}}
+          />
+        </Suspense>
       )}
 
       {/* Settings Modal */}
       {isSettingsModalOpen && (
-        <TimeOffSettingsModal
-          isOpen={isSettingsModalOpen}
-          onClose={() => setIsSettingsModalOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <TimeOffSettingsModal
+            isOpen={isSettingsModalOpen}
+            onClose={() => setIsSettingsModalOpen(false)}
+          />
+        </Suspense>
       )}
 
       {/* Temporary Assignment Coverage Modal */}
       {isCoverModalOpen && coverInitialAssignment && (
-        <TemporaryAssignmentModal
-          isOpen={isCoverModalOpen}
-          onClose={() => {
-            setIsCoverModalOpen(false);
-            setCoverInitialAssignment(null);
-            setActiveTimeOffForCoverage(null);
-          }}
-          assignment={coverInitialAssignment}
-          routes={routes}
-          employees={employees}
-          vehicles={vehicles}
-          onSwitchToRouteOpening={() => {
-            if (activeTimeOffForCoverage) {
-              handlePostRouteOpening(activeTimeOffForCoverage);
-            }
-          }}
-          onSaved={async () => {
-            if (activeTimeOffForCoverage?.id) {
-              try {
-                await TimeOffService.updateTimeOffRequest(activeTimeOffForCoverage.id, {
-                  coverageAssigned: true,
-                  coverageAssignedAt: new Date().toISOString()
-                });
-              } catch (e) {
-                console.error('Failed to mark time off as coverage assigned', e);
+        <Suspense fallback={null}>
+          <TemporaryAssignmentModal
+            isOpen={isCoverModalOpen}
+            onClose={() => {
+              setIsCoverModalOpen(false);
+              setCoverInitialAssignment(null);
+              setActiveTimeOffForCoverage(null);
+            }}
+            assignment={coverInitialAssignment}
+            routes={routes}
+            employees={employees}
+            vehicles={vehicles}
+            onSwitchToRouteOpening={() => {
+              if (activeTimeOffForCoverage) {
+                handlePostRouteOpening(activeTimeOffForCoverage);
               }
-            }
-            loadData();
-            if (onNavigateToTemporaryAssignments) {
-              onNavigateToTemporaryAssignments();
-            }
-          }}
-        />
+            }}
+            onSaved={async () => {
+              if (activeTimeOffForCoverage?.id) {
+                try {
+                  await TimeOffService.updateTimeOffRequest(activeTimeOffForCoverage.id, {
+                    coverageAssigned: true,
+                    coverageAssignedAt: new Date().toISOString()
+                  });
+                } catch (e) {
+                  console.error('Failed to mark time off as coverage assigned', e);
+                }
+              }
+              if (onNavigateToTemporaryAssignments) {
+                onNavigateToTemporaryAssignments();
+              }
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Route Opening Bulletin Modal */}
       {isCreateOpeningModalOpen && (
-        <RouteOpeningCreateModal
-          isOpen={isCreateOpeningModalOpen}
-          onClose={() => {
-            setIsCreateOpeningModalOpen(false);
-            setOpeningInitialValues(null);
-            setActiveTimeOffForCoverage(null);
-          }}
-          routes={routes}
-          initialValues={openingInitialValues}
-          onCreated={async () => {
-            if (activeTimeOffForCoverage?.id) {
-              try {
-                await TimeOffService.updateTimeOffRequest(activeTimeOffForCoverage.id, {
-                  coverageAssigned: true,
-                  coverageAssignedAt: new Date().toISOString()
-                });
-              } catch (e) {
-                console.error('Failed to mark time off as coverage assigned', e);
+        <Suspense fallback={null}>
+          <RouteOpeningCreateModal
+            isOpen={isCreateOpeningModalOpen}
+            onClose={() => {
+              setIsCreateOpeningModalOpen(false);
+              setOpeningInitialValues(null);
+              setActiveTimeOffForCoverage(null);
+            }}
+            routes={routes}
+            initialValues={openingInitialValues}
+            onCreated={async () => {
+              if (activeTimeOffForCoverage?.id) {
+                try {
+                  await TimeOffService.updateTimeOffRequest(activeTimeOffForCoverage.id, {
+                    coverageAssigned: true,
+                    coverageAssignedAt: new Date().toISOString()
+                  });
+                } catch (e) {
+                  console.error('Failed to mark time off as coverage assigned', e);
+                }
               }
-            }
-            loadData();
-            if (onNavigateToTemporaryAssignments) {
-              onNavigateToTemporaryAssignments();
-            }
-          }}
-        />
+              if (onNavigateToTemporaryAssignments) {
+                onNavigateToTemporaryAssignments();
+              }
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Official Time Off PDF Authorization Form Modal */}
       {isPdfModalOpen && (
-        <TimeOffPdfModal
-          isOpen={isPdfModalOpen}
-          onClose={() => {
-            setIsPdfModalOpen(false);
-            setActiveTimeOffForPdf(null);
-          }}
-          request={activeTimeOffForPdf}
-          allRequests={filteredRequests.length > 0 ? filteredRequests : effectiveRequests}
-          employees={employees}
-          routes={routes}
-        />
+        <Suspense fallback={<ExportLoadingOverlay />}>
+          <TimeOffPdfModal
+            isOpen={isPdfModalOpen}
+            onClose={() => {
+              setIsPdfModalOpen(false);
+              setActiveTimeOffForPdf(null);
+            }}
+            request={activeTimeOffForPdf}
+            allRequests={filteredRequests.length > 0 ? filteredRequests : effectiveRequests}
+            employees={employees}
+            routes={routes}
+          />
+        </Suspense>
       )}
     </div>
   );
-};
+});

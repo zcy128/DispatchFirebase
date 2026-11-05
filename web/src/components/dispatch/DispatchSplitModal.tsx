@@ -64,8 +64,12 @@ const isSchoolStopType = (stopType?: string): boolean => {
   return t.includes('school') && !t.includes('home') && !t.includes('corner') && !t.includes('yard');
 };
 
-export const DispatchSplitModal: React.FC<DispatchSplitModalProps> = ({
-  isOpen,
+export const DispatchSplitModal: React.FC<DispatchSplitModalProps> = (props) => {
+  if (!props.isOpen || !props.shift) return null;
+  return <DispatchSplitModalContent {...props} shift={props.shift} />;
+};
+
+const DispatchSplitModalContent: React.FC<DispatchSplitModalProps & { shift: DispatchShift }> = ({
   onClose,
   shift,
   employees,
@@ -74,8 +78,6 @@ export const DispatchSplitModal: React.FC<DispatchSplitModalProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
-
-  if (!isOpen || !shift) return null;
 
   // Extract all unique students from shift stops, prioritizing their home pickup/dropoff stop for time & location
   const allStudents = useMemo(() => {

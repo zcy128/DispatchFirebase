@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   UserX,
@@ -22,9 +22,28 @@ import {
 } from 'lucide-react';
 import { StudentAbsenceRecord } from '../types/dispatch';
 import { DispatchService } from '../services/dispatchService';
-import { RecordStudentAbsenceModal } from '../components/dispatch/RecordStudentAbsenceModal';
 import { Student } from '../types/student';
 import { useI18n } from '../contexts/I18nContext';
+
+const RecordStudentAbsenceModal = React.lazy(() =>
+  import('../components/dispatch/RecordStudentAbsenceModal').then((m) => ({
+    default: m.RecordStudentAbsenceModal,
+  }))
+);
+
+// Pure date format helper
+function formatYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Check if an absence record originates from BigQuery cold storage
+function isColdAbsenceRecord(rec: StudentAbsenceRecord): boolean {
+  if (rec.isCold || rec.isArchivedToBigQuery) return true;
+  return DispatchService.isColdAbsence(rec.date);
+}
 
 interface StudentAbsencesViewProps {
   onSelectStudent?: (studentId: number) => void;
@@ -36,14 +55,6 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
   studentsMap = {},
 }) => {
   const { isFrench } = useI18n();
-
-  // Helper to format date as YYYY-MM-DD
-  const formatYMD = (d: Date): string => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
 
   // Today in YYYY-MM-DD
   const todayStr = useMemo(() => formatYMD(new Date()), []);
@@ -108,6 +119,7 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
 
   // Filters
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [selectedRoute, setSelectedRoute] = useState<string>('ALL');
   const [selectedShiftType, setSelectedShiftType] = useState<string>('ALL');
   const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
@@ -118,36 +130,40 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
 
   // Load absences from backend (Hybrid Dual-Engine: Firestore <= 6mo, BigQuery > 6mo)
-  const fetchAbsences = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await DispatchService.listStudentAbsences(
-        startDate,
-        endDate,
-        selectedRoute !== 'ALL' ? selectedRoute : undefined,
-        undefined,
-        selectedShiftType !== 'ALL' ? selectedShiftType : undefined,
-        searchTerm.trim() || undefined
-      );
-      setAbsences(Array.isArray(data) ? data : ((data as any)?.data || []));
-    } catch (err: any) {
-      console.error('Failed to load student absences:', err);
-      setError(err.message || (isFrench ? 'Échec du chargement des absences' : 'Failed to load absence records'));
-    } finally {
-      setLoading(false);
-    }
-  }, [startDate, endDate, selectedRoute, selectedShiftType, searchTerm, isFrench]);
+  const fetchAbsences = useCallback(
+    async (opts?: { isCancelled?: () => boolean }) => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await DispatchService.listStudentAbsences(
+          startDate,
+          endDate,
+          selectedRoute !== 'ALL' ? selectedRoute : undefined,
+          undefined,
+          selectedShiftType !== 'ALL' ? selectedShiftType : undefined
+        );
+        if (opts?.isCancelled && opts.isCancelled()) return;
+        setAbsences(Array.isArray(data) ? data : ((data as any)?.data || []));
+      } catch (err: any) {
+        if (opts?.isCancelled && opts.isCancelled()) return;
+        console.error('Failed to load student absences:', err);
+        setError(err.message || (isFrench ? 'Échec du chargement des absences' : 'Failed to load absence records'));
+      } finally {
+        if (!opts?.isCancelled || !opts.isCancelled()) {
+          setLoading(false);
+        }
+      }
+    },
+    [startDate, endDate, selectedRoute, selectedShiftType, isFrench]
+  );
 
   useEffect(() => {
-    fetchAbsences();
+    let isCancelled = false;
+    void fetchAbsences({ isCancelled: () => isCancelled });
+    return () => {
+      isCancelled = true;
+    };
   }, [fetchAbsences]);
-
-  // Check if an absence record originates from BigQuery cold storage
-  const isColdRecord = useCallback((rec: StudentAbsenceRecord): boolean => {
-    if (rec.isCold || rec.isArchivedToBigQuery) return true;
-    return DispatchService.isColdAbsence(rec.date);
-  }, []);
 
   // Handle Time Range Toggle
   const handleTimeRangeToggle = (newRange: '6months' | 'all') => {
@@ -232,25 +248,25 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
   // Distinct Route Numbers across loaded records
   const distinctRoutes = useMemo(() => {
     const set = new Set<string>();
-    absences.forEach((a) => {
+    for (const a of absences) {
       if (a.routeNo) set.add(a.routeNo);
-    });
+    }
     return Array.from(set).sort();
   }, [absences]);
 
   // Filtered & Sorted Absences
   const filteredAbsences = useMemo(() => {
-    const q = searchTerm.toLowerCase().trim();
+    const q = deferredSearchTerm.toLowerCase().trim();
     let list = absences;
 
     if (q) {
       list = absences.filter((a) => {
-        const nameMatch = a.studentName.toLowerCase().includes(q);
-        const noMatch = a.studentNo?.toLowerCase().includes(q);
+        const nameMatch = (a.studentName || '').toLowerCase().includes(q);
+        const noMatch = (a.studentNo || '').toLowerCase().includes(q);
         const idMatch = String(a.studentId).includes(q);
-        const schoolMatch = a.schoolName?.toLowerCase().includes(q);
-        const routeMatch = a.routeNo?.toLowerCase().includes(q);
-        const reasonMatch = a.reason?.toLowerCase().includes(q);
+        const schoolMatch = (a.schoolName || '').toLowerCase().includes(q);
+        const routeMatch = (a.routeNo || '').toLowerCase().includes(q);
+        const reasonMatch = (a.reason || '').toLowerCase().includes(q);
         return nameMatch || noMatch || idMatch || schoolMatch || routeMatch || reasonMatch;
       });
     }
@@ -261,14 +277,14 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
       const dateB = b.date || '';
       if (dateA !== dateB) {
         return sortDirection === 'desc'
-          ? dateB.localeCompare(dateA)
-          : dateA.localeCompare(dateB);
+          ? (dateB > dateA ? 1 : -1)
+          : (dateA > dateB ? 1 : -1);
       }
-      return a.studentName.localeCompare(b.studentName);
+      return (a.studentName || '').localeCompare(b.studentName || '');
     });
-  }, [absences, searchTerm, sortDirection]);
+  }, [absences, deferredSearchTerm, sortDirection]);
 
-  // Summary Metrics
+  // Summary Metrics (single-pass loop)
   const metrics = useMemo(() => {
     const total = filteredAbsences.length;
     let upcoming = 0;
@@ -276,26 +292,26 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
     let coldCount = 0;
     const routeCounts: Record<string, number> = {};
 
-    filteredAbsences.forEach((a) => {
+    for (const a of filteredAbsences) {
       if (a.date > todayStr) upcoming++;
       if (a.date === todayStr) todayCount++;
-      if (isColdRecord(a)) coldCount++;
+      if (isColdAbsenceRecord(a)) coldCount++;
       if (a.routeNo) {
         routeCounts[a.routeNo] = (routeCounts[a.routeNo] || 0) + 1;
       }
-    });
+    }
 
     let topRoute = '-';
     let maxRouteCount = 0;
-    Object.entries(routeCounts).forEach(([r, count]) => {
+    for (const [r, count] of Object.entries(routeCounts)) {
       if (count > maxRouteCount) {
         maxRouteCount = count;
         topRoute = `${r} (${count})`;
       }
-    });
+    }
 
     return { total, upcoming, todayCount, coldCount, topRoute };
-  }, [filteredAbsences, todayStr, isColdRecord]);
+  }, [filteredAbsences, todayStr]);
 
   // Virtual scrolling for 1,000+ student absence records
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -353,7 +369,7 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
       `"${a.reason.replace(/"/g, '""')}"`,
       `"${a.reportedBy || ''}"`,
       `"${a.reportedAt || ''}"`,
-      `"${isColdRecord(a) ? 'YES' : 'NO'}"`
+      `"${isColdAbsenceRecord(a) ? 'YES' : 'NO'}"`
     ]);
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -464,7 +480,7 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
           </div>
 
           <button
-            onClick={() => fetchAbsences()}
+            onClick={() => void fetchAbsences()}
             disabled={loading}
             className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
             title={isFrench ? 'Actualiser les absences' : 'Refresh absence records'}
@@ -796,7 +812,7 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
             <AlertCircle className="w-8 h-8 text-rose-400 mx-auto" />
             <div className="text-sm font-bold text-rose-300">{error}</div>
             <button
-              onClick={() => fetchAbsences()}
+              onClick={() => void fetchAbsences()}
               className="px-4 py-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg"
             >
               {isFrench ? 'Réessayer' : 'Retry'}
@@ -880,7 +896,7 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
                   const rec = filteredAbsences[virtualRow.index];
                   if (!rec) return null;
                   const studentObj = studentsMap[rec.studentId];
-                  const isCold = isColdRecord(rec);
+                  const isCold = isColdAbsenceRecord(rec);
 
                   return (
                     <tr
@@ -1031,14 +1047,18 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
       </div>
 
       {/* 6. Record Absence Modal */}
-      <RecordStudentAbsenceModal
-        isOpen={isLogModalOpen}
-        onClose={() => setIsLogModalOpen(false)}
-        initialDate={todayStr}
-        onAbsenceRecorded={() => {
-          fetchAbsences();
-        }}
-      />
+      {isLogModalOpen && (
+        <React.Suspense fallback={null}>
+          <RecordStudentAbsenceModal
+            isOpen={isLogModalOpen}
+            onClose={() => setIsLogModalOpen(false)}
+            initialDate={todayStr}
+            onAbsenceRecorded={() => {
+              void fetchAbsences();
+            }}
+          />
+        </React.Suspense>
+      )}
 
       {/* 7. Cancel Absence Confirmation Dialog */}
       {cancellingAbsence && (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Calendar,
@@ -16,16 +16,16 @@ import {
   Bus,
   CheckCircle2,
   Pencil,
-  X,
-  Save,
   ShieldCheck,
   Receipt,
+  X,
 } from 'lucide-react';
-import { PayrollDepartmentLogRecord, UpdatePayrollDepartmentLogPayload } from '../types/dispatch';
+import { PayrollDepartmentLogRecord } from '../types/dispatch';
 import { DispatchService } from '../services/dispatchService';
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalTodayString, addDaysToDateString } from '../utils/dateUtils';
 import { logDispatchAction } from '../utils/dispatchLogger';
+import { PayrollDeptLogEditModal } from '../components/payroll/PayrollDeptLogEditModal';
 
 const formatModifiedAt = (dateStr?: string) => {
   if (!dateStr) return '-';
@@ -50,9 +50,22 @@ interface PayrollDepartmentLogViewProps {
   initialDate?: string;
 }
 
-export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> = ({
+const isSpareDriverRecord = (item: PayrollDepartmentLogRecord) => {
+  const rateSource = (item.rateSource || '').toLowerCase();
+  const rateDescription = (item.rateDescription || '').toLowerCase();
+  const dispatcherComments = (item.dispatcherComments || '').toLowerCase();
+  const payrollNotes = (item.payrollNotes || '').toLowerCase();
+  return (
+    rateSource.includes('spare') ||
+    rateDescription.includes('spare') ||
+    dispatcherComments.includes('spare') ||
+    payrollNotes.includes('spare')
+  );
+};
+
+export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
   initialDate,
-}) => {
+}: PayrollDepartmentLogViewProps) {
   const { currentUser } = useAuth();
   const actorName = currentUser?.displayName || currentUser?.email || 'Payroll Staff';
 
@@ -77,6 +90,7 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
 
   // Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [roleFilter, setRoleFilter] = useState<'all' | 'driver' | 'attendant' | 'regular_driver' | 'spare_driver'>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sourceTypeFilter, setSourceTypeFilter] = useState<'all' | 'routes' | 'charter'>('all');
@@ -87,11 +101,6 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
 
   // Edit Modal State
   const [editingLog, setEditingLog] = useState<PayrollDepartmentLogRecord | null>(null);
-  const [editPayAmount, setEditPayAmount] = useState<number>(0);
-  const [editEiHours, setEditEiHours] = useState<number>(0);
-  const [editPayrollNotes, setEditPayrollNotes] = useState<string>('');
-  const [editStatus, setEditStatus] = useState<string>('approved');
-  const [savingEdit, setSavingEdit] = useState<boolean>(false);
 
   // Fetch data & subscribe to real-time updates
   useEffect(() => {
@@ -158,8 +167,8 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
       setSyncing(true);
       setSyncFeedback(null);
       const res = await DispatchService.syncCleanPayrollsForDate(selectedDate);
-      
-      await logDispatchAction({
+
+      void logDispatchAction({
         date: selectedDate,
         type: 'Payroll Synced',
         detail: `Finance synced daily dispatch payroll records for ${selectedDate} (${res.synced} clean records synced)`,
@@ -170,8 +179,6 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
         type: 'success',
         message: `Successfully synchronized ${res.synced} clean record(s) from daily dispatch for ${selectedDate}.`,
       });
-
-      await handleRefresh();
     } catch (err) {
       console.error('Failed to sync payroll from daily dispatch:', err);
       setSyncFeedback({
@@ -185,62 +192,19 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
 
   const handleOpenEdit = (rec: PayrollDepartmentLogRecord) => {
     setEditingLog(rec);
-    setEditPayAmount(rec.payAmount);
-    setEditEiHours(rec.eiHours);
-    setEditPayrollNotes(rec.payrollNotes || '');
-    setEditStatus(rec.status || 'approved');
   };
 
-  const handleSaveEdit = async () => {
-    if (!editingLog) return;
-    try {
-      setSavingEdit(true);
-      const payload: UpdatePayrollDepartmentLogPayload = {
-        payAmount: Number(editPayAmount),
-        eiHours: Number(editEiHours),
-        payrollNotes: editPayrollNotes,
-        status: editStatus,
-        updatedBy: actorName,
-      };
-      const updated = await DispatchService.updatePayrollDepartmentLog(editingLog.id, payload);
-      setLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+  const closeEditModal = useCallback(() => setEditingLog(null), []);
 
-      const changes: string[] = [];
-      if (editingLog.payAmount !== Number(editPayAmount)) {
-        changes.push(`Pay: $${editingLog.payAmount.toFixed(2)} -> $${Number(editPayAmount).toFixed(2)}`);
-      }
-      if (editingLog.eiHours !== Number(editEiHours)) {
-        changes.push(`EI: ${editingLog.eiHours}h -> ${Number(editEiHours)}h`);
-      }
-      if ((editingLog.status || 'approved') !== editStatus) {
-        changes.push(`Status: ${editingLog.status || 'approved'} -> ${editStatus}`);
-      }
-      if ((editingLog.payrollNotes || '') !== editPayrollNotes) {
-        changes.push(`Notes: "${editPayrollNotes}"`);
-      }
-      const detailStr = changes.length > 0
-        ? `Finance adjusted payroll log for ${editingLog.employeeName} (${editingLog.role}): [${changes.join(', ')}]`
-        : `Finance updated payroll log for ${editingLog.employeeName} (${editingLog.role})`;
-
-      await logDispatchAction({
-        date: editingLog.dispatchDate,
-        type: 'Payroll Log Modified',
-        detail: detailStr,
-        shift: { id: editingLog.shiftId, routeNo: editingLog.routeNo, shiftType: editingLog.shiftType },
-        user: actorName,
-      });
-
-      setEditingLog(null);
-    } catch (err) {
-      console.error('Failed to update payroll log:', err);
-      alert('Failed to update record: ' + (err as Error).message);
-    } finally {
-      setSavingEdit(false);
-    }
-  };
+  const applyLogUpdate = useCallback((updated: PayrollDepartmentLogRecord) => {
+    setLogs((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+  }, []);
 
   // Filtered logs
   const filteredLogs = useMemo(() => {
+    const searchTerm = deferredSearchQuery.trim().toLowerCase();
+    const statusTerm = statusFilter === 'all' ? '' : statusFilter.toLowerCase();
+
     return logs.filter((item) => {
       const isCharterItem = Boolean(item.isCharter || item.shiftType === 'CHARTER');
       if (sourceTypeFilter === 'charter' && !isCharterItem) {
@@ -256,49 +220,36 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
         } else if (roleFilter === 'driver') {
           if (itemRole !== 'driver') return false;
         } else if (roleFilter === 'spare_driver') {
-          if (itemRole !== 'driver') return false;
-          const isSpare =
-            (item.rateSource || '').toLowerCase().includes('spare') ||
-            (item.rateDescription || '').toLowerCase().includes('spare') ||
-            (item.dispatcherComments || '').toLowerCase().includes('spare') ||
-            (item.payrollNotes || '').toLowerCase().includes('spare');
-          if (!isSpare) return false;
+          if (itemRole !== 'driver' || !isSpareDriverRecord(item)) return false;
         } else if (roleFilter === 'regular_driver') {
-          if (itemRole !== 'driver') return false;
-          const isSpare =
-            (item.rateSource || '').toLowerCase().includes('spare') ||
-            (item.rateDescription || '').toLowerCase().includes('spare') ||
-            (item.dispatcherComments || '').toLowerCase().includes('spare') ||
-            (item.payrollNotes || '').toLowerCase().includes('spare');
-          if (isSpare) return false;
+          if (itemRole !== 'driver' || isSpareDriverRecord(item)) return false;
         }
       }
-      if (statusFilter !== 'all') {
+      if (statusTerm) {
         const itemStatus = (item.status || 'approved').toLowerCase();
-        if (statusFilter === 'pending_review') {
+        if (statusTerm === 'pending_review') {
           if (itemStatus !== 'pending_review' && itemStatus !== 'pending') return false;
-        } else if (itemStatus !== statusFilter.toLowerCase()) {
+        } else if (itemStatus !== statusTerm) {
           return false;
         }
       }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const routeMatch = (item.routeNo || '').toLowerCase().includes(q);
-        const nameMatch = (item.employeeName || '').toLowerCase().includes(q);
-        const empIdMatch = (item.employeeId || '').toLowerCase().includes(q);
-        const unitMatch = (item.unitNumber || '').toLowerCase().includes(q);
-        const notesMatch = (item.payrollNotes || '').toLowerCase().includes(q);
-        const commentsMatch = (item.dispatcherComments || '').toLowerCase().includes(q);
-        const clientMatch = (item.clientName || '').toLowerCase().includes(q);
+      if (searchTerm) {
+        const routeMatch = (item.routeNo || '').toLowerCase().includes(searchTerm);
+        const nameMatch = (item.employeeName || '').toLowerCase().includes(searchTerm);
+        const empIdMatch = (item.employeeId || '').toLowerCase().includes(searchTerm);
+        const unitMatch = (item.unitNumber || '').toLowerCase().includes(searchTerm);
+        const notesMatch = (item.payrollNotes || '').toLowerCase().includes(searchTerm);
+        const commentsMatch = (item.dispatcherComments || '').toLowerCase().includes(searchTerm);
+        const clientMatch = (item.clientName || '').toLowerCase().includes(searchTerm);
         if (!routeMatch && !nameMatch && !empIdMatch && !unitMatch && !notesMatch && !commentsMatch && !clientMatch) {
           return false;
         }
       }
       return true;
     });
-  }, [logs, sourceTypeFilter, roleFilter, statusFilter, searchQuery]);
+  }, [logs, sourceTypeFilter, roleFilter, statusFilter, deferredSearchQuery]);
 
-  // Aggregate statistics
+  // Day-level KPI cards (all records for selected date)
   const stats = useMemo(() => {
     let totalPay = 0;
     let totalEiHours = 0;
@@ -332,6 +283,20 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
       pendingOrHoldCount,
     };
   }, [logs]);
+
+  // Footer totals for the currently filtered table rows
+  const filteredTotals = useMemo(() => {
+    let totalPay = 0;
+    let totalEiHours = 0;
+    for (const r of filteredLogs) {
+      totalPay += r.payAmount || 0;
+      totalEiHours += r.eiHours || 0;
+    }
+    return {
+      totalPay: Number(totalPay.toFixed(2)),
+      totalEiHours: Number(totalEiHours.toFixed(1)),
+    };
+  }, [filteredLogs]);
 
   // Virtual scrolling container for large payroll logs
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -938,141 +903,25 @@ export const PayrollDepartmentLogView: React.FC<PayrollDepartmentLogViewProps> =
             </div>
             <div className="flex items-center gap-4 text-xs font-mono">
               <span>
-                Total Amount: <span className="font-bold text-emerald-600 dark:text-emerald-400">${stats.totalPay.toFixed(2)}</span>
+                Total Amount: <span className="font-bold text-emerald-600 dark:text-emerald-400">${filteredTotals.totalPay.toFixed(2)}</span>
               </span>
               <span>
-                Total Hours: <span className="font-bold text-slate-800 dark:text-slate-200">{stats.totalEiHours.toFixed(1)} hrs</span>
+                Total Hours: <span className="font-bold text-slate-800 dark:text-slate-200">{filteredTotals.totalEiHours.toFixed(1)} hrs</span>
               </span>
             </div>
           </div>
         )}
       </div>
 
-      {/* EDIT MODAL FOR PAYROLL STAFF */}
       {editingLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden animate-scale-in">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:divide-slate-800">
-              <div className="flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-emerald-500" />
-                <h3 className="font-bold text-slate-900 dark:text-white">
-                  Edit Payroll Record ({editingLog.employeeName})
-                </h3>
-              </div>
-              <button
-                onClick={() => setEditingLog(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 space-y-4">
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 space-y-1">
-                <div className="flex justify-between">
-                  <span>Route: <strong>{editingLog.routeNo}</strong> ({editingLog.shiftType})</span>
-                  <span>Role: <strong className="capitalize">{editingLog.role}</strong></span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Unit #: <strong>{editingLog.unitNumber || '-'}</strong></span>
-                  <span>Original Dispatch Rate: <strong>${editingLog.originalPayRate.toFixed(2)}</strong></span>
-                </div>
-                {editingLog.dispatcherComments && (
-                  <div className="pt-1 text-slate-500">
-                    Dispatch Comments: <em>{editingLog.dispatcherComments}</em>
-                  </div>
-                )}
-              </div>
-
-              {/* Pay Amount */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Adjusted Pay Amount ($)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={editPayAmount}
-                  onChange={(e) => setEditPayAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-
-              {/* EI Hours */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Insurable EI Hours
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={editEiHours}
-                  onChange={(e) => setEditEiHours(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-
-              {/* Status */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Payroll Processing Status
-                </label>
-                <select
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-hidden"
-                >
-                  <option value="approved">Approved (Ready for Processing)</option>
-                  <option value="processed">Processed</option>
-                  <option value="paid">Paid</option>
-                  <option value="on_hold">On Hold</option>
-                  <option value="pending_review">Pending Review</option>
-                  <option value="draft">Draft</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
-
-              {/* Payroll Department Internal Notes */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Finance / Payroll Department Internal Notes
-                </label>
-                <textarea
-                  rows={3}
-                  value={editPayrollNotes}
-                  onChange={(e) => setEditPayrollNotes(e.target.value)}
-                  placeholder="e.g. Rate adjusted per HR memo, verified GPS check-out time..."
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50/75 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setEditingLog(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEdit}
-                disabled={savingEdit}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>{savingEdit ? 'Saving...' : 'Save Changes'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <PayrollDeptLogEditModal
+          key={editingLog.id}
+          log={editingLog}
+          actorName={actorName}
+          onClose={closeEditModal}
+          onUpdated={applyLogUpdate}
+        />
       )}
     </div>
   );
-};
+});

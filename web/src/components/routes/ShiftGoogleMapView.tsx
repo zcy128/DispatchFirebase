@@ -3,6 +3,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { BusRoute, BusRouteShift, RouteStop, formatOpDays, getShiftBadgeStyle } from '../../types/route';
 import { Student } from '../../types/student';
+import { Employee } from '../../types/employee';
 import { resolveStopCoordinates, resolveHomeCoordinates } from '../../utils/geoUtils';
 import { diffMinutes } from '../../utils/dispatchDelayUtils';
 import { RouteService } from '../../services/routeService';
@@ -31,10 +32,11 @@ import {
   Pause
 } from 'lucide-react';
 
-interface ShiftGoogleMapViewProps {
+export interface ShiftGoogleMapViewProps {
   shift: BusRouteShift | null;
   route: BusRoute;
   studentsMap?: Record<number, Student>;
+  employees?: Employee[];
   onSelectStudent?: (student: Student) => void;
   onUpdateShift?: (updatedShift: BusRouteShift) => void;
   height?: string | number;
@@ -131,6 +133,7 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
   shift,
   route,
   studentsMap = {},
+  employees,
   onSelectStudent: _onSelectStudent,
   onUpdateShift,
   height = '540px',
@@ -2058,12 +2061,13 @@ export const ShiftGoogleMapView: React.FC<ShiftGoogleMapViewProps> = ({
       </div>
 
       {/* Stop Sequence Optimization Modal */}
-      {shift && (
+      {isOptimizeModalOpen && shift && (
         <OptimizeRouteModal
-          isOpen={isOptimizeModalOpen}
+          isOpen
           onClose={() => setIsOptimizeModalOpen(false)}
           shift={shift}
           route={route}
+          employees={employees ?? []}
           onApplyOptimizedStops={handleApplyOptimizedStops}
         />
       )}

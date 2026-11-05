@@ -1,11 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Vehicle, VehicleStats } from '../types/vehicle';
 import { useI18n } from '../contexts/I18nContext';
-import {
-  ALL_VEHICLE_EXPORT_FIELDS,
-  exportVehiclesToExcel
-} from '../utils/vehicleExcelExporter';
+import type { VehicleExportFieldDef } from '../utils/vehicleExcelExporter';
 import {
   Search,
   Filter,
@@ -33,6 +30,24 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+// Hoisted static set for table grid columns to eliminate repeated instantiation (Vercel advanced-init-once)
+const GRID_DISPLAYED_FIELD_KEYS = new Set([
+  'unitNumber',
+  'plateNumber',
+  'manufacturer',
+  'model',
+  'year',
+  'fuelType',
+  'yardName',
+  'licenseExpiry',
+  'seatCap',
+  'wheelchairCap',
+  'assignedRouteNo',
+  'assignedRouteName',
+  'driverName',
+  'status',
+]);
+
 interface VehicleListViewProps {
   vehicles: Vehicle[];
   stats: VehicleStats;
@@ -59,6 +74,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 }) => {
   const { t, isFrench } = useI18n();
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [fuelFilter, setFuelFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -67,10 +83,8 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 
   // Excel Export Modal State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  // Default export all fields, even not shown in the data grid
-  const [selectedFieldKeys, setSelectedFieldKeys] = useState<string[]>(() =>
-    ALL_VEHICLE_EXPORT_FIELDS.map((f) => f.key)
-  );
+  const [exportFields, setExportFields] = useState<VehicleExportFieldDef[]>([]);
+  const [selectedFieldKeys, setSelectedFieldKeys] = useState<string[]>([]);
   const [exportScope, setExportScope] = useState<'filtered' | 'all'>('filtered');
   const [isExporting, setIsExporting] = useState(false);
   const [exportFieldSearch, setExportFieldSearch] = useState('');
@@ -80,41 +94,47 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
   const handleRefresh = async () => {
     if (!onRefresh) return;
     setRefreshing(true);
-    await onRefresh();
-    setTimeout(() => setRefreshing(false), 500);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
-  const filteredVehicles = vehicles.filter((v) => {
-    if (typeFilter !== 'ALL' && !v.unitType.toLowerCase().includes(typeFilter.toLowerCase())) {
-      return false;
-    }
-    if (fuelFilter !== 'ALL' && !v.fuelType.toLowerCase().includes(fuelFilter.toLowerCase())) {
-      return false;
-    }
-    if (statusFilter !== 'ALL') {
-      if (statusFilter === 'ASSIGNED' && !v.assignedRouteId) return false;
-      if (statusFilter === 'SPARE' && v.assignedRouteId) return false;
-    }
-    if (yardFilter !== 'ALL' && v.yardName !== yardFilter) {
-      return false;
-    }
-
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      const matchUnit = v.unitNumber.toLowerCase().includes(term);
-      const matchPlate = (v.plateNumber || '').toLowerCase().includes(term);
-      const matchVin = (v.vin || '').toLowerCase().includes(term);
-      const matchMfr = (v.manufacturer || '').toLowerCase().includes(term);
-      const matchModel = (v.model || '').toLowerCase().includes(term);
-      const matchDriver = (v.driverName || '').toLowerCase().includes(term);
-      const matchRoute = (v.assignedRouteNo || '').toLowerCase().includes(term);
-      if (!matchUnit && !matchPlate && !matchVin && !matchMfr && !matchModel && !matchDriver && !matchRoute) {
+  // Memoized filter logic with deferred search term to prevent UI frame drops (Vercel rerender-memo & rerender-use-deferred-value)
+  const filteredVehicles = useMemo(() => {
+    return vehicles.filter((v) => {
+      if (typeFilter !== 'ALL' && !v.unitType.toLowerCase().includes(typeFilter.toLowerCase())) {
         return false;
       }
-    }
+      if (fuelFilter !== 'ALL' && !v.fuelType.toLowerCase().includes(fuelFilter.toLowerCase())) {
+        return false;
+      }
+      if (statusFilter !== 'ALL') {
+        if (statusFilter === 'ASSIGNED' && !v.assignedRouteId) return false;
+        if (statusFilter === 'SPARE' && v.assignedRouteId) return false;
+      }
+      if (yardFilter !== 'ALL' && v.yardName !== yardFilter) {
+        return false;
+      }
 
-    return true;
-  });
+      if (deferredSearchTerm) {
+        const term = deferredSearchTerm.toLowerCase();
+        const matchUnit = v.unitNumber.toLowerCase().includes(term);
+        const matchPlate = (v.plateNumber || '').toLowerCase().includes(term);
+        const matchVin = (v.vin || '').toLowerCase().includes(term);
+        const matchMfr = (v.manufacturer || '').toLowerCase().includes(term);
+        const matchModel = (v.model || '').toLowerCase().includes(term);
+        const matchDriver = (v.driverName || '').toLowerCase().includes(term);
+        const matchRoute = (v.assignedRouteNo || '').toLowerCase().includes(term);
+        if (!matchUnit && !matchPlate && !matchVin && !matchMfr && !matchModel && !matchDriver && !matchRoute) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [vehicles, typeFilter, fuelFilter, statusFilter, yardFilter, deferredSearchTerm]);
 
   // Virtual scrolling for 1,000+ fleet vehicles
   const vehicleTableContainerRef = useRef<HTMLDivElement>(null);
@@ -132,22 +152,8 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
     ? vehicleTableVirtualizer.getTotalSize() - (virtualVehicles[virtualVehicles.length - 1]?.end || 0)
     : 0;
 
-  const GRID_DISPLAYED_FIELD_KEYS = new Set([
-    'unitNumber',
-    'plateNumber',
-    'manufacturer',
-    'model',
-    'year',
-    'fuelType',
-    'yardName',
-    'licenseExpiry',
-    'seatCap',
-    'wheelchairCap',
-    'assignedRouteNo',
-    'assignedRouteName',
-    'driverName',
-    'status',
-  ]);
+  // O(1) lookup set for export modal field selection (Vercel js-set-map-lookups)
+  const selectedFieldKeysSet = useMemo(() => new Set(selectedFieldKeys), [selectedFieldKeys]);
 
   const handleToggleField = (key: string) => {
     setSelectedFieldKeys((prev) =>
@@ -156,7 +162,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
   };
 
   const handleSelectAllFields = () => {
-    setSelectedFieldKeys(ALL_VEHICLE_EXPORT_FIELDS.map((f) => f.key));
+    setSelectedFieldKeys(exportFields.map((field) => field.key));
   };
 
   const handleDeselectAllFields = () => {
@@ -164,7 +170,17 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
   };
 
   const handleResetAllFields = () => {
-    setSelectedFieldKeys(ALL_VEHICLE_EXPORT_FIELDS.map((f) => f.key));
+    setSelectedFieldKeys(exportFields.map((field) => field.key));
+  };
+
+  const openExportModal = async () => {
+    setExportError(null);
+    const exporter = await import('../utils/vehicleExcelExporter');
+    setExportFields(exporter.ALL_VEHICLE_EXPORT_FIELDS);
+    setSelectedFieldKeys((prev) =>
+      prev.length > 0 ? prev : exporter.ALL_VEHICLE_EXPORT_FIELDS.map((field) => field.key)
+    );
+    setIsExportModalOpen(true);
   };
 
   const handleExportExcelSubmit = async () => {
@@ -196,7 +212,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
           ? `Type=${typeFilter}, Fuel=${fuelFilter}, Status=${statusFilter}, Yard=${yardFilter}${searchTerm ? `, Search="${searchTerm}"` : ''}`
           : undefined;
 
-      await exportVehiclesToExcel({
+      await (await import('../utils/vehicleExcelExporter')).exportVehiclesToExcel({
         vehicles: targetVehicles,
         selectedFieldKeys,
         isFrench,
@@ -211,7 +227,11 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
     }
   };
 
-  const uniqueYards = Array.from(new Set(vehicles.map((v) => v.yardName).filter(Boolean)));
+  // Memoized unique yards list (Vercel rerender-memo)
+  const uniqueYards = useMemo(
+    () => Array.from(new Set(vehicles.map((v) => v.yardName).filter(Boolean))).sort(),
+    [vehicles]
+  );
 
   return (
     <div className="p-6 space-y-5 max-w-7xl mx-auto">
@@ -234,8 +254,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
           <div className="flex items-center space-x-2">
             <button
               onClick={() => {
-                setExportError(null);
-                setIsExportModalOpen(true);
+                void openExportModal();
               }}
               title={t.vehicles.exportExcel}
               className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow transition flex items-center space-x-1.5 shrink-0"
@@ -716,7 +735,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                       {t.vehicles.fieldsToExport}
                     </span>
                     <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-amber-400 border border-slate-700">
-                      {selectedFieldKeys.length} / {ALL_VEHICLE_EXPORT_FIELDS.length} {t.vehicles.fieldsSelected}
+                      {selectedFieldKeys.length} / {exportFields.length} {t.vehicles.fieldsSelected}
                     </span>
                   </div>
 
@@ -761,7 +780,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                 <div className="space-y-4 max-h-[42vh] overflow-y-auto pr-1">
                   {(['identification', 'specifications', 'operations', 'assignment', 'system'] as const).map(
                     (categoryKey) => {
-                      const categoryFields = ALL_VEHICLE_EXPORT_FIELDS.filter((f) => {
+                      const categoryFields = exportFields.filter((f) => {
                         if (f.category !== categoryKey) return false;
                         if (!exportFieldSearch) return true;
                         const search = exportFieldSearch.toLowerCase();
@@ -786,14 +805,14 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-slate-800/60 pb-1.5">
                             <span>{categoryTitle}</span>
                             <span className="text-[10px] text-slate-500 font-mono">
-                              {categoryFields.filter((f) => selectedFieldKeys.includes(f.key)).length} /{' '}
+                              {categoryFields.filter((f) => selectedFieldKeysSet.has(f.key)).length} /{' '}
                               {categoryFields.length}
                             </span>
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                             {categoryFields.map((field) => {
-                              const isChecked = selectedFieldKeys.includes(field.key);
+                              const isChecked = selectedFieldKeysSet.has(field.key);
                               const isGridCol = GRID_DISPLAYED_FIELD_KEYS.has(field.key);
                               const label = isFrench ? field.labelFr : field.labelEn;
 

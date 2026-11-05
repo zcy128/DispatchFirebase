@@ -36,8 +36,12 @@ interface DispatchCrewModalProps {
   onShiftUpdated: (updatedShift: DispatchShift) => void;
 }
 
-export const DispatchCrewModal: React.FC<DispatchCrewModalProps> = ({
-  isOpen,
+export const DispatchCrewModal: React.FC<DispatchCrewModalProps> = (props) => {
+  if (!props.isOpen || !props.shift) return null;
+  return <DispatchCrewModalContent {...props} shift={props.shift} />;
+};
+
+const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: DispatchShift }> = ({
   onClose,
   shift,
   employees,
@@ -46,8 +50,6 @@ export const DispatchCrewModal: React.FC<DispatchCrewModalProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
-
-  if (!isOpen || !shift) return null;
 
   const [driverId, setDriverId] = useState(shift.driverId || '');
   const [attendantId, setAttendantId] = useState(shift.attendantId || '');

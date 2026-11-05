@@ -87,6 +87,16 @@ This monorepo utilizes specialized, on-demand subagents located in `.agents/agen
 
 ---
 
+### 3. Workspace Custom Skills (`.agents/skills/`)
+
+Skills teach the agent specialized multi-step execution runbooks and procedural workflows.
+
+| Skill Name | Path | Description | Trigger Example |
+| :--- | :--- | :--- | :--- |
+| **`monorepo-regression-test`** | [`.agents/skills/monorepo-regression-test/SKILL.md`](skills/monorepo-regression-test/SKILL.md) | Orchestrates complete regression testing across Web, Driver App, and Parent App (179+ tests) plus `tsc` and `flutter analyze`. | *"Run all tests across the monorepo"* or *"Pre-flight regression check"* |
+
+---
+
 <a name="français"></a>
 ## 🌐 Français : Manuel des Sous-Agents Spécialisés
 
@@ -117,6 +127,16 @@ Ce monorepo intègre une suite de sous-agents autonomes situés dans `.agents/ag
 - **`react-web-developer`** : Conçoit des vues et composants modulaires dans `web/src/`, applique Tailwind CSS 3.4 et `clsx`, désabonne rigoureusement les flux Firestore au démontage et vérifie `npx tsc --noEmit`.
 - **`react-test-engineer`** : Écrit des tests Vitest rapides et isolés dans `web/src/**/*.test.ts`, simule Firebase, vérifie l'arrondi monétaire et garantit 100% de réussite lors de `npm test`.
 - **`react-code-auditor`** : Analyse les tableaux de dépendances (`useEffect`, `useCallback`), audite la virtualisation des listes denses avec `@tanstack/react-virtual` et bloque toute erreur de type TypeScript.
+
+---
+
+### 3. Compétences Locales de l'Espace de Travail (`.agents/skills/`)
+
+Les compétences (Skills) fournissent à l'agent des manuels d'exécution (Runbooks) et des procédures multi-étapes réutilisables.
+
+| Nom de la Compétence | Chemin | Description | Exemple d'Appel |
+| :--- | :--- | :--- | :--- |
+| **`monorepo-regression-test`** | [`.agents/skills/monorepo-regression-test/SKILL.md`](skills/monorepo-regression-test/SKILL.md) | Exécute la suite complète de régression sur Web, Driver App et Parent App (plus de 179 tests) avec `tsc` et `flutter analyze`. | *"Exécuter tous les tests du projet"* ou *"Vérification de régression globale"* |
 
 ---
 
@@ -188,3 +208,13 @@ Ce monorepo intègre une suite de sous-agents autonomes situés dans `.agents/ag
 2. 针对高密度数据表格（排班矩阵、司机花名册），确认正确应用 `@tanstack/react-virtual` 虚拟化渲染。
 3. 审查 `vite-plugin-pwa` 缓存配置，防止版本发布后旧资源死锁。
 4. 执行 `cd web && npx tsc --noEmit`，确保无类型报错与潜在运行时隐患。
+
+---
+
+### 3. 项目工作区专属技能矩阵 (`.agents/skills/`)
+
+技能（Skills）为 AI 提供高度封装的标准作业程序（Runbook / SOP），在触发特定工程任务时自动分步执行。
+
+| 技能名称 | 目录路径 | 核心能力与自动化流程 | 调用指令示例 |
+| :--- | :--- | :--- | :--- |
+| **`monorepo-regression-test`** | [`.agents/skills/monorepo-regression-test/SKILL.md`](skills/monorepo-regression-test/SKILL.md) | 一键串行或并行执行 Web、Driver App 与 Parent App 全套 179+ 单元/组件测试及类型静态分析，自动汇总健康评分看板。 | *“运行全栈回归测试”*、*“检查全项目测试”* 或 *“run all tests”* |

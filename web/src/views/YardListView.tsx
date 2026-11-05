@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useDeferredValue, Suspense } from 'react';
 import {
   Building2,
   Plus,
@@ -15,8 +15,12 @@ import { Yard } from '../types/yard';
 import { BusRoute } from '../types/route';
 import { School } from '../types/school';
 import { Employee } from '../types/employee';
-import { YardModal } from '../components/yards/YardModal';
-import { YardDetailView } from '../components/yards/YardDetailView';
+const YardModal = React.lazy(() =>
+  import('../components/yards/YardModal').then((m) => ({ default: m.YardModal }))
+);
+const YardDetailView = React.lazy(() =>
+  import('../components/yards/YardDetailView').then((m) => ({ default: m.YardDetailView }))
+);
 import { YardService } from '../services/yardService';
 
 interface YardListViewProps {
@@ -44,6 +48,7 @@ export const YardListView: React.FC<YardListViewProps> = ({
 }) => {
   const [assignmentMode, setAssignmentMode] = useState<'routes' | 'schools'>('routes');
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingYard, setEditingYard] = useState<Yard | null>(null);
   const [viewingDetailYard, setViewingDetailYard] = useState<Yard | null>(null);
@@ -64,49 +69,76 @@ export const YardListView: React.FC<YardListViewProps> = ({
   // Robust drag reference to prevent browser dataTransfer sanitization issues
   const draggedItemRef = useRef<{ type: 'route' | 'school'; id: string | number } | null>(null);
 
+  // Pre-index yards by ID and lowercase name for O(1) matching
+  const { yardsByYardId, yardsByNameLower, assignedYardIdsSet, assignedYardNamesLowerSet } = useMemo(() => {
+    const byId = new Map<number, Yard>();
+    const byName = new Map<string, Yard>();
+    const idSet = new Set<number>();
+    const nameSet = new Set<string>();
+
+    for (const y of yards) {
+      if (y.yardId !== undefined && y.yardId !== null) {
+        const numId = Number(y.yardId);
+        byId.set(numId, y);
+        idSet.add(numId);
+      }
+      if (y.name) {
+        const lower = y.name.trim().toLowerCase();
+        byName.set(lower, y);
+        nameSet.add(lower);
+      }
+    }
+    return {
+      yardsByYardId: byId,
+      yardsByNameLower: byName,
+      assignedYardIdsSet: idSet,
+      assignedYardNamesLowerSet: nameSet,
+    };
+  }, [yards]);
+
   // Map routes by yard
   const routesByYard = useMemo(() => {
     const map: Record<string, BusRoute[]> = {};
-    yards.forEach((y) => {
+    for (const y of yards) {
       map[y.id] = [];
-    });
+    }
 
-    localRoutes.forEach((r) => {
-      const matchedYard = yards.find(
-        (y) =>
-          Number(y.yardId) === Number(r.yardId) ||
-          (r.yardName && y.name && y.name.trim().toLowerCase() === r.yardName.trim().toLowerCase())
-      );
-      if (matchedYard) {
-        if (!map[matchedYard.id]) map[matchedYard.id] = [];
-        map[matchedYard.id].push(r);
+    for (const r of localRoutes) {
+      let matchedYard: Yard | undefined;
+      if (r.yardId !== undefined && r.yardId !== null) {
+        matchedYard = yardsByYardId.get(Number(r.yardId));
       }
-    });
+      if (!matchedYard && r.yardName) {
+        matchedYard = yardsByNameLower.get(r.yardName.trim().toLowerCase());
+      }
+      if (matchedYard) {
+        map[matchedYard.id]?.push(r);
+      }
+    }
     return map;
-  }, [yards, localRoutes]);
+  }, [yards, localRoutes, yardsByYardId, yardsByNameLower]);
 
   // Map schools by yard
   const schoolsByYard = useMemo(() => {
     const map: Record<string, School[]> = {};
-    yards.forEach((y) => {
+    for (const y of yards) {
       map[y.id] = [];
-    });
+    }
 
-    localSchools.forEach((s) => {
+    for (const s of localSchools) {
       if (s.yardId !== undefined && s.yardId !== null && Number(s.yardId) > 0) {
-        const matchedYard = yards.find((y) => Number(y.yardId) === Number(s.yardId));
+        const matchedYard = yardsByYardId.get(Number(s.yardId));
         if (matchedYard) {
-          if (!map[matchedYard.id]) map[matchedYard.id] = [];
-          map[matchedYard.id].push(s);
+          map[matchedYard.id]?.push(s);
         }
       }
-    });
+    }
     return map;
-  }, [yards, localSchools]);
+  }, [yards, localSchools, yardsByYardId]);
 
   // Filtered sidebar items (sorted with Unassigned items at top)
   const sidebarItems = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
+    const term = deferredSearchTerm.trim().toLowerCase();
 
     if (assignmentMode === 'routes') {
       const list = localRoutes.filter((r) => {
@@ -119,16 +151,12 @@ export const YardListView: React.FC<YardListViewProps> = ({
       });
 
       return list.sort((a, b) => {
-        const aAssigned = yards.some(
-          (y) =>
-            Number(y.yardId) === Number(a.yardId) ||
-            (a.yardName && y.name.toLowerCase() === a.yardName.toLowerCase())
-        );
-        const bAssigned = yards.some(
-          (y) =>
-            Number(y.yardId) === Number(b.yardId) ||
-            (b.yardName && y.name.toLowerCase() === b.yardName.toLowerCase())
-        );
+        const aAssigned =
+          (a.yardId !== undefined && assignedYardIdsSet.has(Number(a.yardId))) ||
+          (a.yardName ? assignedYardNamesLowerSet.has(a.yardName.toLowerCase()) : false);
+        const bAssigned =
+          (b.yardId !== undefined && assignedYardIdsSet.has(Number(b.yardId))) ||
+          (b.yardName ? assignedYardNamesLowerSet.has(b.yardName.toLowerCase()) : false);
         if (!aAssigned && bAssigned) return -1;
         if (aAssigned && !bAssigned) return 1;
         return a.routeNo.localeCompare(b.routeNo);
@@ -145,14 +173,14 @@ export const YardListView: React.FC<YardListViewProps> = ({
       });
 
       return list.sort((a, b) => {
-        const aAssigned = yards.some((y) => Number(y.yardId) === Number(a.yardId) && Number(a.yardId) > 0);
-        const bAssigned = yards.some((y) => Number(y.yardId) === Number(b.yardId) && Number(b.yardId) > 0);
+        const aAssigned = a.yardId !== undefined && Number(a.yardId) > 0 && assignedYardIdsSet.has(Number(a.yardId));
+        const bAssigned = b.yardId !== undefined && Number(b.yardId) > 0 && assignedYardIdsSet.has(Number(b.yardId));
         if (!aAssigned && bAssigned) return -1;
         if (aAssigned && !bAssigned) return 1;
         return a.schoolName.localeCompare(b.schoolName);
       });
     }
-  }, [assignmentMode, localRoutes, localSchools, yards, searchTerm]);
+  }, [assignmentMode, localRoutes, localSchools, assignedYardIdsSet, assignedYardNamesLowerSet, deferredSearchTerm]);
 
   // Helper to match routes belonging to a school
   const isRouteServicingSchool = (route: BusRoute, school?: School) => {
@@ -361,16 +389,18 @@ export const YardListView: React.FC<YardListViewProps> = ({
   if (viewingDetailYard) {
     const currentDetailYard = yards.find((y) => y.id === viewingDetailYard.id) || viewingDetailYard;
     return (
-      <YardDetailView
-        yard={currentDetailYard}
-        assignedRoutes={routesByYard[currentDetailYard.id] || []}
-        assignedSchools={schoolsByYard[currentDetailYard.id] || []}
-        onBack={() => setViewingDetailYard(null)}
-        onEdit={(y) => {
-          setEditingYard(y);
-          setIsModalOpen(true);
-        }}
-      />
+      <Suspense fallback={null}>
+        <YardDetailView
+          yard={currentDetailYard}
+          assignedRoutes={routesByYard[currentDetailYard.id] || []}
+          assignedSchools={schoolsByYard[currentDetailYard.id] || []}
+          onBack={() => setViewingDetailYard(null)}
+          onEdit={(y) => {
+            setEditingYard(y);
+            setIsModalOpen(true);
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -694,16 +724,20 @@ export const YardListView: React.FC<YardListViewProps> = ({
       </div>
 
       {/* Yard Edit / Add Modal */}
-      <YardModal
-        isOpen={isModalOpen}
-        yard={editingYard}
-        employees={employees}
-        onClose={() => {
-          setIsModalOpen(false);
-          setEditingYard(null);
-        }}
-        onSave={handleSaveYard}
-      />
+      {isModalOpen && (
+        <Suspense fallback={null}>
+          <YardModal
+            isOpen={isModalOpen}
+            yard={editingYard}
+            employees={employees}
+            onClose={() => {
+              setIsModalOpen(false);
+              setEditingYard(null);
+            }}
+            onSave={handleSaveYard}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

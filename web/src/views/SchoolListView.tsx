@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { School, SchoolBoard, SchoolStats } from '../types/school';
 import {
@@ -16,6 +16,20 @@ import {
   ExternalLink,
   CalendarDays
 } from 'lucide-react';
+
+// Pure badge color helper based on school board code
+function getBoardBadgeColor(code?: string): string {
+  switch (code) {
+    case 'OCDSB':
+      return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
+    case 'OCSB':
+      return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+    case 'CEPEO':
+      return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+    default:
+      return 'bg-purple-500/10 text-purple-400 border-purple-500/30';
+  }
+}
 
 interface SchoolListViewProps {
   schools: School[];
@@ -48,6 +62,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'schools' | 'boards'>('schools');
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [selectedBoardId, setSelectedBoardId] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [refreshing, setRefreshing] = useState(false);
@@ -55,8 +70,11 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
   const handleRefresh = async () => {
     if (!onRefresh) return;
     setRefreshing(true);
-    await onRefresh();
-    setTimeout(() => setRefreshing(false), 500);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   // Compute school & student counts per board
@@ -74,24 +92,33 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
 
   // Filter schools
   const filteredSchools = useMemo(() => {
+    const term = deferredSearchTerm.trim().toLowerCase();
+    const hasSearch = term.length > 0;
+    const isBoardFiltered = selectedBoardId !== 'ALL';
+    const targetBoardId = isBoardFiltered ? Number(selectedBoardId) : 0;
+    const isStatusFiltered = statusFilter !== 'ALL';
+
     return schools.filter((s) => {
-      if (selectedBoardId !== 'ALL' && s.schoolBoardId !== Number(selectedBoardId)) {
+      if (isBoardFiltered && s.schoolBoardId !== targetBoardId) {
         return false;
       }
-      if (statusFilter === 'ACTIVE' && !s.isActive) return false;
-      if (statusFilter === 'INACTIVE' && s.isActive) return false;
+      if (isStatusFiltered) {
+        if (statusFilter === 'ACTIVE' && !s.isActive) return false;
+        if (statusFilter === 'INACTIVE' && s.isActive) return false;
+      }
 
-      if (!searchTerm) return true;
-      const term = searchTerm.toLowerCase();
-      return (
-        s.schoolName.toLowerCase().includes(term) ||
-        s.schoolAddress?.toLowerCase().includes(term) ||
-        s.contactPerson?.toLowerCase().includes(term) ||
-        s.schoolBoardCode?.toLowerCase().includes(term) ||
-        s.schoolBoardName?.toLowerCase().includes(term)
-      );
+      if (hasSearch) {
+        return (
+          (s.schoolName || '').toLowerCase().includes(term) ||
+          (s.schoolAddress || '').toLowerCase().includes(term) ||
+          (s.contactPerson || '').toLowerCase().includes(term) ||
+          (s.schoolBoardCode || '').toLowerCase().includes(term) ||
+          (s.schoolBoardName || '').toLowerCase().includes(term)
+        );
+      }
+      return true;
     });
-  }, [schools, selectedBoardId, statusFilter, searchTerm]);
+  }, [schools, selectedBoardId, statusFilter, deferredSearchTerm]);
 
   const schoolTableRef = useRef<HTMLDivElement>(null);
   const schoolMobileRef = useRef<HTMLDivElement>(null);
@@ -118,19 +145,6 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
     ? schoolMobileVirtualizer.getTotalSize() - (schoolMobileRows[schoolMobileRows.length - 1]?.end || 0)
     : 0;
 
-  const getBoardBadgeColor = (code?: string) => {
-    switch (code) {
-      case 'OCDSB':
-        return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
-      case 'OCSB':
-        return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
-      case 'CEPEO':
-        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
-      default:
-        return 'bg-purple-500/10 text-purple-400 border-purple-500/30';
-    }
-  };
-
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 text-slate-100">
       {/* Top Header & Action Controls */}
@@ -152,7 +166,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
         <div className="flex items-center space-x-3">
           {onRefresh && (
             <button
-              onClick={handleRefresh}
+              onClick={() => void handleRefresh()}
               disabled={refreshing || loading}
               className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition shadow-sm disabled:opacity-50"
               title="Sync latest school database"

@@ -2,6 +2,13 @@ import { collection, onSnapshot, query, where, addDoc, doc, deleteDoc, getDoc, s
 import { db } from './firebase';
 import { apiRequest, isClientHttpError } from './api';
 import {
+  getCheckInReminderSettings as fetchCheckInReminderSettings,
+  getSimulationSettings as fetchSimulationSettings,
+  runSimulation as runSimulationRequest,
+  saveCheckInReminderSettings as persistCheckInReminderSettings,
+  saveSimulationSettings as persistSimulationSettings,
+} from './dispatchSettingsApi';
+import {
   DispatchShift,
   CreateDispatchDayResult,
   SplitShiftPart,
@@ -257,35 +264,19 @@ export const DispatchService = {
       });
   },
 
-  getCheckInReminderSettings: async (): Promise<CheckInReminderSettings> => {
-          return await apiRequest<CheckInReminderSettings>('/api/dispatch/check-in-reminder-settings');
-  },
+  getCheckInReminderSettings: (): Promise<CheckInReminderSettings> => fetchCheckInReminderSettings(),
 
-  saveCheckInReminderSettings: async (settings: CheckInReminderSettings): Promise<CheckInReminderSettings> => {
-          return await apiRequest<CheckInReminderSettings>('/api/dispatch/check-in-reminder-settings', {
-        method: 'PUT',
-        body: JSON.stringify(settings),
-      });
-  },
+  saveCheckInReminderSettings: (
+    settings: CheckInReminderSettings
+  ): Promise<CheckInReminderSettings> => persistCheckInReminderSettings(settings),
 
-  getSimulationSettings: async (): Promise<SimulationSettings> => {
-          return await apiRequest<SimulationSettings>('/api/dispatch/simulation-settings');
-  },
+  getSimulationSettings: (): Promise<SimulationSettings> => fetchSimulationSettings(),
 
-  saveSimulationSettings: async (settings: SimulationSettings): Promise<SimulationSettings> => {
-          return await apiRequest<SimulationSettings>('/api/dispatch/simulation-settings', {
-        method: 'PUT',
-        body: JSON.stringify(settings),
-      });
-  },
+  saveSimulationSettings: (settings: SimulationSettings): Promise<SimulationSettings> =>
+    persistSimulationSettings(settings),
 
-  runSimulation: async (date?: string, forceOverwrite: boolean = true): Promise<SimulationRunResult> => {
-    const payload = { date: date || '', forceOverwrite };
-          return await apiRequest<SimulationRunResult>('/api/dispatch/simulation/run', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-  },
+  runSimulation: (date?: string, forceOverwrite: boolean = true): Promise<SimulationRunResult> =>
+    runSimulationRequest(date, forceOverwrite),
 
   subscribeToChangeLogs: (
     date: string,
@@ -301,13 +292,41 @@ export const DispatchService = {
     const cutoffDateStr = cutoff7DaysAgo.toISOString().slice(0, 10);
     const isColdDate = Boolean(date && date < cutoffDateStr);
 
-    if (isColdDate || filterParams?.routeNo || filterParams?.employee || filterParams?.scope === 'all' || !db) {
-      DispatchService.listChangeLogs(date, filterParams)
-        .then((logs) => onUpdate(Array.isArray(logs) ? logs : []))
-        .catch((err) => {
-          if (onError) onError(err);
-        });
-      return () => {};
+    let cancelled = false;
+    let snapshotUnsub: (() => void) | null = null;
+    let emptyFallbackStarted = false;
+
+    const emitUpdate = (logs: DispatchChangeLog[]) => {
+      if (!cancelled) onUpdate(logs);
+    };
+    const emitError = (err: Error) => {
+      if (!cancelled && onError) onError(err);
+    };
+    const cleanup = () => {
+      cancelled = true;
+      if (snapshotUnsub) {
+        snapshotUnsub();
+        snapshotUnsub = null;
+      }
+    };
+
+    const includeShiftDetails = filterParams?.scope === 'detail';
+    const fetchViaApi = () => {
+      const apiParams = includeShiftDetails ? { ...filterParams, scope: 'all' } : filterParams;
+      DispatchService.listChangeLogs(date, apiParams)
+        .then((logs) => emitUpdate(Array.isArray(logs) ? logs : []))
+        .catch((err) => emitError(err as Error));
+    };
+
+    if (!db) {
+      fetchViaApi();
+      return cleanup;
+    }
+
+    const canUseDetailSnapshot = includeShiftDetails && !isColdDate;
+    if (!canUseDetailSnapshot && (isColdDate || filterParams?.routeNo || filterParams?.employee || filterParams?.scope === 'all' || filterParams?.scope === 'detail')) {
+      fetchViaApi();
+      return cleanup;
     }
 
     try {
@@ -315,14 +334,17 @@ export const DispatchService = {
         collection(db, 'dispatch_change_logs'),
         where('dispatchDate', '==', date)
       );
-      const unsubscribe = onSnapshot(
+      snapshotUnsub = onSnapshot(
         q,
         (snapshot) => {
+          if (cancelled) return;
+
           // If Firestore returns 0 documents, it may have already been archived to BigQuery cold storage
           if (snapshot.empty) {
-            DispatchService.listChangeLogs(date, filterParams)
-              .then((logs) => onUpdate(Array.isArray(logs) ? logs : []))
-              .catch(() => onUpdate([]));
+            if (includeShiftDetails) return;
+            if (emptyFallbackStarted) return;
+            emptyFallbackStarted = true;
+            fetchViaApi();
             return;
           }
 
@@ -337,6 +359,8 @@ export const DispatchService = {
           list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
           // By default, filter down to macro-level dispatch operations (Day Generated, Day Deleted, etc.)
+          // Note: full tier-indexed Firestore queries need a dedicated `tier` field on write; until then
+          // macro filtering remains client-side for the live snapshot path.
           const macroTypes = new Set([
             'Day Generated',
             'Day Deleted',
@@ -346,28 +370,25 @@ export const DispatchService = {
             'Day Sheet Created',
             'Day Sheet Deleted',
           ]);
-          const filtered = list.filter((l) => !l.shiftId || !l.routeNo || macroTypes.has(l.type));
-          onUpdate(filtered || []);
+          const filtered = includeShiftDetails
+            ? list
+            : list.filter((l) => !l.shiftId || !l.routeNo || macroTypes.has(l.type));
+          emitUpdate(filtered);
         },
         (error) => {
           console.warn('[DispatchService] Change logs onSnapshot fallback to API:', error);
-          DispatchService.listChangeLogs(date, filterParams)
-            .then((logs) => onUpdate(Array.isArray(logs) ? logs : []))
-            .catch((apiErr) => {
-              console.error('[DispatchService] Change logs fallback failed:', apiErr);
-              if (onError) onError(apiErr);
-            });
+          if (includeShiftDetails) {
+            emitError(error);
+            return;
+          }
+          fetchViaApi();
         }
       );
-      return unsubscribe;
+      return cleanup;
     } catch (e) {
       console.warn('[DispatchService] Exception in change log listener, fallback to API:', e);
-      DispatchService.listChangeLogs(date, filterParams)
-        .then((logs) => onUpdate(Array.isArray(logs) ? logs : []))
-        .catch((apiErr) => {
-          if (onError) onError(apiErr);
-        });
-      return () => {};
+      fetchViaApi();
+      return cleanup;
     }
   },
 

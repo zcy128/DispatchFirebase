@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useI18n } from '../contexts/I18nContext';
 import {
@@ -37,13 +37,52 @@ import {
 import { HazardReportService } from '../services/hazardReportService';
 import { useAuth } from '../contexts/AuthContext';
 import { OperationalSafetyLogService } from '../services/operationalSafetyLogService';
-import { HazardReportPdfModal } from '../components/hazards/HazardReportPdfModal';
+import { ExportLoadingOverlay } from '../components/common/ExportLoadingOverlay';
+
+// Pure helper to calculate 365-day cutoff date string once
+function getCutoffDate365Days(): string {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 365);
+  return cutoff.toISOString().slice(0, 10);
+}
+
+// Pure helper to get active hazard tags
+function getHazardTags(r: HazardReport): string[] {
+  const list: string[] = [];
+  if (r.trippingHazard) list.push('Tripping');
+  if (r.trafficHazard) list.push('Traffic');
+  if (r.equipmentHazard) list.push('Equipment');
+  if (r.performanceHazard) list.push('Performance');
+  if (r.snowHazard) list.push('Snow / Ice / Road');
+  if (r.spillHazard) list.push('Spill');
+  if (r.otherHazard) list.push('Other Hazard');
+  return list;
+}
+
+// Pure helper to get active close call tags
+function getCloseCallTags(r: HazardReport): string[] {
+  const list: string[] = [];
+  if (r.unsafeAction) list.push('Unsafe Action');
+  if (r.unsafeCondition) list.push('Unsafe Condition');
+  if (r.happenedtoMe) list.push('To Me');
+  if (r.happenedtoSomeone) list.push('To Someone');
+  if (r.ofanarea) list.push('Area Issue');
+  if (r.ofEquipment) list.push('Equipment Issue');
+  return list;
+}
+
+const HazardReportPdfModal = React.lazy(() =>
+  import('../components/hazards/HazardReportPdfModal').then((module) => ({
+    default: module.HazardReportPdfModal,
+  }))
+);
 
 export const HazardReportsView: React.FC = () => {
   const { currentUser } = useAuth();
   const [reports, setReports] = useState<HazardReport[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [hazardTypeFilter, setHazardTypeFilter] = useState<string>('all');
   const [officeTypeFilter, setOfficeTypeFilter] = useState<string>('all');
@@ -95,18 +134,17 @@ export const HazardReportsView: React.FC = () => {
 
   const [timeRange, setTimeRange] = useState<'1year' | 'all'>('1year');
 
-  const isArchivedDate = (d?: string) => {
-    if (!d) return false;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 365);
-    return d.slice(0, 10) < cutoff.toISOString().slice(0, 10);
-  };
+  // Pre-calculate 365-day cutoff date string once to avoid per-row Date allocations
+  const cutoffDate365Str = useMemo(() => getCutoffDate365Days(), []);
+  const isArchivedDate = (d?: string) => Boolean(d && d.slice(0, 10) < cutoffDate365Str);
 
-  const loadReports = async (targetQuery?: string) => {
+  const loadReports = async (targetQuery?: string, opts?: { isCancelled?: () => boolean }) => {
     const q = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
     if (timeRange === 'all' && !q) {
-      setReports([]);
-      setLoading(false);
+      if (!opts?.isCancelled || !opts.isCancelled()) {
+        setReports([]);
+        setLoading(false);
+      }
       return;
     }
     setLoading(true);
@@ -116,81 +154,106 @@ export const HazardReportsView: React.FC = () => {
         params.query = q;
       }
       const data = await HazardReportService.listReports(params);
+      if (opts?.isCancelled && opts.isCancelled()) return;
       setReports(data);
     } catch (err) {
+      if (opts?.isCancelled && opts.isCancelled()) return;
       console.error('Failed to load hazard reports:', err);
       setReports([]);
     } finally {
-      setLoading(false);
+      if (!opts?.isCancelled || !opts.isCancelled()) {
+        setLoading(false);
+      }
     }
   };
 
   // Subscribe to real-time updates (live data <= 1 year) or load targeted archives
   useEffect(() => {
+    let isCancelled = false;
     if (timeRange === '1year') {
       setLoading(true);
       const unsubscribe = HazardReportService.subscribeHazardReports((data) => {
-        setReports(data);
-        setLoading(false);
+        if (!isCancelled) {
+          setReports(data);
+          setLoading(false);
+        }
       });
-      return () => unsubscribe();
+      return () => {
+        isCancelled = true;
+        unsubscribe();
+      };
     } else {
       if (searchQuery.trim()) {
-        loadReports(searchQuery.trim());
+        void loadReports(searchQuery.trim(), { isCancelled: () => isCancelled });
       } else {
         setReports([]);
         setLoading(false);
       }
     }
+    return () => {
+      isCancelled = true;
+    };
   }, [timeRange]);
 
   const refreshData = async () => {
     if (timeRange === 'all') {
       if (searchQuery.trim()) {
-        loadReports(searchQuery.trim());
+        await loadReports(searchQuery.trim());
       } else {
         setReports([]);
       }
     } else {
-      loadReports();
+      await loadReports();
     }
   };
 
-  // KPIs
+  // KPIs - single pass loop
   const stats = useMemo(() => {
-    const total = reports.length;
-    const open = reports.filter((r) => r.statusInt === 0).length;
-    const investigating = reports.filter((r) => r.statusInt === 1).length;
-    const resolved = reports.filter((r) => r.statusInt === 2 || r.isCompleted).length;
-    const serious = reports.filter((r) => r.serious || r.trafficHazard).length;
-    return { total, open, investigating, resolved, serious };
+    let open = 0;
+    let investigating = 0;
+    let resolved = 0;
+    let serious = 0;
+
+    for (const r of reports) {
+      if (r.statusInt === 0) open++;
+      else if (r.statusInt === 1) investigating++;
+      else if (r.statusInt === 2 || r.isCompleted) resolved++;
+
+      if (r.serious || r.trafficHazard) serious++;
+    }
+
+    return { total: reports.length, open, investigating, resolved, serious };
   }, [reports]);
 
   // Filtered reports
   const filteredReports = useMemo(() => {
+    const q = deferredSearchQuery.trim().toLowerCase();
+    const hasSearch = q.length > 0;
+    const isStatusFiltered = statusFilter !== 'all';
+    const targetStatus = isStatusFiltered ? Number(statusFilter) : 0;
+    const isOfficeFiltered = officeTypeFilter !== 'all';
+    const targetOfficeType = isOfficeFiltered ? officeTypeFilter.toLowerCase() : '';
+    const isHazardCategoryFiltered = hazardTypeFilter !== 'all';
+    const targetHazardKey = isHazardCategoryFiltered ? (hazardTypeFilter as keyof HazardReport) : null;
+
     return reports.filter((r) => {
       // Status filter
-      if (statusFilter !== 'all') {
-        const targetStatus = Number(statusFilter);
-        if (r.statusInt !== targetStatus) return false;
+      if (isStatusFiltered && r.statusInt !== targetStatus) {
+        return false;
       }
 
       // Office Hazard Type filter
-      if (officeTypeFilter !== 'all') {
-        if ((r.officeHazardType || '').toLowerCase() !== officeTypeFilter.toLowerCase()) {
-          return false;
-        }
+      if (isOfficeFiltered && (r.officeHazardType || '').toLowerCase() !== targetOfficeType) {
+        return false;
       }
 
       // Specific Hazard Type filter
-      if (hazardTypeFilter !== 'all') {
-        const key = hazardTypeFilter as keyof HazardReport;
-        if (!r[key]) return false;
+      if (targetHazardKey && !r[targetHazardKey]) {
+        return false;
       }
 
       // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (hasSearch) {
         const matchesReporter = (r.reportedBy || '').toLowerCase().includes(q);
         const matchesRoute = (r.routeId || r.routeName || '').toLowerCase().includes(q);
         const matchesUnit = (r.unitNumber || r.unitId || '').toLowerCase().includes(q);
@@ -213,7 +276,7 @@ export const HazardReportsView: React.FC = () => {
       }
       return true;
     });
-  }, [reports, statusFilter, officeTypeFilter, hazardTypeFilter, searchQuery]);
+  }, [reports, statusFilter, officeTypeFilter, hazardTypeFilter, deferredSearchQuery]);
 
   const { isFrench } = useI18n();
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -323,31 +386,6 @@ export const HazardReportsView: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  };
-
-  // Helper to get active hazard tags
-  const getHazardTags = (r: HazardReport) => {
-    const list: string[] = [];
-    if (r.trippingHazard) list.push('Tripping');
-    if (r.trafficHazard) list.push('Traffic');
-    if (r.equipmentHazard) list.push('Equipment');
-    if (r.performanceHazard) list.push('Performance');
-    if (r.snowHazard) list.push('Snow / Ice / Road');
-    if (r.spillHazard) list.push('Spill');
-    if (r.otherHazard) list.push('Other Hazard');
-    return list;
-  };
-
-  // Helper to get active close call tags
-  const getCloseCallTags = (r: HazardReport) => {
-    const list: string[] = [];
-    if (r.unsafeAction) list.push('Unsafe Action');
-    if (r.unsafeCondition) list.push('Unsafe Condition');
-    if (r.happenedtoMe) list.push('To Me');
-    if (r.happenedtoSomeone) list.push('To Someone');
-    if (r.ofanarea) list.push('Area Issue');
-    if (r.ofEquipment) list.push('Equipment Issue');
-    return list;
   };
 
   const handleOpenPdf = (rep: HazardReport) => {
@@ -476,7 +514,7 @@ export const HazardReportsView: React.FC = () => {
 
           <button
             type="button"
-            onClick={refreshData}
+            onClick={() => void refreshData()}
             disabled={loading}
             className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-xs cursor-pointer"
             title="Refresh list from server"
@@ -563,7 +601,7 @@ export const HazardReportsView: React.FC = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && timeRange === 'all') {
-                    loadReports(searchQuery.trim());
+                    void loadReports(searchQuery.trim());
                   }
                 }}
                 className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -581,7 +619,7 @@ export const HazardReportsView: React.FC = () => {
             {timeRange === 'all' && (
               <button
                 type="button"
-                onClick={() => loadReports(searchQuery.trim())}
+                onClick={() => void loadReports(searchQuery.trim())}
                 disabled={loading || !searchQuery.trim()}
                 className="px-3.5 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-900 rounded-xl transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5"
               >
@@ -1499,13 +1537,16 @@ export const HazardReportsView: React.FC = () => {
         </div>
       )}
 
-      {/* ─── Official Printable Hazard Report PDF Modal ───────────────────── */}
-      <HazardReportPdfModal
-        isOpen={isPdfModalOpen}
-        onClose={() => setIsPdfModalOpen(false)}
-        report={pdfTargetReport}
-        allReports={filteredReports}
-      />
+      {isPdfModalOpen && (
+        <React.Suspense fallback={<ExportLoadingOverlay />}>
+          <HazardReportPdfModal
+            isOpen={isPdfModalOpen}
+            onClose={() => setIsPdfModalOpen(false)}
+            report={pdfTargetReport}
+            allReports={filteredReports}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

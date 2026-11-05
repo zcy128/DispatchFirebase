@@ -12,6 +12,8 @@ import { DispatchService } from '../../services/dispatchService';
 import { useAuth } from '../../contexts/AuthContext';
 import { logDispatchAction } from '../../utils/dispatchLogger';
 
+const EMPTY_SHIFTS: DispatchShift[] = [];
+
 export interface StudentAbsenceTarget {
   studentId: number;
   studentNo?: string;
@@ -37,10 +39,15 @@ const PRESET_REASONS = [
   'Personal / Other'
 ];
 
-export const RecordStudentAbsenceModal: React.FC<RecordStudentAbsenceModalProps> = ({
+export const RecordStudentAbsenceModal: React.FC<RecordStudentAbsenceModalProps> = (props) => {
+  if (!props.isOpen) return null;
+  return <RecordStudentAbsenceModalContent {...props} shifts={props.shifts ?? EMPTY_SHIFTS} />;
+};
+
+const RecordStudentAbsenceModalContent: React.FC<RecordStudentAbsenceModalProps> = ({
   isOpen,
   onClose,
-  shifts = [],
+  shifts = EMPTY_SHIFTS,
   initialDate,
   initialStudent,
   onAbsenceRecorded,

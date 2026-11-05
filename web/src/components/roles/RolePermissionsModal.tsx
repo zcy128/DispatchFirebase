@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { UserRole, PermissionLevel } from '../../types/employee';
 import { NavTab } from '../common/Sidebar';
 import {
@@ -22,6 +22,8 @@ import {
   RotateCcw
 } from 'lucide-react';
 
+const PAGE_CATEGORIES = ['all', 'operations', 'masterData', 'hr_finance', 'system'] as const;
+
 interface RolePermissionsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -39,6 +41,7 @@ export const RolePermissionsModal: React.FC<RolePermissionsModalProps> = ({
     getRoleDefaultPermissions(role)
   );
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -71,23 +74,22 @@ export const RolePermissionsModal: React.FC<RolePermissionsModalProps> = ({
     ).length;
   }, [permissions, role]);
 
+  const filteredPages = useMemo(() => {
+    const term = deferredSearchTerm.trim().toLowerCase();
+    return SYSTEM_PAGES.filter((page) => {
+      if (selectedCategory !== 'all' && page.category !== selectedCategory) return false;
+      if (!term) return true;
+      return (
+        page.label.toLowerCase().includes(term) ||
+        page.description.toLowerCase().includes(term) ||
+        page.id.toLowerCase().includes(term)
+      );
+    });
+  }, [deferredSearchTerm, selectedCategory]);
+
   if (!isOpen) return null;
 
-  const categories = ['all', 'operations', 'masterData', 'hr_finance', 'system'];
-
-  const filteredPages = SYSTEM_PAGES.filter((page) => {
-    if (selectedCategory !== 'all' && page.category !== selectedCategory) {
-      return false;
-    }
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase().trim();
-      const matchLabel = page.label.toLowerCase().includes(term);
-      const matchDesc = page.description.toLowerCase().includes(term);
-      const matchId = page.id.toLowerCase().includes(term);
-      if (!matchLabel && !matchDesc && !matchId) return false;
-    }
-    return true;
-  });
+  const categories = PAGE_CATEGORIES;
 
   const handleSetLevel = (pageId: NavTab, level: PermissionLevel) => {
     setPermissions((prev) => ({

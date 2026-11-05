@@ -37,6 +37,18 @@ export const RouteOpeningStopPreviewModal: React.FC<RouteOpeningStopPreviewModal
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
 
+  const postingType = opening?.postingType;
+  const charterTripId = opening?.charterTripId;
+  const departsAt = opening?.departsAt;
+  const returnsAt = opening?.returnsAt;
+  const sanitizedStopsSignature = useMemo(() => {
+    const stops = opening?.sanitizedStops || [];
+    if (stops.length === 0) return '';
+    return stops
+      .map((s) => `${s.stopId}|${s.sequence}|${s.stopLocation}|${s.stopScheduleTime}|${s.stopType}`)
+      .join(';');
+  }, [opening?.sanitizedStops]);
+
   // Load shifts for route or charter stops
   useEffect(() => {
     if (!isOpen || !routeId) {
@@ -49,15 +61,18 @@ export const RouteOpeningStopPreviewModal: React.FC<RouteOpeningStopPreviewModal
     let isCancelled = false;
     setLoading(true);
 
-    if (opening?.postingType === 'charter' || (opening?.sanitizedStops && opening.sanitizedStops.length > 0)) {
-      if (opening.sanitizedStops && opening.sanitizedStops.length > 0) {
-        if (opening.postingType === 'charter' && opening.sanitizedStops.length === 3) {
-          const s0 = opening.sanitizedStops[0];
-          const s1 = opening.sanitizedStops[1];
-          const s2 = opening.sanitizedStops[2];
-          const t0 = formatCharterStopTime(s0.stopScheduleTime) || formatCharterStopTime(opening.departsAt) || '08:00';
+    const hasSanitizedStops = Boolean(sanitizedStopsSignature);
+    const openingStops = opening?.sanitizedStops;
+
+    if (postingType === 'charter' || hasSanitizedStops) {
+      if (openingStops && openingStops.length > 0) {
+        if (postingType === 'charter' && openingStops.length === 3) {
+          const s0 = openingStops[0];
+          const s1 = openingStops[1];
+          const s2 = openingStops[2];
+          const t0 = formatCharterStopTime(s0.stopScheduleTime) || formatCharterStopTime(departsAt) || '08:00';
           const t1 = addMinutesToCharterTime(t0, 30);
-          const t2 = formatCharterStopTime(s2.stopScheduleTime) || formatCharterStopTime(opening.returnsAt) || '15:00';
+          const t2 = formatCharterStopTime(s2.stopScheduleTime) || formatCharterStopTime(returnsAt) || '15:00';
           const t3 = addMinutesToCharterTime(t2, 30);
           setCharterStops([
             { ...s0, sequence: 1, stopScheduleTime: t0 },
@@ -80,13 +95,13 @@ export const RouteOpeningStopPreviewModal: React.FC<RouteOpeningStopPreviewModal
             },
           ]);
         } else {
-          setCharterStops(opening.sanitizedStops);
+          setCharterStops(openingStops);
         }
         setShifts([]);
         setLoading(false);
         return;
       }
-      const targetTripId = opening.charterTripId || routeId;
+      const targetTripId = charterTripId || routeId;
       CharterService.getTripById(targetTripId)
         .then((trip) => {
           if (isCancelled) return;
@@ -183,7 +198,16 @@ export const RouteOpeningStopPreviewModal: React.FC<RouteOpeningStopPreviewModal
     return () => {
       isCancelled = true;
     };
-  }, [isOpen, routeId, opening]);
+  }, [
+    isOpen,
+    routeId,
+    postingType,
+    charterTripId,
+    departsAt,
+    returnsAt,
+    sanitizedStopsSignature,
+    opening?.sanitizedStops,
+  ]);
 
   const activeShift = shifts[selectedShiftIndex] || null;
   const markersByIndexRef = useRef<L.Marker[]>([]);
@@ -319,14 +343,16 @@ export const RouteOpeningStopPreviewModal: React.FC<RouteOpeningStopPreviewModal
     };
   }, [isOpen, sanitizedStops]);
 
-  // Teardown map on modal close
+  // Always tear down Leaflet on unmount (parent unmounts when closed)
   useEffect(() => {
-    if (!isOpen && mapInstanceRef.current) {
-      mapInstanceRef.current.remove();
-      mapInstanceRef.current = null;
-      markersLayerRef.current = null;
-    }
-  }, [isOpen]);
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+        markersLayerRef.current = null;
+      }
+    };
+  }, []);
 
   if (!isOpen) return null;
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { PreTripInspection, VehiclePretripStatus } from '../types/pretrip';
 import { PreTripService } from '../services/pretripService';
@@ -6,8 +6,18 @@ import { DispatchService } from '../services/dispatchService';
 import { VehicleService } from '../services/vehicleService';
 import { Vehicle } from '../types/vehicle';
 import { DispatchShift } from '../types/dispatch';
-import { PreTripReportPdfModal } from '../components/pretrip/PreTripReportPdfModal';
-import { PreTripFleetRosterPrintModal } from '../components/pretrip/PreTripFleetRosterPrintModal';
+import { ExportLoadingOverlay } from '../components/common/ExportLoadingOverlay';
+
+const PreTripReportPdfModal = React.lazy(() =>
+  import('../components/pretrip/PreTripReportPdfModal').then((module) => ({
+    default: module.PreTripReportPdfModal,
+  }))
+);
+const PreTripFleetRosterPrintModal = React.lazy(() =>
+  import('../components/pretrip/PreTripFleetRosterPrintModal').then((module) => ({
+    default: module.PreTripFleetRosterPrintModal,
+  }))
+);
 import {
   ClipboardCheck,
   Search,
@@ -36,6 +46,7 @@ export const PreTripInspectionsView: React.FC = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [activeTab, setActiveTab] = useState<'all_dispatched' | 'missing' | 'passed' | 'defects' | 'all_fleet'>('missing');
 
   // Modals
@@ -47,8 +58,8 @@ export const PreTripInspectionsView: React.FC = () => {
     return PreTripService.isColdDate(selectedDate);
   }, [selectedDate]);
 
-  // Load shifts, vehicles, and subscribe to pre-trip inspections for selectedDate
-  const loadData = async () => {
+  // Load shifts, vehicles, and subscribe to pre-trip inspections with race-condition cancellation protection (Vercel client-event-listeners)
+  const loadData = async (signal?: { isCancelled: boolean }) => {
     setLoading(true);
     try {
       const [vList, sList, inspList] = await Promise.all([
@@ -56,26 +67,41 @@ export const PreTripInspectionsView: React.FC = () => {
         DispatchService.list(selectedDate).catch(() => []),
         PreTripService.listInspections(selectedDate).catch(() => []),
       ]);
+      if (signal?.isCancelled) return;
       setVehicles(vList);
       setShifts(sList);
       setInspections(inspList);
     } catch (err) {
-      console.error('[PreTripInspectionsView] Error loading data:', err);
+      if (!signal?.isCancelled) {
+        console.error('[PreTripInspectionsView] Error loading data:', err);
+      }
     } finally {
-      setLoading(false);
+      if (!signal?.isCancelled) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadData();
+    const signal = { isCancelled: false };
+    loadData(signal);
 
     // Subscribe to live updates for today / recent dates
     if (!PreTripService.isColdDate(selectedDate)) {
       const unsub = PreTripService.subscribeToDate(selectedDate, (live) => {
-        setInspections(live);
+        if (!signal.isCancelled) {
+          setInspections(live);
+        }
       });
-      return () => unsub();
+      return () => {
+        signal.isCancelled = true;
+        unsub();
+      };
     }
+
+    return () => {
+      signal.isCancelled = true;
+    };
   }, [selectedDate]);
 
   // Map each vehicle/shift into unified VehiclePretripStatus
@@ -180,27 +206,42 @@ export const PreTripInspectionsView: React.FC = () => {
     });
   }, [shifts, inspections, vehicles]);
 
-  // KPIs
+  // Single-pass aggregate KPI calculation (Vercel js-combine-iterations)
   const stats = useMemo(() => {
-    const assigned = roster.filter((r) => r.isAssigned);
-    const totalAssigned = assigned.length;
-    const inspected = assigned.filter((r) => r.hasInspection);
-    const missing = assigned.filter((r) => !r.hasInspection);
-    const passedClean = inspected.filter((r) => r.status === 'passed').length;
-    const defects = inspected.filter((r) => r.status === 'passed_with_minor_defects' || r.status === 'failed_major_defects').length;
-    const complianceRate = totalAssigned > 0 ? Math.round((inspected.length / totalAssigned) * 100) : 100;
+    let totalAssigned = 0;
+    let inspectedCount = 0;
+    let missingCount = 0;
+    let passedClean = 0;
+    let defects = 0;
+
+    for (const r of roster) {
+      if (!r.isAssigned) continue;
+      totalAssigned++;
+      if (r.hasInspection) {
+        inspectedCount++;
+        if (r.status === 'passed') {
+          passedClean++;
+        } else if (r.status === 'passed_with_minor_defects' || r.status === 'failed_major_defects') {
+          defects++;
+        }
+      } else {
+        missingCount++;
+      }
+    }
+
+    const complianceRate = totalAssigned > 0 ? Math.round((inspectedCount / totalAssigned) * 100) : 100;
 
     return {
       totalAssigned,
-      inspectedCount: inspected.length,
-      missingCount: missing.length,
+      inspectedCount,
+      missingCount,
       passedClean,
       defects,
       complianceRate,
     };
   }, [roster]);
 
-  // Filtered List
+  // Filtered List using deferred search query (Vercel rerender-use-deferred-value)
   const filteredRoster = useMemo(() => {
     return roster.filter((item) => {
       // Tab filter
@@ -210,9 +251,9 @@ export const PreTripInspectionsView: React.FC = () => {
       if (activeTab === 'defects' && (!item.isAssigned || (item.status !== 'passed_with_minor_defects' && item.status !== 'failed_major_defects'))) return false;
       // 'all_fleet' includes everyone
 
-      // Search Query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
+      // Search Query evaluated with deferred value to prevent dropped frames
+      if (deferredSearchQuery.trim()) {
+        const q = deferredSearchQuery.toLowerCase().trim();
         const matches =
           item.unitNumber.toLowerCase().includes(q) ||
           (item.driverName && item.driverName.toLowerCase().includes(q)) ||
@@ -224,7 +265,23 @@ export const PreTripInspectionsView: React.FC = () => {
 
       return true;
     });
-  }, [roster, activeTab, searchQuery]);
+  }, [roster, activeTab, deferredSearchQuery]);
+
+  // Memoized tabs configuration (Vercel rerender-memo)
+  const filterTabs = useMemo(
+    () => [
+      {
+        id: 'missing' as const,
+        label: `🚨 Missing Pre-Trip (${stats.missingCount})`,
+        badgeClass: stats.missingCount > 0 ? 'bg-rose-600 text-white animate-pulse' : 'bg-emerald-600 text-white',
+      },
+      { id: 'all_dispatched' as const, label: `Dispatched Vehicles (${stats.totalAssigned})` },
+      { id: 'passed' as const, label: `Passed Clean (${stats.passedClean})` },
+      { id: 'defects' as const, label: `With Defects (${stats.defects})` },
+      { id: 'all_fleet' as const, label: `All Fleet Units (${roster.length})` },
+    ],
+    [stats, roster.length]
+  );
 
   // Virtual Scrolling for large fleet rosters (hundreds/thousands of units)
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -297,7 +354,7 @@ export const PreTripInspectionsView: React.FC = () => {
           {/* Refresh */}
           <button
             type="button"
-            onClick={loadData}
+            onClick={() => void loadData()}
             disabled={loading}
             className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-600 dark:text-slate-300 transition shadow-xs disabled:opacity-50 cursor-pointer"
             title="Refresh Inspections & Shifts"
@@ -449,17 +506,7 @@ export const PreTripInspectionsView: React.FC = () => {
         {/* Tab Filters */}
         <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-700/60">
           <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mr-2">Filter View:</span>
-          {[
-            {
-              id: 'missing',
-              label: `🚨 Missing Pre-Trip (${stats.missingCount})`,
-              badgeClass: stats.missingCount > 0 ? 'bg-rose-600 text-white animate-pulse' : 'bg-emerald-600 text-white',
-            },
-            { id: 'all_dispatched', label: `Dispatched Vehicles (${stats.totalAssigned})` },
-            { id: 'passed', label: `Passed Clean (${stats.passedClean})` },
-            { id: 'defects', label: `With Defects (${stats.defects})` },
-            { id: 'all_fleet', label: `All Fleet Units (${roster.length})` },
-          ].map((tab) => {
+          {filterTabs.map((tab) => {
             const active = activeTab === tab.id;
             return (
               <button
@@ -707,23 +754,29 @@ export const PreTripInspectionsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Individual Certificate Modal */}
-      <PreTripReportPdfModal
-        isOpen={isIndividualPdfOpen}
-        onClose={() => {
-          setIsIndividualPdfOpen(false);
-          setSelectedInspectionForPdf(null);
-        }}
-        inspection={selectedInspectionForPdf}
-      />
+      {isIndividualPdfOpen && (
+        <React.Suspense fallback={<ExportLoadingOverlay />}>
+          <PreTripReportPdfModal
+            isOpen={isIndividualPdfOpen}
+            onClose={() => {
+              setIsIndividualPdfOpen(false);
+              setSelectedInspectionForPdf(null);
+            }}
+            inspection={selectedInspectionForPdf}
+          />
+        </React.Suspense>
+      )}
 
-      {/* Fleet Daily Roster Print Modal */}
-      <PreTripFleetRosterPrintModal
-        isOpen={isRosterPdfOpen}
-        onClose={() => setIsRosterPdfOpen(false)}
-        date={selectedDate}
-        roster={roster}
-      />
+      {isRosterPdfOpen && (
+        <React.Suspense fallback={<ExportLoadingOverlay />}>
+          <PreTripFleetRosterPrintModal
+            isOpen={isRosterPdfOpen}
+            onClose={() => setIsRosterPdfOpen(false)}
+            date={selectedDate}
+            roster={roster}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

@@ -8,8 +8,15 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { RouteChangeLog } from '../types/routeAudit';
+import {
+  capLogList,
+  isTimestampInBounds,
+  timestampLogQuery,
+  type TimestampLogBounds,
+} from './timestampLogQuery';
 
 const LOCAL_STORAGE_KEY = 'dispatch_route_change_logs';
+let memoryLogs: RouteChangeLog[] | null = null;
 
 function isStoredRouteLog(item: unknown): item is RouteChangeLog {
   if (!item || typeof item !== 'object') return false;
@@ -18,23 +25,36 @@ function isStoredRouteLog(item: unknown): item is RouteChangeLog {
 }
 
 function getStoredLogs(): RouteChangeLog[] {
+  if (memoryLogs) return memoryLogs;
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) {
+      memoryLogs = [];
+      return memoryLogs;
+    }
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isStoredRouteLog);
+    memoryLogs = Array.isArray(parsed) ? parsed.filter(isStoredRouteLog) : [];
+    return memoryLogs;
   } catch {
     return [];
   }
 }
 
 function saveStoredLogs(logs: RouteChangeLog[]) {
+  memoryLogs = logs;
   try {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(logs));
   } catch (err) {
     console.warn('[RouteAuditService] Failed to cache logs in localStorage:', err);
   }
+}
+
+function publishRouteLogs(logs: RouteChangeLog[], bounds?: TimestampLogBounds): RouteChangeLog[] {
+  const filtered = logs.filter((item) => isTimestampInBounds(item.timestamp, bounds));
+  const sorted = [...filtered].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+  return capLogList(sorted, bounds?.limitCount);
 }
 
 export const RouteAuditService = {
@@ -141,20 +161,18 @@ export const RouteAuditService = {
    */
   subscribeToAllLogs: (
     onUpdate: (logs: RouteChangeLog[]) => void,
-    onError?: (err: Error) => void
+    onError?: (err: Error) => void,
+    bounds?: TimestampLogBounds
   ): (() => void) => {
     if (!db) {
-      const all = getStoredLogs().sort(
-        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      );
-      onUpdate(all);
+      onUpdate(publishRouteLogs(getStoredLogs(), bounds));
       return () => {};
     }
 
     try {
-      const q = query(collection(db, 'route_change_logs'), orderBy('timestamp', 'desc'));
+      const logQuery = timestampLogQuery(collection(db, 'route_change_logs'), bounds);
       const unsubscribe = onSnapshot(
-        q,
+        logQuery,
         (snapshot) => {
           const list: RouteChangeLog[] = [];
           snapshot.forEach((doc) => {
@@ -162,34 +180,23 @@ export const RouteAuditService = {
             list.push({ ...(doc.data() as RouteChangeLog), id: doc.id });
           });
 
-          const cached = getStoredLogs();
+          const cached = getStoredLogs().filter((item) => isTimestampInBounds(item.timestamp, bounds));
           const map = new Map<string, RouteChangeLog>();
           cached.forEach((item) => map.set(item.id, item));
           list.forEach((item) => map.set(item.id, item));
 
-          const merged = Array.from(map.values()).sort(
-            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-          );
-          onUpdate(merged);
+          onUpdate(publishRouteLogs(Array.from(map.values()), bounds));
         },
         (error) => {
           console.warn('[RouteAuditService] onSnapshot error on all logs, fallback to cache:', error);
           if (onError) onError(error);
-          onUpdate(
-            getStoredLogs().sort(
-              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-            )
-          );
+          onUpdate(publishRouteLogs(getStoredLogs(), bounds));
         }
       );
       return unsubscribe;
     } catch (err) {
       console.warn('[RouteAuditService] Exception in all logs listener:', err);
-      onUpdate(
-        getStoredLogs().sort(
-          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        )
-      );
+      onUpdate(publishRouteLogs(getStoredLogs(), bounds));
       return () => {};
     }
   }

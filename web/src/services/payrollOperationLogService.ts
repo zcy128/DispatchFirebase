@@ -1,8 +1,6 @@
 import {
   collection,
   addDoc,
-  query,
-  orderBy,
   onSnapshot
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -10,6 +8,12 @@ import {
   PayrollOperationLog,
   PayrollOperationLogFilter
 } from '../types/payrollOperationLog';
+import {
+  capLogList,
+  isTimestampInBounds,
+  timestampLogQuery,
+  type TimestampLogBounds,
+} from './timestampLogQuery';
 
 const LOCAL_STORAGE_KEY = 'dispatch_payroll_operation_logs';
 
@@ -73,7 +77,8 @@ export const PayrollOperationLogService = {
   subscribeToLogs(
     filter: PayrollOperationLogFilter = {},
     onUpdate: (logs: PayrollOperationLog[]) => void,
-    onError?: (err: Error) => void
+    onError?: (err: Error) => void,
+    bounds?: TimestampLogBounds
   ): () => void {
     const applyFilter = (allLogs: PayrollOperationLog[]): PayrollOperationLog[] => {
       return allLogs
@@ -119,16 +124,20 @@ export const PayrollOperationLogService = {
         .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     };
 
+    const publish = (logs: PayrollOperationLog[]) => {
+      const windowed = logs.filter((item) => isTimestampInBounds(item.timestamp, bounds));
+      onUpdate(capLogList(applyFilter(windowed), bounds?.limitCount));
+    };
+
     if (!db) {
-      const local = PayrollOperationLogService.getStoredLogs();
-      onUpdate(applyFilter(local));
+      publish(PayrollOperationLogService.getStoredLogs());
       return () => {};
     }
 
     try {
-      const q = query(collection(db, 'payroll_operation_logs'), orderBy('timestamp', 'desc'));
+      const logQuery = timestampLogQuery(collection(db, 'payroll_operation_logs'), bounds);
       const unsub = onSnapshot(
-        q,
+        logQuery,
         (snap) => {
           const remoteList: PayrollOperationLog[] = [];
           snap.forEach((doc) => {
@@ -140,7 +149,7 @@ export const PayrollOperationLogService = {
             });
           });
 
-          onUpdate(applyFilter(remoteList));
+          publish(remoteList);
         },
         (err) => {
           console.warn('[PayrollOperationLogService] onSnapshot fallback:', err);

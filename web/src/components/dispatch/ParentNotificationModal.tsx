@@ -25,6 +25,8 @@ import { getCurrentHHmm } from '../../utils/dispatchDelayUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { logDispatchAction } from '../../utils/dispatchLogger';
 
+const EMPTY_STUDENTS_MAP: Record<number, Student> = {};
+
 interface ParentNotificationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -36,18 +38,26 @@ interface ParentNotificationModalProps {
 
 type RecipientScope = 'this_stop' | 'downstream' | 'all';
 
-export const ParentNotificationModal: React.FC<ParentNotificationModalProps> = ({
-  isOpen,
+export const ParentNotificationModal: React.FC<ParentNotificationModalProps> = (props) => {
+  if (!props.isOpen || !props.shift) return null;
+  return (
+    <ParentNotificationModalContent
+      {...props}
+      shift={props.shift}
+      studentsMap={props.studentsMap ?? EMPTY_STUDENTS_MAP}
+    />
+  );
+};
+
+const ParentNotificationModalContent: React.FC<ParentNotificationModalProps & { shift: DispatchShift }> = ({
   onClose,
   shift,
   targetStopId,
-  studentsMap = {},
+  studentsMap = EMPTY_STUDENTS_MAP,
   onNotificationSent,
 }) => {
   const { currentUser } = useAuth();
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
-
-  if (!isOpen || !shift) return null;
 
   const stops = Array.isArray(shift.stops) ? shift.stops : [];
   const initialStop = targetStopId ? stops.find((s) => s.stopId === targetStopId) || stops[0] : stops[0];

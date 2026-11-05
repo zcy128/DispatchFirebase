@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useI18n } from '../contexts/I18nContext';
 import {
@@ -33,7 +33,35 @@ import {
   ROUTE_ASSESSMENT_QUESTIONS,
 } from '../types/routeAssessment';
 import { RouteAssessmentService } from '../services/routeAssessmentService';
-import { RouteAssessmentPdfModal } from '../components/assessments/RouteAssessmentPdfModal';
+import { ExportLoadingOverlay } from '../components/common/ExportLoadingOverlay';
+
+// Pure helper to calculate 365-day cutoff date string once
+function getCutoffDate365Days(): string {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 365);
+  return cutoff.toISOString().slice(0, 10);
+}
+
+// Pure helper to count flagged risks for an assessment
+function countFlaggedRisks(a: RouteAssessment): number {
+  let count = 0;
+  if (a.visibilityProblemCheck) count++;
+  if (a.highwayStopConcernCheck) count++;
+  if (a.locationProblemCheck) count++;
+  if (a.unsafeTurnaroundCheck) count++;
+  if (a.intersectionCheck) count++;
+  if (a.roadwayCheck) count++;
+  if (a.nonweatherRiskCheck) count++;
+  if (a.weatherRiskCheck) count++;
+  if (a.safetyConcernCheck) count++;
+  return count;
+}
+
+const RouteAssessmentPdfModal = React.lazy(() =>
+  import('../components/assessments/RouteAssessmentPdfModal').then((module) => ({
+    default: module.RouteAssessmentPdfModal,
+  }))
+);
 
 export const RouteAssessmentsView: React.FC = () => {
   const [assessments, setAssessments] = useState<RouteAssessment[]>([]);
@@ -41,14 +69,12 @@ export const RouteAssessmentsView: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'working' | 'completed' | 'submitted'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | '0' | '1'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [timeRange, setTimeRange] = useState<'1year' | 'all'>('1year');
 
-  const isArchivedDate = (d?: string) => {
-    if (!d) return false;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 365);
-    return d.slice(0, 10) < cutoff.toISOString().slice(0, 10);
-  };
+  // Pre-calculate 365-day cutoff date string once to avoid per-row Date allocations
+  const cutoffDate365Str = useMemo(() => getCutoffDate365Days(), []);
+  const isArchivedDate = (d?: string) => Boolean(d && d.slice(0, 10) < cutoffDate365Str);
 
   // Selected assessment for review/details modal
   const [selectedAssessment, setSelectedAssessment] = useState<RouteAssessment | null>(null);
@@ -88,11 +114,13 @@ export const RouteAssessmentsView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightbox]);
 
-  const loadAssessments = async (targetQuery?: string) => {
+  const loadAssessments = async (targetQuery?: string, opts?: { isCancelled?: () => boolean }) => {
     const q = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
     if (timeRange === 'all' && !q) {
-      setAssessments([]);
-      setLoading(false);
+      if (!opts?.isCancelled || !opts.isCancelled()) {
+        setAssessments([]);
+        setLoading(false);
+      }
       return;
     }
     setLoading(true);
@@ -102,44 +130,57 @@ export const RouteAssessmentsView: React.FC = () => {
         params.query = q;
       }
       const data = await RouteAssessmentService.listAssessments(params);
+      if (opts?.isCancelled && opts.isCancelled()) return;
       setAssessments(data);
     } catch (err) {
+      if (opts?.isCancelled && opts.isCancelled()) return;
       console.error('Failed to load route assessments:', err);
       setAssessments([]);
     } finally {
-      setLoading(false);
+      if (!opts?.isCancelled || !opts.isCancelled()) {
+        setLoading(false);
+      }
     }
   };
 
   // Real-time subscription (live data <= 1 year) or load targeted archives
   useEffect(() => {
+    let isCancelled = false;
     if (timeRange === '1year') {
       setLoading(true);
       const unsubscribe = RouteAssessmentService.subscribeRouteAssessments((data) => {
-        setAssessments(data);
-        setLoading(false);
-        // Keep selected assessment up to date if open
-        setSelectedAssessment((prev) => {
-          if (!prev) return null;
-          const found = data.find((d) => d.id === prev.id);
-          return found || prev;
-        });
+        if (!isCancelled) {
+          setAssessments(data);
+          setLoading(false);
+          // Keep selected assessment up to date if open
+          setSelectedAssessment((prev) => {
+            if (!prev) return null;
+            const found = data.find((d) => d.id === prev.id);
+            return found || prev;
+          });
+        }
       });
-      return () => unsubscribe();
+      return () => {
+        isCancelled = true;
+        unsubscribe();
+      };
     } else {
       if (searchQuery.trim()) {
-        loadAssessments(searchQuery.trim());
+        void loadAssessments(searchQuery.trim(), { isCancelled: () => isCancelled });
       } else {
         setAssessments([]);
         setLoading(false);
       }
     }
+    return () => {
+      isCancelled = true;
+    };
   }, [timeRange]);
 
   const refreshData = async () => {
     if (timeRange === 'all') {
       if (searchQuery.trim()) {
-        loadAssessments(searchQuery.trim());
+        await loadAssessments(searchQuery.trim());
       } else {
         setAssessments([]);
       }
@@ -156,14 +197,19 @@ export const RouteAssessmentsView: React.FC = () => {
     }
   };
 
-  // KPIs
+  // KPIs - single pass loop
   const stats = useMemo(() => {
-    const total = assessments.length;
-    const working = assessments.filter((a) => a.statusInt === 0 || a.statusInt === 1).length;
-    const completed = assessments.filter((a) => a.statusInt === 2 || a.isCompleted).length;
-    const submitted = assessments.filter((a) => a.statusInt === 3 || a.isSubmitted).length;
-    const flagged = assessments.filter((a) => {
-      return (
+    let working = 0;
+    let completed = 0;
+    let submitted = 0;
+    let flagged = 0;
+
+    for (const a of assessments) {
+      if (a.statusInt === 0 || a.statusInt === 1) working++;
+      if (a.statusInt === 2 || a.isCompleted) completed++;
+      if (a.statusInt === 3 || a.isSubmitted) submitted++;
+
+      if (
         a.visibilityProblemCheck ||
         a.highwayStopConcernCheck ||
         a.locationProblemCheck ||
@@ -173,35 +219,44 @@ export const RouteAssessmentsView: React.FC = () => {
         a.nonweatherRiskCheck ||
         a.weatherRiskCheck ||
         a.safetyConcernCheck
-      );
-    }).length;
-    return { total, working, completed, submitted, flagged };
+      ) {
+        flagged++;
+      }
+    }
+
+    return { total: assessments.length, working, completed, submitted, flagged };
   }, [assessments]);
 
   // Filtered list
   const filteredAssessments = useMemo(() => {
+    const q = deferredSearchQuery.trim().toLowerCase();
+    const hasSearch = q.length > 0;
+    const isStatusFiltered = statusFilter !== 'all';
+    const isTypeFiltered = typeFilter !== 'all';
+
     return assessments.filter((item) => {
       // Status filter
-      if (statusFilter === 'working' && item.statusInt !== 0 && item.statusInt !== 1) {
-        return false;
-      }
-      if (statusFilter === 'completed' && item.statusInt !== 2) {
-        return false;
-      }
-      if (statusFilter === 'submitted' && item.statusInt !== 3) {
-        return false;
+      if (isStatusFiltered) {
+        if (statusFilter === 'working' && item.statusInt !== 0 && item.statusInt !== 1) {
+          return false;
+        }
+        if (statusFilter === 'completed' && item.statusInt !== 2) {
+          return false;
+        }
+        if (statusFilter === 'submitted' && item.statusInt !== 3) {
+          return false;
+        }
       }
 
       // Assessment Type filter
-      if (typeFilter !== 'all' && item.assessmentType !== typeFilter) {
+      if (isTypeFiltered && item.assessmentType !== typeFilter) {
         return false;
       }
 
       // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesRoute = item.routeId.toLowerCase().includes(q);
-        const matchesDriver = item.conductedByDriver.toLowerCase().includes(q);
+      if (hasSearch) {
+        const matchesRoute = (item.routeId || '').toLowerCase().includes(q);
+        const matchesDriver = (item.conductedByDriver || '').toLowerCase().includes(q);
         const matchesEmpId = (item.conductedByEmployeeId || '').toLowerCase().includes(q);
         const matchesSchool = (item.school || '').toLowerCase().includes(q);
         const matchesBoard = (item.schoolBoard || '').toLowerCase().includes(q);
@@ -223,7 +278,7 @@ export const RouteAssessmentsView: React.FC = () => {
 
       return true;
     });
-  }, [assessments, statusFilter, typeFilter, searchQuery]);
+  }, [assessments, statusFilter, typeFilter, deferredSearchQuery]);
 
   const { isFrench } = useI18n();
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -303,21 +358,6 @@ export const RouteAssessmentsView: React.FC = () => {
       console.error('Failed to delete route assessment:', err);
       alert('Failed to delete route assessment.');
     }
-  };
-
-  // Count flagged risks for an assessment
-  const countFlaggedRisks = (a: RouteAssessment): number => {
-    let count = 0;
-    if (a.visibilityProblemCheck) count++;
-    if (a.highwayStopConcernCheck) count++;
-    if (a.locationProblemCheck) count++;
-    if (a.unsafeTurnaroundCheck) count++;
-    if (a.intersectionCheck) count++;
-    if (a.roadwayCheck) count++;
-    if (a.nonweatherRiskCheck) count++;
-    if (a.weatherRiskCheck) count++;
-    if (a.safetyConcernCheck) count++;
-    return count;
   };
 
   const handleOpenPdf = (a: RouteAssessment) => {
@@ -459,7 +499,7 @@ export const RouteAssessmentsView: React.FC = () => {
           </button>
 
           <button
-            onClick={refreshData}
+            onClick={() => void refreshData()}
             disabled={loading}
             className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
           >
@@ -523,7 +563,7 @@ export const RouteAssessmentsView: React.FC = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && timeRange === 'all') {
-                    loadAssessments(searchQuery.trim());
+                    void loadAssessments(searchQuery.trim());
                   }
                 }}
                 className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
@@ -540,7 +580,7 @@ export const RouteAssessmentsView: React.FC = () => {
             {timeRange === 'all' && (
               <button
                 type="button"
-                onClick={() => loadAssessments(searchQuery.trim())}
+                onClick={() => void loadAssessments(searchQuery.trim())}
                 disabled={loading || !searchQuery.trim()}
                 className="px-3.5 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5"
               >
@@ -1359,13 +1399,16 @@ export const RouteAssessmentsView: React.FC = () => {
         </div>
       )}
 
-      {/* ─── Official Printable Route Assessment PDF Modal ───────────────────── */}
-      <RouteAssessmentPdfModal
-        isOpen={isPdfModalOpen}
-        onClose={() => setIsPdfModalOpen(false)}
-        assessment={pdfTargetAssessment}
-        allAssessments={filteredAssessments}
-      />
+      {isPdfModalOpen && (
+        <React.Suspense fallback={<ExportLoadingOverlay />}>
+          <RouteAssessmentPdfModal
+            isOpen={isPdfModalOpen}
+            onClose={() => setIsPdfModalOpen(false)}
+            assessment={pdfTargetAssessment}
+            allAssessments={filteredAssessments}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

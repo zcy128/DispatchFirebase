@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Receipt,
@@ -30,11 +30,17 @@ import {
 import { ExpenseReimbursementService } from '../services/expenseReimbursementService';
 import { useAuth } from '../contexts/AuthContext';
 
+// Pure helper to identify historical claims archived in BigQuery cold storage
+function isArchivedClaimDate(claimDate?: string): boolean {
+  return ExpenseReimbursementService.isColdClaim(claimDate);
+}
+
 export const ExpenseReimbursementsView: React.FC = () => {
   const { currentUser } = useAuth();
   const [claims, setClaims] = useState<ExpenseReimbursement[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedClaim, setSelectedClaim] = useState<ExpenseReimbursement | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState<boolean>(false);
@@ -70,15 +76,13 @@ export const ExpenseReimbursementsView: React.FC = () => {
   // Claims older than six months are BigQuery cold data.
   const [timeRange, setTimeRange] = useState<'6months' | 'all'>('6months');
 
-  const isArchivedDate = (claimDate?: string) => {
-    return ExpenseReimbursementService.isColdClaim(claimDate);
-  };
-
-  const loadClaims = async (targetQuery?: string) => {
+  const loadClaims = async (targetQuery?: string, opts?: { isCancelled?: () => boolean }) => {
     const q = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
     if (timeRange === 'all' && !q) {
-      setClaims([]);
-      setLoading(false);
+      if (!opts?.isCancelled?.()) {
+        setClaims([]);
+        setLoading(false);
+      }
       return;
     }
     setLoading(true);
@@ -91,70 +95,102 @@ export const ExpenseReimbursementsView: React.FC = () => {
         params.status = statusFilter;
       }
       const data = await ExpenseReimbursementService.listClaims(params);
-      setClaims(data);
+      if (!opts?.isCancelled?.()) {
+        setClaims(data);
+      }
     } catch (err) {
-      console.error('Failed to load expense claims:', err);
-      setClaims([]);
+      if (!opts?.isCancelled?.()) {
+        console.error('Failed to load expense claims:', err);
+        setClaims([]);
+      }
     } finally {
-      setLoading(false);
+      if (!opts?.isCancelled?.()) {
+        setLoading(false);
+      }
     }
   };
 
   // Subscribe to real-time updates (live data <= 6 months) or load targeted archives
   useEffect(() => {
+    let isCancelled = false;
     if (timeRange === '6months') {
       setLoading(true);
       const unsubscribe = ExpenseReimbursementService.subscribeClaims((data) => {
-        setClaims(data);
-        setLoading(false);
+        if (!isCancelled) {
+          setClaims(data);
+          setLoading(false);
+        }
       });
-      return () => unsubscribe();
+      return () => {
+        isCancelled = true;
+        unsubscribe();
+      };
     } else {
       if (searchQuery.trim()) {
-        loadClaims(searchQuery.trim());
+        void loadClaims(searchQuery.trim(), { isCancelled: () => isCancelled });
       } else {
         setClaims([]);
         setLoading(false);
       }
+      return () => {
+        isCancelled = true;
+      };
     }
   }, [timeRange]);
 
   const refreshData = async () => {
     if (timeRange === 'all') {
       if (searchQuery.trim()) {
-        loadClaims(searchQuery.trim());
+        await loadClaims(searchQuery.trim());
       } else {
         setClaims([]);
       }
     } else {
-      loadClaims();
+      await loadClaims();
     }
   };
 
   // KPIs
   const stats = useMemo(() => {
-    const total = claims.length;
-    const pending = claims.filter((c) => c.status === 'pending').length;
-    const approved = claims.filter((c) => c.status === 'approved').length;
-    const rejected = claims.filter((c) => c.status === 'rejected').length;
-    const approvedDollars = claims
-      .filter((c) => c.status === 'approved')
-      .reduce((sum, c) => sum + (c.totalAmount || 0), 0);
-    const pendingDollars = claims
-      .filter((c) => c.status === 'pending')
-      .reduce((sum, c) => sum + (c.totalAmount || 0), 0);
+    let pending = 0;
+    let approved = 0;
+    let rejected = 0;
+    let approvedDollars = 0;
+    let pendingDollars = 0;
 
-    return { total, pending, approved, rejected, approvedDollars, pendingDollars };
+    for (const c of claims) {
+      const amt = c.totalAmount || 0;
+      if (c.status === 'pending') {
+        pending++;
+        pendingDollars += amt;
+      } else if (c.status === 'approved') {
+        approved++;
+        approvedDollars += amt;
+      } else if (c.status === 'rejected' || c.status === 'cancelled') {
+        rejected++;
+      }
+    }
+
+    return {
+      total: claims.length,
+      pending,
+      approved,
+      rejected,
+      approvedDollars: Math.round(approvedDollars * 100) / 100,
+      pendingDollars: Math.round(pendingDollars * 100) / 100,
+    };
   }, [claims]);
 
   // Newest claim date first.
   const filteredClaims = useMemo(() => {
+    const q = deferredSearchQuery.trim().toLowerCase();
+    const hasQuery = q.length > 0;
+
     const list = claims.filter((c) => {
       if (statusFilter !== 'all' && c.status !== statusFilter) {
         return false;
       }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (hasQuery) {
         const matchesDriver = (c.employeeName || '').toLowerCase().includes(q);
         const matchesEmpId = (c.employeeId || '').toLowerCase().includes(q);
         const matchesRoute = (c.routeNo || '').toLowerCase().includes(q);
@@ -181,10 +217,12 @@ export const ExpenseReimbursementsView: React.FC = () => {
     return list.sort((a, b) => {
       const dateA = a.claimDate || a.createdAt || '';
       const dateB = b.claimDate || b.createdAt || '';
-      if (dateA !== dateB) return dateB.localeCompare(dateA);
-      return (b.createdAt || '').localeCompare(a.createdAt || '');
+      if (dateA !== dateB) return dateB > dateA ? 1 : -1;
+      const createdA = a.createdAt || '';
+      const createdB = b.createdAt || '';
+      return createdB > createdA ? 1 : createdB < createdA ? -1 : 0;
     });
-  }, [claims, statusFilter, searchQuery]);
+  }, [claims, statusFilter, deferredSearchQuery]);
 
   // Virtual scrolling for a large expense roster.
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -276,7 +314,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={refreshData}
+            onClick={() => void refreshData()}
             disabled={loading}
             className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors shadow-sm cursor-pointer"
           >
@@ -384,19 +422,31 @@ export const ExpenseReimbursementsView: React.FC = () => {
             type="text"
             placeholder={
               timeRange === 'all'
-                ? "Search BigQuery archives by driver, ID, route, receipt notes..."
+                ? "Search BigQuery archives by driver, ID, route, receipt notes... (Press Enter)"
                 : "Search by driver, employee ID, route, receipt notes..."
             }
             value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              if (timeRange === 'all') {
-                loadClaims(e.target.value);
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && timeRange === 'all') {
+                void loadClaims(searchQuery.trim());
               }
             }}
             className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
           />
         </div>
+
+        {timeRange === 'all' && (
+          <button
+            type="button"
+            onClick={() => void loadClaims(searchQuery.trim())}
+            disabled={loading}
+            className="px-3.5 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 disabled:opacity-50 rounded-lg transition-colors shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
+          >
+            <Search className="w-4 h-4" />
+            <span>Search Archive</span>
+          </button>
+        )}
 
         <div className="flex items-center gap-2">
           <select
@@ -487,7 +537,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
                       )
                     );
 
-                    const isCold = isArchivedDate(claim.claimDate);
+                    const isCold = isArchivedClaimDate(claim.claimDate);
 
                     return (
                       <tr

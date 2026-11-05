@@ -1,4 +1,4 @@
-import { BiweeklyEmployeeGroup } from '../views/BiweeklyPayrollView';
+import { BiweeklyEmployeeGroup } from '../types/biweeklyPayroll';
 
 export type QuickBooksExportFormat =
   | 'qbo_time_activity_csv'

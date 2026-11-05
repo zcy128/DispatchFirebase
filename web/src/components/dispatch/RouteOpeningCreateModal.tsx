@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import {
   X,
   PlusCircle,
@@ -58,49 +58,32 @@ export const RouteOpeningCreateModal: React.FC<RouteOpeningCreateModalProps> = (
   const initialStart = initialValues?.effectiveStartDate || todayStr;
   const computedInitialDeadline = initialValues?.deadline || calculateDefaultDeadline(initialStart);
 
-  const [selectedRouteId, setSelectedRouteId] = useState<string>(routes[0]?.id || '');
+  const [selectedRouteId, setSelectedRouteId] = useState<string>(
+    () => initialValues?.routeId || routes[0]?.id || ''
+  );
   const [routeSearch, setRouteSearch] = useState<string>('');
+  const deferredRouteSearch = useDeferredValue(routeSearch);
   const [isRouteDropdownOpen, setIsRouteDropdownOpen] = useState<boolean>(false);
-  const [postingType, setPostingType] = useState<RouteOpeningType>('permanent');
-  const [roleNeeded, setRoleNeeded] = useState<RouteOpeningRole>('driver');
+  const [postingType, setPostingType] = useState<RouteOpeningType>(
+    () => initialValues?.postingType || 'permanent'
+  );
+  const [roleNeeded, setRoleNeeded] = useState<RouteOpeningRole>(
+    () => initialValues?.roleNeeded || 'driver'
+  );
   const [effectiveStartDate, setEffectiveStartDate] = useState<string>(initialStart);
-  const [effectiveEndDate, setEffectiveEndDate] = useState<string>(initialValues?.effectiveEndDate || initialStart);
-  const [shiftType, setShiftType] = useState<string>('ALL');
+  const [effectiveEndDate, setEffectiveEndDate] = useState<string>(
+    initialValues?.effectiveEndDate || initialStart
+  );
+  const [shiftType, setShiftType] = useState<string>(() => initialValues?.shiftType || 'ALL');
   const [deadline, setDeadline] = useState<string>(computedInitialDeadline);
-  const [hasUserModifiedDeadline, setHasUserModifiedDeadline] = useState<boolean>(Boolean(initialValues?.deadline));
-  const [description, setDescription] = useState<string>('');
+  const [hasUserModifiedDeadline, setHasUserModifiedDeadline] = useState<boolean>(
+    Boolean(initialValues?.deadline)
+  );
+  const [description, setDescription] = useState<string>(() => initialValues?.description || '');
   const [postToChat, setPostToChat] = useState<boolean>(true);
 
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (isOpen) {
-      if (initialValues) {
-        if (initialValues.routeId) setSelectedRouteId(initialValues.routeId);
-        if (initialValues.postingType) setPostingType(initialValues.postingType);
-        if (initialValues.roleNeeded) setRoleNeeded(initialValues.roleNeeded);
-        if (initialValues.effectiveStartDate) setEffectiveStartDate(initialValues.effectiveStartDate);
-        if (initialValues.effectiveEndDate) setEffectiveEndDate(initialValues.effectiveEndDate);
-        if (initialValues.shiftType) setShiftType(initialValues.shiftType);
-        if (initialValues.description) setDescription(initialValues.description);
-
-        if (initialValues.deadline) {
-          setDeadline(initialValues.deadline);
-          setHasUserModifiedDeadline(true);
-        } else if (initialValues.effectiveStartDate) {
-          setDeadline(calculateDefaultDeadline(initialValues.effectiveStartDate));
-          setHasUserModifiedDeadline(false);
-        }
-      } else {
-        if (!selectedRouteId && routes.length > 0) {
-          setSelectedRouteId(routes[0].id);
-        }
-        setDeadline(calculateDefaultDeadline(todayStr));
-        setHasUserModifiedDeadline(false);
-      }
-    }
-  }, [isOpen, initialValues, routes, selectedRouteId, todayStr]);
 
   const handleStartDateChange = (newDate: string) => {
     setEffectiveStartDate(newDate);
@@ -113,7 +96,7 @@ export const RouteOpeningCreateModal: React.FC<RouteOpeningCreateModalProps> = (
   };
 
   const filteredRoutes = useMemo(() => {
-    const q = routeSearch.trim().toLowerCase();
+    const q = deferredRouteSearch.trim().toLowerCase();
     if (!q) return routes;
     return routes.filter((r) => {
       const no = (r.routeNo || '').toLowerCase();
@@ -129,11 +112,23 @@ export const RouteOpeningCreateModal: React.FC<RouteOpeningCreateModalProps> = (
         drv.includes(q)
       );
     });
-  }, [routes, routeSearch]);
+  }, [routes, deferredRouteSearch]);
+
+  const dropdownRoutes = useMemo(() => filteredRoutes.slice(0, 50), [filteredRoutes]);
+  const selectRoutes = useMemo(
+    () => (filteredRoutes.length > 0 ? filteredRoutes : routes).slice(0, 200),
+    [filteredRoutes, routes]
+  );
+
+  const selectedRoute = useMemo(() => {
+    const exact = routes.find((r) => r.id === selectedRouteId);
+    if (exact && (!deferredRouteSearch.trim() || filteredRoutes.some((r) => r.id === exact.id))) {
+      return exact;
+    }
+    return filteredRoutes[0] || routes[0] || null;
+  }, [routes, selectedRouteId, filteredRoutes, deferredRouteSearch]);
 
   if (!isOpen) return null;
-
-  const selectedRoute = routes.find((r) => r.id === selectedRouteId) || filteredRoutes[0] || routes[0];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,19 +238,6 @@ export const RouteOpeningCreateModal: React.FC<RouteOpeningCreateModalProps> = (
                   const val = e.target.value;
                   setRouteSearch(val);
                   setIsRouteDropdownOpen(true);
-                  const q = val.trim().toLowerCase();
-                  if (q) {
-                    const firstMatch = routes.find(
-                      (r) =>
-                        (r.routeNo || '').toLowerCase().includes(q) ||
-                        (r.routeName || '').toLowerCase().includes(q) ||
-                        (r.schoolBoardCode || '').toLowerCase().includes(q) ||
-                        (r.yardName || '').toLowerCase().includes(q)
-                    );
-                    if (firstMatch) {
-                      setSelectedRouteId(firstMatch.id);
-                    }
-                  }
                 }}
                 placeholder="Search route number, school name, board, or yard..."
                 className="w-full bg-slate-800/90 border border-slate-700 rounded-xl pl-9 pr-8 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
@@ -277,12 +259,12 @@ export const RouteOpeningCreateModal: React.FC<RouteOpeningCreateModalProps> = (
             {/* Interactive Filtered Search Results Dropdown */}
             {isRouteDropdownOpen && routeSearch.trim().length > 0 && (
               <div className="mb-2 max-h-48 overflow-y-auto rounded-xl border border-slate-700 bg-slate-950/95 divide-y divide-slate-800/80 shadow-xl">
-                {filteredRoutes.length === 0 ? (
+                {dropdownRoutes.length === 0 ? (
                   <div className="p-3 text-center text-xs text-slate-500">
                     No matching routes found for &ldquo;{routeSearch}&rdquo;
                   </div>
                 ) : (
-                  filteredRoutes.map((r) => {
+                  dropdownRoutes.map((r) => {
                     const isSelected = selectedRoute?.id === r.id;
                     return (
                       <button
@@ -327,7 +309,7 @@ export const RouteOpeningCreateModal: React.FC<RouteOpeningCreateModalProps> = (
               className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
               required
             >
-              {(filteredRoutes.length > 0 ? filteredRoutes : routes).map((r) => (
+              {selectRoutes.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.routeNo} {r.routeName ? `- ${r.routeName}` : ''} ({r.schoolBoardCode || 'Route'}
                   {r.yardName ? ` • ${r.yardName}` : ''})

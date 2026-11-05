@@ -204,7 +204,7 @@ service cloud.firestore {
 
     match /company_contacts/{contactId} {
       allow read: if isAuthenticated();
-      allow write: if canWrite('company_contacts', ['HR', 'manager', 'dispatcher']);
+      allow write: if canWrite('company_contacts', ['HR', 'hr', 'manager', 'dispatcher']);
     }
 
     match /yards/{yardId} {
