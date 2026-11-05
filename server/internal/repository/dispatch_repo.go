@@ -2226,6 +2226,12 @@ func (r *FirestoreDispatchRepository) CheckInDriver(ctx context.Context, shiftID
 	}
 	ds.ID = docRef.ID
 
+	if req == nil || !req.Undo {
+		if err := r.rejectDriverCheckIn(ctx, ds.UnitNumber); err != nil {
+			return nil, err
+		}
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	var updates []firestore.Update
 

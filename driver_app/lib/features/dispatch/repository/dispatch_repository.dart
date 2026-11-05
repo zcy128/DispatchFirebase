@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import '../../../core/api_config.dart';
 import '../../../core/network/api_client.dart';
 import '../../route/repository/route_repository.dart';
+import '../dispatch_progress.dart';
 import '../models/dispatch_model.dart';
 
 class DispatchRejected implements Exception {
@@ -358,6 +359,7 @@ class DispatchRepository {
   Future<List<DispatchRecord>> syncDispatchesFromBackend(
     DateTime date, {
     String? driverId,
+    bool trustServer = false,
   }) async {
     try {
       final dateStr = formatDate(date);
@@ -372,11 +374,16 @@ class DispatchRepository {
       }
 
       final decoded = jsonDecode(res.body);
-      final List<dynamic> shiftsJson = decoded is List ? decoded : const [];
-      final synced = <DispatchRecord>[];
+      if (decoded is! List) {
+        return getDispatchesForDate(date, driverId: driverId);
+      }
 
-      for (final raw in shiftsJson) {
-        final s = Map<String, dynamic>.from(raw as Map);
+      final synced = <DispatchRecord>[];
+      final keptIds = <String>{};
+
+      for (final raw in decoded) {
+        if (raw is! Map) continue;
+        final s = Map<String, dynamic>.from(raw);
         final shiftDriverId = (s['driverId'] ?? '').toString();
         final shiftDriverName = (s['driverName'] ?? '').toString();
         if (driverId != null &&
@@ -387,15 +394,57 @@ class DispatchRepository {
         }
 
         final record = parseShiftMap(s, dateStr);
-        await saveDispatch(record);
-        synced.add(record);
+        final existing = getDispatchById(record.id);
+        final toSave = (!trustServer && existing != null)
+            ? keepLocalDispatchProgress(existing, record)
+            : record;
+        await saveDispatch(toSave);
+        synced.add(toSave);
+        keptIds.add(toSave.id);
+      }
+
+      final previous = getDispatchesForDate(date, driverId: driverId);
+      for (final old in previous) {
+        if (!keptIds.contains(old.id)) {
+          await box.delete(old.id);
+        }
       }
 
       synced.sort((a, b) => a.shiftType.compareTo(b.shiftType));
-      return synced.isNotEmpty ? synced : getDispatchesForDate(date, driverId: driverId);
+      return synced;
     } catch (_) {
       return getDispatchesForDate(date, driverId: driverId);
     }
+  }
+
+  /// Reads the public vehicle record. An unknown or unreachable status blocks check-in.
+  /// A known in-service record returns null.
+  Future<String?> vehicleServiceHold(String unitNumber) async {
+    final unit = unitNumber.trim();
+    if (unit.isEmpty) {
+      return 'Check-in is blocked because this run has no bus assigned.';
+    }
+    const unavailable = 'Check-in is blocked because the bus service status could not be confirmed. Try again.';
+    final http.Response res;
+    try {
+      final uri = Uri.parse('$apiBaseUrl/api/public/vehicles/${Uri.encodeComponent(unit)}');
+      res = await _httpClient.get(uri).timeout(const Duration(seconds: 8));
+    } catch (_) {
+      throw const DispatchRejected(unavailable);
+    }
+    if (res.statusCode == 404) {
+      throw DispatchRejected('Check-in is blocked because bus $unit has no fleet record.');
+    }
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw const DispatchRejected(unavailable);
+    }
+    final decoded = jsonDecode(res.body);
+    if (decoded is! Map) {
+      throw const DispatchRejected(unavailable);
+    }
+    final status = decoded['status']?.toString() ?? '';
+    final active = decoded['active'] != false;
+    return vehicleServiceHoldReason(status: status, active: active, unitNumber: unit);
   }
 
   DispatchRecord? getDispatchById(String id) {

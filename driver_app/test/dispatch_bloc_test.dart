@@ -67,6 +67,20 @@ void main() {
       expect(nextFromWed.weekday, DateTime.thursday);
     });
 
+    test('an unconfirmed bus status blocks check-in', () async {
+      final missing = DispatchRepository(httpClient: _ScriptedClient(404));
+      expect(
+        () => missing.vehicleServiceHold('1001'),
+        throwsA(isA<DispatchRejected>()),
+      );
+
+      final failed = DispatchRepository(httpClient: _ScriptedClient(503));
+      expect(
+        () => failed.vehicleServiceHold('1001'),
+        throwsA(isA<DispatchRejected>()),
+      );
+    });
+
     test('driver check-in and check-out lifecycle', () async {
       final todayStr = DispatchRepository.formatDate(DateTime.now());
       final dispatchId = 'DISP-$todayStr-AM';
@@ -429,6 +443,49 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 100));
 
       expect(bloc.state, isA<DispatchLoaded>());
+      await bloc.close();
+    });
+
+    test('reloading a loaded day does not replace the page with a spinner', () async {
+      final bloc = DispatchBloc(repository: repository);
+      final today = DateTime.now();
+      bloc.add(LoadDispatchesForDate(today, driverId: 'driver1d'));
+      await expectLater(bloc.stream, emitsThrough(isA<DispatchLoaded>()));
+
+      final loadings = <DispatchState>[];
+      final sub = bloc.stream.listen((state) {
+        if (state is DispatchLoading) loadings.add(state);
+      });
+      bloc.add(LoadDispatchesForDate(today, driverId: 'driver1d'));
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await sub.cancel();
+
+      expect(loadings, isEmpty);
+      expect(bloc.state, isA<DispatchLoaded>());
+      await bloc.close();
+    });
+
+    test('check-in waits for today\'s pre-trip inspection', () async {
+      final bloc = DispatchBloc(
+        repository: repository,
+        isVehicleInspected: (_, _) async => false,
+      );
+      final today = DateTime.now();
+      bloc.add(LoadDispatchesForDate(today, driverId: 'driver1d'));
+      await expectLater(bloc.stream, emitsThrough(isA<DispatchLoaded>()));
+
+      final dispatchId = (bloc.state as DispatchLoaded).activeDispatch!.id;
+      final blocked = expectLater(
+        bloc.stream,
+        emitsThrough(
+          predicate<DispatchLoaded>((state) =>
+              state.errorMessage != null && state.errorMessage!.contains('Schedule 5')),
+        ),
+      );
+      bloc.add(DriverCheckInEvent(dispatchId));
+      await blocked;
+
+      expect(repository.getDispatchById(dispatchId)!.isCheckedIn, isFalse);
       await bloc.close();
     });
   });

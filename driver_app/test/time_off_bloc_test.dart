@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:driver_app/features/forms/models/time_off_model.dart';
 import 'package:driver_app/features/forms/repository/time_off_repository.dart';
 import 'package:driver_app/features/forms/bloc/time_off_bloc.dart';
@@ -12,6 +13,8 @@ void main() {
   late TimeOffRepository repository;
 
   setUp(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
     tempDir = await Directory.systemTemp.createTemp('hive_time_off_test_');
     Hive.init(tempDir.path);
     repository = TimeOffRepository();
@@ -257,8 +260,14 @@ void main() {
         updatedAt: '2026-09-30T12:00:00Z',
       );
 
+      final futureLoaded = expectLater(
+        bloc.stream,
+        emitsThrough(
+          predicate<TimeOffLoaded>((s) => !s.isSubmitting && s.totalCount == 1),
+        ),
+      );
       bloc.add(const CreateTimeOffRequestEvent(newReq));
-      await Future.delayed(const Duration(milliseconds: 100));
+      await futureLoaded;
 
       expect(bloc.state, isA<TimeOffLoaded>());
       final loaded = bloc.state as TimeOffLoaded;
@@ -270,17 +279,7 @@ void main() {
     });
 
     test('FilterTimeOffStatusEvent filters requests accurately', () async {
-      final bloc = TimeOffBloc(repository: repository);
-      bloc.add(const LoadTimeOffRequestsEvent('EMP-021'));
-      await expectLater(
-        bloc.stream,
-        emitsInOrder([
-          isA<TimeOffLoading>(),
-          isA<TimeOffLoaded>(),
-        ]),
-      );
-
-      // Simulate snapshot push with 1 pending, 1 approved, 1 rejected
+      // Seed cache with 1 pending, 1 approved, 1 rejected
       final requests = [
         const TimeOffRequestModel(
           id: 'TOR-1',
@@ -316,9 +315,13 @@ void main() {
           updatedAt: '2026-09-30T12:00:00Z',
         ),
       ];
+      for (final r in requests) {
+        await repository.createTimeOffRequest(r);
+      }
 
+      final bloc = TimeOffBloc(repository: repository);
+      bloc.add(const LoadTimeOffRequestsEvent('EMP-021'));
       final nextLoaded = bloc.stream.firstWhere((s) => s is TimeOffLoaded && s.totalCount == 3);
-      bloc.add(FirestoreTimeOffUpdatedEvent(requests));
       var loaded = (await nextLoaded) as TimeOffLoaded;
       expect(loaded.totalCount, equals(3));
       expect(loaded.pendingCount, equals(1));

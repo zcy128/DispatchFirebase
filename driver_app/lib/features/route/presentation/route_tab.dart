@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -44,22 +46,38 @@ class _RouteTabState extends State<RouteTab> {
   int? _selectedMapStopIndex;
 
   @override
-  void initState() {
-    super.initState();
-    context.read<RouteBloc>().add(LoadRouteEvent(widget.driverId));
-  }
-
-  @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _reload() {
+    final ready = Completer<void>();
+    context.read<RouteBloc>().add(LoadRouteEvent(widget.driverId, ready: ready));
+    return ready.future;
+  }
+
+  bool _shellChanged(RouteState previous, RouteState current) {
+    if (previous.runtimeType != current.runtimeType) return true;
+    if (previous is RouteError && current is RouteError) {
+      return previous.message != current.message;
+    }
+    if (previous is RouteLoaded && current is RouteLoaded) {
+      return previous.isAssigned != current.isAssigned || previous.route != current.route;
+    }
+    return false;
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return BlocBuilder<RouteBloc, RouteState>(
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: BlocBuilder<RouteBloc, RouteState>(
+      buildWhen: _shellChanged,
       builder: (context, state) {
         if (state is RouteLoading || state is RouteInitial) {
           return const Center(child: CircularProgressIndicator(color: AppColors.primary));
@@ -81,9 +99,7 @@ class _RouteTabState extends State<RouteTab> {
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () {
-                      context.read<RouteBloc>().add(LoadRouteEvent(widget.driverId));
-                    },
+                    onPressed: _reload,
                     child: const Text('Retry Loading Route'),
                   ),
                 ],
@@ -97,84 +113,25 @@ class _RouteTabState extends State<RouteTab> {
             return _buildUnassignedView(context, isDark);
           }
 
-          final route = state.route!;
-          final mapStops = state.displayedStops
-              .map(
-                (stop) => MapStopPin(
-                  sequence: stop.sequence,
-                  title: stop.isSchoolStop &&
-                          stop.schoolName != null &&
-                          stop.schoolName!.isNotEmpty
-                      ? stop.schoolName!
-                      : stop.location,
-                  subtitle: stop.isSchoolStop
-                      ? stop.location
-                      : (stop.instruction ?? 'Student Stop'),
-                  scheduledTime: stop.pullawayTime,
-                  isSchoolStop: stop.isSchoolStop,
-                  schoolNameHint: stop.schoolName ?? route.routeName,
-                  latitude: stop.latitude,
-                  longitude: stop.longitude,
-                ),
-              )
-              .toList();
-
-          return RefreshIndicator(
-            color: AppColors.primary,
-            backgroundColor: isDark ? AppColors.darkCard : Colors.white,
-            onRefresh: () async {
-              context.read<RouteBloc>().add(LoadRouteEvent(widget.driverId));
-            },
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // Route Master Header Card
-                _buildRouteHeaderCard(context, route, isDark),
-                const SizedBox(height: 16),
-
-                // Shift Filter Selector (AM / PM / All)
-                _buildShiftFilterSelector(context, state, isDark),
-                const SizedBox(height: 16),
-
-                // Google Maps Route & Stops Card
-                GoogleRouteMapCard(
-                  routeTitle: 'Route ${route.routeNo}',
-                  shiftLabel: state.selectedShiftType == 'ALL'
-                      ? 'FULL'
-                      : state.selectedShiftType,
-                  stops: mapStops,
-                  focusedStopSequence: _selectedMapStopIndex != null &&
-                          _selectedMapStopIndex! < mapStops.length
-                      ? mapStops[_selectedMapStopIndex!].sequence
-                      : null,
-                  mapHeight: 260,
-                  onStopSelected: (pin) {
-                    final idx = mapStops.indexWhere(
-                      (s) => s.sequence == pin.sequence,
-                    );
-                    setState(() => _selectedMapStopIndex = idx >= 0 ? idx : null);
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // Search Bar & View Mode Toggle (Stops vs Students)
-                _buildSearchAndModeToggle(context, state, isDark),
-                const SizedBox(height: 16),
-
-                // Content based on View Mode
-                if (_viewMode == 0) ...[
-                  _buildStopsTimeline(context, state, isDark),
-                ] else ...[
-                  _buildStudentsDirectory(context, state, isDark),
-                ],
-                const SizedBox(height: 32),
-              ],
-            ),
+          return _AssignedRouteView(
+            key: const ValueKey('assigned-route'),
+            isDark: isDark,
+            viewMode: _viewMode,
+            focusedStopIndex: _selectedMapStopIndex,
+            onRefresh: _reload,
+            onFocusStop: (index) => setState(() => _selectedMapStopIndex = index),
+            stopBuilder: (stop, index) => _buildStopItem(context, stop, index, isDark),
+            studentBuilder: (student) => _buildStudentCard(context, student, isDark),
+            headerBuilder: (route) => _buildRouteHeaderCard(context, route, isDark),
+            shiftBuilder: (loaded) => _buildShiftFilterSelector(context, loaded, isDark),
+            searchBuilder: (loaded) => _buildSearchAndModeToggle(context, loaded, isDark),
           );
         }
 
         return const SizedBox.shrink();
       },
+        ),
+      ),
     );
   }
 
@@ -223,13 +180,7 @@ class _RouteTabState extends State<RouteTab> {
             ),
             const SizedBox(height: 24),
             OutlinedButton.icon(
-              onPressed: () {
-                // Allows user to simulate/restore sample route assignment for testing
-                context.read<RouteBloc>().add(ToggleRouteAssignmentEvent(
-                      driverId: widget.driverId,
-                      shouldAssign: true,
-                    ));
-              },
+              onPressed: _reload,
               icon: const Icon(Icons.refresh_rounded),
               label: const Text('Check For Route Assignments'),
               style: OutlinedButton.styleFrom(
@@ -267,18 +218,22 @@ class _RouteTabState extends State<RouteTab> {
           // Route No & Status Pill
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  route.routeNo,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF0F172A),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    route.routeNo,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0F172A),
+                    ),
                   ),
                 ),
               ),
@@ -334,9 +289,7 @@ class _RouteTabState extends State<RouteTab> {
                 const SizedBox(width: 6),
               ],
               InkWell(
-                onTap: () {
-                  context.read<RouteBloc>().add(LoadRouteEvent(widget.driverId));
-                },
+                onTap: _reload,
                 borderRadius: BorderRadius.circular(6),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -406,9 +359,13 @@ class _RouteTabState extends State<RouteTab> {
                     ),
                     const Icon(Icons.phone_rounded, size: 16, color: AppColors.primary),
                     const SizedBox(width: 4),
-                    Text(
-                      route.attendantPhone ?? '',
-                      style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600),
+                    Flexible(
+                      child: Text(
+                        route.attendantPhone ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ],
                 ),
@@ -467,6 +424,9 @@ class _RouteTabState extends State<RouteTab> {
         const SizedBox(height: 2),
         Text(
           title,
+          maxLines: 2,
+          textAlign: TextAlign.center,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontSize: 11,
             color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
@@ -534,9 +494,14 @@ class _RouteTabState extends State<RouteTab> {
         padding: const EdgeInsets.symmetric(horizontal: 4),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          label,
+          maxLines: 1,
+          softWrap: false,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }
@@ -560,7 +525,7 @@ class _RouteTabState extends State<RouteTab> {
                 child: _buildModeTab(
                   index: 0,
                   icon: Icons.alt_route_rounded,
-                  label: 'Stops Timeline (${state.displayedStops.length})',
+                  label: 'Stops Timeline (${state.shiftStops.length})',
                   isDark: isDark,
                 ),
               ),
@@ -568,7 +533,7 @@ class _RouteTabState extends State<RouteTab> {
                 child: _buildModeTab(
                   index: 1,
                   icon: Icons.people_alt_rounded,
-                  label: 'Students Roster (${state.allUniqueStudents.length})',
+                  label: 'Students Roster (${state.rosterStudents.length})',
                   isDark: isDark,
                 ),
               ),
@@ -579,6 +544,7 @@ class _RouteTabState extends State<RouteTab> {
 
         // Search Input
         TextField(
+          key: const ValueKey('route-student-search'),
           controller: _searchController,
           onChanged: (val) {
             context.read<RouteBloc>().add(SearchRouteStudentsEvent(val));
@@ -654,90 +620,6 @@ class _RouteTabState extends State<RouteTab> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildStopsTimeline(BuildContext context, RouteLoaded state, bool isDark) {
-    final stops = state.displayedStops;
-    if (stops.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'No stops found for this selection.',
-            style: TextStyle(color: isDark ? Colors.grey : Colors.black54),
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Direction C: Micro-Stepper Progress Indicator
-        Container(
-          margin: const EdgeInsets.only(bottom: 14),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF141926) : Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'ROUTE STOPS PROGRESS: ${stops.length} STOPS',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                      color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                    ),
-                  ),
-                  Text(
-                    '${state.selectedShiftType} RUN',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: List.generate(stops.length, (idx) {
-                  final isFocused = _selectedMapStopIndex == idx;
-                  return Expanded(
-                    child: Container(
-                      height: 4,
-                      margin: EdgeInsets.only(right: idx == stops.length - 1 ? 0 : 2),
-                      decoration: BoxDecoration(
-                        color: isFocused
-                            ? AppColors.primary
-                            : (idx == 0
-                                ? AppColors.success
-                                : (isDark ? Colors.grey.shade800 : Colors.grey.shade300)),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ],
-          ),
-        ),
-        ...List.generate(
-          stops.length,
-          (idx) => _buildStopItem(context, stops[idx], idx, isDark),
-        ),
-      ],
     );
   }
 
@@ -882,32 +764,6 @@ class _RouteTabState extends State<RouteTab> {
     );
   }
 
-  Widget _buildStudentsDirectory(BuildContext context, RouteLoaded state, bool isDark) {
-    final students = state.allUniqueStudents;
-    if (students.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.search_off_rounded, size: 40, color: Colors.grey),
-              const SizedBox(height: 10),
-              Text(
-                'No matching students found.',
-                style: TextStyle(color: isDark ? Colors.grey : Colors.black54),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      children: students.map((s) => _buildStudentCard(context, s, isDark)).toList(),
-    );
-  }
-
   Widget _buildStudentCard(BuildContext context, DriverRouteStudent student, bool isDark) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -979,13 +835,14 @@ class _RouteTabState extends State<RouteTab> {
                 border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
               ),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.medical_services_outlined, size: 12, color: Colors.amber),
                   const SizedBox(width: 4),
-                  Flexible(
+                  Expanded(
                     child: Text(
                       student.specialNeeds!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber),
                     ),
                   ),
@@ -1088,5 +945,231 @@ class _RouteTabState extends State<RouteTab> {
         ],
       ),
     );
+  }
+}
+
+class _AssignedRouteView extends StatelessWidget {
+  final bool isDark;
+  final int viewMode;
+  final int? focusedStopIndex;
+  final Future<void> Function() onRefresh;
+  final ValueChanged<int?> onFocusStop;
+  final Widget Function(DriverRouteStop stop, int index) stopBuilder;
+  final Widget Function(DriverRouteStudent student) studentBuilder;
+  final Widget Function(DriverRouteInfo route) headerBuilder;
+  final Widget Function(RouteLoaded state) shiftBuilder;
+  final Widget Function(RouteLoaded state) searchBuilder;
+
+  const _AssignedRouteView({
+    super.key,
+    required this.isDark,
+    required this.viewMode,
+    required this.focusedStopIndex,
+    required this.onRefresh,
+    required this.onFocusStop,
+    required this.stopBuilder,
+    required this.studentBuilder,
+    required this.headerBuilder,
+    required this.shiftBuilder,
+    required this.searchBuilder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final loaded = context.select<RouteBloc, RouteLoaded?>((bloc) {
+      final state = bloc.state;
+      return state is RouteLoaded ? state : null;
+    });
+    final route = loaded?.route;
+    if (loaded == null || route == null) {
+      return const SizedBox.shrink();
+    }
+
+    final stops = loaded.displayedStops;
+    final students = viewMode == 0 ? const <DriverRouteStudent>[] : loaded.filteredStudents;
+    final showStops = viewMode == 0;
+    final itemCount = showStops ? stops.length : students.length;
+
+    return RefreshIndicator(
+      color: AppColors.primary,
+      backgroundColor: isDark ? AppColors.darkCard : Colors.white,
+      onRefresh: onRefresh,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                headerBuilder(route),
+                const SizedBox(height: 16),
+                shiftBuilder(loaded),
+                const SizedBox(height: 16),
+                _StableRouteMap(
+                  route: route,
+                  shiftType: loaded.selectedShiftType,
+                  stops: loaded.shiftStops,
+                  focusedStopIndex: focusedStopIndex,
+                  onFocusStop: onFocusStop,
+                ),
+                const SizedBox(height: 16),
+                searchBuilder(loaded),
+                const SizedBox(height: 16),
+              ]),
+            ),
+          ),
+          if (itemCount == 0)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+              sliver: SliverToBoxAdapter(child: _emptyResults(showStops)),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+              sliver: SliverList.builder(
+                itemCount: itemCount + (showStops ? 1 : 0),
+                itemBuilder: (context, index) {
+                  if (showStops && index == 0) {
+                    return _stopCountHeader(loaded, stops.length);
+                  }
+                  final itemIndex = showStops ? index - 1 : index;
+                  if (showStops) {
+                    final stop = stops[itemIndex];
+                    final mapIndex = loaded.shiftStops.indexWhere(
+                      (candidate) => candidate.stopId == stop.stopId && candidate.sequence == stop.sequence,
+                    );
+                    return stopBuilder(stop, mapIndex < 0 ? itemIndex : mapIndex);
+                  }
+                  return studentBuilder(students[itemIndex]);
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stopCountHeader(RouteLoaded loaded, int count) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '$count STOPS',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.4,
+                color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+              ),
+            ),
+          ),
+          Text(
+            '${loaded.selectedShiftType} RUN',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: AppColors.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyResults(bool showStops) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 28),
+      child: Column(
+        children: [
+          Icon(
+            showStops ? Icons.alt_route_rounded : Icons.search_off_rounded,
+            size: 40,
+            color: Colors.grey,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            showStops ? 'No stops found for this selection.' : 'No matching students found.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: isDark ? Colors.grey : Colors.black54),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StableRouteMap extends StatefulWidget {
+  final DriverRouteInfo route;
+  final String shiftType;
+  final List<DriverRouteStop> stops;
+  final int? focusedStopIndex;
+  final ValueChanged<int?> onFocusStop;
+
+  const _StableRouteMap({
+    required this.route,
+    required this.shiftType,
+    required this.stops,
+    required this.focusedStopIndex,
+    required this.onFocusStop,
+  });
+
+  @override
+  State<_StableRouteMap> createState() => _StableRouteMapState();
+}
+
+class _StableRouteMapState extends State<_StableRouteMap> {
+  Widget? _cachedMap;
+  DriverRouteInfo? _cachedRoute;
+  String? _cachedShift;
+  int? _cachedFocus;
+
+  @override
+  Widget build(BuildContext context) {
+    final sameRoute = _cachedRoute == widget.route &&
+        _cachedShift == widget.shiftType &&
+        _cachedFocus == widget.focusedStopIndex;
+    if (_cachedMap != null && sameRoute) {
+      return _cachedMap!;
+    }
+    _cachedRoute = widget.route;
+    _cachedShift = widget.shiftType;
+    _cachedFocus = widget.focusedStopIndex;
+    final pins = widget.stops
+        .map(
+          (stop) => MapStopPin(
+            sequence: stop.sequence,
+            title: stop.isSchoolStop &&
+                    stop.schoolName != null &&
+                    stop.schoolName!.isNotEmpty
+                ? stop.schoolName!
+                : stop.location,
+            subtitle: stop.isSchoolStop ? stop.location : (stop.instruction ?? 'Student Stop'),
+            scheduledTime: stop.pullawayTime,
+            isSchoolStop: stop.isSchoolStop,
+            schoolNameHint: stop.schoolName ?? widget.route.routeName,
+            latitude: stop.latitude,
+            longitude: stop.longitude,
+          ),
+        )
+        .toList();
+    final focus = widget.focusedStopIndex;
+    _cachedMap = GoogleRouteMapCard(
+      routeTitle: 'Route ${widget.route.routeNo}',
+      shiftLabel: widget.shiftType == 'ALL' ? 'FULL' : widget.shiftType,
+      stops: pins,
+      focusedStopSequence: focus != null && focus >= 0 && focus < pins.length
+          ? pins[focus].sequence
+          : null,
+      mapHeight: 260,
+      onStopSelected: (pin) {
+        final index = pins.indexWhere((stop) => stop.sequence == pin.sequence);
+        widget.onFocusStop(index >= 0 ? index : null);
+      },
+    );
+    return _cachedMap!;
   }
 }
