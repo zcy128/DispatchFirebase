@@ -9,6 +9,8 @@ import 'dispatch_state.dart';
 class DispatchBloc extends Bloc<DispatchEvent, DispatchState> {
   final DispatchRepository repository;
   final Future<bool> Function(String vehicleUnit, String date)? isVehicleInspected;
+  final Future<String?> Function(String vehicleUnit, String date)?
+      inspectionBlockReason;
   String? _currentDriverId;
   Timer? _autoSyncTimer;
   StreamSubscription<List<DispatchRecord>>? _dispatchesStreamSubscription;
@@ -17,6 +19,7 @@ class DispatchBloc extends Bloc<DispatchEvent, DispatchState> {
   DispatchBloc({
     required this.repository,
     this.isVehicleInspected,
+    this.inspectionBlockReason,
   }) : super(DispatchInitial()) {
     on<LoadDispatchesForDate>(_onLoadDispatchesForDate);
     on<FirestoreDispatchesUpdatedEvent>(_onFirestoreDispatchesUpdated);
@@ -430,7 +433,13 @@ class DispatchBloc extends Bloc<DispatchEvent, DispatchState> {
     if (unit.isEmpty) {
       return 'Check-in is blocked because this run has no bus assigned.';
     }
-    final inspected = await isVehicleInspected?.call(unit, DispatchRepository.formatDate(DateTime.now()));
+    final date = DispatchRepository.formatDate(DateTime.now());
+    if (inspectionBlockReason != null) {
+      final reason = await inspectionBlockReason!.call(unit, date);
+      if (reason != null && reason.isNotEmpty) return reason;
+      return null;
+    }
+    final inspected = await isVehicleInspected?.call(unit, date);
     if (inspected != true) {
       return 'Check-in is blocked until the Schedule 5 pre-trip inspection is complete for bus $unit.';
     }

@@ -78,6 +78,8 @@ class PreTripInProgress extends PreTripState {
   final String date;
   final Map<String, InspectionItemResult> items;
   final int currentCategoryIndex;
+  final bool submitting;
+  final String? submitError;
 
   const PreTripInProgress({
     required this.vehicleUnit,
@@ -88,6 +90,8 @@ class PreTripInProgress extends PreTripState {
     required this.date,
     required this.items,
     this.currentCategoryIndex = 0,
+    this.submitting = false,
+    this.submitError,
   });
 
   @override
@@ -100,11 +104,16 @@ class PreTripInProgress extends PreTripState {
         date,
         items,
         currentCategoryIndex,
+        submitting,
+        submitError,
       ];
 
   PreTripInProgress copyWith({
     Map<String, InspectionItemResult>? items,
     int? currentCategoryIndex,
+    bool? submitting,
+    String? submitError,
+    bool clearSubmitError = false,
   }) {
     return PreTripInProgress(
       vehicleUnit: vehicleUnit,
@@ -115,6 +124,8 @@ class PreTripInProgress extends PreTripState {
       date: date,
       items: items ?? this.items,
       currentCategoryIndex: currentCategoryIndex ?? this.currentCategoryIndex,
+      submitting: submitting ?? this.submitting,
+      submitError: clearSubmitError ? null : (submitError ?? this.submitError),
     );
   }
 
@@ -127,11 +138,6 @@ class PreTripInProgress extends PreTripState {
 
   bool get hasMajorDefect =>
       items.values.any((i) => i.status == InspectionItemStatus.majorDefect);
-}
-
-/// Submission is in progress.
-class PreTripSubmitting extends PreTripState {
-  const PreTripSubmitting();
 }
 
 /// Submission succeeded.

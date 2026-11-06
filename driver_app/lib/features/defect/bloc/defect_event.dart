@@ -28,6 +28,15 @@ class WatchDefectsStarted extends DefectEvent {
   List<Object?> get props => [vehicleUnit, driverId];
 }
 
+class DefectWatchFailed extends DefectEvent {
+  final String message;
+
+  const DefectWatchFailed(this.message);
+
+  @override
+  List<Object?> get props => [message];
+}
+
 class DefectsUpdated extends DefectEvent {
   final List<VehicleDefectReport> reports;
 

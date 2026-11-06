@@ -33,6 +33,7 @@ class _TimesheetPageState extends State<TimesheetPage> {
   bool _loading = true;
   String? _error;
   BiweeklyTimesheetSummary? _summary;
+  int _loadEpoch = 0;
 
   @override
   void initState() {
@@ -63,6 +64,8 @@ class _TimesheetPageState extends State<TimesheetPage> {
 
   Future<void> _loadData() async {
     if (!mounted) return;
+    final epoch = ++_loadEpoch;
+    final requestedStart = _startDate;
     setState(() {
       _loading = true;
       _error = null;
@@ -71,39 +74,48 @@ class _TimesheetPageState extends State<TimesheetPage> {
       final summary = await _repository.loadBiweeklyTimesheet(
         driverId: widget.driverId,
         driverName: widget.driverName,
-        startDate: _startDate,
+        startDate: requestedStart,
       );
-      if (!mounted) return;
+      if (!mounted || epoch != _loadEpoch) return;
       setState(() {
         _summary = summary;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || epoch != _loadEpoch) return;
       setState(() {
         _error = e.toString();
         _loading = false;
+        if (_summary != null && _summary!.startDate != requestedStart) {
+          _summary = null;
+        }
       });
     }
   }
 
-  void _shiftPeriod(int days) {
+  void _showPeriod(String startDate) {
+    if (_startDate == startDate && _summary != null) {
+      _loadData();
+      return;
+    }
     setState(() {
-      _startDate = TimesheetRepository.addDays(_startDate, days);
+      _startDate = startDate;
+      _summary = null;
+      _error = null;
     });
     _loadData();
   }
 
+  void _shiftPeriod(int days) {
+    _showPeriod(TimesheetRepository.addDays(_startDate, days));
+  }
+
   void _jumpToCurrentPeriod() {
-    final defStart = TimesheetRepository.formatDate(
-      TimesheetRepository.getDefaultBiweeklyStartDate(),
+    _showPeriod(
+      TimesheetRepository.formatDate(
+        TimesheetRepository.getDefaultBiweeklyStartDate(),
+      ),
     );
-    if (_startDate != defStart) {
-      setState(() {
-        _startDate = defStart;
-      });
-    }
-    _loadData();
   }
 
   Future<void> _pickStartDate() async {
@@ -116,10 +128,7 @@ class _TimesheetPageState extends State<TimesheetPage> {
       helpText: 'Select Bi-Weekly Period Start Date',
     );
     if (picked != null) {
-      setState(() {
-        _startDate = TimesheetRepository.formatDate(picked);
-      });
-      _loadData();
+      _showPeriod(TimesheetRepository.formatDate(picked));
     }
   }
 
@@ -149,53 +158,89 @@ class _TimesheetPageState extends State<TimesheetPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final endDate = TimesheetRepository.addDays(_startDate, 13);
 
+    final summary = _summary;
+    final summaryMatches = summary != null && summary.startDate == _startDate;
+    final visibleDays = summaryMatches ? _visibleDays(summary) : const <MapEntry<String, List<TimesheetShiftEntry>>>[];
+
     final content = RefreshIndicator(
       color: AppColors.primary,
       onRefresh: _loadData,
-      child: ListView(
+      child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 36),
-        children: [
-          // 1. Bi-Weekly Period Navigation Bar
-          _buildPeriodSelectorCard(isDark, endDate),
-          const SizedBox(height: 14),
-
-          if (_loading)
-            Container(
-              height: 240,
-              alignment: Alignment.center,
-              child: const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: Column(
                 children: [
-                  CircularProgressIndicator(color: AppColors.primary),
-                  SizedBox(height: 12),
-                  Text(
-                    'Synchronizing bi-weekly timesheet & payroll...',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
+                  _buildPeriodSelectorCard(isDark, endDate),
+                  if (_loading && summaryMatches)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 10),
+                      child: LinearProgressIndicator(color: AppColors.primary, minHeight: 2),
+                    ),
+                  const SizedBox(height: 14),
+                  if (_loading && !summaryMatches)
+                    Container(
+                      height: 240,
+                      alignment: Alignment.center,
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(color: AppColors.primary),
+                          SizedBox(height: 12),
+                          Text(
+                            'Synchronizing bi-weekly timesheet & payroll...',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (_error != null && !summaryMatches)
+                    _buildErrorCard(isDark)
+                  else if (summaryMatches) ...[
+                    if (_error != null) ...[
+                      _buildErrorCard(isDark),
+                      const SizedBox(height: 14),
+                    ],
+                    _buildBiweeklySummaryCard(summary, isDark),
+                    const SizedBox(height: 14),
+                    _buildWeekFilterTabs(summary, isDark),
+                  ],
                 ],
               ),
+            ),
+          ),
+          if (summaryMatches)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 36),
+              sliver: SliverList.builder(
+                itemCount: visibleDays.isEmpty ? 1 : visibleDays.length,
+                itemBuilder: (context, index) {
+                  if (visibleDays.isEmpty) {
+                    return _buildEmptyDaysCard(isDark);
+                  }
+                  final day = visibleDays[index];
+                  return _buildDayCard(summary, day.key, day.value, isDark);
+                },
+              ),
             )
-          else if (_error != null)
-            _buildErrorCard(isDark)
-          else if (_summary != null) ...[
-            // 2. Top 2-Week Wages & Hours Summary Card
-            _buildBiweeklySummaryCard(_summary!, isDark),
-            const SizedBox(height: 14),
-
-            // 3. Week 1 vs Week 2 Filter Tabs
-            _buildWeekFilterTabs(_summary!, isDark),
-            const SizedBox(height: 12),
-
-            // 4. Daily Dispatch Shifts Breakdown
-            ..._buildDailyShiftsSections(_summary!, isDark),
-          ],
+          else
+            const SliverToBoxAdapter(child: SizedBox(height: 36)),
         ],
       ),
     );
 
+    final limited = Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: content,
+      ),
+    );
+
     if (!widget.showAppBar) {
-      return content;
+      return limited;
     }
 
     return Scaffold(
@@ -231,7 +276,7 @@ class _TimesheetPageState extends State<TimesheetPage> {
           ),
         ],
       ),
-      body: content,
+      body: limited,
     );
   }
 
@@ -292,6 +337,8 @@ class _TimesheetPageState extends State<TimesheetPage> {
                         const SizedBox(height: 2),
                         Text(
                           '14-Day Bi-Weekly Period ($_startDate to $endDate)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 10,
                             color: isDark
@@ -314,30 +361,37 @@ class _TimesheetPageState extends State<TimesheetPage> {
           ),
           const SizedBox(height: 6),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              TextButton.icon(
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                ),
-                onPressed: _jumpToCurrentPeriod,
-                icon: const Icon(Icons.today_rounded, size: 14, color: AppColors.primary),
-                label: const Text(
-                  'Current 2-Week Period',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              Expanded(
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  ),
+                  onPressed: _jumpToCurrentPeriod,
+                  icon: const Icon(Icons.today_rounded, size: 14, color: AppColors.primary),
+                  label: const Text(
+                    'Current 2-Week Period',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ),
-              TextButton.icon(
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                ),
-                onPressed: _loadData,
-                icon: const Icon(Icons.sync_rounded, size: 14, color: AppColors.primary),
-                label: const Text(
-                  'Sync Payroll',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              Expanded(
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  ),
+                  onPressed: _loadData,
+                  icon: const Icon(Icons.sync_rounded, size: 14, color: AppColors.primary),
+                  label: const Text(
+                    'Sync Payroll',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ),
             ],
@@ -588,21 +642,20 @@ class _TimesheetPageState extends State<TimesheetPage> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '\$${summary.week1Pay.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '${summary.week1Hours.toStringAsFixed(2)} hrs · ${summary.week1ShiftsCount} runs',
-                            style: const TextStyle(fontSize: 11, color: Colors.grey),
-                          ),
-                        ],
+                      Text(
+                        '\$${summary.week1Pay.toStringAsFixed(2)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '${summary.week1Hours.toStringAsFixed(2)} hrs · ${summary.week1ShiftsCount} runs',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -633,21 +686,20 @@ class _TimesheetPageState extends State<TimesheetPage> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '\$${summary.week2Pay.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '${summary.week2Hours.toStringAsFixed(2)} hrs · ${summary.week2ShiftsCount} runs',
-                            style: const TextStyle(fontSize: 11, color: Colors.grey),
-                          ),
-                        ],
+                      Text(
+                        '\$${summary.week2Pay.toStringAsFixed(2)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '${summary.week2Hours.toStringAsFixed(2)} hrs · ${summary.week2ShiftsCount} runs',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -696,7 +748,7 @@ class _TimesheetPageState extends State<TimesheetPage> {
           onTap: () => setState(() => _weekFilter = key),
           borderRadius: BorderRadius.circular(10),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 9),
+            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
             decoration: BoxDecoration(
               color: isSelected
                   ? AppColors.primary
@@ -709,14 +761,19 @@ class _TimesheetPageState extends State<TimesheetPage> {
               ),
             ),
             alignment: Alignment.center,
-            child: Text(
-              '$label ($count)',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isSelected
-                    ? const Color(0xFF0F172A)
-                    : (isDark ? Colors.white70 : Colors.black87),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                '$label ($count)',
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected
+                      ? const Color(0xFF0F172A)
+                      : (isDark ? Colors.white70 : Colors.black87),
+                ),
               ),
             ),
           ),
@@ -735,57 +792,62 @@ class _TimesheetPageState extends State<TimesheetPage> {
     );
   }
 
-  List<Widget> _buildDailyShiftsSections(
-    BiweeklyTimesheetSummary summary,
-    bool isDark,
-  ) {
+  List<MapEntry<String, List<TimesheetShiftEntry>>> _visibleDays(BiweeklyTimesheetSummary summary) {
     final activeShifts = _weekFilter == 'week1'
         ? summary.week1Shifts
         : _weekFilter == 'week2'
             ? summary.week2Shifts
             : summary.shifts;
+    return summary.groupShiftsByDate(activeShifts).entries.toList();
+  }
 
-    if (activeShifts.isEmpty) {
-      return [
-        Container(
-          padding: const EdgeInsets.all(28),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkCard : Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
-            ),
-          ),
-          child: const Column(
-            children: [
-              Icon(Icons.event_busy_rounded, size: 36, color: Colors.grey),
-              SizedBox(height: 8),
-              Text(
-                'No dispatch shifts recorded for this period',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 4),
-              Text(
-                'Use the date selector above to switch between 2-week pay periods.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
+  Widget _buildEmptyDaysCard(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
         ),
-      ];
-    }
+      ),
+      child: const Column(
+        children: [
+          Icon(Icons.event_busy_rounded, size: 36, color: Colors.grey),
+          SizedBox(height: 8),
+          Text(
+            'No dispatch shifts recorded for this period',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 4),
+          Text(
+            'Use the date selector above to switch between 2-week pay periods.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
 
-    final groupedByDate = summary.groupShiftsByDate(activeShifts);
-    final widgets = <Widget>[];
+  Widget _buildDayCard(
+    BiweeklyTimesheetSummary summary,
+    String dateStr,
+    List<TimesheetShiftEntry> dayShifts,
+    bool isDark,
+  ) {
+    final isWeek1 = dateStr.compareTo(summary.week1EndDate) <= 0;
+    final dayPay = dayShifts.fold<double>(
+      0,
+      (sum, shift) => TimesheetRepository.roundMoney(sum + shift.payAmount),
+    );
+    final dayHours = dayShifts.fold<double>(
+      0,
+      (sum, shift) => TimesheetRepository.roundMoney(sum + shift.eiHours),
+    );
 
-    groupedByDate.forEach((dateStr, dayShifts) {
-      final isWeek1 = dateStr.compareTo(summary.week1EndDate) <= 0;
-      final dayPay = dayShifts.fold<double>(0.0, (sum, s) => sum + s.payAmount);
-      final dayHours = dayShifts.fold<double>(0.0, (sum, s) => sum + s.eiHours);
-
-      widgets.add(
-        Container(
+    return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
             color: isDark ? AppColors.darkCard : Colors.white,
@@ -817,6 +879,8 @@ class _TimesheetPageState extends State<TimesheetPage> {
                     Expanded(
                       child: Text(
                         _formatFullDayHeader(dateStr),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -841,12 +905,17 @@ class _TimesheetPageState extends State<TimesheetPage> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      '${dayHours.toStringAsFixed(2)} hrs · \$${dayPay.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
+                    Flexible(
+                      child: Text(
+                        '${dayHours.toStringAsFixed(2)} hrs · \$${dayPay.toStringAsFixed(2)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                        ),
                       ),
                     ),
                   ],
@@ -872,11 +941,43 @@ class _TimesheetPageState extends State<TimesheetPage> {
               }),
             ],
           ),
-        ),
-      );
-    });
+    );
+  }
 
-    return widgets;
+  String _statusLabel(TimesheetShiftEntry shift) {
+    if (shift.isHolidayCredit) return 'Holiday Credit';
+    switch (shift.status) {
+      case 'pending_approval':
+        return 'Pending Review';
+      case 'scheduled':
+        return 'Scheduled';
+      case 'in_progress':
+        return 'In Progress';
+      case 'approved':
+        return 'Approved';
+      case 'completed':
+        return 'Completed';
+      default:
+        return 'Recorded';
+    }
+  }
+
+  Color _statusColor(TimesheetShiftEntry shift) {
+    if (shift.isHolidayCredit) return Colors.amber;
+    switch (shift.status) {
+      case 'pending_approval':
+        return AppColors.warning;
+      case 'scheduled':
+        return AppColors.info;
+      case 'in_progress':
+        return AppColors.primary;
+      case 'approved':
+        return AppColors.success;
+      case 'completed':
+        return AppColors.success;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildShiftTile(TimesheetShiftEntry shift, bool isDark) {
@@ -890,21 +991,8 @@ class _TimesheetPageState extends State<TimesheetPage> {
       shiftColor = Colors.deepOrangeAccent;
     }
 
-    Color statusColor = AppColors.success;
-    String statusLabel = 'Approved';
-    if (shift.isHolidayCredit) {
-      statusColor = Colors.amber;
-      statusLabel = 'Holiday Credit';
-    } else if (shift.status == 'pending_approval') {
-      statusColor = AppColors.warning;
-      statusLabel = 'Pending Review';
-    } else if (shift.status == 'scheduled') {
-      statusColor = AppColors.info;
-      statusLabel = 'Scheduled';
-    } else if (shift.status == 'in_progress') {
-      statusColor = AppColors.primary;
-      statusLabel = 'In Progress';
-    }
+    final statusColor = _statusColor(shift);
+    final statusLabel = _statusLabel(shift);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -913,20 +1001,25 @@ class _TimesheetPageState extends State<TimesheetPage> {
         children: [
           // Shift Type Badge (AM / PM / MIDDAY / CHARTER)
           Container(
-            width: 50,
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            constraints: const BoxConstraints(minWidth: 50, maxWidth: 72),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
             decoration: BoxDecoration(
               color: shiftColor.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: shiftColor.withValues(alpha: 0.35)),
             ),
             alignment: Alignment.center,
-            child: Text(
-              shiftUpper,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: shiftColor,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                shiftUpper,
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: shiftColor,
+                ),
               ),
             ),
           ),

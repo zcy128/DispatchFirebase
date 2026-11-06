@@ -46,7 +46,16 @@ class DefectSummaryCard extends StatelessWidget {
           fleetVehicles = state.fleetVehicles;
         }
 
-        return Container(
+        final pending = state is DefectInitial || state is DefectLoading;
+        final loadError = state is DefectError
+            ? state.message
+            : (state is DefectLoaded ? state.loadError : null);
+
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: isDark ? AppColors.darkCard : Colors.white,
@@ -109,9 +118,24 @@ class DefectSummaryCard extends StatelessWidget {
                 ],
               ),
 
+              if (loadError != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  loadError,
+                  style: const TextStyle(fontSize: 12, color: AppColors.error),
+                ),
+              ],
+
               const SizedBox(height: 14),
 
-              // KPI Stats Row
+              if (pending)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  ),
+                )
+              else if (state is! DefectError)
               Row(
                 children: [
                   Expanded(
@@ -175,18 +199,23 @@ class DefectSummaryCard extends StatelessWidget {
                         color: textSecondary,
                       ),
                       const SizedBox(width: 6),
-                      Text(
-                        'Latest: Unit #${latestReport.vehicleUnitNumber}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: isDark
-                              ? AppColors.textPrimaryDark
-                              : AppColors.textPrimaryLight,
+                      Expanded(
+                        child: Text(
+                          'Latest: Unit #${latestReport.vehicleUnitNumber}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimaryLight,
+                          ),
                         ),
                       ),
-                      const Spacer(),
-                      Container(
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
@@ -196,12 +225,15 @@ class DefectSummaryCard extends StatelessWidget {
                         ),
                         child: Text(
                           latestReport.status.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                             color: latestReport.status.color,
                           ),
                         ),
+                      ),
                       ),
                     ],
                   ),
@@ -292,6 +324,8 @@ class DefectSummaryCard extends StatelessWidget {
                 ],
               ),
             ],
+          ),
+        ),
           ),
         );
       },

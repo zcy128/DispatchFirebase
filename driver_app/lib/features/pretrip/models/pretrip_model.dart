@@ -85,6 +85,24 @@ enum OverallInspectionStatus {
         return 'Failed — Major Defects';
     }
   }
+
+  /// A major defect keeps the bus in the yard.
+  bool get allowsOperation => this != OverallInspectionStatus.failedMajorDefects;
+}
+
+/// Derives the inspection result from Schedule 5 item statuses.
+OverallInspectionStatus overallStatusForItems(
+    Iterable<InspectionItemResult> items) {
+  var status = OverallInspectionStatus.passed;
+  for (final item in items) {
+    if (item.status == InspectionItemStatus.majorDefect) {
+      return OverallInspectionStatus.failedMajorDefects;
+    }
+    if (item.status == InspectionItemStatus.minorDefect) {
+      status = OverallInspectionStatus.passedWithMinorDefects;
+    }
+  }
+  return status;
 }
 
 // ─────────────────────────── Item Result ─────────────────────────────────────

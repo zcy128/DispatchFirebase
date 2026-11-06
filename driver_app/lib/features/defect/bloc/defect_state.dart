@@ -20,11 +20,19 @@ class DefectLoaded extends DefectState {
   final List<VehicleDefectReport> reports;
   final List<String> fleetVehicles;
   final String? selectedVehicleUnit;
+  final bool submitting;
+  final String? submitError;
+  final String? loadError;
+  final String? submitNotice;
 
   const DefectLoaded({
     required this.reports,
     this.fleetVehicles = const [],
     this.selectedVehicleUnit,
+    this.submitting = false,
+    this.submitError,
+    this.loadError,
+    this.submitNotice,
   });
 
   /// Count of open defects (submitted, under_assessment, under_repair)
@@ -36,16 +44,37 @@ class DefectLoaded extends DefectState {
     List<VehicleDefectReport>? reports,
     List<String>? fleetVehicles,
     String? selectedVehicleUnit,
+    bool? submitting,
+    String? submitError,
+    bool clearSubmitError = false,
+    String? loadError,
+    bool clearLoadError = false,
+    String? submitNotice,
+    bool clearSubmitNotice = false,
   }) {
     return DefectLoaded(
       reports: reports ?? this.reports,
       fleetVehicles: fleetVehicles ?? this.fleetVehicles,
       selectedVehicleUnit: selectedVehicleUnit ?? this.selectedVehicleUnit,
+      submitting: submitting ?? this.submitting,
+      submitError:
+          clearSubmitError ? null : (submitError ?? this.submitError),
+      loadError: clearLoadError ? null : (loadError ?? this.loadError),
+      submitNotice:
+          clearSubmitNotice ? null : (submitNotice ?? this.submitNotice),
     );
   }
 
   @override
-  List<Object?> get props => [reports, fleetVehicles, selectedVehicleUnit];
+  List<Object?> get props => [
+        reports,
+        fleetVehicles,
+        selectedVehicleUnit,
+        submitting,
+        submitError,
+        loadError,
+        submitNotice,
+      ];
 }
 
 class DefectSubmitting extends DefectState {

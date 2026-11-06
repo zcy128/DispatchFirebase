@@ -9,6 +9,26 @@ import '../../../core/api_config.dart';
 import '../../../core/network/api_client.dart';
 import '../models/defect_model.dart';
 
+class DefectLookupException implements Exception {
+  final String message;
+
+  const DefectLookupException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+String _defectSubmitError(int statusCode, String body) {
+  try {
+    final decoded = jsonDecode(body);
+    if (decoded is Map && decoded['error'] != null) {
+      final message = decoded['error'].toString().trim();
+      if (message.isNotEmpty) return message;
+    }
+  } catch (_) {}
+  return 'Failed to submit defect report ($statusCode)';
+}
+
 class DefectRepository {
   static const String _boxName = 'driver_defects_v1';
   static String get _baseUrl => ApiConfig.dispatchApiUrl;
@@ -49,12 +69,11 @@ class DefectRepository {
 
   // ─── Fleet Vehicles ───────────────────────────────────────────────────────
 
+  /// Active fleet unit numbers. An unavailable list is empty, never sample buses.
   Future<List<String>> getFleetVehicleUnits() async {
     try {
       final fs = _firestore;
-      if (fs == null) {
-        return ['1001', '1002', '1003', '1004', '1005'];
-      }
+      if (fs == null) return const [];
       final snap = await fs
           .collection('vehicles')
           .where('active', isEqualTo: true)
@@ -64,20 +83,22 @@ class DefectRepository {
           .where((u) => u.isNotEmpty)
           .toList();
       units.sort();
-      return units.isEmpty ? ['1001', '1002', '1003', '1004', '1005'] : units;
+      return units;
     } catch (e) {
       debugPrint('[DefectRepository] getFleetVehicleUnits error: $e');
-      return ['1001', '1002', '1003', '1004', '1005'];
+      return const [];
     }
   }
 
   // ─── Fetch Reports ────────────────────────────────────────────────────────
 
+  /// Confirmed server results, including an empty list.
+  /// A failed lookup throws [DefectLookupException] when nothing is cached.
   Future<List<VehicleDefectReport>> getDefectReports({
     String? vehicleUnit,
     String? driverId,
   }) async {
-    // 1. Try REST API
+    Object? restFailure;
     try {
       final queryParams = <String, String>{};
       if (vehicleUnit != null && vehicleUnit.isNotEmpty) {
@@ -92,118 +113,129 @@ class DefectRepository {
       final res = await _httpClient.get(uri).timeout(const Duration(seconds: 6));
 
       if (res.statusCode == 200) {
-        final List list = jsonDecode(res.body);
-        final reports = list
-            .map((item) =>
-                VehicleDefectReport.fromJson(Map<String, dynamic>.from(item as Map)))
+        final decoded = jsonDecode(res.body);
+        if (decoded is! List) {
+          throw const DefectLookupException(
+              'Defect report response was not valid.');
+        }
+        final reports = decoded
+            .map((item) => VehicleDefectReport.fromJson(
+                Map<String, dynamic>.from(item as Map)))
             .toList();
-
-        // Cache reports in Hive
-        _cacheReports(reports);
-        return reports;
+        _replaceCachedReports(
+          reports,
+          vehicleUnit: vehicleUnit,
+          driverId: driverId,
+        );
+        return newestDefectReports(reports);
       }
+      restFailure = DefectLookupException(
+          'Defect report request failed (${res.statusCode}).');
+    } on DefectLookupException {
+      rethrow;
     } catch (e) {
       debugPrint('[DefectRepository] REST getDefectReports error: $e');
+      restFailure = e;
     }
 
-    // 2. Try Firestore fallback
     try {
-      final fs = _firestore;
-      if (fs != null) {
-        Query q = fs.collection('vehicle_defects');
-        if (vehicleUnit != null && vehicleUnit.isNotEmpty) {
-          q = q.where('vehicleUnitNumber', isEqualTo: vehicleUnit);
-        }
-        if (driverId != null && driverId.isNotEmpty) {
-          q = q.where('reportedByUserId', isEqualTo: driverId);
-        }
-        final snap = await q.get();
-        final reports = snap.docs.map((d) {
-          final data = d.data() as Map<String, dynamic>;
-          data['id'] = d.id;
-          return VehicleDefectReport.fromJson(data);
-        }).toList();
-
-        _cacheReports(reports);
-        return reports;
+      final fromFirestore = await _reportsFromFirestore(
+        vehicleUnit: vehicleUnit,
+        driverId: driverId,
+      );
+      if (fromFirestore != null && fromFirestore.isNotEmpty) {
+        _cacheReports(fromFirestore);
+        return newestDefectReports(fromFirestore);
       }
     } catch (e) {
       debugPrint('[DefectRepository] Firestore getDefectReports error: $e');
     }
 
-    // 3. Fallback to Hive cache
-    return _getCachedReports(vehicleUnit: vehicleUnit, driverId: driverId);
+    final cached = _getCachedReports(vehicleUnit: vehicleUnit, driverId: driverId);
+    if (cached.isNotEmpty) return cached;
+    throw DefectLookupException(
+        'Defect reports could not be confirmed: $restFailure');
+  }
+
+  Future<List<VehicleDefectReport>?> _reportsFromFirestore({
+    String? vehicleUnit,
+    String? driverId,
+  }) async {
+    final fs = _firestore;
+    if (fs == null) return null;
+    Query q = fs.collection('vehicle_defects');
+    if (vehicleUnit != null && vehicleUnit.isNotEmpty) {
+      q = q.where('vehicleUnitNumber', isEqualTo: vehicleUnit);
+    }
+    if (driverId != null && driverId.isNotEmpty) {
+      q = q.where('reportedByUserId', isEqualTo: driverId);
+    }
+    final snap = await q.get();
+    if (snap.docs.isEmpty) return const [];
+    return snap.docs.map((d) {
+      final data = d.data() as Map<String, dynamic>;
+      data['id'] = d.id;
+      return VehicleDefectReport.fromJson(data);
+    }).toList();
   }
 
   // ─── Submit Report ────────────────────────────────────────────────────────
 
+  /// Submits through the API so a real defect still removes the bus from dispatch.
+  /// A rejected or unanswered request is not saved locally or written to Firestore.
   Future<VehicleDefectReport> submitDefectReport(
       VehicleDefectReport report) async {
-    // 1. Send via REST
-    try {
-      final uri = Uri.parse('$_baseUrl/vehicle-defects');
-      final body = jsonEncode({
-        'vehicleId': report.vehicleId,
-        'vehicleUnitNumber': report.vehicleUnitNumber,
-        'odometer': report.odometer,
-        'reportedByUserId': report.reportedByUserId,
-        'reportedByName': report.reportedByName,
-        'reportDate': report.reportDate,
-        'reportTime': report.reportTime,
-        'items': report.items.map((i) => i.toJson()).toList(),
-        'defectNotes': report.defectNotes,
-        'noDefectsFound': report.noDefectsFound,
-        'confirmedAccurate': report.confirmedAccurate,
-      });
-
-      final res = await _httpClient.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: body,
-      ).timeout(const Duration(seconds: 8));
-
-      if (res.statusCode == 200 || res.statusCode == 201) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final created = VehicleDefectReport.fromJson(data);
-        _saveToCache(created);
-        return created;
-      } else {
-        throw Exception('Server returned ${res.statusCode}: ${res.body}');
-      }
-    } catch (e) {
-      debugPrint('[DefectRepository] REST submitDefectReport error: $e');
-
-      // 2. Direct Firestore fallback
-      final fs = _firestore;
-      if (fs != null) {
-        final docRef = fs.collection('vehicle_defects').doc();
-        final created = VehicleDefectReport(
-          id: docRef.id,
-          vehicleId: report.vehicleId,
-          vehicleUnitNumber: report.vehicleUnitNumber,
-          odometer: report.odometer,
-          reportedByUserId: report.reportedByUserId,
-          reportedByName: report.reportedByName,
-          reportDate: report.reportDate,
-          reportTime: report.reportTime,
-          items: report.items,
-          defectNotes: report.defectNotes,
-          noDefectsFound: report.noDefectsFound,
-          confirmedAccurate: report.confirmedAccurate,
-          status: DefectReportStatus.submitted,
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        );
-
-        await docRef.set(created.toJson());
-        _saveToCache(created);
-        return created;
-      }
-
-      // Offline mode: cache locally
-      _saveToCache(report);
-      return report;
+    if (report.vehicleUnitNumber.trim().isEmpty) {
+      throw Exception('A fleet vehicle is required.');
     }
+    if (report.odometer <= 0) {
+      throw Exception('A valid odometer reading is required.');
+    }
+
+    final uri = Uri.parse('$_baseUrl/vehicle-defects');
+    final body = jsonEncode({
+      'vehicleId': report.vehicleId,
+      'vehicleUnitNumber': report.vehicleUnitNumber,
+      'odometer': report.odometer,
+      'reportedByUserId': report.reportedByUserId,
+      'reportedByName': report.reportedByName,
+      'reportDate': report.reportDate,
+      'reportTime': report.reportTime,
+      'items': report.items.map((i) => i.toJson()).toList(),
+      'defectNotes': report.defectNotes,
+      'noDefectsFound': report.noDefectsFound,
+      'confirmedAccurate': report.confirmedAccurate,
+    });
+
+    final http.Response res;
+    try {
+      res = await _httpClient
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: body,
+          )
+          .timeout(const Duration(seconds: 8));
+    } on TimeoutException {
+      throw Exception(
+          'Failed to submit defect report. The server did not respond.');
+    } on http.ClientException {
+      throw Exception(
+          'Failed to submit defect report. The server did not respond.');
+    }
+
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      final decoded = jsonDecode(res.body);
+      if (decoded is! Map) {
+        throw const DefectLookupException(
+            'Defect report response was not valid.');
+      }
+      final created =
+          VehicleDefectReport.fromJson(Map<String, dynamic>.from(decoded));
+      _saveToCache(created);
+      return created;
+    }
+    throw Exception(_defectSubmitError(res.statusCode, res.body));
   }
 
   // ─── Real-Time Stream ─────────────────────────────────────────────────────
@@ -227,9 +259,7 @@ class DefectRepository {
       q = q.where('vehicleUnitNumber', isEqualTo: vehicleUnit);
     }
 
-    return q.snapshots().handleError((err) {
-      debugPrint('[DefectRepository] Firestore watch notice: $err');
-    }).map((snap) {
+    return q.snapshots().map((snap) {
       final reports = snap.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
         data['id'] = doc.id;
@@ -246,6 +276,21 @@ class DefectRepository {
     if (_box == null) return;
     try {
       _box!.put(report.id, jsonEncode(report.toJson()));
+    } catch (_) {}
+  }
+
+  void _replaceCachedReports(
+    List<VehicleDefectReport> reports, {
+    String? vehicleUnit,
+    String? driverId,
+  }) {
+    if (_box == null) return;
+    try {
+      final stale = _getCachedReports(vehicleUnit: vehicleUnit, driverId: driverId);
+      for (final report in stale) {
+        _box!.delete(report.id);
+      }
+      _cacheReports(reports);
     } catch (_) {}
   }
 

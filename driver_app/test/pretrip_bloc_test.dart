@@ -19,10 +19,14 @@ class FakePreTripRepository extends PreTripRepository {
   @override
   Future<List<String>> getFleetVehicleUnits() async => _vehicleUnits;
 
+  bool failNextSubmit = false;
+
   @override
   Future<bool> isVehicleInspectedToday(
       String vehicleUnit, String date) async {
-    return _store.containsKey('${vehicleUnit}_$date');
+    final record = _store['${vehicleUnit}_$date'];
+    if (record == null) return false;
+    return record.overallStatus.allowsOperation;
   }
 
   @override
@@ -34,6 +38,10 @@ class FakePreTripRepository extends PreTripRepository {
   @override
   Future<PreTripInspectionRecord> submitInspection(
       PreTripInspectionRecord record) async {
+    if (failNextSubmit) {
+      failNextSubmit = false;
+      throw Exception('offline');
+    }
     final key = '${record.vehicleUnit}_${record.inspectionDate}';
     final created = record.copyWith(id: 'fake-id-${key.hashCode}');
     _store[key] = created;
@@ -506,12 +514,113 @@ void main() {
       ));
       await Future.delayed(const Duration(milliseconds: 100));
 
-      expect(states.any((s) => s is PreTripSubmitting), true);
+      expect(
+          states.whereType<PreTripInProgress>().any((s) => s.submitting),
+          true);
       final success = states.whereType<PreTripSubmitSuccess>().firstOrNull;
       expect(success, isNotNull);
       expect(success!.record.vehicleUnit, testVehicle);
       expect(success.record.odometer, 99000);
       expect(success.record.signatureName, 'Test Driver');
+      expect(success.record.overallStatus, OverallInspectionStatus.passed);
+
+      await sub.cancel();
+      bloc.close();
+    });
+
+    test('major defect is stored as failed and does not release the bus', () async {
+      final bloc = PreTripBloc(repository: repo);
+      final states = <PreTripState>[];
+      final sub = bloc.stream.listen(states.add);
+
+      bloc.add(const StartPreTripInspectionEvent(
+        vehicleUnit: testVehicle,
+        inspectorId: 'EMP-001',
+        inspectorName: 'Test Driver',
+        date: testDate,
+      ));
+      bloc.add(const UpdatePreTripItemEvent(
+        itemCode: 'AIR_BRAKE_01',
+        status: InspectionItemStatus.majorDefect,
+        notes: 'Pushrod out of adjustment',
+      ));
+      bloc.add(const SubmitPreTripInspectionEvent(
+        odometer: 99000,
+        defectNotes: 'Pushrod out of adjustment',
+        signatureName: 'Test Driver',
+        inspectionTime: '07:45',
+      ));
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      final success = states.whereType<PreTripSubmitSuccess>().firstOrNull;
+      expect(success, isNotNull);
+      expect(success!.record.overallStatus,
+          OverallInspectionStatus.failedMajorDefects);
+      expect(await repo.isVehicleInspectedToday(testVehicle, testDate), false);
+
+      await sub.cancel();
+      bloc.close();
+    });
+
+    test('major defect without notes stays on the checklist', () async {
+      final bloc = PreTripBloc(repository: repo);
+      final states = <PreTripState>[];
+      final sub = bloc.stream.listen(states.add);
+
+      bloc.add(const StartPreTripInspectionEvent(
+        vehicleUnit: testVehicle,
+        inspectorId: 'EMP-001',
+        inspectorName: 'Test Driver',
+        date: testDate,
+      ));
+      bloc.add(const UpdatePreTripItemEvent(
+        itemCode: 'AIR_BRAKE_01',
+        status: InspectionItemStatus.majorDefect,
+      ));
+      bloc.add(const SubmitPreTripInspectionEvent(
+        odometer: 99000,
+        signatureName: 'Test Driver',
+        inspectionTime: '07:45',
+      ));
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      expect(states.whereType<PreTripSubmitSuccess>(), isEmpty);
+      final last = states.whereType<PreTripInProgress>().lastOrNull;
+      expect(last, isNotNull);
+      expect(last!.submitError, isNotNull);
+      expect(last.items['AIR_BRAKE_01']?.status,
+          InspectionItemStatus.majorDefect);
+
+      await sub.cancel();
+      bloc.close();
+    });
+
+    test('submit failure keeps the in-progress checklist', () async {
+      repo.failNextSubmit = true;
+      final bloc = PreTripBloc(repository: repo);
+      final states = <PreTripState>[];
+      final sub = bloc.stream.listen(states.add);
+
+      bloc.add(const StartPreTripInspectionEvent(
+        vehicleUnit: testVehicle,
+        inspectorId: 'EMP-001',
+        inspectorName: 'Test Driver',
+        date: testDate,
+      ));
+      bloc.add(const SubmitPreTripInspectionEvent(
+        odometer: 99000,
+        signatureName: 'Test Driver',
+        inspectionTime: '07:45',
+      ));
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      expect(states.whereType<PreTripSubmitSuccess>(), isEmpty);
+      expect(states.whereType<PreTripError>(), isEmpty);
+      final last = states.whereType<PreTripInProgress>().lastOrNull;
+      expect(last, isNotNull);
+      expect(last!.submitting, false);
+      expect(last.submitError, contains('offline'));
+      expect(last.items, isNotEmpty);
 
       await sub.cancel();
       bloc.close();

@@ -81,6 +81,7 @@ class PreTripBloc extends Bloc<PreTripEvent, PreTripState> {
       UpdatePreTripItemEvent event, Emitter<PreTripState> emit) {
     if (state is! PreTripInProgress) return;
     final current = state as PreTripInProgress;
+    if (current.submitting) return;
     final updated = Map<String, InspectionItemResult>.from(current.items);
     final existing = updated[event.itemCode];
     if (existing != null) {
@@ -94,7 +95,20 @@ class PreTripBloc extends Bloc<PreTripEvent, PreTripState> {
       SubmitPreTripInspectionEvent event, Emitter<PreTripState> emit) async {
     if (state is! PreTripInProgress) return;
     final current = state as PreTripInProgress;
-    emit(const PreTripSubmitting());
+    if (current.submitting) return;
+
+    final overall = overallStatusForItems(current.items.values);
+    if (overall == OverallInspectionStatus.failedMajorDefects &&
+        !_hasMajorDefectDescription(current, event.defectNotes)) {
+      emit(current.copyWith(
+        submitting: false,
+        submitError:
+            'Describe the major defect before submitting this inspection.',
+      ));
+      return;
+    }
+
+    emit(current.copyWith(submitting: true, clearSubmitError: true));
 
     try {
       final now = DateTime.now();
@@ -107,6 +121,7 @@ class PreTripBloc extends Bloc<PreTripEvent, PreTripState> {
         inspectorId: current.inspectorId,
         inspectorName: current.inspectorName,
         odometer: event.odometer,
+        overallStatus: overall,
         items: current.items,
         defectNotes: event.defectNotes,
         signatureName: event.signatureName.isNotEmpty
@@ -121,7 +136,17 @@ class PreTripBloc extends Bloc<PreTripEvent, PreTripState> {
       final created = await repository.submitInspection(record);
       emit(PreTripSubmitSuccess(created));
     } catch (e) {
-      emit(PreTripError('Failed to submit inspection: $e'));
+      emit(current.copyWith(
+        submitting: false,
+        submitError: 'Failed to submit inspection: $e',
+      ));
     }
   }
+}
+
+bool _hasMajorDefectDescription(PreTripInProgress state, String defectNotes) {
+  if (defectNotes.trim().isNotEmpty) return true;
+  return state.items.values.any((item) =>
+      item.status == InspectionItemStatus.majorDefect &&
+      item.notes.trim().isNotEmpty);
 }

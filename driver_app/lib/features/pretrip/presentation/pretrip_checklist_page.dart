@@ -37,9 +37,25 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
   int get _totalPages => kSchedule5Categories.length + 1;
 
   bool _isExpressMode = true; // Default to Quick / Express Mode
-  bool _allChecked = true;
-  int _currentVehicleOdometer = 0;
-  bool _isLoadingOdometer = false;
+  bool _allChecked = false;
+  int? _knownOdometer;
+  bool _odometerUnconfirmed = false;
+  bool _isLoadingOdometer = true;
+
+  bool _isOdometerValid(int entered) {
+    if (_isLoadingOdometer || _odometerUnconfirmed) return false;
+    if (entered <= 0) return false;
+    final known = _knownOdometer;
+    if (known != null && known > 0 && entered < known) return false;
+    return true;
+  }
+
+  bool _majorNotesReady(PreTripInProgress state) {
+    if (_defectNotesCtrl.text.trim().isNotEmpty) return true;
+    return state.items.values.any((item) =>
+        item.status == InspectionItemStatus.majorDefect &&
+        item.notes.trim().isNotEmpty);
+  }
 
   @override
   void initState() {
@@ -56,13 +72,16 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
   }
 
   Future<void> _fetchCurrentVehicleOdometer() async {
-    setState(() => _isLoadingOdometer = true);
+    if (mounted && !_isLoadingOdometer) {
+      setState(() => _isLoadingOdometer = true);
+    }
     try {
       final repo = context.read<PreTripRepository>();
       final odo = await repo.getVehicleOdometer(widget.vehicleUnit);
       if (mounted) {
         setState(() {
-          _currentVehicleOdometer = odo;
+          _knownOdometer = odo;
+          _odometerUnconfirmed = false;
           if (odo > 0 && _odometerCtrl.text.isEmpty) {
             _odometerCtrl.text = odo.toString();
           }
@@ -70,7 +89,13 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _isLoadingOdometer = false);
+      if (mounted) {
+        setState(() {
+          _knownOdometer = null;
+          _odometerUnconfirmed = true;
+          _isLoadingOdometer = false;
+        });
+      }
     }
   }
 
@@ -167,19 +192,38 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return BlocListener<PreTripBloc, PreTripState>(
+      listenWhen: (previous, current) {
+        if (current is PreTripSubmitSuccess) return true;
+        return current is PreTripInProgress &&
+            current.submitError != null &&
+            (previous is! PreTripInProgress ||
+                previous.submitError != current.submitError);
+      },
       listener: (context, state) {
-        if (state is PreTripSubmitSuccess || state is PreTripStatusLoaded) {
-          AppFeedback.showSuccess(
-            context,
-            message: 'Pre-trip inspection submitted successfully.',
-          );
+        if (state is PreTripSubmitSuccess) {
+          final failed = state.record.overallStatus ==
+              OverallInspectionStatus.failedMajorDefects;
+          if (failed) {
+            AppFeedback.showError(
+              context,
+              title: 'Inspection recorded as failed',
+              message:
+                  'Major defects keep this bus from being checked in.',
+            );
+          } else {
+            AppFeedback.showSuccess(
+              context,
+              message: 'Pre-trip inspection submitted successfully.',
+            );
+          }
           if (mounted) Navigator.of(context).pop();
+          return;
         }
-        if (state is PreTripError) {
+        if (state is PreTripInProgress && state.submitError != null) {
           AppFeedback.showError(
             context,
             title: 'Inspection Submission Failed',
-            message: state.message,
+            message: state.submitError!,
           );
         }
       },
@@ -219,24 +263,23 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
               );
             },
           ),
-          title: BlocBuilder<PreTripBloc, PreTripState>(
-            builder: (context, state) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Pre-Trip Inspection',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  Text(
-                    'Bus #${widget.vehicleUnit} · ${widget.currentDate}',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                ],
-              );
-            },
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Pre-Trip Inspection',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              Text(
+                'Bus #${widget.vehicleUnit} · ${widget.currentDate}',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
           ),
         ),
-        body: BlocBuilder<PreTripBloc, PreTripState>(
+        body: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: BlocBuilder<PreTripBloc, PreTripState>(
           builder: (context, state) {
             if (state is! PreTripInProgress) {
               return const Center(
@@ -280,6 +323,8 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
               ],
             );
           },
+            ),
+          ),
         ),
       ),
     );
@@ -325,8 +370,11 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                             : Colors.grey,
                       ),
                       const SizedBox(width: 6),
-                      Text(
+                      Flexible(
+                        child: Text(
                         'Express Mode',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: _isExpressMode
@@ -336,6 +384,7 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                               ? const Color(0xFF0F172A)
                               : Colors.grey,
                         ),
+                      ),
                       ),
                     ],
                   ),
@@ -369,8 +418,11 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                             : Colors.grey,
                       ),
                       const SizedBox(width: 6),
-                      Text(
+                      Flexible(
+                        child: Text(
                         'Full Checklist',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: !_isExpressMode
@@ -380,6 +432,7 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                               ? const Color(0xFF0F172A)
                               : Colors.grey,
                         ),
+                      ),
                       ),
                     ],
                   ),
@@ -397,8 +450,11 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
   Widget _buildExpressModeView(
       BuildContext context, PreTripInProgress state, bool isDark) {
     final enteredOdo = int.tryParse(_odometerCtrl.text.trim()) ?? 0;
-    final isOdoTooLow =
-        _currentVehicleOdometer > 0 && enteredOdo > 0 && enteredOdo < _currentVehicleOdometer;
+    final knownOdometer = _knownOdometer;
+    final isOdoTooLow = knownOdometer != null &&
+        knownOdometer > 0 &&
+        enteredOdo > 0 &&
+        enteredOdo < knownOdometer;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -492,7 +548,7 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                         height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    else if (_currentVehicleOdometer > 0)
+                    else if (knownOdometer != null && knownOdometer > 0)
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
@@ -503,7 +559,7 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          'Current: $_currentVehicleOdometer km',
+                          'Current: $knownOdometer km',
                           style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
@@ -517,8 +573,8 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                   controller: _odometerCtrl,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
-                    hintText: _currentVehicleOdometer > 0
-                        ? 'e.g. $_currentVehicleOdometer'
+                    hintText: knownOdometer != null && knownOdometer > 0
+                        ? 'e.g. $knownOdometer'
                         : 'Enter odometer reading...',
                     suffixText: 'km',
                     prefixIcon: const Icon(Icons.pin_rounded, size: 18),
@@ -533,7 +589,29 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                       fontSize: 15, fontWeight: FontWeight.bold),
                   onChanged: (_) => setState(() {}),
                 ),
-                if (isOdoTooLow) ...[
+                if (_odometerUnconfirmed) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.error_outline_rounded,
+                          size: 14, color: AppColors.error),
+                      const SizedBox(width: 4),
+                      const Expanded(
+                        child: Text(
+                          'Current odometer could not be confirmed. Retry before submitting.',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.error,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _fetchCurrentVehicleOdometer,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ] else if (isOdoTooLow) ...[
                   const SizedBox(height: 6),
                   Row(
                     children: [
@@ -542,7 +620,7 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          'Reading cannot be less than vehicle odometer ($_currentVehicleOdometer km).',
+                          'Reading cannot be less than vehicle odometer ($knownOdometer km).',
                           style: const TextStyle(
                               fontSize: 11,
                               color: AppColors.error,
@@ -551,8 +629,7 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                       ),
                     ],
                   ),
-                ] else if (enteredOdo > 0 &&
-                    enteredOdo >= _currentVehicleOdometer) ...[
+                ] else if (_isOdometerValid(enteredOdo)) ...[
                   const SizedBox(height: 6),
                   const Row(
                     children: [
@@ -575,7 +652,9 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
 
           const SizedBox(height: 16),
 
-          // All Checked Card
+          if (state.hasMajorDefect)
+            _buildOverallBanner(state, isDark)
+          else
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -642,16 +721,6 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                         setState(() {
                           _allChecked = val;
                         });
-                        if (val) {
-                          context.read<PreTripBloc>().add(
-                                StartPreTripInspectionEvent(
-                                  vehicleUnit: widget.vehicleUnit,
-                                  inspectorId: widget.driverId,
-                                  inspectorName: widget.driverName,
-                                  date: widget.currentDate,
-                                ),
-                              );
-                        }
                       },
                     ),
                   ],
@@ -758,10 +827,15 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
           // Optional defect notes
           _buildTextField(
             controller: _defectNotesCtrl,
-            label: 'Inspection Notes (optional)',
-            hint: 'Any remarks or observations...',
+            label: state.hasMajorDefect
+                ? 'Major defect notes (required)'
+                : 'Inspection Notes (optional)',
+            hint: state.hasMajorDefect
+                ? 'Describe the major defect...'
+                : 'Any remarks or observations...',
             maxLines: 2,
             isDark: isDark,
+            onChanged: () => setState(() {}),
           ),
 
           const SizedBox(height: 16),
@@ -780,9 +854,9 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
   Widget _buildExpressSubmitBar(
       BuildContext context, PreTripInProgress state, bool isDark) {
     final enteredOdo = int.tryParse(_odometerCtrl.text.trim()) ?? 0;
-    final isOdoValid = enteredOdo > 0 &&
-        (_currentVehicleOdometer == 0 || enteredOdo >= _currentVehicleOdometer);
-    final canSubmit = _allChecked && isOdoValid;
+    final isOdoValid = _isOdometerValid(enteredOdo);
+    final canSubmit = isOdoValid &&
+        (state.hasMajorDefect ? _majorNotesReady(state) : _allChecked);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
@@ -796,7 +870,8 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
       ),
       child: BlocBuilder<PreTripBloc, PreTripState>(
         builder: (context, s) {
-          final submitting = s is PreTripSubmitting;
+          final submitting = s is PreTripInProgress && s.submitting;
+          final failed = state.hasMajorDefect;
           return ElevatedButton.icon(
             onPressed: (!canSubmit || submitting)
                 ? null
@@ -808,11 +883,18 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white),
                   )
-                : const Icon(Icons.check_circle_rounded, size: 18),
-            label: Text(
-                submitting ? 'Submitting...' : 'Submit Pre-Trip Inspection'),
+                : Icon(
+                    failed
+                        ? Icons.report_rounded
+                        : Icons.check_circle_rounded,
+                    size: 18),
+            label: Text(submitting
+                ? 'Submitting...'
+                : failed
+                    ? 'Submit Failed Inspection'
+                    : 'Submit Pre-Trip Inspection'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.success,
+              backgroundColor: failed ? AppColors.error : AppColors.success,
               foregroundColor: Colors.white,
               disabledBackgroundColor:
                   isDark ? Colors.grey.shade800 : Colors.grey.shade300,
@@ -1062,6 +1144,8 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                     child: Text(
                       s.label,
                       textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: isSelected
@@ -1127,8 +1211,11 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
         .where((i) => i.status == InspectionItemStatus.notApplicable)
         .length;
     final enteredOdo = int.tryParse(_odometerCtrl.text.trim()) ?? 0;
-    final isOdoTooLow =
-        _currentVehicleOdometer > 0 && enteredOdo > 0 && enteredOdo < _currentVehicleOdometer;
+    final knownOdometer = _knownOdometer;
+    final isOdoTooLow = knownOdometer != null &&
+        knownOdometer > 0 &&
+        enteredOdo > 0 &&
+        enteredOdo < knownOdometer;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -1217,9 +1304,9 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                     const Text('Odometer Reading (km)',
                         style: TextStyle(
                             fontSize: 13, fontWeight: FontWeight.w600)),
-                    if (_currentVehicleOdometer > 0)
+                    if (knownOdometer != null && knownOdometer > 0)
                       Text(
-                        'Current: $_currentVehicleOdometer km',
+                        'Current: $knownOdometer km',
                         style: const TextStyle(
                             fontSize: 11,
                             color: Colors.grey,
@@ -1232,8 +1319,8 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                   controller: _odometerCtrl,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
-                    hintText: _currentVehicleOdometer > 0
-                        ? 'e.g. $_currentVehicleOdometer'
+                    hintText: knownOdometer != null && knownOdometer > 0
+                        ? 'e.g. $knownOdometer'
                         : 'e.g. 123456',
                     suffixText: 'km',
                     isDense: true,
@@ -1246,10 +1333,29 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                   style: const TextStyle(fontSize: 13),
                   onChanged: (_) => setState(() {}),
                 ),
-                if (isOdoTooLow) ...[
+                if (_odometerUnconfirmed) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Current odometer could not be confirmed. Retry before submitting.',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.error,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _fetchCurrentVehicleOdometer,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ] else if (isOdoTooLow) ...[
                   const SizedBox(height: 6),
                   Text(
-                    'Reading cannot be less than vehicle odometer ($_currentVehicleOdometer km).',
+                    'Reading cannot be less than vehicle odometer ($knownOdometer km).',
                     style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.error,
@@ -1265,10 +1371,15 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
           // Additional defect notes
           _buildTextField(
             controller: _defectNotesCtrl,
-            label: 'Additional Defect Notes (optional)',
-            hint: 'Describe any other observations...',
+            label: state.hasMajorDefect
+                ? 'Major defect notes (required)'
+                : 'Additional Defect Notes (optional)',
+            hint: state.hasMajorDefect
+                ? 'Describe the major defect...'
+                : 'Describe any other observations...',
             maxLines: 3,
             isDark: isDark,
+            onChanged: () => setState(() {}),
           ),
 
           const SizedBox(height: 16),
@@ -1301,7 +1412,8 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
     if (state.hasMajorDefect) {
       color = AppColors.error;
       icon = Icons.cancel_rounded;
-      label = 'Major defects present — vehicle may be unsafe. Report immediately.';
+      label =
+          'Major defects are recorded as a failed inspection. This bus cannot be checked in.';
     } else if (state.defectCount > 0) {
       color = AppColors.warning;
       icon = Icons.warning_amber_rounded;
@@ -1458,6 +1570,7 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
     required bool isDark,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
+    VoidCallback? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1485,6 +1598,7 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
             ),
           ),
           style: const TextStyle(fontSize: 13),
+          onChanged: onChanged == null ? null : (_) => onChanged(),
         ),
       ],
     );
@@ -1494,8 +1608,8 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
       BuildContext context, PreTripInProgress state, bool isDark) {
     final isLastPage = _currentPage == _totalPages - 1;
     final enteredOdo = int.tryParse(_odometerCtrl.text.trim()) ?? 0;
-    final isOdoValid = enteredOdo > 0 &&
-        (_currentVehicleOdometer == 0 || enteredOdo >= _currentVehicleOdometer);
+    final isOdoValid = _isOdometerValid(enteredOdo) &&
+        (!state.hasMajorDefect || _majorNotesReady(state));
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
@@ -1543,7 +1657,7 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
           else
             BlocBuilder<PreTripBloc, PreTripState>(
               builder: (context, s) {
-                final submitting = s is PreTripSubmitting;
+                final submitting = s is PreTripInProgress && s.submitting;
                 return ElevatedButton.icon(
                   onPressed: (!isOdoValid || submitting)
                       ? null
@@ -1556,10 +1670,15 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
                               strokeWidth: 2, color: Colors.white),
                         )
                       : const Icon(Icons.send_rounded, size: 18),
-                  label:
-                      Text(submitting ? 'Submitting...' : 'Submit Inspection'),
+                  label: Text(submitting
+                      ? 'Submitting...'
+                      : state.hasMajorDefect
+                          ? 'Submit Failed Inspection'
+                          : 'Submit Inspection'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.success,
+                    backgroundColor: state.hasMajorDefect
+                        ? AppColors.error
+                        : AppColors.success,
                     foregroundColor: Colors.white,
                     disabledBackgroundColor:
                         isDark ? Colors.grey.shade800 : Colors.grey.shade300,
@@ -1592,17 +1711,39 @@ class _PreTripChecklistPageState extends State<PreTripChecklistPage> {
       return;
     }
 
-    if (_currentVehicleOdometer > 0 && odo < _currentVehicleOdometer) {
+    if (_isLoadingOdometer || _odometerUnconfirmed || _knownOdometer == null) {
       AppFeedback.showError(
         context,
-        title: 'Invalid Odometer',
+        title: 'Odometer Unavailable',
         message:
-            'Entered odometer ($odo km) cannot be less than current recorded vehicle odometer ($_currentVehicleOdometer km).',
+            'Current odometer could not be confirmed. Retry before submitting.',
       );
       return;
     }
 
-    if (_isExpressMode && !_allChecked) {
+    final knownOdometer = _knownOdometer!;
+    if (knownOdometer > 0 && odo < knownOdometer) {
+      AppFeedback.showError(
+        context,
+        title: 'Invalid Odometer',
+        message:
+            'Entered odometer ($odo km) cannot be less than current recorded vehicle odometer ($knownOdometer km).',
+      );
+      return;
+    }
+
+    final progress = context.read<PreTripBloc>().state;
+    if (progress is! PreTripInProgress) return;
+    if (progress.hasMajorDefect && !_majorNotesReady(progress)) {
+      AppFeedback.showError(
+        context,
+        title: 'Defect Notes Required',
+        message: 'Describe the major defect before submitting this inspection.',
+      );
+      return;
+    }
+
+    if (_isExpressMode && !progress.hasMajorDefect && !_allChecked) {
       AppFeedback.showError(
         context,
         title: 'Checklist Required',
