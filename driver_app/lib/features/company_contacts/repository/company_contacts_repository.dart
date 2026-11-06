@@ -1,12 +1,24 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import '../models/company_contact_model.dart';
 
 class CompanyContactsRepository {
-  final FirebaseFirestore _firestore;
+  final FirebaseFirestore? _firestore;
 
   CompanyContactsRepository({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+      : _firestore = firestore ?? _resolveFirestore();
+
+  static FirebaseFirestore? _resolveFirestore() {
+    try {
+      if (Firebase.apps.isNotEmpty) {
+        return FirebaseFirestore.instance;
+      }
+    } catch (_) {
+      // Fallback when Firebase is not initialized in testing/offline environments
+    }
+    return null;
+  }
 
   static const List<CompanyContactModel> defaultContacts = [
     CompanyContactModel(
@@ -84,6 +96,9 @@ class CompanyContactsRepository {
   ];
 
   Stream<List<CompanyContactModel>> streamContacts() {
+    if (_firestore == null) {
+      return Stream.value(defaultContacts);
+    }
     try {
       return _firestore
           .collection('company_contacts')

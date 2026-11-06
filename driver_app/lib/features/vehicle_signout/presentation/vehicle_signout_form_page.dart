@@ -179,6 +179,14 @@ class _VehicleSignoutFormPageState extends State<VehicleSignoutFormPage> {
   }
 
   void _submitForm() {
+    if (_unitNumberController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unit Number is required. Please check step 1.')),
+      );
+      setState(() => _currentStep = 0);
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please complete all required fields.')),
