@@ -252,6 +252,7 @@ func main() {
 
 	// Amazon SES & SNS Inbound/Outbound Email services for time-off requests
 	emailService := services.NewEmailService(cfg)
+	routeHandler.UseSheetMailer(emailService)
 	inboundEmailService := services.NewInboundEmailService(cfg, dispatchRepo, repo, emailService)
 	snsWebhookHandler := handlers.NewSNSWebhookHandler(cfg, inboundEmailService, emailService, dispatchRepo, repo)
 
@@ -366,6 +367,7 @@ func main() {
 		protected.Put("/api/shifts/{id}", routeHandler.UpdateShift)
 		protected.Put("/api/routes/{id}", routeHandler.UpdateRoute)
 		protected.Put("/api/routes/{id}/crew", routeHandler.AssignCrew)
+		protected.Post("/api/routes/{id}/share-sheet", routeHandler.ShareRouteSheet)
 
 		// Vehicle Fleet routes
 		protected.Get("/api/vehicles", vehicleHandler.ListVehicles)

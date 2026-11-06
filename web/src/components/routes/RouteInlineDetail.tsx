@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect, memo, useMemo } from 'react';
 import { BusRoute, BusRouteShift, RouteStop, getShiftBadgeStyle, formatOpDays, isAutoMarryupEnabled } from '../../types/route';
 import { Student } from '../../types/student';
 import { School } from '../../types/school';
@@ -33,13 +33,18 @@ import {
   FileText,
   Pencil,
   Navigation,
-  Zap
+  Zap,
+  Download,
+  Mail
 } from 'lucide-react';
 import { RouteStudentItineraryView } from './RouteStudentItineraryView';
 import { ShiftEditModal } from './ShiftEditModal';
 import { StopEditModal } from './StopEditModal';
 import { LazyShiftGoogleMapView, preloadShiftGoogleMapView } from './LazyShiftGoogleMapView';
 import { OptimizeRouteModal } from './OptimizeRouteModal';
+import { RouteSheetShareModal, downloadRouteSheet } from './RouteSheetShareModal';
+import { RouteSheetPreview } from './RouteSheetPreview';
+import { sortRouteSheetShifts } from '../../utils/routeSheetPdf';
 import { RouteSettingsService } from '../../services/routeSettingsService';
 import { recalculateStopTimes } from '../../utils/routeOptimizer';
 
@@ -64,7 +69,7 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
 }: RouteInlineDetailProps) {
   const { t } = useI18n();
   const { currentUser } = useAuth();
-  const [viewMode, setViewMode] = useState<'students' | 'stops' | 'map'>('students');
+  const [viewMode, setViewMode] = useState<'students' | 'stops' | 'map' | 'sheet'>('students');
   const [shifts, setShifts] = useState<BusRouteShift[]>([]);
   const [activeShiftId, setActiveShiftId] = useState<string>('');
   const [editingShift, setEditingShift] = useState<BusRouteShift | null>(null);
@@ -80,6 +85,7 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assigning, setAssigning] = useState(false);
   const [isOptimizeModalOpen, setIsOptimizeModalOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
 
   const handleRefreshShifts = async () => {
     try {
@@ -349,7 +355,8 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
     };
   }, [route.id]);
 
-  const activeShift = shifts.find((s) => s.id === activeShiftId) || shifts[0];
+  const orderedShifts = useMemo(() => sortRouteSheetShifts(shifts), [shifts]);
+  const activeShift = orderedShifts.find((s) => s.id === activeShiftId) || orderedShifts[0];
 
   const toggleStopExpand = (stopId: number) => {
     setExpandedStopIds((prev) => ({
@@ -525,7 +532,7 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
           ) : shifts.length === 0 ? (
             <span className="text-xs text-slate-500 italic">No shifts recorded</span>
           ) : (
-            shifts.map((shift) => {
+            orderedShifts.map((shift) => {
               const opDaysStr = formatOpDays(shift.runDays);
               const isSelected = shift.id === activeShift?.id;
               const badgeStyle = getShiftBadgeStyle(shift.shiftType, opDaysStr);
@@ -643,6 +650,18 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
               <Navigation className="w-3.5 h-3.5" />
               <span>Shift Map</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('sheet')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 ${
+                viewMode === 'sheet'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Route Sheet</span>
+            </button>
           </div>
 
           {isAutoMarryupEnabled(route) ? (
@@ -654,6 +673,27 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
               No Auto Marryup
             </span>
           )}
+
+          <button
+            type="button"
+            disabled={loading || shifts.length === 0}
+            onClick={() => downloadRouteSheet({ route, shifts: orderedShifts, studentsMap, schools })}
+            title="Export a route sheet PDF"
+            className="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition flex items-center space-x-1.5 disabled:opacity-40"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-400" />
+            <span>Export PDF</span>
+          </button>
+          <button
+            type="button"
+            disabled={loading || shifts.length === 0}
+            onClick={() => setIsShareOpen(true)}
+            title="Email the route sheet to a driver or the office"
+            className="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition flex items-center space-x-1.5 disabled:opacity-40"
+          >
+            <Mail className="w-3.5 h-3.5 text-amber-400" />
+            <span>Share</span>
+          </button>
 
           {onOpenDrawer && (
             <button
@@ -667,10 +707,17 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
         </div>
       </div>
 
-      {viewMode === 'students' ? (
+      {viewMode === 'sheet' ? (
+        <RouteSheetPreview
+          route={route}
+          shifts={orderedShifts}
+          studentsMap={studentsMap}
+          schools={schools}
+        />
+      ) : viewMode === 'students' ? (
         <RouteStudentItineraryView
           route={route}
-          shifts={shifts}
+          shifts={orderedShifts}
           studentsMap={studentsMap}
           schools={schools}
           onSelectStudent={onSelectStudent}
@@ -1272,6 +1319,17 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
           route={route}
           employees={employees}
           onApplyOptimizedStops={handleApplyOptimizedStopsFromModal}
+        />
+      )}
+
+      {isShareOpen && (
+        <RouteSheetShareModal
+          route={route}
+          shifts={orderedShifts}
+          studentsMap={studentsMap}
+          schools={schools}
+          employees={employees}
+          onClose={() => setIsShareOpen(false)}
         />
       )}
     </div>

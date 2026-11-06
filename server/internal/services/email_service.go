@@ -103,6 +103,76 @@ func (s *EmailService) SendEmail(to []string, subject, htmlBody, textBody string
 	return nil
 }
 
+// SendEmailWithAttachment delivers a message and one file. simulated is true when SMTP is not configured.
+func (s *EmailService) SendEmailWithAttachment(to []string, subject, htmlBody, textBody, fileName string, attachment []byte) (bool, error) {
+	from := s.cfg.SMTPFrom
+	if from == "" {
+		from = "leave@pcytech.ca"
+	}
+	if s.cfg.SMTPHost == "" {
+		log.Printf("[EMAIL-SIMULATION] Outbound Email to: %v | Subject: %s | Attachment: %s (%d bytes)\nText:\n%s\n---", to, subject, fileName, len(attachment), textBody)
+		return true, nil
+	}
+
+	addr := fmt.Sprintf("%s:%d", s.cfg.SMTPHost, s.cfg.SMTPPort)
+	var auth smtp.Auth
+	if s.cfg.SMTPUsername != "" && s.cfg.SMTPPassword != "" {
+		auth = smtp.PlainAuth("", s.cfg.SMTPUsername, s.cfg.SMTPPassword, s.cfg.SMTPHost)
+	}
+
+	mixed := "===Part_Dispatch_Mixed==="
+	alt := "===Part_Dispatch_Alt==="
+	var msg strings.Builder
+	fmt.Fprintf(&msg, "From: %s\r\n", from)
+	fmt.Fprintf(&msg, "To: %s\r\n", strings.Join(to, ", "))
+	fmt.Fprintf(&msg, "Subject: %s\r\n", mime.QEncoding.Encode("UTF-8", subject))
+	msg.WriteString("MIME-Version: 1.0\r\n")
+	fmt.Fprintf(&msg, "Content-Type: multipart/mixed; boundary=\"%s\"\r\n\r\n", mixed)
+
+	fmt.Fprintf(&msg, "--%s\r\n", mixed)
+	fmt.Fprintf(&msg, "Content-Type: multipart/alternative; boundary=\"%s\"\r\n\r\n", alt)
+	fmt.Fprintf(&msg, "--%s\r\n", alt)
+	msg.WriteString("Content-Type: text/plain; charset=\"UTF-8\"\r\n")
+	msg.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
+	msg.WriteString(wrapBase64(base64.StdEncoding.EncodeToString([]byte(textBody))))
+	msg.WriteString("\r\n")
+	if htmlBody != "" {
+		fmt.Fprintf(&msg, "--%s\r\n", alt)
+		msg.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
+		msg.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
+		msg.WriteString(wrapBase64(base64.StdEncoding.EncodeToString([]byte(htmlBody))))
+		msg.WriteString("\r\n")
+	}
+	fmt.Fprintf(&msg, "--%s--\r\n", alt)
+
+	safeName := strings.ReplaceAll(fileName, "\"", "")
+	fmt.Fprintf(&msg, "--%s\r\n", mixed)
+	msg.WriteString("Content-Type: application/pdf\r\n")
+	fmt.Fprintf(&msg, "Content-Disposition: attachment; filename=\"%s\"\r\n", safeName)
+	msg.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
+	msg.WriteString(wrapBase64(base64.StdEncoding.EncodeToString(attachment)))
+	msg.WriteString("\r\n")
+	fmt.Fprintf(&msg, "--%s--\r\n", mixed)
+
+	if err := smtp.SendMail(addr, auth, from, to, []byte(msg.String())); err != nil {
+		log.Printf("[EMAIL-ERROR] Failed to send email to %v: %v", to, err)
+		return false, err
+	}
+	log.Printf("[EMAIL-SENT] Successfully delivered email to %v (Subject: %s, Attachment: %s)", to, subject, safeName)
+	return false, nil
+}
+
+func wrapBase64(encoded string) string {
+	var out strings.Builder
+	for len(encoded) > 76 {
+		out.WriteString(encoded[:76])
+		out.WriteString("\r\n")
+		encoded = encoded[76:]
+	}
+	out.WriteString(encoded)
+	return out.String()
+}
+
 // SendLeaveRequestToHR formats and emails the leave request to HR with quick-action links
 func (s *EmailService) SendLeaveRequestToHR(req *models.TimeOffRequest, driver *models.Employee) error {
 	recipients := s.cfg.GetForwardTargets("leave@pcytech.ca")

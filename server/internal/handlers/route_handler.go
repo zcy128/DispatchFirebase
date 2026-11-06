@@ -6,13 +6,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"dispatch-server/internal/models"
 	"dispatch-server/internal/repository"
+	"github.com/go-chi/chi/v5"
 )
 
 type RouteHandler struct {
-	repo repository.RouteRepository
+	repo        repository.RouteRepository
+	sheetMailer routeSheetMailer
 }
 
 func NewRouteHandler(repo repository.RouteRepository) *RouteHandler {

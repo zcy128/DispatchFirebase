@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { BusRoute, BusRouteShift, RouteStop, formatOpDays, getShiftBadgeStyle, isAutoMarryupEnabled } from '../../types/route';
 import { Student } from '../../types/student';
 import { RouteService } from '../../services/routeService';
@@ -23,6 +23,7 @@ import {
 import { ShiftEditModal } from './ShiftEditModal';
 import { StopEditModal } from './StopEditModal';
 import { LazyShiftGoogleMapView } from './LazyShiftGoogleMapView';
+import { sortRouteSheetShifts } from '../../utils/routeSheetPdf';
 
 interface RouteDetailDrawerProps {
   route: BusRoute | null;
@@ -214,7 +215,8 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
 
   if (!route) return null;
 
-  const currentShift = shifts.find((s) => s.id === activeShiftId) || shifts[0];
+  const orderedShifts = useMemo(() => sortRouteSheetShifts(shifts), [shifts]);
+  const currentShift = orderedShifts.find((s) => s.id === activeShiftId) || orderedShifts[0];
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/60 backdrop-blur-sm flex justify-end">
@@ -383,7 +385,7 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
             {/* Shift Tabs (AM, NOON, PM, etc.) */}
             <div>
               <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
-                {shifts.map((s) => {
+                {orderedShifts.map((s) => {
                   const opDays = formatOpDays(s.runDays);
                   const isSelected = s.id === currentShift?.id;
                   const isEarly = opDays === '----F' || s.shiftType.toUpperCase().includes('NOON');
