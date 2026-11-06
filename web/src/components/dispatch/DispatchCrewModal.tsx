@@ -90,6 +90,14 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
       .catch(console.error);
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   const { t } = useI18n();
   const [sortByDeadhead, setSortByDeadhead] = useState(true);
 
@@ -307,10 +315,16 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div
+        className="flex min-h-full items-center justify-center p-4"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+      >
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+        <div className="sticky top-0 z-10 px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/95 rounded-t-2xl">
           <div>
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               Assign Dispatch Crew & Vehicle
@@ -329,6 +343,8 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
 
         {/* Form Body */}
         <form onSubmit={handleSave} className="p-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+          <div className="space-y-4 min-w-0">
           {/* Driver Selection */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -509,7 +525,9 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
               </div>
             )}
           </div>
+          </div>
 
+          <div className="space-y-4 min-w-0">
           {/* Attendant Selection */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
@@ -658,6 +676,8 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
               )}
             </div>
           )}
+          </div>
+          </div>
 
           {/* Vehicle Selection */}
           <div>
@@ -796,7 +816,7 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
           </div>
 
           {/* Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+          <div className="sticky bottom-0 z-10 -mx-6 -mb-6 px-6 py-4 flex items-center justify-end gap-3 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95">
             <button
               type="button"
               onClick={onClose}
@@ -814,6 +834,7 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
             </button>
           </div>
         </form>
+      </div>
       </div>
     </div>
   );
