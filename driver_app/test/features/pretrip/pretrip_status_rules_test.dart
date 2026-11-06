@@ -41,13 +41,7 @@ void main() {
 
   group('Overall Inspection Status Calculation Rules', () {
     OverallInspectionStatus evaluateOverallStatus(Map<String, InspectionItemResult> items) {
-      final hasMajor = items.values.any((i) => i.status == InspectionItemStatus.majorDefect);
-      final hasMinor = items.values.any((i) => i.status == InspectionItemStatus.minorDefect);
-      return hasMajor
-          ? OverallInspectionStatus.failedMajorDefects
-          : (hasMinor
-              ? OverallInspectionStatus.passedWithMinorDefects
-              : OverallInspectionStatus.passed);
+      return overallStatusForItems(items.values);
     }
 
     test('evaluates to passed when all items are pass or na', () {

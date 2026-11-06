@@ -559,3 +559,14 @@ class StudentIncident extends Equatable {
         updatedAt,
       ];
 }
+
+/// Newest incident date first, then newest created time.
+List<StudentIncident> newestStudentIncidents(List<StudentIncident> reports) {
+  final copy = List<StudentIncident>.of(reports);
+  copy.sort((a, b) {
+    final byDate = b.incidentDate.compareTo(a.incidentDate);
+    if (byDate != 0) return byDate;
+    return b.createdAt.compareTo(a.createdAt);
+  });
+  return copy;
+}

@@ -138,7 +138,11 @@ class _DefectHistoryViewState extends State<_DefectHistoryView> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
-      body: Column(
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Column(
         children: [
           // Filter Chips
           SingleChildScrollView(
@@ -169,6 +173,22 @@ class _DefectHistoryViewState extends State<_DefectHistoryView> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
+                if (state is DefectLoaded && state.loadError != null) {
+                  return Column(
+                    children: [
+                      _loadErrorBanner(state.loadError!),
+                      Expanded(child: _reportList(
+                        _visibleReports(state.reports),
+                        isDark,
+                        cardBg,
+                        cardBorder,
+                        textPrimary,
+                        textSecondary,
+                      )),
+                    ],
+                  );
+                }
+
                 if (state is DefectError) {
                   return Center(
                     child: Padding(
@@ -195,72 +215,100 @@ class _DefectHistoryViewState extends State<_DefectHistoryView> {
                   );
                 }
 
-                List<VehicleDefectReport> reports = [];
-                if (state is DefectLoaded) {
-                  reports = state.reports;
-                }
+                final reports = state is DefectLoaded
+                    ? _visibleReports(state.reports)
+                    : const <VehicleDefectReport>[];
 
-                if (_filterStatus != null) {
-                  reports =
-                      reports.where((r) => r.status == _filterStatus).toList();
-                }
-
-                if (reports.isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.assignment_turned_in_outlined,
-                            size: 64,
-                            color: textSecondary.withValues(alpha: 0.5),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No defect reports found.',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Any reported vehicle defects and fleet repairs will appear here.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 13, color: textSecondary),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-
-                return ListView.separated(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8)
-                          .copyWith(bottom: 80),
-                  itemCount: reports.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 10),
-                  itemBuilder: (context, idx) {
-                    final report = reports[idx];
-                    return _buildReportCard(
-                      report,
-                      isDark,
-                      cardBg,
-                      cardBorder,
-                      textPrimary,
-                      textSecondary,
-                    );
-                  },
+                return _reportList(
+                  reports,
+                  isDark,
+                  cardBg,
+                  cardBorder,
+                  textPrimary,
+                  textSecondary,
                 );
               },
             ),
           ),
         ],
+          ),
+        ),
       ),
+    );
+  }
+
+  List<VehicleDefectReport> _visibleReports(List<VehicleDefectReport> reports) {
+    if (_filterStatus == null) return reports;
+    return reports.where((report) => report.status == _filterStatus).toList();
+  }
+
+  Widget _loadErrorBanner(String message) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Text(
+        message,
+        style: const TextStyle(fontSize: 12, color: AppColors.error),
+      ),
+    );
+  }
+
+  Widget _reportList(
+    List<VehicleDefectReport> reports,
+    bool isDark,
+    Color cardBg,
+    Color cardBorder,
+    Color textPrimary,
+    Color textSecondary,
+  ) {
+    if (reports.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.assignment_turned_in_outlined,
+                size: 64,
+                color: textSecondary.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No defect reports found.',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Any reported vehicle defects and fleet repairs will appear here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: textSecondary),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)
+          .copyWith(bottom: 80),
+      itemCount: reports.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 10),
+      itemBuilder: (context, idx) {
+        final report = reports[idx];
+        return _buildReportCard(
+          report,
+          isDark,
+          cardBg,
+          cardBorder,
+          textPrimary,
+          textSecondary,
+        );
+      },
     );
   }
 
@@ -327,30 +375,38 @@ class _DefectHistoryViewState extends State<_DefectHistoryView> {
         ),
         title: Row(
           children: [
-            Text(
-              'Unit #${report.vehicleUnitNumber}',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: textPrimary,
-              ),
-            ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: report.status.color.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: report.status.color.withValues(alpha: 0.5),
+            Expanded(
+              child: Text(
+                'Unit #${report.vehicleUnitNumber}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: textPrimary,
                 ),
               ),
-              child: Text(
-                report.status.label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: report.status.color,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: report.status.color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: report.status.color.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: Text(
+                  report.status.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: report.status.color,
+                  ),
                 ),
               ),
             ),
@@ -358,26 +414,15 @@ class _DefectHistoryViewState extends State<_DefectHistoryView> {
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4.0),
-          child: Row(
-            children: [
-              Text(
-                '${report.reportDate} ${report.reportTime}',
-                style: TextStyle(fontSize: 12, color: textSecondary),
-              ),
-              const SizedBox(width: 8),
-              Text('•', style: TextStyle(color: textSecondary)),
-              const SizedBox(width: 8),
-              Text(
-                hasDefects
-                    ? '${defectItems.length} Defect${defectItems.length > 1 ? 's' : ''}'
-                    : 'Clean Pass',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: hasDefects ? AppColors.error : AppColors.success,
-                ),
-              ),
-            ],
+          child: Text(
+            '${report.reportDate} ${report.reportTime} · ${hasDefects ? '${defectItems.length} Defect${defectItems.length > 1 ? 's' : ''}' : 'Clean Pass'}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: hasDefects ? AppColors.error : textSecondary,
+            ),
           ),
         ),
         children: [
@@ -388,14 +433,17 @@ class _DefectHistoryViewState extends State<_DefectHistoryView> {
               children: [
                 const Divider(),
                 // Basic info
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Odometer: ${report.odometer} km',
-                        style: TextStyle(fontSize: 12, color: textSecondary)),
-                    Text('Reported By: ${report.reportedByName}',
-                        style: TextStyle(fontSize: 12, color: textSecondary)),
-                  ],
+                Text(
+                  'Odometer: ${report.odometer} km',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: textSecondary),
+                ),
+                Text(
+                  'Reported By: ${report.reportedByName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: textSecondary),
                 ),
                 if (report.defectNotes.isNotEmpty) ...[
                   const SizedBox(height: 8),

@@ -46,7 +46,17 @@ class StudentIncidentSummaryCard extends StatelessWidget {
           }
         }
 
-        return Container(
+        final pending = state is StudentIncidentInitial ||
+            state is StudentIncidentLoading;
+        final loadError = state is StudentIncidentOperationFailure
+            ? state.error
+            : (state is StudentIncidentLoaded ? state.loadError : null);
+
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: isDark ? AppColors.darkCard : Colors.white,
@@ -108,33 +118,50 @@ class StudentIncidentSummaryCard extends StatelessWidget {
                     ),
                   ),
                   if (pendingReview > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.amber.shade700.withValues(alpha: 0.4),
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
                         ),
-                      ),
-                      child: Text(
-                        '$pendingReview Under Review',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.amber.shade800,
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.amber.shade700.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Text(
+                          '$pendingReview Under Review',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber.shade800,
+                          ),
                         ),
                       ),
                     ),
                 ],
               ),
 
+              if (loadError != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  loadError,
+                  style: const TextStyle(fontSize: 12, color: Colors.redAccent),
+                ),
+              ],
+
               const SizedBox(height: 14),
 
-              // ─── KPI Chips Row ──────────────────────────────────────────
+              if (pending)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (state is! StudentIncidentOperationFailure)
               Row(
                 children: [
                   Expanded(
@@ -188,8 +215,9 @@ class StudentIncidentSummaryCard extends StatelessWidget {
                       Expanded(
                         child: Text(
                           'Latest: ${latestIncident.studentName} (${latestIncident.incidentDate}) - ${latestIncident.status.label}',
-                          style: const TextStyle(fontSize: 12),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
                         ),
                       ),
                     ],
@@ -237,7 +265,11 @@ class StudentIncidentSummaryCard extends StatelessWidget {
                         );
                       },
                       icon: const Icon(Icons.history, size: 16),
-                      label: const Text('View History'),
+                      label: const Text(
+                        'View History',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         shape: RoundedRectangleBorder(
@@ -290,7 +322,11 @@ class StudentIncidentSummaryCard extends StatelessWidget {
                         });
                       },
                       icon: const Icon(Icons.add_circle_outline, size: 16),
-                      label: const Text('Report Incident'),
+                      label: const Text(
+                        'Report Incident',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFD97706),
                         foregroundColor: Colors.white,
@@ -304,6 +340,8 @@ class StudentIncidentSummaryCard extends StatelessWidget {
                 ],
               ),
             ],
+          ),
+            ),
           ),
         );
       },

@@ -37,7 +37,7 @@ class DispatchPage extends StatelessWidget {
         final preTrip = context.read<PreTripRepository>();
         final bloc = DispatchBloc(
           repository: repo,
-          isVehicleInspected: preTrip.isVehicleInspectedToday,
+          inspectionBlockReason: preTrip.checkInBlockReason,
         );
         bloc.add(LoadDispatchesForDate(DateTime.now(), driverId: driverId));
         return bloc;

@@ -202,6 +202,38 @@ void main() {
       expect(state.pendingReviewCount, equals(1));
     });
 
+    test('newestStudentIncidents sorts by date then created time', () {
+      final older = StudentIncident(
+        id: 'old',
+        incidentDate: '2026-11-04',
+        incidentTime: '08:00',
+        studentName: 'A',
+        routeNo: '1',
+        driverId: '1',
+        driverName: 'D',
+        description: 'Earlier',
+        createdAt: DateTime.utc(2026, 11, 4, 8),
+        updatedAt: DateTime.utc(2026, 11, 4, 8),
+      );
+      final newer = StudentIncident(
+        id: 'new',
+        incidentDate: '2026-11-05',
+        incidentTime: '08:00',
+        studentName: 'B',
+        routeNo: '1',
+        driverId: '1',
+        driverName: 'D',
+        description: 'Later',
+        createdAt: DateTime.utc(2026, 11, 5, 8),
+        updatedAt: DateTime.utc(2026, 11, 5, 8),
+      );
+
+      expect(
+        newestStudentIncidents([older, newer]).map((item) => item.id),
+        ['new', 'old'],
+      );
+    });
+
     test('RosterStudentOption generates correct subtitle', () {
       const opt = RosterStudentOption(
         key: 'id_101',

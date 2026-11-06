@@ -95,9 +95,12 @@ class _CreateDefectReportViewState extends State<_CreateDefectReportView>
   @override
   void initState() {
     super.initState();
-    _selectedVehicleUnit = widget.defaultVehicleUnit.isNotEmpty
-        ? widget.defaultVehicleUnit
-        : (widget.fleetVehicles.isNotEmpty ? widget.fleetVehicles.first : '1001');
+    final assigned = widget.defaultVehicleUnit.trim();
+    _selectedVehicleUnit = assigned.isNotEmpty
+        ? assigned
+        : (widget.fleetVehicles.isNotEmpty
+            ? widget.fleetVehicles.first.trim()
+            : '');
 
     for (final item in DefectCheckItemTemplate.standardItems) {
       _itemStatuses[item.key] = DefectItemStatus.ok;
@@ -130,9 +133,6 @@ class _CreateDefectReportViewState extends State<_CreateDefectReportView>
       if (v.trim().isNotEmpty) {
         set.add(v.trim());
       }
-    }
-    if (set.isEmpty) {
-      set.add('1001');
     }
     final list = set.toList();
     list.sort();
@@ -189,6 +189,15 @@ class _CreateDefectReportViewState extends State<_CreateDefectReportView>
     }).toList();
 
     final availableVehicles = _availableVehicles;
+    if (availableVehicles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No fleet vehicle is available for this report.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
     final vehicleToSubmit = availableVehicles.contains(_selectedVehicleUnit)
         ? _selectedVehicleUnit
         : availableVehicles.first;
@@ -219,7 +228,7 @@ class _CreateDefectReportViewState extends State<_CreateDefectReportView>
     final availableVehicles = _availableVehicles;
     final currentVehicle = availableVehicles.contains(_selectedVehicleUnit)
         ? _selectedVehicleUnit
-        : availableVehicles.first;
+        : (availableVehicles.isNotEmpty ? availableVehicles.first : null);
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textPrimary =
@@ -231,18 +240,31 @@ class _CreateDefectReportViewState extends State<_CreateDefectReportView>
         isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder;
 
     return BlocListener<DefectBloc, DefectState>(
+      listenWhen: (previous, current) {
+        if (current is! DefectLoaded) return false;
+        final previousNotice =
+            previous is DefectLoaded ? previous.submitNotice : null;
+        final previousError =
+            previous is DefectLoaded ? previous.submitError : null;
+        return (current.submitNotice != null &&
+                current.submitNotice != previousNotice) ||
+            (current.submitError != null && current.submitError != previousError);
+      },
       listener: (context, state) {
-        if (state is DefectSubmitSuccess) {
+        if (state is! DefectLoaded) return;
+        if (state.submitNotice != null) {
           AppFeedback.showSuccess(
             context,
             message: 'Defect report submitted successfully.',
           );
           Navigator.of(context).pop(true);
-        } else if (state is DefectError) {
+          return;
+        }
+        if (state.submitError != null) {
           AppFeedback.showError(
             context,
             title: 'Defect Submission Failed',
-            message: state.message,
+            message: state.submitError!,
           );
         }
       },
@@ -269,7 +291,11 @@ class _CreateDefectReportViewState extends State<_CreateDefectReportView>
             ],
           ),
         ),
-        body: Column(
+        body: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Column(
           children: [
             // Vehicle & Odometer Top Bar
             Container(
@@ -279,7 +305,15 @@ class _CreateDefectReportViewState extends State<_CreateDefectReportView>
                 children: [
                   Expanded(
                     flex: 4,
-                    child: Container(
+                    child: currentVehicle == null
+                        ? const Text(
+                            'No fleet vehicle is available.',
+                            style: TextStyle(
+                              color: AppColors.error,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        : Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       decoration: BoxDecoration(
                         color: cardBg,
@@ -351,6 +385,8 @@ class _CreateDefectReportViewState extends State<_CreateDefectReportView>
             // Bottom Summary & Submit Section
             _buildBottomSection(isDark, cardBg, cardBorder, textPrimary, textSecondary),
           ],
+            ),
+          ),
         ),
       ),
     );
@@ -508,7 +544,8 @@ class _CreateDefectReportViewState extends State<_CreateDefectReportView>
     Color textSecondary,
   ) {
     final defectCount = _flaggedDefectCount;
-    final isSubmitting = context.watch<DefectBloc>().state is DefectSubmitting;
+    final blocState = context.watch<DefectBloc>().state;
+    final isSubmitting = blocState is DefectLoaded && blocState.submitting;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -601,13 +638,17 @@ class _CreateDefectReportViewState extends State<_CreateDefectReportView>
                           size: 20,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          defectCount > 0
-                              ? 'Submit Defect Report ($defectCount Flagged)'
-                              : 'Submit Report (No Defects)',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
+                        Flexible(
+                          child: Text(
+                            defectCount > 0
+                                ? 'Submit Defect Report ($defectCount Flagged)'
+                                : 'Submit Report (No Defects)',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ],

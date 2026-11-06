@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../models/student_incident_model.dart';
 import '../repository/student_incident_repository.dart';
 import 'student_incident_event.dart';
 import 'student_incident_state.dart';
@@ -15,20 +16,39 @@ class StudentIncidentBloc
     on<SubmitStudentIncidentEvent>(_onSubmitStudentIncident);
   }
 
+  StudentIncidentLoaded? get _loaded =>
+      state is StudentIncidentLoaded ? state as StudentIncidentLoaded : null;
+
+  String _errorText(Object error) {
+    final text = error.toString();
+    const prefix = 'Exception: ';
+    return text.startsWith(prefix) ? text.substring(prefix.length) : text;
+  }
+
   Future<void> _onLoadStudentIncidents(
     LoadStudentIncidents event,
     Emitter<StudentIncidentState> emit,
   ) async {
-    emit(const StudentIncidentLoading());
+    final previous = _loaded;
+    if (previous == null) emit(const StudentIncidentLoading());
     try {
-      final reports = await repository.getStudentIncidents(
-        driverId: event.driverId,
-        studentId: event.studentId,
-        routeNo: event.routeNo,
+      final reports = newestStudentIncidents(
+        await repository.getStudentIncidents(
+          driverId: event.driverId,
+          studentId: event.studentId,
+          routeNo: event.routeNo,
+        ),
       );
-      emit(StudentIncidentLoaded(reports: reports));
+      emit(StudentIncidentLoaded(
+        reports: reports,
+        submitting: previous?.submitting ?? false,
+      ));
     } catch (e) {
-      emit(StudentIncidentOperationFailure(e.toString()));
+      if (previous != null) {
+        emit(previous.copyWith(loadError: _errorText(e)));
+      } else {
+        emit(StudentIncidentOperationFailure(_errorText(e)));
+      }
     }
   }
 
@@ -36,25 +56,55 @@ class StudentIncidentBloc
     StudentIncidentsUpdated event,
     Emitter<StudentIncidentState> emit,
   ) {
-    emit(StudentIncidentLoaded(reports: event.reports));
+    final reports = newestStudentIncidents(event.reports);
+    final current = _loaded;
+    if (current != null) {
+      emit(current.copyWith(reports: reports, clearLoadError: true));
+      return;
+    }
+    if (state is StudentIncidentLoading) return;
+    emit(StudentIncidentLoaded(reports: reports));
   }
 
   Future<void> _onSubmitStudentIncident(
     SubmitStudentIncidentEvent event,
     Emitter<StudentIncidentState> emit,
   ) async {
-    emit(const StudentIncidentSubmitting());
+    final previous = _loaded;
+    if (previous != null) {
+      if (previous.submitting) return;
+      emit(previous.copyWith(
+        submitting: true,
+        clearSubmitError: true,
+        clearSubmitNotice: true,
+      ));
+    } else {
+      emit(const StudentIncidentLoaded(reports: [], submitting: true));
+    }
+
     try {
       final saved = await repository.submitStudentIncident(event.report);
-      emit(StudentIncidentSubmitSuccess(saved));
-
-      // Reload list for driver
-      final updatedList = await repository.getStudentIncidents(
-        driverId: event.report.driverId,
-      );
-      emit(StudentIncidentLoaded(reports: updatedList));
+      final base = previous ?? const StudentIncidentLoaded(reports: []);
+      final merged = newestStudentIncidents([
+        saved,
+        ...base.reports.where((report) => report.id != saved.id),
+      ]);
+      emit(base.copyWith(
+        reports: merged,
+        submitting: false,
+        clearSubmitError: true,
+        clearLoadError: true,
+        submitNotice: saved.id.isEmpty
+            ? '${saved.incidentDate}${saved.incidentTime}'
+            : saved.id,
+      ));
     } catch (e) {
-      emit(StudentIncidentSubmitFailure(e.toString()));
+      final base = previous ?? const StudentIncidentLoaded(reports: []);
+      emit(base.copyWith(
+        submitting: false,
+        submitError: _errorText(e),
+        clearSubmitNotice: true,
+      ));
     }
   }
 }

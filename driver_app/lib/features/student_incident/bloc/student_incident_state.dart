@@ -18,9 +18,17 @@ class StudentIncidentLoading extends StudentIncidentState {
 
 class StudentIncidentLoaded extends StudentIncidentState {
   final List<StudentIncident> reports;
+  final bool submitting;
+  final String? submitError;
+  final String? loadError;
+  final String? submitNotice;
 
   const StudentIncidentLoaded({
     required this.reports,
+    this.submitting = false,
+    this.submitError,
+    this.loadError,
+    this.submitNotice,
   });
 
   /// Incidents requiring office administrative review
@@ -29,14 +37,28 @@ class StudentIncidentLoaded extends StudentIncidentState {
 
   StudentIncidentLoaded copyWith({
     List<StudentIncident>? reports,
+    bool? submitting,
+    String? submitError,
+    bool clearSubmitError = false,
+    String? loadError,
+    bool clearLoadError = false,
+    String? submitNotice,
+    bool clearSubmitNotice = false,
   }) {
     return StudentIncidentLoaded(
       reports: reports ?? this.reports,
+      submitting: submitting ?? this.submitting,
+      submitError:
+          clearSubmitError ? null : (submitError ?? this.submitError),
+      loadError: clearLoadError ? null : (loadError ?? this.loadError),
+      submitNotice:
+          clearSubmitNotice ? null : (submitNotice ?? this.submitNotice),
     );
   }
 
   @override
-  List<Object?> get props => [reports];
+  List<Object?> get props =>
+      [reports, submitting, submitError, loadError, submitNotice];
 }
 
 class StudentIncidentSubmitting extends StudentIncidentState {

@@ -83,6 +83,7 @@ class _CreateStudentIncidentViewState
   List<RosterStudentOption> _rosterStudents = [];
   String? _selectedRosterKey;
   bool _manualStudentEntry = false;
+  bool _rosterLoaded = false;
   int _rosterRequest = 0;
 
   // Form Controllers
@@ -118,10 +119,7 @@ class _CreateStudentIncidentViewState
     _routeNoCtrl.text = widget.defaultRouteNo;
     _routeNameCtrl.text = widget.defaultRouteName;
     _locationCtrl.text = 'On School Bus';
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadRosterForDate(_incidentDate);
-    });
+    _loadRosterForDate(_incidentDate);
   }
 
   @override
@@ -155,16 +153,18 @@ class _CreateStudentIncidentViewState
       if (!mounted || ticket != _rosterRequest) return;
 
       setState(() {
+        _rosterLoaded = true;
         _rosterStudents = options;
-        if (options.isNotEmpty && !_manualStudentEntry) {
-          if (_selectedRosterKey == null ||
-              !options.any((o) => o.key == _selectedRosterKey)) {
-            _selectedRosterKey = options.first.key;
-            _applyRosterSelection(options.first);
-          }
-        } else if (options.isEmpty) {
+        if (options.isEmpty) {
           _manualStudentEntry = true;
-          _selectedRosterKey = null;
+          if (_selectedRosterKey != null) _clearRosterStudent();
+          return;
+        }
+        if (_manualStudentEntry) return;
+        final stillListed = _selectedRosterKey != null &&
+            options.any((option) => option.key == _selectedRosterKey);
+        if (!stillListed && _selectedRosterKey != null) {
+          _clearRosterStudent();
         }
       });
 
@@ -193,7 +193,27 @@ class _CreateStudentIncidentViewState
       });
     } catch (e) {
       debugPrint('[CreateStudentIncidentPage] Error loading roster: $e');
+      if (!mounted || ticket != _rosterRequest) return;
+      setState(() {
+        _rosterLoaded = true;
+        _rosterStudents = [];
+        _manualStudentEntry = true;
+      });
     }
+  }
+
+  void _clearRosterStudent() {
+    _selectedRosterKey = null;
+    _studentId = null;
+    _schoolId = null;
+    _routeId = null;
+    _shiftType = '';
+    _studentNameCtrl.clear();
+    _studentNoCtrl.clear();
+    _gradeCtrl.clear();
+    _schoolNameCtrl.clear();
+    _routeNoCtrl.text = widget.defaultRouteNo;
+    _routeNameCtrl.text = widget.defaultRouteName;
   }
 
   void _applyRosterSelection(RosterStudentOption opt) {
@@ -250,6 +270,19 @@ class _CreateStudentIncidentViewState
       return;
     }
 
+    if (!_manualStudentEntry &&
+        _rosterStudents.isNotEmpty &&
+        (_selectedRosterKey == null ||
+            !_rosterStudents.any((option) => option.key == _selectedRosterKey))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select the student this report is about.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     final dateStr = DateFormat('yyyy-MM-dd').format(_incidentDate);
     final timeStr =
         '${_incidentTime.hour.toString().padLeft(2, '0')}:${_incidentTime.minute.toString().padLeft(2, '0')}';
@@ -296,18 +329,31 @@ class _CreateStudentIncidentViewState
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return BlocListener<StudentIncidentBloc, StudentIncidentState>(
+      listenWhen: (previous, current) {
+        if (current is! StudentIncidentLoaded) return false;
+        final previousNotice =
+            previous is StudentIncidentLoaded ? previous.submitNotice : null;
+        final previousError =
+            previous is StudentIncidentLoaded ? previous.submitError : null;
+        return (current.submitNotice != null &&
+                current.submitNotice != previousNotice) ||
+            (current.submitError != null && current.submitError != previousError);
+      },
       listener: (context, state) {
-        if (state is StudentIncidentSubmitSuccess) {
+        if (state is! StudentIncidentLoaded) return;
+        if (state.submitNotice != null) {
           AppFeedback.showSuccess(
             context,
             message: 'Student incident report submitted successfully.',
           );
           Navigator.of(context).pop(true);
-        } else if (state is StudentIncidentSubmitFailure) {
+          return;
+        }
+        if (state.submitError != null) {
           AppFeedback.showError(
             context,
             title: 'Incident Report Submission Failed',
-            message: state.error,
+            message: state.submitError!,
           );
         }
       },
@@ -316,7 +362,11 @@ class _CreateStudentIncidentViewState
           title: const Text('Report Student Incident'),
           elevation: 0,
         ),
-        body: Form(
+        body: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Form(
           key: _formKey,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
@@ -348,6 +398,8 @@ class _CreateStudentIncidentViewState
               // ─── Submit Button ──────────────────────────────────────────
               _buildSubmitButton(isDark),
             ],
+          ),
+            ),
           ),
         ),
       ),
@@ -527,9 +579,6 @@ class _CreateStudentIncidentViewState
                       _manualStudentEntry = !_manualStudentEntry;
                       if (_manualStudentEntry) {
                         _selectedRosterKey = null;
-                      } else if (_rosterStudents.isNotEmpty) {
-                        _selectedRosterKey = _rosterStudents.first.key;
-                        _applyRosterSelection(_rosterStudents.first);
                       }
                     });
                   },
@@ -564,6 +613,10 @@ class _CreateStudentIncidentViewState
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     isExpanded: true,
+                    hint: const Text(
+                      'Select a student',
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     value: _selectedRosterKey,
                     items: _rosterStudents.map((stu) {
                       return DropdownMenuItem<String>(
@@ -589,7 +642,7 @@ class _CreateStudentIncidentViewState
               const SizedBox(height: 12),
             ],
 
-            if (_rosterStudents.isEmpty && !_manualStudentEntry) ...[
+            if (_rosterLoaded && _rosterStudents.isEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
@@ -980,7 +1033,8 @@ class _CreateStudentIncidentViewState
   Widget _buildSubmitButton(bool isDark) {
     return BlocBuilder<StudentIncidentBloc, StudentIncidentState>(
       builder: (context, state) {
-        final isSubmitting = state is StudentIncidentSubmitting;
+        final isSubmitting =
+            state is StudentIncidentLoaded && state.submitting;
 
         return SizedBox(
           width: double.infinity,
@@ -1001,6 +1055,8 @@ class _CreateStudentIncidentViewState
               isSubmitting
                   ? 'Submitting Report...'
                   : 'Submit Student Incident Report',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(

@@ -461,3 +461,15 @@ class VehicleDefectReport extends Equatable {
         updatedAt,
       ];
 }
+
+/// Newest report date first, then newest creation time.
+List<VehicleDefectReport> newestDefectReports(
+    List<VehicleDefectReport> reports) {
+  final copy = List<VehicleDefectReport>.of(reports);
+  copy.sort((a, b) {
+    final byDate = b.reportDate.compareTo(a.reportDate);
+    if (byDate != 0) return byDate;
+    return b.createdAt.compareTo(a.createdAt);
+  });
+  return copy;
+}

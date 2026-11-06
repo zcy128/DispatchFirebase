@@ -10,7 +10,7 @@ import 'pretrip_checklist_page.dart';
 /// A compact card displayed in the Forms tab (and optionally the Dashboard)
 /// that shows today's pre-trip status for the selected vehicle.
 /// Includes a dropdown to change the vehicle.
-class PreTripStatusCard extends StatelessWidget {
+class PreTripStatusCard extends StatefulWidget {
   final String driverId;
   final String driverName;
   final String? defaultVehicleUnit;
@@ -25,23 +25,47 @@ class PreTripStatusCard extends StatelessWidget {
   });
 
   @override
+  State<PreTripStatusCard> createState() => _PreTripStatusCardState();
+}
+
+class _PreTripStatusCardState extends State<PreTripStatusCard> {
+  @override
+  void initState() {
+    super.initState();
+    _loadDefault();
+  }
+
+  @override
+  void didUpdateWidget(PreTripStatusCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.defaultVehicleUnit != oldWidget.defaultVehicleUnit ||
+        widget.currentDate != oldWidget.currentDate) {
+      _loadDefault();
+    }
+  }
+
+  void _loadDefault() {
+    final unit = widget.defaultVehicleUnit;
+    if (unit == null || unit.isEmpty) return;
+    final bloc = context.read<PreTripBloc>();
+    if (bloc.state is PreTripInitial) {
+      bloc.add(LoadPreTripStatusEvent(
+        vehicleUnit: unit,
+        date: widget.currentDate,
+      ));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return BlocConsumer<PreTripBloc, PreTripState>(
       listener: (context, state) {
         if (state is PreTripSubmitSuccess) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Pre-trip inspection submitted successfully!'),
-              backgroundColor: AppColors.success,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-          // Reload status after success
           context.read<PreTripBloc>().add(LoadPreTripStatusEvent(
                 vehicleUnit: state.record.vehicleUnit,
-                date: currentDate,
+                date: widget.currentDate,
               ));
         }
         if (state is PreTripError) {
@@ -57,21 +81,14 @@ class PreTripStatusCard extends StatelessWidget {
       builder: (context, state) {
         // Show checklist page as a full screen overlay when in-progress
         if (state is PreTripInProgress) {
-          return const SizedBox.shrink(); // Handled via route push in _startInspection
+          return const SizedBox.shrink();
         }
 
-        // Auto-load status if state is initial and we have a vehicle unit
-        if (state is PreTripInitial && defaultVehicleUnit != null &&
-            defaultVehicleUnit!.isNotEmpty) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            context.read<PreTripBloc>().add(LoadPreTripStatusEvent(
-                  vehicleUnit: defaultVehicleUnit!,
-                  date: currentDate,
-                ));
-          });
-        }
-
-        return Container(
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: isDark ? AppColors.darkCard : Colors.white,
@@ -140,9 +157,20 @@ class PreTripStatusCard extends StatelessWidget {
                   ),
                 ),
               ] else ...[
+                if (state is PreTripError)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      state.message,
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.error),
+                    ),
+                  ),
                 _buildInitButton(context, isDark),
               ],
             ],
+          ),
+        ),
           ),
         );
       },
@@ -262,13 +290,27 @@ class PreTripStatusCard extends StatelessWidget {
   Widget _buildStatusRow(PreTripStatusLoaded state, bool isDark) {
     if (state.isInspectedToday && state.completedInspection != null) {
       final rec = state.completedInspection!;
+      final failed =
+          rec.overallStatus == OverallInspectionStatus.failedMajorDefects;
+      final minor = rec.overallStatus ==
+          OverallInspectionStatus.passedWithMinorDefects;
+      final color = failed
+          ? AppColors.error
+          : (minor ? AppColors.warning : AppColors.success);
+      final summary = failed
+          ? 'Failed inspection at ${rec.inspectionTime}. This bus cannot be checked in.'
+          : 'Inspected at ${rec.inspectionTime} by ${rec.inspectorName}${rec.odometer > 0 ? " · ${rec.odometer} km" : ""}';
       return Row(
         children: [
-          Icon(Icons.check_circle_rounded, color: AppColors.success, size: 16),
+          Icon(
+            failed ? Icons.cancel_rounded : Icons.check_circle_rounded,
+            color: color,
+            size: 16,
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              'Inspected at ${rec.inspectionTime} by ${rec.inspectorName}${rec.odometer > 0 ? " · ${rec.odometer} km" : ""}',
+              summary,
               style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ),
@@ -292,10 +334,14 @@ class PreTripStatusCard extends StatelessWidget {
   Widget _buildActionButton(
       BuildContext context, PreTripStatusLoaded state, bool isDark) {
     if (state.isInspectedToday) {
+      final failed = state.completedInspection?.overallStatus ==
+          OverallInspectionStatus.failedMajorDefects;
       return OutlinedButton.icon(
         onPressed: () => _startInspection(context, state),
         icon: const Icon(Icons.edit_note_rounded, size: 16),
-        label: const Text('Inspect Another Vehicle'),
+        label: Text(failed
+            ? 'Record a New Inspection'
+            : 'Inspect Another Vehicle'),
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.primary,
           side: const BorderSide(color: AppColors.primary),
@@ -320,11 +366,11 @@ class PreTripStatusCard extends StatelessWidget {
   Widget _buildInitButton(BuildContext context, bool isDark) {
     return OutlinedButton.icon(
       onPressed: () {
-        final vehicleUnit = defaultVehicleUnit ?? '';
+        final vehicleUnit = widget.defaultVehicleUnit ?? '';
         if (vehicleUnit.isEmpty) return;
         context.read<PreTripBloc>().add(LoadPreTripStatusEvent(
               vehicleUnit: vehicleUnit,
-              date: currentDate,
+              date: widget.currentDate,
             ));
       },
       icon: const Icon(Icons.refresh_rounded, size: 16),
@@ -340,18 +386,18 @@ class PreTripStatusCard extends StatelessWidget {
   void _startInspection(BuildContext context, PreTripStatusLoaded state) {
     context.read<PreTripBloc>().add(StartPreTripInspectionEvent(
           vehicleUnit: state.selectedVehicleUnit,
-          inspectorId: driverId,
-          inspectorName: driverName,
-          date: currentDate,
+          inspectorId: widget.driverId,
+          inspectorName: widget.driverName,
+          date: widget.currentDate,
         ));
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => BlocProvider.value(
         value: context.read<PreTripBloc>(),
         child: PreTripChecklistPage(
           vehicleUnit: state.selectedVehicleUnit,
-          driverId: driverId,
-          driverName: driverName,
-          currentDate: currentDate,
+          driverId: widget.driverId,
+          driverName: widget.driverName,
+          currentDate: widget.currentDate,
         ),
       ),
     ));

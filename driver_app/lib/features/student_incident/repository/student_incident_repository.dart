@@ -10,6 +10,26 @@ import '../../../core/api_config.dart';
 import '../../dispatch/repository/dispatch_repository.dart';
 import '../models/student_incident_model.dart';
 
+class StudentIncidentLookupException implements Exception {
+  final String message;
+
+  const StudentIncidentLookupException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+String _studentIncidentSubmitError(int statusCode, String body) {
+  try {
+    final decoded = jsonDecode(body);
+    if (decoded is Map && decoded['error'] != null) {
+      final message = decoded['error'].toString().trim();
+      if (message.isNotEmpty) return message;
+    }
+  } catch (_) {}
+  return 'Failed to submit student incident ($statusCode)';
+}
+
 class StudentIncidentRepository {
   static const String _boxName = 'driver_student_incidents_v1';
   static String get _baseUrl => ApiConfig.dispatchApiUrl;
@@ -141,12 +161,14 @@ class StudentIncidentRepository {
 
   // ─── Fetch Reports ────────────────────────────────────────────────────────
 
+  /// Confirmed server results, including an empty list.
+  /// A failed lookup throws [StudentIncidentLookupException] when nothing is cached.
   Future<List<StudentIncident>> getStudentIncidents({
     String? driverId,
     int? studentId,
     String? routeNo,
   }) async {
-    // 1. Try REST API
+    Object? restFailure;
     try {
       final queryParams = <String, String>{};
       if (driverId != null && driverId.isNotEmpty) {
@@ -164,112 +186,165 @@ class StudentIncidentRepository {
       final res = await _httpClient.get(uri).timeout(const Duration(seconds: 6));
 
       if (res.statusCode == 200) {
-        final List list = jsonDecode(res.body);
-        final reports = list
-            .map((item) =>
-                StudentIncident.fromMap(Map<String, dynamic>.from(item as Map)))
-            .toList();
-
-        _cacheReports(reports);
-        return reports;
+        final decoded = jsonDecode(res.body);
+        if (decoded is! List) {
+          throw const StudentIncidentLookupException(
+            'Student incident response was not valid.',
+          );
+        }
+        final reports = <StudentIncident>[];
+        for (final item in decoded) {
+          if (item is! Map) {
+            throw const StudentIncidentLookupException(
+              'Student incident response was not valid.',
+            );
+          }
+          reports.add(
+            StudentIncident.fromMap(Map<String, dynamic>.from(item)),
+          );
+        }
+        final sorted = newestStudentIncidents(reports);
+        _replaceCachedReports(
+          sorted,
+          driverId: driverId,
+          studentId: studentId,
+          routeNo: routeNo,
+        );
+        return sorted;
       }
+      restFailure = StudentIncidentLookupException(
+        'Student incident request failed (${res.statusCode}).',
+      );
+    } on StudentIncidentLookupException {
+      rethrow;
     } catch (e) {
       debugPrint('[StudentIncidentRepository] REST getStudentIncidents error: $e');
+      restFailure = e;
     }
 
-    // 2. Try Firestore fallback
     try {
-      final fs = _firestore;
-      if (fs != null) {
-        Query q = fs.collection('student_incidents');
-        if (driverId != null && driverId.isNotEmpty) {
-          q = q.where('driverId', isEqualTo: driverId);
-        }
-        if (studentId != null && studentId > 0) {
-          q = q.where('studentId', isEqualTo: studentId);
-        }
-        if (routeNo != null && routeNo.isNotEmpty) {
-          q = q.where('routeNo', isEqualTo: routeNo);
-        }
-        final snap = await q.get();
-        final reports = snap.docs.map((d) {
-          final data = d.data() as Map<String, dynamic>;
-          return StudentIncident.fromMap(data, docId: d.id);
-        }).toList();
-
-        _cacheReports(reports);
-        return reports;
+      final fromFirestore = await _reportsFromFirestore(
+        driverId: driverId,
+        studentId: studentId,
+        routeNo: routeNo,
+      );
+      if (fromFirestore != null && fromFirestore.isNotEmpty) {
+        _cacheReports(fromFirestore);
+        return newestStudentIncidents(fromFirestore);
       }
     } catch (e) {
-      debugPrint('[StudentIncidentRepository] Firestore getStudentIncidents error: $e');
+      debugPrint(
+        '[StudentIncidentRepository] Firestore getStudentIncidents error: $e',
+      );
     }
 
-    // 3. Fallback to Hive cache
-    return _getCachedReports(driverId: driverId, studentId: studentId, routeNo: routeNo);
+    final cached = _getCachedReports(
+      driverId: driverId,
+      studentId: studentId,
+      routeNo: routeNo,
+    );
+    if (cached.isNotEmpty) return cached;
+    throw StudentIncidentLookupException(
+      'Student incidents could not be confirmed: $restFailure',
+    );
+  }
+
+  Future<List<StudentIncident>?> _reportsFromFirestore({
+    String? driverId,
+    int? studentId,
+    String? routeNo,
+  }) async {
+    final fs = _firestore;
+    if (fs == null) return null;
+    Query q = fs.collection('student_incidents');
+    if (driverId != null && driverId.isNotEmpty) {
+      q = q.where('driverId', isEqualTo: driverId);
+    }
+    if (studentId != null && studentId > 0) {
+      q = q.where('studentId', isEqualTo: studentId);
+    }
+    if (routeNo != null && routeNo.isNotEmpty) {
+      q = q.where('routeNo', isEqualTo: routeNo);
+    }
+    final snap = await q.get();
+    if (snap.docs.isEmpty) return const [];
+    return snap.docs.map((d) {
+      final data = d.data() as Map<String, dynamic>;
+      return StudentIncident.fromMap(data, docId: d.id);
+    }).toList();
   }
 
   // ─── Submit Report ────────────────────────────────────────────────────────
 
+  /// The office record exists only after the API accepts it.
+  /// A rejected or unanswered request is not written locally or to Firestore.
   Future<StudentIncident> submitStudentIncident(StudentIncident incident) async {
-    // 1. Try REST
-    try {
-      final uri = Uri.parse('$_baseUrl/student-incidents');
-      final body = jsonEncode(incident.toCreatePayload());
+    if (incident.studentName.trim().isEmpty) {
+      throw Exception('A student name is required.');
+    }
+    if (incident.driverId.trim().isEmpty) {
+      throw Exception('A driver is required.');
+    }
 
-      final res = await _httpClient
+    final uri = Uri.parse('$_baseUrl/student-incidents');
+    final body = jsonEncode(incident.toCreatePayload());
+
+    final http.Response res;
+    try {
+      res = await _httpClient
           .post(
             uri,
             headers: {'Content-Type': 'application/json'},
             body: body,
           )
           .timeout(const Duration(seconds: 8));
-
-      if (res.statusCode == 200 || res.statusCode == 201) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final created = StudentIncident.fromMap(data);
-        _saveToCache(created);
-        return created;
-      }
-    } catch (e) {
-      debugPrint('[StudentIncidentRepository] REST submitStudentIncident error: $e');
+    } on TimeoutException {
+      throw Exception(
+        'Failed to submit student incident. The server did not respond.',
+      );
+    } on http.ClientException {
+      throw Exception(
+        'Failed to submit student incident. The server did not respond.',
+      );
     }
 
-    // 2. Try Firestore
-    try {
-      final fs = _firestore;
-      if (fs != null) {
-        final col = fs.collection('student_incidents');
-        final docRef = incident.id.isNotEmpty && !incident.id.startsWith('temp-')
-            ? col.doc(incident.id)
-            : col.doc();
-
-        final updated = incident.copyWith(
-          id: docRef.id,
-          createdAt: DateTime.now().toUtc(),
-          updatedAt: DateTime.now().toUtc(),
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      final decoded = jsonDecode(res.body);
+      if (decoded is! Map) {
+        throw const StudentIncidentLookupException(
+          'Student incident response was not valid.',
         );
-
-        await docRef.set(updated.toMap());
-        _saveToCache(updated);
-        return updated;
       }
-    } catch (e) {
-      debugPrint('[StudentIncidentRepository] Firestore submitStudentIncident error: $e');
+      final created = StudentIncident.fromMap(Map<String, dynamic>.from(decoded));
+      _saveToCache(created);
+      return created;
     }
-
-    // 3. Offline fallback
-    final offlineIncident = incident.copyWith(
-      id: incident.id.isNotEmpty
-          ? incident.id
-          : 'offline-${DateTime.now().millisecondsSinceEpoch}',
-      createdAt: DateTime.now().toUtc(),
-      updatedAt: DateTime.now().toUtc(),
-    );
-    _saveToCache(offlineIncident);
-    return offlineIncident;
+    throw Exception(_studentIncidentSubmitError(res.statusCode, res.body));
   }
 
   // ─── Hive Cache Helpers ───────────────────────────────────────────────────
+
+  void _replaceCachedReports(
+    List<StudentIncident> reports, {
+    String? driverId,
+    int? studentId,
+    String? routeNo,
+  }) {
+    if (_box == null || !_box!.isOpen) return;
+    try {
+      final stale = _getCachedReports(
+        driverId: driverId,
+        studentId: studentId,
+        routeNo: routeNo,
+      );
+      for (final report in stale) {
+        _box!.delete(report.id);
+      }
+      _cacheReports(reports);
+    } catch (e) {
+      debugPrint('[StudentIncidentRepository] _replaceCachedReports error: $e');
+    }
+  }
 
   void _cacheReports(List<StudentIncident> reports) {
     if (_box == null || !_box!.isOpen) return;

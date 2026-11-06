@@ -13,14 +13,25 @@ class DefectBloc extends Bloc<DefectEvent, DefectState> {
     on<LoadDefects>(_onLoadDefects);
     on<WatchDefectsStarted>(_onWatchDefectsStarted);
     on<DefectsUpdated>(_onDefectsUpdated);
+    on<DefectWatchFailed>(_onWatchFailed);
     on<SubmitDefectReportEvent>(_onSubmitDefectReport);
+  }
+
+  DefectLoaded? get _loaded =>
+      state is DefectLoaded ? state as DefectLoaded : null;
+
+  String _errorText(Object error) {
+    final text = error.toString();
+    const prefix = 'Exception: ';
+    return text.startsWith(prefix) ? text.substring(prefix.length) : text;
   }
 
   Future<void> _onLoadDefects(
     LoadDefects event,
     Emitter<DefectState> emit,
   ) async {
-    emit(const DefectLoading());
+    final previous = _loaded;
+    if (previous == null) emit(const DefectLoading());
     try {
       final fleetVehicles = await repository.getFleetVehicleUnits();
       final reports = await repository.getDefectReports(
@@ -28,12 +39,17 @@ class DefectBloc extends Bloc<DefectEvent, DefectState> {
         driverId: event.driverId,
       );
       emit(DefectLoaded(
-        reports: reports,
+        reports: newestDefectReports(reports),
         fleetVehicles: fleetVehicles,
         selectedVehicleUnit: event.vehicleUnit,
+        submitting: previous?.submitting ?? false,
       ));
     } catch (e) {
-      emit(DefectError(e.toString()));
+      if (previous != null) {
+        emit(previous.copyWith(loadError: _errorText(e)));
+      } else {
+        emit(DefectError(_errorText(e)));
+      }
     }
   }
 
@@ -42,7 +58,26 @@ class DefectBloc extends Bloc<DefectEvent, DefectState> {
     Emitter<DefectState> emit,
   ) async {
     await _reportsSubscription?.cancel();
-    final fleetVehicles = await repository.getFleetVehicleUnits();
+    final previous = _loaded;
+    try {
+      final fleetVehicles = await repository.getFleetVehicleUnits();
+      final initialReports = await repository.getDefectReports(
+        vehicleUnit: event.vehicleUnit,
+        driverId: event.driverId,
+      );
+      emit(DefectLoaded(
+        reports: newestDefectReports(initialReports),
+        fleetVehicles: fleetVehicles,
+        selectedVehicleUnit: event.vehicleUnit ?? previous?.selectedVehicleUnit,
+        submitting: previous?.submitting ?? false,
+      ));
+    } catch (e) {
+      if (previous != null) {
+        emit(previous.copyWith(loadError: _errorText(e)));
+      } else {
+        emit(DefectError(_errorText(e)));
+      }
+    }
 
     _reportsSubscription = repository
         .watchDefectReports(
@@ -54,30 +89,35 @@ class DefectBloc extends Bloc<DefectEvent, DefectState> {
         add(DefectsUpdated(reports));
       },
       onError: (err) {
-        // Suppress unhandled stream error in web/browser when Firestore security rules restrict direct access
+        add(DefectWatchFailed(err.toString()));
       },
     );
+  }
 
-    final initialReports = await repository.getDefectReports(
-      vehicleUnit: event.vehicleUnit,
-      driverId: event.driverId,
-    );
-    emit(DefectLoaded(
-      reports: initialReports,
-      fleetVehicles: fleetVehicles,
-      selectedVehicleUnit: event.vehicleUnit,
-    ));
+  void _onWatchFailed(
+    DefectWatchFailed event,
+    Emitter<DefectState> emit,
+  ) {
+    final current = _loaded;
+    if (current != null) {
+      emit(current.copyWith(loadError: _errorText(event.message)));
+      return;
+    }
+    emit(DefectError(_errorText(event.message)));
   }
 
   void _onDefectsUpdated(
     DefectsUpdated event,
     Emitter<DefectState> emit,
   ) {
+    final reports = newestDefectReports(event.reports);
     if (state is DefectLoaded) {
       final current = state as DefectLoaded;
-      emit(current.copyWith(reports: event.reports));
+      emit(current.copyWith(reports: reports, clearLoadError: true));
+    } else if (state is DefectLoading) {
+      return;
     } else {
-      emit(DefectLoaded(reports: event.reports));
+      emit(DefectLoaded(reports: reports));
     }
   }
 
@@ -85,12 +125,37 @@ class DefectBloc extends Bloc<DefectEvent, DefectState> {
     SubmitDefectReportEvent event,
     Emitter<DefectState> emit,
   ) async {
-    emit(const DefectSubmitting());
+    final previous = _loaded;
+    if (previous != null) {
+      if (previous.submitting) return;
+      emit(previous.copyWith(submitting: true, clearSubmitError: true));
+    } else {
+      emit(const DefectLoaded(reports: [], submitting: true));
+    }
+
     try {
       final created = await repository.submitDefectReport(event.report);
-      emit(DefectSubmitSuccess(created));
+      final base = previous ?? const DefectLoaded(reports: []);
+      final merged = newestDefectReports([
+        created,
+        ...base.reports.where((report) => report.id != created.id),
+      ]);
+      emit(base.copyWith(
+        reports: merged,
+        submitting: false,
+        clearSubmitError: true,
+        clearLoadError: true,
+        submitNotice: created.id.isEmpty
+            ? created.reportDate + created.reportTime
+            : created.id,
+      ));
     } catch (e) {
-      emit(DefectError('Failed to submit defect report: $e'));
+      final base = previous ?? const DefectLoaded(reports: []);
+      emit(base.copyWith(
+        submitting: false,
+        submitError: _errorText(e),
+        clearSubmitNotice: true,
+      ));
     }
   }
 

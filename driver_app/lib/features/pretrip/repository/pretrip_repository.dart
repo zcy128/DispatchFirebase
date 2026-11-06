@@ -9,6 +9,15 @@ import '../../../core/api_config.dart';
 import '../../../core/network/api_client.dart';
 import '../models/pretrip_model.dart';
 
+class PreTripLookupException implements Exception {
+  final String message;
+
+  const PreTripLookupException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 String _pretripSubmitError(int statusCode, String body) {
   try {
     final decoded = jsonDecode(body);
@@ -60,14 +69,12 @@ class PreTripRepository {
 
   // ─── Fleet Vehicles ───────────────────────────────────────────────────────
 
-  /// Returns a sorted list of vehicle unit numbers from the Firestore vehicles
-  /// collection (e.g., ['1001', '1002', '1003']).
+  /// Returns a sorted list of active vehicle unit numbers.
+  /// An unavailable fleet list is empty. It is never replaced with sample buses.
   Future<List<String>> getFleetVehicleUnits() async {
     try {
       final fs = _firestore;
-      if (fs == null) {
-        return ['1001', '1002', '1003', '1004', '1005'];
-      }
+      if (fs == null) return const [];
       final snap = await fs
           .collection('vehicles')
           .where('active', isEqualTo: true)
@@ -80,98 +87,117 @@ class PreTripRepository {
       return units;
     } catch (e) {
       debugPrint('[PreTripRepository] getFleetVehicleUnits error: $e');
-      // Fall back to a small static list for offline dev
-      return ['1001', '1002', '1003', '1004', '1005'];
+      return const [];
     }
+  }
+
+  String _inspectionCacheKey(String vehicleUnit, String date) =>
+      'inspected_${vehicleUnit}_$date';
+
+  bool _cachedAllowsOperation(String vehicleUnit, String date) {
+    final raw = _box?.get(_inspectionCacheKey(vehicleUnit, date));
+    return raw == OverallInspectionStatus.passed.apiValue ||
+        raw == OverallInspectionStatus.passedWithMinorDefects.apiValue;
+  }
+
+  void _rememberInspection(PreTripInspectionRecord record) {
+    _box?.put(
+      _inspectionCacheKey(record.vehicleUnit, record.inspectionDate),
+      record.overallStatus.apiValue,
+    );
+  }
+
+  void _clearInspectionCache(String vehicleUnit, String date) {
+    _box?.delete(_inspectionCacheKey(vehicleUnit, date));
   }
 
   // ─── Check Today's Status ─────────────────────────────────────────────────
 
-  /// Returns `true` if a vehicle already has a valid inspection for [date]
-  /// (YYYY-MM-DD). Checks Hive cache first, then REST, then Firestore stream.
-  Future<bool> isVehicleInspectedToday(
-      String vehicleUnit, String date) async {
-    // 1. Hive cache
-    final cacheKey = 'inspected_${vehicleUnit}_$date';
-    if (_box != null && _box!.get(cacheKey) == true) {
-      return true;
-    }
-
-    // 2. REST
+  /// Null when the bus may be checked in. A message when check-in stays blocked.
+  /// A failed lookup blocks check-in unless a passing inspection is already cached.
+  Future<String?> checkInBlockReason(String vehicleUnit, String date) async {
     try {
-      final uri = Uri.parse(
-          '$_baseUrl/pretrip-inspections/today/$vehicleUnit?date=$date');
-      final res = await _httpClient.get(uri).timeout(const Duration(seconds: 5));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final found = data['found'] as bool? ?? false;
-        if (found) {
-          _box?.put(cacheKey, true);
-          return true;
-        }
-        return false;
+      final record = await getTodayInspection(vehicleUnit, date);
+      if (record == null) {
+        _clearInspectionCache(vehicleUnit, date);
+        return 'Check-in is blocked until the Schedule 5 pre-trip inspection is complete for bus $vehicleUnit.';
       }
-    } catch (_) {}
-
-    // 3. Firestore fallback
-    try {
-      final fs = _firestore;
-      if (fs == null) return false;
-      final snap = await fs
-          .collection('pretrip_inspections')
-          .where('vehicleUnit', isEqualTo: vehicleUnit)
-          .where('inspectionDate', isEqualTo: date)
-          .limit(1)
-          .get();
-      final found = snap.docs.isNotEmpty;
-      if (found) {
-        _box?.put(cacheKey, true);
+      _rememberInspection(record);
+      if (!record.overallStatus.allowsOperation) {
+        return 'Check-in is blocked because the Schedule 5 inspection for bus $vehicleUnit has a major defect.';
       }
-      return found;
-    } catch (e) {
-      debugPrint('[PreTripRepository] isVehicleInspectedToday error: $e');
-      return false;
+      return null;
+    } on PreTripLookupException {
+      if (_cachedAllowsOperation(vehicleUnit, date)) return null;
+      return 'Check-in is blocked because the Schedule 5 inspection for bus $vehicleUnit could not be confirmed.';
     }
   }
 
-  /// Returns the existing inspection for [vehicleUnit] on [date], or null.
+  /// Returns `true` only when today's inspection allows the bus to operate.
+  Future<bool> isVehicleInspectedToday(
+      String vehicleUnit, String date) async {
+    final reason = await checkInBlockReason(vehicleUnit, date);
+    return reason == null;
+  }
+
+  /// Returns the existing inspection for [vehicleUnit] on [date].
+  /// A confirmed absence is null. A failed lookup throws [PreTripLookupException].
   Future<PreTripInspectionRecord?> getTodayInspection(
       String vehicleUnit, String date) async {
-    // REST first
+    Object? restFailure;
     try {
       final uri = Uri.parse(
           '$_baseUrl/pretrip-inspections/today/$vehicleUnit?date=$date');
-      final res = await _httpClient.get(uri).timeout(const Duration(seconds: 5));
+      final res =
+          await _httpClient.get(uri).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        if (data['found'] == true && data['inspection'] != null) {
-          return PreTripInspectionRecord.fromMap(
-              data['inspection'] as Map<String, dynamic>);
+        final decoded = jsonDecode(res.body);
+        if (decoded is! Map) {
+          throw const PreTripLookupException(
+              'Inspection status response was not valid.');
         }
-        return null;
+        final data = Map<String, dynamic>.from(decoded);
+        if (data['found'] == false) return null;
+        final inspection = data['inspection'];
+        if (data['found'] == true && inspection is Map) {
+          return PreTripInspectionRecord.fromMap(
+              Map<String, dynamic>.from(inspection));
+        }
+        throw const PreTripLookupException(
+            'Inspection status response was not valid.');
       }
-    } catch (_) {}
+      restFailure = PreTripLookupException(
+          'Inspection status request failed (${res.statusCode}).');
+    } on PreTripLookupException {
+      rethrow;
+    } catch (e) {
+      restFailure = e;
+    }
 
-    // Firestore fallback
     try {
-      final fs = _firestore;
-      if (fs == null) return null;
-      final snap = await fs
-          .collection('pretrip_inspections')
-          .where('vehicleUnit', isEqualTo: vehicleUnit)
-          .where('inspectionDate', isEqualTo: date)
-          .limit(1)
-          .get();
-      if (snap.docs.isNotEmpty) {
-        final data = snap.docs.first.data();
-        data['id'] = snap.docs.first.id;
-        return PreTripInspectionRecord.fromMap(data);
-      }
-      return null;
+      final record = await _inspectionFromFirestore(vehicleUnit, date);
+      if (record != null) return record;
     } catch (e) {
       debugPrint('[PreTripRepository] getTodayInspection error: $e');
-      return null;
     }
+    throw PreTripLookupException(
+        'Inspection status could not be confirmed: $restFailure');
+  }
+
+  Future<PreTripInspectionRecord?> _inspectionFromFirestore(
+      String vehicleUnit, String date) async {
+    final fs = _firestore;
+    if (fs == null) return null;
+    final snap = await fs
+        .collection('pretrip_inspections')
+        .where('vehicleUnit', isEqualTo: vehicleUnit)
+        .where('inspectionDate', isEqualTo: date)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    final data = snap.docs.first.data();
+    data['id'] = snap.docs.first.id;
+    return PreTripInspectionRecord.fromMap(data);
   }
 
   // ─── Real-time stream ─────────────────────────────────────────────────────
@@ -201,21 +227,39 @@ class PreTripRepository {
   // ─── Vehicle Odometer ────────────────────────────────────────────────────
 
   /// Fetches the latest recorded odometer for [vehicleUnit].
+  /// Throws [PreTripLookupException] when the reading cannot be confirmed.
   Future<int> getVehicleOdometer(String vehicleUnit) async {
-    if (vehicleUnit.isEmpty) return 0;
+    if (vehicleUnit.isEmpty) {
+      throw const PreTripLookupException('Vehicle unit is required.');
+    }
 
-    // 1. Try REST API
+    Object? restFailure;
     try {
-      final uri = Uri.parse('${ApiConfig.baseUrl}/api/public/vehicles/$vehicleUnit');
-      final res = await _httpClient.get(uri).timeout(const Duration(seconds: 4));
+      final uri =
+          Uri.parse('${ApiConfig.baseUrl}/api/public/vehicles/$vehicleUnit');
+      final res =
+          await _httpClient.get(uri).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final odo = data['odometer'];
-        if (odo is num) return odo.toInt();
+        final decoded = jsonDecode(res.body);
+        if (decoded is Map) {
+          final odo = decoded['odometer'];
+          if (odo is num) return odo.toInt();
+        }
+        restFailure = const PreTripLookupException(
+            'Vehicle record did not include an odometer.');
+      } else if (res.statusCode == 404) {
+        restFailure = PreTripLookupException(
+            'No fleet record for bus $vehicleUnit.');
+      } else {
+        restFailure = PreTripLookupException(
+            'Odometer lookup failed (${res.statusCode}).');
       }
-    } catch (_) {}
+    } on PreTripLookupException {
+      rethrow;
+    } catch (e) {
+      restFailure = e;
+    }
 
-    // 2. Firestore fallback
     try {
       final fs = _firestore;
       if (fs != null) {
@@ -238,7 +282,8 @@ class PreTripRepository {
     } catch (e) {
       debugPrint('[PreTripRepository] getVehicleOdometer error: $e');
     }
-    return 0;
+    throw PreTripLookupException(
+        'Current odometer could not be confirmed: $restFailure');
   }
 
   // ─── Submit ───────────────────────────────────────────────────────────────
@@ -246,6 +291,9 @@ class PreTripRepository {
   /// Submits a new pre-trip inspection to the REST API (Firestore fallback).
   Future<PreTripInspectionRecord> submitInspection(
       PreTripInspectionRecord record) async {
+    if (record.odometer <= 0) {
+      throw Exception('A valid odometer reading is required.');
+    }
     final payload = record.toMap();
     // Remove id so server auto-generates it
     payload.remove('id');
@@ -262,11 +310,12 @@ class PreTripRepository {
           )
           .timeout(const Duration(seconds: 10));
       if (res.statusCode == 201 || res.statusCode == 200) {
-        final created = PreTripInspectionRecord.fromMap(
-            jsonDecode(res.body) as Map<String, dynamic>);
-        final cacheKey =
-            'inspected_${record.vehicleUnit}_${record.inspectionDate}';
-        _box?.put(cacheKey, true);
+        final decoded = jsonDecode(res.body);
+        final created = decoded is Map
+            ? PreTripInspectionRecord.fromMap(
+                Map<String, dynamic>.from(decoded))
+            : record;
+        _rememberInspection(created);
         return created;
       }
       throw Exception(_pretripSubmitError(res.statusCode, res.body));
@@ -311,18 +360,14 @@ class PreTripRepository {
         });
       }
 
-      final cacheKey =
-          'inspected_${record.vehicleUnit}_${record.inspectionDate}';
-      _box?.put(cacheKey, true);
+      _rememberInspection(withId);
       return withId;
     }
 
     final docRef = fs.collection('pretrip_inspections').doc();
     final withId = record.copyWith(id: docRef.id);
     await docRef.set(withId.toMap());
-    final cacheKey =
-        'inspected_${record.vehicleUnit}_${record.inspectionDate}';
-    _box?.put(cacheKey, true);
+    _rememberInspection(withId);
     return withId;
   }
 }

@@ -8,8 +8,19 @@ import '../../../core/api_config.dart';
 import '../../../core/network/api_client.dart';
 import '../../dispatch/repository/dispatch_repository.dart';
 import '../../expense_reimbursement/repository/expense_reimbursement_repository.dart';
+import '../../route/models/route_model.dart';
 import '../../route/repository/route_repository.dart';
 import '../models/timesheet_model.dart';
+
+/// The payroll API responded, but the body or status cannot be used as a timesheet.
+class TimesheetSyncException implements Exception {
+  final String message;
+
+  const TimesheetSyncException(this.message);
+
+  @override
+  String toString() => message;
+}
 
 class TimesheetRepository {
   final http.Client _httpClient;
@@ -69,6 +80,14 @@ class TimesheetRepository {
     return formatDate(_addCalendarDays(parseDate(dateStr), days));
   }
 
+  /// Half-up currency rounding to 2 decimal places.
+  static double roundMoney(num value) {
+    if (value.isNaN || value.isInfinite) return 0;
+    final sign = value.isNegative ? -1.0 : 1.0;
+    final scaled = (value.abs() + 1e-8) * 100;
+    return sign * scaled.round() / 100;
+  }
+
   static const Map<String, String> predefinedHolidays = {
     '2026-01-01': "New Year's Day",
     '2026-02-16': 'Family Day',
@@ -115,14 +134,8 @@ class TimesheetRepository {
     final shiftType = (m['shiftType'] ?? 'AM').toString().toUpperCase();
     final employeeId = (m['employeeId'] ?? '').toString();
     final employeeName = (m['employeeName'] ?? '').toString();
-    final rawPay = m['payAmount'] ?? m['payRate'] ?? m['originalPayRate'] ?? 0;
-    final payAmount = rawPay is num
-        ? rawPay.toDouble()
-        : (double.tryParse(rawPay.toString()) ?? 0.0);
-    final rawHours = m['eiHours'] ?? m['originalEiHours'] ?? 2.5;
-    final eiHours = rawHours is num
-        ? rawHours.toDouble()
-        : (double.tryParse(rawHours.toString()) ?? 2.5);
+    final payAmount = _readMoney(m['payAmount'] ?? m['payRate'] ?? m['originalPayRate']);
+    final eiHours = _readHours(m['eiHours'] ?? m['originalEiHours']);
     final payOption = (m['payOption'] ?? 'STANDARD').toString();
     final rateSource = (m['rateSource'] ?? 'board_base_rate').toString();
     final rateDescription = m['rateDescription']?.toString();
@@ -164,6 +177,7 @@ class TimesheetRepository {
     final resolvedEmpId = RouteRepository.resolveEmployeeId(driverId);
 
     final shiftMap = <String, TimesheetShiftEntry>{};
+    TimesheetSyncException? apiFailure;
 
     // 1. Fetch from Backend API (/api/public/dispatch/payroll-logs)
     try {
@@ -171,32 +185,41 @@ class TimesheetRepository {
         '$apiBaseUrl/api/public/dispatch/payroll-logs?startDate=$startDate&endDate=$endDate',
       );
       final res = await _httpClient.get(uri).timeout(const Duration(seconds: 5));
-      if (res.statusCode == 200) {
-        final list = jsonDecode(res.body) as List<dynamic>;
-        for (final raw in list) {
-          final m = Map<String, dynamic>.from(raw as Map);
-          final status = (m['status'] ?? '').toString();
-          if (status == 'rejected') continue;
-          final recEmpId = (m['employeeId'] ?? '').toString();
-          final recEmpName = (m['employeeName'] ?? '').toString();
-          if (_matchesCurrentDriver(
-            recordEmployeeId: recEmpId,
-            recordEmployeeName: recEmpName,
-            driverId: driverId,
-            driverName: driverName,
-          )) {
-            final entry = _parsePayrollLogMap(m);
-            if (entry.dispatchDate.compareTo(startDate) >= 0 &&
-                entry.dispatchDate.compareTo(endDate) <= 0 &&
-                entry.payAmount > 0) {
-              final key = '${entry.dispatchDate}_${entry.routeNo}_${entry.shiftType}';
-              shiftMap[key] = entry;
-            }
+      if (res.statusCode != 200) {
+        throw TimesheetSyncException('Timesheet sync failed (${res.statusCode}).');
+      }
+      final decoded = jsonDecode(res.body);
+      if (decoded is! List) {
+        throw const TimesheetSyncException(
+          'Timesheet sync failed because the server response was not a payroll list.',
+        );
+      }
+      for (final raw in decoded) {
+        if (raw is! Map) continue;
+        final m = Map<String, dynamic>.from(raw);
+        final status = (m['status'] ?? '').toString();
+        if (status == 'rejected') continue;
+        final recEmpId = (m['employeeId'] ?? '').toString();
+        final recEmpName = (m['employeeName'] ?? '').toString();
+        if (_matchesCurrentDriver(
+          recordEmployeeId: recEmpId,
+          recordEmployeeName: recEmpName,
+          driverId: driverId,
+          driverName: driverName,
+        )) {
+          final entry = _parsePayrollLogMap(m);
+          if (entry.dispatchDate.compareTo(startDate) >= 0 &&
+              entry.dispatchDate.compareTo(endDate) <= 0) {
+            final key = '${entry.dispatchDate}_${entry.routeNo}_${entry.shiftType}';
+            shiftMap[key] = entry;
           }
         }
       }
     } catch (e) {
-      debugPrint('[TimesheetRepository] API payroll-logs fetch fallback: $e');
+      apiFailure = e is TimesheetSyncException
+          ? e
+          : const TimesheetSyncException('Timesheet sync failed.');
+      debugPrint('[TimesheetRepository] API payroll-logs fetch failed: $e');
     }
 
     // 2. Fetch from Firestore payroll_logs & dispatch_payrolls if available
@@ -220,10 +243,9 @@ class TimesheetRepository {
             if ((m['status'] ?? '') == 'rejected') continue;
             final entry = _parsePayrollLogMap(m);
             if (entry.dispatchDate.compareTo(startDate) >= 0 &&
-                entry.dispatchDate.compareTo(endDate) <= 0 &&
-                entry.payAmount > 0) {
+                entry.dispatchDate.compareTo(endDate) <= 0) {
               final key = '${entry.dispatchDate}_${entry.routeNo}_${entry.shiftType}';
-              shiftMap[key] = entry;
+              shiftMap.putIfAbsent(key, () => entry);
             }
           }
         }
@@ -243,8 +265,7 @@ class TimesheetRepository {
             if ((m['status'] ?? '') == 'rejected') continue;
             final entry = _parsePayrollLogMap(m);
             if (entry.dispatchDate.compareTo(startDate) >= 0 &&
-                entry.dispatchDate.compareTo(endDate) <= 0 &&
-                entry.payAmount > 0) {
+                entry.dispatchDate.compareTo(endDate) <= 0) {
               final key = '${entry.dispatchDate}_${entry.routeNo}_${entry.shiftType}';
               shiftMap.putIfAbsent(key, () => entry);
             }
@@ -281,10 +302,6 @@ class TimesheetRepository {
             final record = DispatchRepository.parseShiftMap(data, d);
             final key = '${record.date}_${record.routeNo}_${record.shiftType}';
             if (!shiftMap.containsKey(key) && record.payOption != 'NP') {
-              final rawHours = data['driverEiHours'] ?? data['eiHours'] ?? 2.5;
-              final eiHours = rawHours is num
-                  ? rawHours.toDouble()
-                  : (double.tryParse(rawHours.toString()) ?? 2.5);
               shiftMap[key] = TimesheetShiftEntry(
                 id: record.id,
                 dispatchDate: record.date,
@@ -293,14 +310,14 @@ class TimesheetRepository {
                 shiftType: record.shiftType,
                 employeeId: resolvedEmpId,
                 employeeName: record.driverName.isNotEmpty ? record.driverName : driverName,
-                payAmount: record.payrollRate > 0 ? record.payrollRate : 28.50,
-                eiHours: eiHours,
+                payAmount: record.payrollRate > 0 ? roundMoney(record.payrollRate) : 0,
+                eiHours: _readHours(data['driverEiHours'] ?? data['eiHours']),
                 payOption: record.payOption,
                 rateSource: 'dispatch_shift',
                 checkInTime: record.checkInTime,
                 checkOutTime: record.checkOutTime,
                 status: record.isCheckedOut
-                    ? 'approved'
+                    ? 'completed'
                     : (record.isCheckedIn ? 'in_progress' : 'scheduled'),
               );
             }
@@ -329,14 +346,14 @@ class TimesheetRepository {
                 shiftType: rec.shiftType,
                 employeeId: resolvedEmpId,
                 employeeName: rec.driverName.isNotEmpty ? rec.driverName : driverName,
-                payAmount: rec.payrollRate > 0 ? rec.payrollRate : 28.50,
-                eiHours: 2.50,
+                payAmount: rec.payrollRate > 0 ? roundMoney(rec.payrollRate) : 0,
+                eiHours: 0,
                 payOption: rec.payOption,
                 rateSource: 'dispatch_shift',
                 checkInTime: rec.checkInTime,
                 checkOutTime: rec.checkOutTime,
                 status: rec.isCheckedOut
-                    ? 'approved'
+                    ? 'completed'
                     : (rec.isCheckedIn ? 'in_progress' : 'scheduled'),
               );
             }
@@ -345,117 +362,21 @@ class TimesheetRepository {
       }
     }
 
-    // 5. Fallback / Demo Route Shifts if no shifts found for the 2-week period
-    // Ensures synchronized experience with assigned route in demo/offline or historical periods
-    final assignedRoute = await routeRepository?.getAssignedRoute(driverId);
-    final defaultRouteNo = assignedRoute?.routeNo ?? 'OCDSB-001';
-    final defaultRouteName = assignedRoute?.routeName ?? 'Route 001 - Hillcrest High School';
-
-    if (shiftMap.isEmpty) {
-      final todayStr = formatDate(DateTime.now());
-      for (int i = 0; i < 14; i++) {
-        final dateStr = addDays(startDate, i);
-        final dt = parseDate(dateStr);
-        // Only Monday (1) to Friday (5)
-        if (dt.weekday >= DateTime.monday && dt.weekday <= DateTime.friday) {
-          if (predefinedHolidays.containsKey(dateStr)) {
-            continue; // Handled in step 6 below as statutory holiday credit
-          }
-          final isPastOrToday = dateStr.compareTo(todayStr) <= 0;
-          final amKey = '${dateStr}_${defaultRouteNo}_AM';
-          final pmKey = '${dateStr}_${defaultRouteNo}_PM';
-
-          shiftMap[amKey] = TimesheetShiftEntry(
-            id: 'TS-$dateStr-AM',
-            dispatchDate: dateStr,
-            routeNo: defaultRouteNo,
-            routeName: defaultRouteName,
-            shiftType: 'AM',
-            employeeId: resolvedEmpId,
-            employeeName: driverName,
-            payAmount: 28.50,
-            eiHours: 2.50,
-            payOption: 'STANDARD',
-            rateSource: 'board_base_rate',
-            checkInTime: isPastOrToday ? '07:15 AM' : null,
-            checkOutTime: isPastOrToday ? '08:45 AM' : null,
-            status: isPastOrToday ? 'approved' : 'scheduled',
-          );
-
-          shiftMap[pmKey] = TimesheetShiftEntry(
-            id: 'TS-$dateStr-PM',
-            dispatchDate: dateStr,
-            routeNo: defaultRouteNo,
-            routeName: defaultRouteName,
-            shiftType: 'PM',
-            employeeId: resolvedEmpId,
-            employeeName: driverName,
-            payAmount: 28.50,
-            eiHours: 2.50,
-            payOption: 'STANDARD',
-            rateSource: 'board_base_rate',
-            checkInTime: isPastOrToday ? '02:35 PM' : null,
-            checkOutTime: isPastOrToday ? '04:05 PM' : null,
-            status: isPastOrToday ? 'approved' : 'scheduled',
-          );
-        }
-      }
+    if (apiFailure != null && shiftMap.isEmpty) {
+      throw apiFailure;
     }
 
-    // 6. Statutory Holiday Route Assignment Credits (Synchronized with BiweeklyPayrollView.tsx)
-    predefinedHolidays.forEach((holDate, holName) {
-      if (holDate.compareTo(startDate) >= 0 && holDate.compareTo(endDate) <= 0) {
-        final dt = parseDate(holDate);
-        if (dt.weekday >= DateTime.monday && dt.weekday <= DateTime.friday) {
-          // Determine driver's primary route and rate from period shifts or assigned route
-          final existingShift = shiftMap.values.firstOrNull;
-          final routeNo = existingShift?.routeNo ?? defaultRouteNo;
-          final routeName = existingShift?.routeName ?? defaultRouteName;
-          final rate = existingShift?.payAmount ?? 28.50;
-          final hrs = existingShift?.eiHours ?? 2.50;
-
-          final amKey = '${holDate}_${routeNo}_AM';
-          final pmKey = '${holDate}_${routeNo}_PM';
-
-          if (!shiftMap.containsKey(amKey)) {
-            shiftMap[amKey] = TimesheetShiftEntry(
-              id: 'HOLIDAY-$holDate-$routeNo-AM',
-              dispatchDate: holDate,
-              routeNo: routeNo,
-              routeName: routeName,
-              shiftType: 'AM',
-              employeeId: resolvedEmpId,
-              employeeName: driverName,
-              payAmount: rate,
-              eiHours: hrs,
-              payOption: 'STANDARD',
-              rateSource: 'holiday_route_assignment',
-              rateDescription: 'Statutory Holiday Credit: $holName',
-              status: 'holiday_credit',
-              isHolidayCredit: true,
-            );
-          }
-          if (!shiftMap.containsKey(pmKey)) {
-            shiftMap[pmKey] = TimesheetShiftEntry(
-              id: 'HOLIDAY-$holDate-$routeNo-PM',
-              dispatchDate: holDate,
-              routeNo: routeNo,
-              routeName: routeName,
-              shiftType: 'PM',
-              employeeId: resolvedEmpId,
-              employeeName: driverName,
-              payAmount: rate,
-              eiHours: hrs,
-              payOption: 'STANDARD',
-              rateSource: 'holiday_route_assignment',
-              rateDescription: 'Statutory Holiday Credit: $holName',
-              status: 'holiday_credit',
-              isHolidayCredit: true,
-            );
-          }
-        }
-      }
-    });
+    final assignedRoute = await routeRepository?.getAssignedRoute(driverId);
+    if (assignedRoute != null) {
+      _addAssignedHolidayCredits(
+        shiftMap: shiftMap,
+        route: assignedRoute,
+        driverId: resolvedEmpId,
+        driverName: driverName,
+        startDate: startDate,
+        endDate: endDate,
+      );
+    }
 
     // 7. Sort shifts chronologically by date, then shift type (AM -> MIDDAY -> PM -> CHARTER)
     const shiftOrder = <String, int>{
@@ -486,18 +407,20 @@ class TimesheetRepository {
     double holidayPay = 0;
 
     for (final s in allShifts) {
+      final pay = roundMoney(s.payAmount);
+      final hours = roundMoney(s.eiHours);
       if (s.dispatchDate.compareTo(week1EndDate) <= 0) {
         week1Shifts.add(s);
-        week1Pay += s.payAmount;
-        week1Hours += s.eiHours;
+        week1Pay = roundMoney(week1Pay + pay);
+        week1Hours = roundMoney(week1Hours + hours);
       } else {
         week2Shifts.add(s);
-        week2Pay += s.payAmount;
-        week2Hours += s.eiHours;
+        week2Pay = roundMoney(week2Pay + pay);
+        week2Hours = roundMoney(week2Hours + hours);
       }
       if (s.isHolidayCredit) {
         holidayShiftsCount += 1;
-        holidayPay += s.payAmount;
+        holidayPay = roundMoney(holidayPay + pay);
       }
     }
 
@@ -511,16 +434,16 @@ class TimesheetRepository {
           if (c.status.name == 'approved' &&
               c.claimDate.compareTo(startDate) >= 0 &&
               c.claimDate.compareTo(endDate) <= 0) {
-            approvedExpensesAmount += c.totalAmount;
+            approvedExpensesAmount = roundMoney(approvedExpensesAmount + c.totalAmount);
             approvedExpensesCount += 1;
           }
         }
       } catch (_) {}
     }
 
-    final totalPay = double.parse((week1Pay + week2Pay).toStringAsFixed(2));
-    final totalHours = double.parse((week1Hours + week2Hours).toStringAsFixed(2));
-    final netTotalPayout = double.parse((totalPay + approvedExpensesAmount).toStringAsFixed(2));
+    final totalPay = roundMoney(week1Pay + week2Pay);
+    final totalHours = roundMoney(week1Hours + week2Hours);
+    final netTotalPayout = roundMoney(totalPay + approvedExpensesAmount);
 
     return BiweeklyTimesheetSummary(
       startDate: startDate,
@@ -530,17 +453,96 @@ class TimesheetRepository {
       shifts: allShifts,
       week1Shifts: week1Shifts,
       week2Shifts: week2Shifts,
-      week1Pay: double.parse(week1Pay.toStringAsFixed(2)),
-      week1Hours: double.parse(week1Hours.toStringAsFixed(2)),
-      week2Pay: double.parse(week2Pay.toStringAsFixed(2)),
-      week2Hours: double.parse(week2Hours.toStringAsFixed(2)),
+      week1Pay: week1Pay,
+      week1Hours: week1Hours,
+      week2Pay: week2Pay,
+      week2Hours: week2Hours,
       totalPay: totalPay,
       totalHours: totalHours,
       holidayShiftsCount: holidayShiftsCount,
-      holidayPay: double.parse(holidayPay.toStringAsFixed(2)),
-      approvedExpensesAmount: double.parse(approvedExpensesAmount.toStringAsFixed(2)),
+      holidayPay: holidayPay,
+      approvedExpensesAmount: approvedExpensesAmount,
       approvedExpensesCount: approvedExpensesCount,
       netTotalPayout: netTotalPayout,
     );
+  }
+
+  static double _readMoney(dynamic raw) {
+    if (raw == null) return 0;
+    final parsed = raw is num ? raw.toDouble() : double.tryParse(raw.toString());
+    return roundMoney(parsed ?? 0);
+  }
+
+  static double _readHours(dynamic raw) {
+    if (raw == null) return 0;
+    final parsed = raw is num ? raw.toDouble() : double.tryParse(raw.toString());
+    if (parsed == null || parsed <= 0) return 0;
+    return roundMoney(parsed);
+  }
+
+  static const _weekdayLetters = <int, String>{
+    DateTime.monday: 'M',
+    DateTime.tuesday: 'T',
+    DateTime.wednesday: 'W',
+    DateTime.thursday: 'R',
+    DateTime.friday: 'F',
+  };
+
+  /// Credits only the assigned shift types that are missing on a weekday holiday.
+  void _addAssignedHolidayCredits({
+    required Map<String, TimesheetShiftEntry> shiftMap,
+    required DriverRouteInfo route,
+    required String driverId,
+    required String driverName,
+    required String startDate,
+    required String endDate,
+  }) {
+    final rate = roundMoney(
+      route.schoolBoard.toUpperCase().contains('CEPEO') ? 25 : 44.4,
+    );
+    predefinedHolidays.forEach((holDate, holName) {
+      if (holDate.compareTo(startDate) < 0 || holDate.compareTo(endDate) > 0) return;
+      final letter = _weekdayLetters[parseDate(holDate).weekday];
+      if (letter == null) return;
+
+      final assignedTypes = route.shifts
+          .where((shift) => shift.runDays.toUpperCase().contains(letter))
+          .map((shift) => shift.shiftType.toUpperCase())
+          .toSet()
+          .toList();
+      if (assignedTypes.isEmpty) return;
+
+      final loggedCount = shiftMap.values.where((shift) => shift.dispatchDate == holDate).length;
+      if (loggedCount >= assignedTypes.length) return;
+      final loggedTypes = shiftMap.values
+          .where((shift) => shift.dispatchDate == holDate)
+          .map((shift) => shift.shiftType.toUpperCase())
+          .toSet();
+      final missing = assignedTypes.where((type) => !loggedTypes.contains(type)).toList();
+      final shiftsNeeded = assignedTypes.length - loggedCount;
+
+      for (final shiftType in missing.take(shiftsNeeded)) {
+        final key = '${holDate}_${route.routeNo}_$shiftType';
+        shiftMap.putIfAbsent(
+          key,
+          () => TimesheetShiftEntry(
+            id: 'HOLIDAY-$holDate-${route.routeNo}-$shiftType',
+            dispatchDate: holDate,
+            routeNo: route.routeNo,
+            routeName: route.routeName,
+            shiftType: shiftType,
+            employeeId: driverId,
+            employeeName: driverName,
+            payAmount: rate,
+            eiHours: 3,
+            payOption: 'STANDARD',
+            rateSource: 'holiday_route_assignment',
+            rateDescription: 'Statutory Holiday Credit: $holName',
+            status: 'holiday_credit',
+            isHolidayCredit: true,
+          ),
+        );
+      }
+    });
   }
 }

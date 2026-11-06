@@ -67,7 +67,22 @@ func (r *FirestoreDispatchRepository) rejectDriverCheckIn(ctx context.Context, u
 			Reason: fmt.Sprintf("Check-in is blocked until the Schedule 5 pre-trip inspection is complete for bus %s.", unit),
 		}
 	}
+	if reason := PreTripOperationBlockReason(unit, inspection.OverallStatus); reason != "" {
+		return &CheckInBlockedError{Reason: reason}
+	}
 	return nil
+}
+
+// PreTripOperationBlockReason reports why a recorded inspection cannot release the bus.
+// An empty or legacy status is not treated as a major-defect failure.
+func PreTripOperationBlockReason(unit, overallStatus string) string {
+	unit = strings.TrimSpace(unit)
+	switch strings.ToLower(strings.TrimSpace(overallStatus)) {
+	case "failed_major_defects":
+		return fmt.Sprintf("Check-in is blocked because the Schedule 5 inspection for bus %s has a major defect.", unit)
+	default:
+		return ""
+	}
 }
 
 func (r *FirestoreDispatchRepository) lookupVehicleService(ctx context.Context, unit string) (bool, string, bool, error) {

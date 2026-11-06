@@ -76,11 +76,9 @@ class _StudentIncidentHistoryViewState
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context
-          .read<StudentIncidentBloc>()
-          .add(LoadStudentIncidents(driverId: widget.driverId));
-    });
+    context
+        .read<StudentIncidentBloc>()
+        .add(LoadStudentIncidents(driverId: widget.driverId));
   }
 
   void _openCreatePage() {
@@ -149,16 +147,18 @@ class _StudentIncidentHistoryViewState
           ),
         ],
       ),
-      body: Column(
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Column(
         children: [
-          // Filter Bar
           _buildFilterBar(isDark),
-
-          // List of Incidents
           Expanded(
             child: BlocBuilder<StudentIncidentBloc, StudentIncidentState>(
               builder: (context, state) {
-                if (state is StudentIncidentLoading) {
+                if (state is StudentIncidentLoading ||
+                    state is StudentIncidentInitial) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
@@ -172,14 +172,18 @@ class _StudentIncidentHistoryViewState
                           const Icon(Icons.error_outline,
                               size: 48, color: Colors.redAccent),
                           const SizedBox(height: 12),
-                          Text('Failed to load incident history:\n${state.error}',
-                              textAlign: TextAlign.center),
+                          Text(
+                            'Failed to load incident history:\n${state.error}',
+                            textAlign: TextAlign.center,
+                          ),
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
                             onPressed: () {
                               context.read<StudentIncidentBloc>().add(
-                                  LoadStudentIncidents(
-                                      driverId: widget.driverId));
+                                    LoadStudentIncidents(
+                                      driverId: widget.driverId,
+                                    ),
+                                  );
                             },
                             icon: const Icon(Icons.refresh),
                             label: const Text('Try Again'),
@@ -190,12 +194,11 @@ class _StudentIncidentHistoryViewState
                   );
                 }
 
-                List<StudentIncident> items = [];
-                if (state is StudentIncidentLoaded) {
-                  items = state.reports;
+                if (state is! StudentIncidentLoaded) {
+                  return const Center(child: CircularProgressIndicator());
                 }
 
-                // Apply local tab filter
+                var items = state.reports;
                 if (_selectedFilter == 'needs_review') {
                   items = items.where((r) => r.needsOfficeReview).toList();
                 } else if (_selectedFilter == 'closed') {
@@ -204,74 +207,99 @@ class _StudentIncidentHistoryViewState
                       .toList();
                 }
 
-                if (items.isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.shield_outlined,
-                            size: 56,
-                            color: isDark ? Colors.grey[600] : Colors.grey[400],
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'No Student Incidents Found',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            _selectedFilter == 'all'
-                                ? 'No incident reports filed by this driver yet.'
-                                : 'No incident reports match this filter.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color:
-                                  isDark ? Colors.grey[400] : Colors.grey[600],
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          ElevatedButton.icon(
-                            onPressed: _openCreatePage,
-                            icon: const Icon(Icons.add_circle_outline),
-                            label: const Text('Report New Incident'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFD97706),
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
+                final list = items.isEmpty
+                    ? _emptyHistory(isDark)
+                    : RefreshIndicator(
+                        onRefresh: () async {
+                          context.read<StudentIncidentBloc>().add(
+                                LoadStudentIncidents(
+                                  driverId: widget.driverId,
+                                ),
+                              );
+                        },
+                        child: ListView.separated(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: items.length,
+                          separatorBuilder: (_, index) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            return _buildIncidentCard(items[index], isDark);
+                          },
+                        ),
+                      );
 
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    context
-                        .read<StudentIncidentBloc>()
-                        .add(LoadStudentIncidents(driverId: widget.driverId));
-                  },
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: items.length,
-                    separatorBuilder: (_, index) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final incident = items[index];
-                      return _buildIncidentCard(incident, isDark);
-                    },
-                  ),
+                return Column(
+                  children: [
+                    if (state.loadError != null)
+                      _loadErrorBanner(state.loadError!),
+                    Expanded(child: list),
+                  ],
                 );
               },
             ),
           ),
         ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _loadErrorBanner(String message) {
+    return Container(
+      width: double.infinity,
+      color: Colors.redAccent.withValues(alpha: 0.12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Text(
+        message,
+        style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+      ),
+    );
+  }
+
+  Widget _emptyHistory(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.shield_outlined,
+              size: 56,
+              color: isDark ? Colors.grey[600] : Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'No Student Incidents Found',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _selectedFilter == 'all'
+                  ? 'No incident reports filed by this driver yet.'
+                  : 'No incident reports match this filter.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.grey[400] : Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: _openCreatePage,
+              icon: const Icon(Icons.add_circle_outline),
+              label: const Text('Report New Incident'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD97706),
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -287,14 +315,17 @@ class _StudentIncidentHistoryViewState
           ),
         ),
       ),
-      child: Row(
-        children: [
-          _buildFilterChip('all', 'All Reports'),
-          const SizedBox(width: 8),
-          _buildFilterChip('needs_review', 'Pending Office'),
-          const SizedBox(width: 8),
-          _buildFilterChip('closed', 'Closed'),
-        ],
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _buildFilterChip('all', 'All Reports'),
+            const SizedBox(width: 8),
+            _buildFilterChip('needs_review', 'Pending Office'),
+            const SizedBox(width: 8),
+            _buildFilterChip('closed', 'Closed'),
+          ],
+        ),
       ),
     );
   }
@@ -338,25 +369,32 @@ class _StudentIncidentHistoryViewState
             Expanded(
               child: Text(
                 incident.studentName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
                 ),
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: status.color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: status.color.withValues(alpha: 0.4)),
-              ),
-              child: Text(
-                status.label,
-                style: TextStyle(
-                  color: status.color,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
+            const SizedBox(width: 8),
+            Flexible(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: status.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: status.color.withValues(alpha: 0.4)),
+                ),
+                child: Text(
+                  status.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: status.color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
@@ -368,6 +406,8 @@ class _StudentIncidentHistoryViewState
             const SizedBox(height: 4),
             Text(
               '${incident.incidentDate} at ${incident.incidentTime} · Route ${incident.routeNo}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
                 color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -376,6 +416,8 @@ class _StudentIncidentHistoryViewState
             if (incident.schoolName.isNotEmpty) ...[
               Text(
                 incident.schoolName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 12,
                   color: isDark ? Colors.grey[400] : Colors.grey[600],

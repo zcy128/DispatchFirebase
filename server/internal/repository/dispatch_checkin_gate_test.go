@@ -21,3 +21,19 @@ func TestVehicleServiceHoldReason(t *testing.T) {
 		t.Fatalf("inactive hold = %q", got)
 	}
 }
+
+func TestPreTripOperationBlockReason(t *testing.T) {
+	if got := PreTripOperationBlockReason("1001", "passed"); got != "" {
+		t.Fatalf("passed inspection was blocked: %s", got)
+	}
+	if got := PreTripOperationBlockReason("1001", "passed_with_minor_defects"); got != "" {
+		t.Fatalf("minor-defect inspection was blocked: %s", got)
+	}
+	if got := PreTripOperationBlockReason("1001", ""); got != "" {
+		t.Fatalf("legacy inspection was blocked: %s", got)
+	}
+	got := PreTripOperationBlockReason("42", "failed_major_defects")
+	if !strings.Contains(got, "42") || !strings.Contains(got, "major defect") {
+		t.Fatalf("major-defect hold = %q", got)
+	}
+}
