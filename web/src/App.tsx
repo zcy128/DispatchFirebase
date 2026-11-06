@@ -127,7 +127,7 @@ export const AppContent: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const currentUserId = currentUser?.employeeId || currentUser?.uid || 'EMP-ADMIN-001';
+  const currentUserId = currentUser?.employeeId || currentUser?.uid || '';
   const { unreadCount, activeAlert, clearUnread, dismissAlert } = useChatNotifications(
     currentUserId,
     isChatOpen,
