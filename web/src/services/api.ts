@@ -1,6 +1,8 @@
 import { auth } from './firebase';
+import { joinApiUrl } from './apiUrl';
 
-// When running with Vite dev proxy, empty string calls same origin /api which proxies to :8080
+// Empty in dev and in the GitHub Hosting build. Vite proxies /api to :8080.
+// Firebase Hosting rewrites /api/** to Cloud Run. Do not set this to /api.
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export async function getAuthToken(): Promise<string> {
@@ -63,15 +65,7 @@ export async function apiRequest<T>(
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  let path = endpoint;
-  if (!path.startsWith('http')) {
-    if (!path.startsWith('/')) path = `/${path}`;
-    if (!path.startsWith('/api/') && path !== '/api') {
-      path = `/api${path}`;
-    }
-  }
-
-  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
+  const url = joinApiUrl(API_BASE_URL, endpoint);
 
   const response = await fetch(url, {
     ...options,
