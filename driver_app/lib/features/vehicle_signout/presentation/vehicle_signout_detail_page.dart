@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../models/vehicle_signout_model.dart';
 
+/// Detailed view of a submitted vehicle sign-out / sign-in handover record.
 class VehicleSignoutDetailPage extends StatelessWidget {
   final VehicleSignoutModel record;
 
@@ -66,11 +67,10 @@ class VehicleSignoutDetailPage extends StatelessWidget {
 
             // Condition & Parking Notes
             if ((record.conditionComments != null && record.conditionComments!.isNotEmpty) ||
-                (record.parkingAddress != null && record.parkingAddress!.isNotEmpty))
+                (record.parkingAddress != null && record.parkingAddress!.isNotEmpty)) ...[
               _buildConditionCard(isDark),
-            if ((record.conditionComments != null && record.conditionComments!.isNotEmpty) ||
-                (record.parkingAddress != null && record.parkingAddress!.isNotEmpty))
               const SizedBox(height: 16),
+            ],
 
             // Photos
             if (record.attachments.isNotEmpty) ...[
@@ -101,17 +101,22 @@ class VehicleSignoutDetailPage extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Driver / Recipient', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  const SizedBox(height: 2),
-                  Text(
-                    record.employeeName,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Driver / Recipient', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    const SizedBox(height: 2),
+                    Text(
+                      record.employeeName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 12),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -129,11 +134,12 @@ class VehicleSignoutDetailPage extends StatelessWidget {
           const Divider(height: 1),
           const SizedBox(height: 12),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildKeyValue('License', record.driverLicenseClass ?? 'Class 2-S'),
-              _buildKeyValue('Conditions', record.driverLicenseCondition ?? 'None'),
-              _buildKeyValue('Route', record.routeId ?? 'General'),
+              Expanded(child: _buildKeyValue('License', record.driverLicenseClass ?? 'Class 2-S')),
+              const SizedBox(width: 8),
+              Expanded(child: _buildKeyValue('Conditions', record.driverLicenseCondition ?? 'None')),
+              const SizedBox(width: 8),
+              Expanded(child: _buildKeyValue('Route', record.routeId ?? 'General')),
             ],
           ),
         ],
@@ -142,6 +148,8 @@ class VehicleSignoutDetailPage extends StatelessWidget {
   }
 
   Widget _buildVehicleDetailsCard(bool isDark) {
+    final makerModel = '${record.unitMaker ?? ""} ${record.unitModel ?? ""}'.trim();
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -155,20 +163,22 @@ class VehicleSignoutDetailPage extends StatelessWidget {
           const Text('Vehicle Specifications', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildKeyValue('Unit #', record.unitNumber),
-              _buildKeyValue('Plate', record.licensePlate ?? 'N/A'),
-              _buildKeyValue('Maker/Model', '${record.unitMaker ?? ""} ${record.unitModel ?? ""}'),
+              Expanded(child: _buildKeyValue('Unit #', record.unitNumber)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildKeyValue('Plate', record.licensePlate ?? 'N/A')),
+              const SizedBox(width: 8),
+              Expanded(child: _buildKeyValue('Maker/Model', makerModel.isEmpty ? 'N/A' : makerModel)),
             ],
           ),
           const SizedBox(height: 12),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildKeyValue('Odometer', '${record.odometer.toStringAsFixed(1)} km'),
-              _buildKeyValue('Fuel Level', record.fuelLevelDescription ?? 'Full'),
-              _buildKeyValue('Fuel Type', record.fuelTypeDescription ?? 'Diesel'),
+              Expanded(child: _buildKeyValue('Odometer', '${record.odometer.toStringAsFixed(1)} km')),
+              const SizedBox(width: 8),
+              Expanded(child: _buildKeyValue('Fuel Level', record.fuelLevelDescription ?? 'Full')),
+              const SizedBox(width: 8),
+              Expanded(child: _buildKeyValue('Fuel Type', record.fuelTypeDescription ?? 'Diesel')),
             ],
           ),
         ],
@@ -401,40 +411,52 @@ class VehicleSignoutDetailPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Signatures & Acknowledgement', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+          const Text('Digital Sign-Off', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Driver Signature', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                  const SizedBox(height: 2),
-                  Text(
-                    record.driverSignature ?? record.employeeName,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
-                  ),
-                  Text(
-                    record.driverSignDate ?? record.signDate,
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
-                  ),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Driver Signature', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                    const SizedBox(height: 2),
+                    Text(
+                      record.driverSignature ?? record.employeeName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
+                    ),
+                    Text(
+                      record.driverSignDate ?? record.signDate,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
+                ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  const Text('Fleet Inspector', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                  const SizedBox(height: 2),
-                  Text(
-                    record.fleetDepartmentSignature ?? 'Fleet Lead',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
-                  ),
-                  Text(
-                    record.fleetDepartmentSignDate ?? record.signDate,
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
-                  ),
-                ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text('Fleet Inspector', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                    const SizedBox(height: 2),
+                    Text(
+                      record.fleetDepartmentSignature ?? 'Fleet Lead',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic),
+                    ),
+                    Text(
+                      record.fleetDepartmentSignDate ?? record.signDate,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -447,9 +469,19 @@ class VehicleSignoutDetailPage extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 10, color: Colors.grey),
+        ),
         const SizedBox(height: 2),
-        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+        Text(
+          value.isEmpty ? 'N/A' : value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
       ],
     );
   }

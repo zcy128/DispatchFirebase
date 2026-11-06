@@ -7,7 +7,11 @@ import '../bloc/vehicle_signout_state.dart';
 import '../models/vehicle_signout_model.dart';
 import 'vehicle_signout_detail_page.dart';
 import 'vehicle_signout_form_page.dart';
+import 'widgets/vehicle_signout_empty_state.dart';
+import 'widgets/vehicle_signout_filter_pills.dart';
+import 'widgets/vehicle_signout_record_card.dart';
 
+/// Handover history screen displaying all past vehicle sign-out / return records.
 class VehicleSignoutHistoryPage extends StatefulWidget {
   final String driverId;
   final String driverName;
@@ -43,8 +47,6 @@ class _VehicleSignoutHistoryPageState extends State<VehicleSignoutHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Handover Records'),
@@ -61,30 +63,31 @@ class _VehicleSignoutHistoryPageState extends State<VehicleSignoutHistoryPage> {
       floatingActionButton: widget.isReadOnly
           ? null
           : FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (ctx) => BlocProvider.value(
-                value: context.read<VehicleSignoutBloc>(),
-                child: VehicleSignoutFormPage(
-                  driverId: widget.driverId,
-                  driverName: widget.driverName,
-                ),
-              ),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (ctx) => BlocProvider.value(
+                      value: context.read<VehicleSignoutBloc>(),
+                      child: VehicleSignoutFormPage(
+                        driverId: widget.driverId,
+                        driverName: widget.driverName,
+                      ),
+                    ),
+                  ),
+                );
+              },
+              backgroundColor: AppColors.primary,
+              foregroundColor: const Color(0xFF0F172A),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('New Handover', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
-          );
-        },
-        backgroundColor: AppColors.primary,
-        foregroundColor: const Color(0xFF0F172A),
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('New Handover', style: TextStyle(fontWeight: FontWeight.bold)),
-      ),
       body: Column(
         children: [
           // Search & Filter Header
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 TextField(
                   controller: _searchController,
@@ -111,14 +114,9 @@ class _VehicleSignoutHistoryPageState extends State<VehicleSignoutHistoryPage> {
                   onChanged: (val) => setState(() => _searchQuery = val.trim().toLowerCase()),
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    _buildFilterChip('All'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('Signed Out'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('Signed In'),
-                  ],
+                VehicleSignoutFilterPills(
+                  selectedFilter: _selectedFilter,
+                  onFilterSelected: (filter) => setState(() => _selectedFilter = filter),
                 ),
               ],
             ),
@@ -174,24 +172,8 @@ class _VehicleSignoutHistoryPageState extends State<VehicleSignoutHistoryPage> {
                 }).toList();
 
                 if (filtered.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.assignment_turned_in_outlined, size: 48, color: Colors.grey),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'No handover records found',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Completed vehicle handovers will appear here.',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  );
+                  final hasFilter = _selectedFilter != 'All' || _searchQuery.isNotEmpty;
+                  return VehicleSignoutEmptyState(hasFilter: hasFilter);
                 }
 
                 return ListView.separated(
@@ -200,139 +182,22 @@ class _VehicleSignoutHistoryPageState extends State<VehicleSignoutHistoryPage> {
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final item = filtered[index];
-                    return _buildRecordCard(context, item, isDark);
+                    return VehicleSignoutRecordCard(
+                      item: item,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => VehicleSignoutDetailPage(record: item),
+                          ),
+                        );
+                      },
+                    );
                   },
                 );
               },
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(String label) {
-    final isSelected = _selectedFilter == label;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedFilter = label),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? AppColors.primary : Colors.grey[700]!,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: isSelected ? const Color(0xFF0F172A) : Colors.grey[400],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRecordCard(BuildContext context, VehicleSignoutModel item, bool isDark) {
-    return InkWell(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => VehicleSignoutDetailPage(record: item),
-          ),
-        );
-      },
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark ? Colors.grey[900] : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isDark ? Colors.grey[800]! : Colors.grey[200]!,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: item.isSignIn
-                        ? Colors.green.withValues(alpha: 0.15)
-                        : Colors.blue.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    item.isSignIn ? 'SIGN IN' : 'SIGN OUT',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: item.isSignIn ? Colors.green : Colors.blue[400],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Unit #${item.unitNumber}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-                const Spacer(),
-                Text(
-                  item.signDate,
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.person_outline_rounded, size: 14, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text(
-                  item.employeeName,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                ),
-                if (item.routeId != null && item.routeId!.isNotEmpty) ...[
-                  const SizedBox(width: 12),
-                  const Icon(Icons.alt_route_rounded, size: 14, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
-                    item.routeId!,
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${item.odometer.toStringAsFixed(1)} km · ${item.fuelLevelDescription ?? "Full"}',
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-                if (item.attachments.isNotEmpty)
-                  Row(
-                    children: [
-                      const Icon(Icons.photo_camera_outlined, size: 12, color: AppColors.primary),
-                      const SizedBox(width: 3),
-                      Text(
-                        '${item.attachments.length}',
-                        style: const TextStyle(fontSize: 11, color: AppColors.primary),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
