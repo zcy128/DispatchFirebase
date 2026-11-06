@@ -106,6 +106,8 @@ export function useChatNotifications(
   }, [currentUserId]);
 
   useEffect(() => {
+    if (!currentUserId) return;
+
     let interval: ReturnType<typeof setInterval> | null = null;
     const tick = () => {
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -138,7 +140,7 @@ export function useChatNotifications(
       if (interval) clearInterval(interval);
       if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
     };
-  }, [checkChannelsForNewMessages]);
+  }, [checkChannelsForNewMessages, currentUserId]);
 
   const clearUnread = useCallback(() => {
     setUnreadCount(0);
