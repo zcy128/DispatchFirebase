@@ -32,6 +32,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     _selectedStudentIndex = widget.initialStudentIndex.clamp(0, widget.students.isEmpty ? 0 : widget.students.length - 1);
   }
 
+  @override
+  void didUpdateWidget(covariant ScheduleScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialStudentIndex != oldWidget.initialStudentIndex ||
+        widget.students.length != oldWidget.students.length) {
+      setState(() {
+        _selectedStudentIndex = widget.initialStudentIndex.clamp(
+          0,
+          widget.students.isEmpty ? 0 : widget.students.length - 1,
+        );
+      });
+    }
+  }
+
   ParentStudentCommute? get _activeCommute {
     if (widget.students.isEmpty) return null;
     if (_selectedStudentIndex >= widget.students.length) return widget.students.first;
@@ -75,21 +89,28 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Row(
-                        children: [
-                          Text('📅', style: TextStyle(fontSize: 20)),
-                          SizedBox(width: 8),
-                          Text(
-                            'Route Master Schedule',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textPrimary,
-                              letterSpacing: -0.3,
+                      const Expanded(
+                        child: Row(
+                          children: [
+                            Text('📅', style: TextStyle(fontSize: 20)),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Route Master Schedule',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                  letterSpacing: -0.3,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -215,19 +236,30 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              commute.studentName,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
+                            Expanded(
+                              flex: 3,
+                              child: Text(
+                                commute.studentName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
                               ),
                             ),
-                            Text(
-                              schoolName,
-                              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              flex: 2,
+                              child: Text(
+                                schoolName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.end,
+                                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                              ),
                             ),
                           ],
                         ),

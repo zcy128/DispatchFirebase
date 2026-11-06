@@ -48,6 +48,12 @@ class _BusMapWidgetState extends State<BusMapWidget> {
     }
   }
 
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
+
   void _fitRouteBounds() {
     if (!mounted) return;
     try {

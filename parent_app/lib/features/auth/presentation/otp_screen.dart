@@ -8,12 +8,14 @@ class OtpScreen extends StatefulWidget {
   final String contact;
   final String? devCode;
   final int matchedCount;
+  final String? error;
 
   const OtpScreen({
     super.key,
     required this.contact,
     this.devCode,
     required this.matchedCount,
+    this.error,
   });
 
   @override
@@ -38,6 +40,7 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   void _verify() {
+    FocusScope.of(context).unfocus();
     final code = _codeController.text.trim();
     if (code.length >= 4) {
       context.read<AuthBloc>().add(VerifyOtpEvent(widget.contact, code));
@@ -106,7 +109,33 @@ class _OtpScreenState extends State<OtpScreen> {
                       side: BorderSide.none,
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+
+                  // Error notification if verification failed
+                  if (widget.error != null && widget.error!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.error.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                widget.error!,
+                                style: const TextStyle(color: AppColors.error, fontSize: 13, fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
 
                   // Dev Code helper if available
                   if (AppMode.isDemo && widget.devCode != null && widget.devCode!.isNotEmpty)
@@ -119,22 +148,22 @@ class _OtpScreenState extends State<OtpScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           decoration: BoxDecoration(
-                            color: Colors.amber.shade50,
+                            color: AppColors.primary.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.amber.shade300),
+                            border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
                           ),
                           child: Wrap(
                             alignment: WrapAlignment.center,
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              Icon(Icons.bolt_rounded, size: 18, color: Colors.amber.shade800),
+                              const Icon(Icons.bolt_rounded, size: 18, color: AppColors.primary),
                               const SizedBox(width: 8),
                               Text(
                                 'Dev Passcode: ${widget.devCode} (Tap to autofill)',
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.amber.shade900,
+                                  color: AppColors.primary,
                                 ),
                               ),
                             ],
@@ -153,15 +182,25 @@ class _OtpScreenState extends State<OtpScreen> {
                       fontSize: 32,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 10,
-                      color: AppColors.primaryDark,
+                      color: AppColors.primary,
                     ),
                     decoration: InputDecoration(
                       hintText: '••••••',
                       counterText: '',
                       contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                      filled: true,
+                      fillColor: AppColors.surfaceMuted,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: AppColors.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(color: AppColors.border),
+                      ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
-                        borderSide: const BorderSide(color: AppColors.primary, width: 2.5),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 2),
                       ),
                     ),
                     onSubmitted: (_) => _verify(),
@@ -174,13 +213,19 @@ class _OtpScreenState extends State<OtpScreen> {
                       final isLoading = state is AuthLoadingState;
                       return ElevatedButton(
                         onPressed: isLoading ? null : _verify,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: const Color(0xFF0B101D),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
                         child: isLoading
                             ? const SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                                child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF0B101D)),
                               )
-                            : const Text('Verify & Open Bus Tracker'),
+                            : const Text('Verify & Open Bus Tracker', style: TextStyle(fontWeight: FontWeight.bold)),
                       );
                     },
                   ),
@@ -195,7 +240,7 @@ class _OtpScreenState extends State<OtpScreen> {
                         onPressed: () {
                           context.read<AuthBloc>().add(RequestOtpEvent(widget.contact));
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('New passcode requested!')),
+                            const SnackBar(content: Text('New passcode requested!'), behavior: SnackBarBehavior.floating),
                           );
                         },
                         child: const Text('Resend passcode'),
@@ -216,5 +261,3 @@ class _OtpScreenState extends State<OtpScreen> {
     );
   }
 }
-
-

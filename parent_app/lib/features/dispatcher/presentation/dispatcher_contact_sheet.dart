@@ -194,10 +194,16 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
 
   Future<void> _makePhoneCall() async {
     final uri = Uri.parse('tel:$dispatchPhone');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
-      _copyToClipboard(dispatchPhone, 'Dispatch phone copied to clipboard: $dispatchDisplayPhone');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else if (mounted) {
+        _copyToClipboard(dispatchPhone, 'Dispatch phone copied to clipboard: $dispatchDisplayPhone');
+      }
+    } catch (_) {
+      if (mounted) {
+        _copyToClipboard(dispatchPhone, 'Dispatch phone copied to clipboard: $dispatchDisplayPhone');
+      }
     }
   }
 
@@ -207,10 +213,16 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
     final body = customBody ?? 'Student: $studentName, Bus: #$busNo. Inquiry: ';
 
     final uri = Uri.parse('sms:$dispatchSmsNumber?body=${Uri.encodeComponent(body)}');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
-      _copyToClipboard(dispatchSmsNumber, 'SMS hotline copied to clipboard: $dispatchDisplaySms');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else if (mounted) {
+        _copyToClipboard(dispatchSmsNumber, 'SMS hotline copied to clipboard: $dispatchDisplaySms');
+      }
+    } catch (_) {
+      if (mounted) {
+        _copyToClipboard(dispatchSmsNumber, 'SMS hotline copied to clipboard: $dispatchDisplaySms');
+      }
     }
   }
 
@@ -773,8 +785,9 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
     }
 
     // 2. Automatically record absence and update dispatch shifts if generated
+    Map<String, dynamic>? absenceRes;
     try {
-      final res = await widget.apiClient.recordStudentAbsence(
+      absenceRes = await widget.apiClient.recordStudentAbsence(
         date: date,
         studentId: student.studentId,
         studentName: student.studentName,
@@ -784,8 +797,21 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
         reason: 'Absent - Reported by Parent',
         reportedBy: parentName,
       );
+    } catch (e) {
+      debugPrint('Automated absence recording error: $e');
+      if (mounted) {
+        _showFailureDialog(student.studentName, e.toString());
+      }
+      if (mounted) {
+        setState(() => _isSending = false);
+      }
+      return;
+    }
 
-      final count = res['count'] as int? ?? (res['affectedShifts'] as List?)?.length ?? 0;
+    try {
+      final count = absenceRes['count'] is num
+          ? (absenceRes['count'] as num).toInt()
+          : ((absenceRes['affectedShifts'] as List?)?.length ?? 0);
       final shiftNote = count > 0
           ? "Marked absent in today's active dispatch run ($count shift${count > 1 ? 's' : ''})."
           : "Logged in student absences repository ($shiftType).";
@@ -794,15 +820,21 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
       final sysActionMsg = '[AUTOMATED ACTION] Student absence recorded for ${student.studentName} (ID: ${student.studentId}, Route: ${student.routeNo}, Date: $date, Shift: $shiftType). $shiftNote Source: Parent (${widget.parentContact}).';
 
       if (_channelId != null) {
-        await widget.apiClient.sendChatMessage(
-          channelId: _channelId!,
-          text: sysActionMsg,
-          senderName: 'System Automation',
-          senderId: 'system-automation',
-        );
+        try {
+          await widget.apiClient.sendChatMessage(
+            channelId: _channelId!,
+            text: sysActionMsg,
+            senderName: 'System Automation',
+            senderId: 'system-automation',
+          );
+        } catch (chatErr) {
+          debugPrint('Error sending automated absence chat message: $chatErr');
+        }
       }
 
-      await _fetchMessages();
+      try {
+        await _fetchMessages();
+      } catch (_) {}
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -823,11 +855,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
         );
       }
     } catch (e) {
-      debugPrint('Automated absence recording error: $e');
-      // 4. If operation failed, alert parent to contact dispatch directly
-      if (mounted) {
-        _showFailureDialog(student.studentName, e.toString());
-      }
+      debugPrint('Post-absence processing note: $e');
     } finally {
       if (mounted) {
         setState(() => _isSending = false);
@@ -883,14 +911,21 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
     final studentName = widget.commute?.studentName ?? 'Student';
     final busNo = widget.commute?.busUnitNumber.isNotEmpty == true ? widget.commute!.busUnitNumber : '42';
 
+    final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
+    final modalHeight = viewInsetsBottom > 0
+        ? MediaQuery.of(context).size.height * 0.92
+        : MediaQuery.of(context).size.height * 0.80;
+
     return Material(
       color: AppColors.surface,
       borderRadius: widget.isTabMode ? BorderRadius.zero : const BorderRadius.vertical(top: Radius.circular(24)),
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: widget.isTabMode,
-        child: SizedBox(
-          height: widget.isTabMode ? double.infinity : MediaQuery.of(context).size.height * 0.78,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: widget.isTabMode ? 0 : viewInsetsBottom),
+          child: SizedBox(
+            height: widget.isTabMode ? double.infinity : modalHeight,
           child: Column(
             children: [
               // 1. Grab Bar & Header
@@ -919,41 +954,51 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.12),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.support_agent_rounded, color: AppColors.primary, size: 22),
-                            ),
-                            const SizedBox(width: 10),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Dispatch Operations Desk',
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.12),
+                                  shape: BoxShape.circle,
                                 ),
-                                Row(
+                                child: const Icon(Icons.support_agent_rounded, color: AppColors.primary, size: 22),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Container(
-                                      width: 7,
-                                      height: 7,
-                                      decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle),
+                                    const Text(
+                                      'Dispatch Operations Desk',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                                     ),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      'Online Support • $studentName (Bus #$busNo)',
-                                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 7,
+                                          height: 7,
+                                          decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle),
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Expanded(
+                                          child: Text(
+                                            'Online Support • $studentName (Bus #$busNo)',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
-                              ],
-                            ),
-                          ],
+                              ),
+                            ],
+                          ),
                         ),
                         if (!widget.isTabMode)
                           IconButton(
@@ -1017,6 +1062,7 @@ class _DispatcherContactSheetState extends State<DispatcherContactSheet> with Si
               ),
             ],
           ),
+        ),
         ),
       ),
     );

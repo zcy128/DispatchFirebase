@@ -203,20 +203,26 @@ class _EtaCardWidgetState extends State<EtaCardWidget> with SingleTickerProvider
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
-                        color: AppColors.secondary.withValues(alpha: 0.15),
+                        color: (commute.status == 'DELAYED' ? AppColors.coral : AppColors.secondary).withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.check_circle_rounded, size: 11, color: AppColors.secondary),
+                          Icon(
+                            commute.status == 'DELAYED' ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
+                            size: 11,
+                            color: commute.status == 'DELAYED' ? AppColors.coral : AppColors.secondary,
+                          ),
                           const SizedBox(width: 4),
                           Text(
-                            commute.scheduledTime.isNotEmpty ? commute.scheduledTime : 'On Time',
-                            style: const TextStyle(
+                            commute.status == 'DELAYED'
+                                ? 'Delayed (+${commute.lateMinutes}m)'
+                                : (commute.scheduledTime.isNotEmpty ? commute.scheduledTime : 'On Time'),
+                            style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.secondary,
+                              color: commute.status == 'DELAYED' ? AppColors.coral : AppColors.secondary,
                             ),
                           ),
                         ],
@@ -511,12 +517,12 @@ class _EtaCardWidgetState extends State<EtaCardWidget> with SingleTickerProvider
   String _getBadgeText(ParentStudentCommute commute) {
     if (commute.status == 'BOARDED') return 'ON BOARD';
     if (commute.status == 'DROPPED_OFF') return 'ARRIVED';
+    if (commute.status == 'DELAYED') {
+      return commute.lateMinutes > 0 ? 'DELAYED (+${commute.lateMinutes}m)' : 'DELAYED';
+    }
     if (commute.status == 'APPROACHING') return 'APPROACHING';
     if (commute.minutesAway != null && commute.minutesAway! > 0) {
       return '${commute.minutesAway} MINS';
-    }
-    if (commute.status == 'DELAYED') {
-      return 'DELAYED (+${commute.lateMinutes}m)';
     }
     return 'ON TIME';
   }

@@ -7,10 +7,14 @@ class SmsGuideModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.border),
+      ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -21,7 +25,7 @@ class SmsGuideModal extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
+                      color: AppColors.primary.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(Icons.sms_outlined, color: AppColors.primary, size: 24),
@@ -31,20 +35,20 @@ class SmsGuideModal extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('SMS Instant Bus Inquiry', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                        Text('Twilio Automated Response', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        Text('SMS Instant Bus Inquiry', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                        Text('Automated SMS Gateway', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 20),
+                    icon: const Icon(Icons.close_rounded, size: 20, color: AppColors.textMuted),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
               const Text(
-                'No data or app needed! Send a text message from your registered phone to our automated transit hotline:',
+                'No mobile data or app needed! Send a text message from your registered phone to our automated transit hotline:',
                 style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
               ),
               const SizedBox(height: 12),
@@ -64,16 +68,16 @@ class SmsGuideModal extends StatelessWidget {
                     SizedBox(width: 8),
                     Text(
                       '(613) 555-0188',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5, color: AppColors.textPrimary),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
 
-              const Text('How it works:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              const Text('How it works:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
               const SizedBox(height: 8),
-              _buildStepItem('1', 'Text "ETA" or "WHERE"', 'Our Twilio API automatically verifies your phone and looks up your children\'s active bus.'),
+              _buildStepItem('1', 'Text "ETA" or "WHERE"', 'Our automated transit gateway verifies your phone and looks up your children\'s active bus.'),
               const SizedBox(height: 8),
               _buildStepItem('2', 'Multi-Child Support', 'If you have multiple children, text "1" or "2" to get detailed stop & delay info for that child.'),
               const SizedBox(height: 8),
@@ -82,7 +86,13 @@ class SmsGuideModal extends StatelessWidget {
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Got It'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: const Color(0xFF0B101D),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: const Text('Got It', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           ),

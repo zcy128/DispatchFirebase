@@ -80,6 +80,7 @@ class ParentApp extends StatelessWidget {
                 contact: state.contact,
                 devCode: state.devCode,
                 matchedCount: state.matchedCount,
+                error: state.error,
               );
             }
 

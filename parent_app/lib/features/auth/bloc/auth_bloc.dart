@@ -42,10 +42,12 @@ class OtpSentState extends AuthState {
   final String contact;
   final String? devCode;
   final int matchedCount;
+  final String? error;
   OtpSentState({
     required this.contact,
     this.devCode,
     required this.matchedCount,
+    this.error,
   });
 }
 
@@ -131,6 +133,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   }
 
   Future<void> _onVerifyOtp(VerifyOtpEvent event, Emitter<AuthState> emit) async {
+    final prevState = state is OtpSentState ? (state as OtpSentState) : null;
     emit(AuthLoadingState(message: 'Verifying passcode...'));
     try {
       final res = await apiClient.verifyOtp(event.contact, event.code);
@@ -147,7 +150,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         justLoggedIn: true,
       ));
     } catch (e) {
-      emit(AuthErrorState(e.toString().replaceAll('Exception: ', '')));
+      final err = e.toString().replaceAll('Exception: ', '');
+      if (prevState != null) {
+        emit(OtpSentState(
+          contact: prevState.contact,
+          devCode: prevState.devCode,
+          matchedCount: prevState.matchedCount,
+          error: err,
+        ));
+      } else {
+        emit(AuthErrorState(err));
+      }
     }
   }
 
