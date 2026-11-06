@@ -33,7 +33,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
   late TextEditingController _emailController;
   late TextEditingController _addressController;
 
-  bool _isLoading = true;
+  late bool _isLoading;
   bool _isSaving = false;
 
   @override
@@ -41,6 +41,8 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
     super.initState();
     final user = widget.initialUser;
     final isEmail = widget.parentContact.contains('@');
+
+    _isLoading = user == null;
 
     _nameController = TextEditingController(text: user?.displayName ?? '');
     _phoneController = TextEditingController(
@@ -70,16 +72,16 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
       final user = await widget.apiClient.fetchProfile(widget.parentContact);
       if (mounted) {
         setState(() {
-          if (_nameController.text.isEmpty && user.displayName.isNotEmpty) {
+          if (user.displayName.isNotEmpty) {
             _nameController.text = user.displayName;
           }
-          if (_phoneController.text.isEmpty && user.phone.isNotEmpty) {
+          if (user.phone.isNotEmpty) {
             _phoneController.text = user.phone;
           }
-          if (_emailController.text.isEmpty && user.email.isNotEmpty) {
+          if (user.email.isNotEmpty) {
             _emailController.text = user.email;
           }
-          if (_addressController.text.isEmpty && user.homeAddress.isNotEmpty) {
+          if (user.homeAddress.isNotEmpty) {
             _addressController.text = user.homeAddress;
           }
           _isLoading = false;
@@ -95,6 +97,9 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
   Future<void> _handleSave() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     setState(() => _isSaving = true);
     try {
       final updated = await widget.apiClient.updateProfile(
@@ -109,29 +114,28 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
         widget.onProfileUpdated!(updated);
       }
 
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                SizedBox(width: 8),
-                Text('Profile details successfully updated.'),
-              ],
-            ),
-            backgroundColor: AppColors.success,
-            duration: Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
+      navigator.pop();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text('Profile details successfully updated.'),
+            ],
           ),
-        );
-      }
+          backgroundColor: AppColors.success,
+          duration: Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to update profile: $e'),
             backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -146,8 +150,11 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(
+          top: BorderSide(color: AppColors.border, width: 1.2),
+        ),
       ),
       padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).viewInsets.bottom + 24),
       child: SafeArea(
@@ -159,7 +166,6 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Drag Handle
                 Center(
                   child: Container(
                     width: 36,
@@ -178,7 +184,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
+                        color: AppColors.primary.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(Icons.person_outline_rounded, color: AppColors.primary, size: 22),
@@ -216,7 +222,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                   const Center(
                     child: Padding(
                       padding: EdgeInsets.symmetric(vertical: 32),
-                      child: CircularProgressIndicator(),
+                      child: CircularProgressIndicator(color: AppColors.primary),
                     ),
                   )
                 else ...[
@@ -228,6 +234,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                   const SizedBox(height: 6),
                   TextFormField(
                     controller: _nameController,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
                       hintText: 'e.g. Sarah Thompson',
                       hintStyle: const TextStyle(fontSize: 13, color: AppColors.textMuted),
@@ -262,6 +269,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                   TextFormField(
                     controller: _phoneController,
                     keyboardType: TextInputType.phone,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
                       hintText: 'e.g. (613) 555-0199',
                       hintStyle: const TextStyle(fontSize: 13, color: AppColors.textMuted),
@@ -296,6 +304,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
                       hintText: 'e.g. sarah.thompson@example.com',
                       hintStyle: const TextStyle(fontSize: 13, color: AppColors.textMuted),
@@ -312,6 +321,15 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                       ),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     ),
+                    validator: (val) {
+                      if (val != null && val.trim().isNotEmpty) {
+                        final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+                        if (!emailRegex.hasMatch(val.trim())) {
+                          return 'Please enter a valid email address';
+                        }
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 16),
 
@@ -324,6 +342,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                   TextFormField(
                     controller: _addressController,
                     maxLines: 2,
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
                       hintText: 'e.g. 142 Richmond Rd, Ottawa, ON K1Z 6X2',
                       hintStyle: const TextStyle(fontSize: 13, color: AppColors.textMuted),
@@ -381,7 +400,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                       onPressed: _isSaving ? null : _handleSave,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF0B101D),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         elevation: 0,
                       ),
@@ -389,7 +408,10 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                           ? const SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF0B101D),
+                              ),
                             )
                           : const Text(
                               'Save Changes',

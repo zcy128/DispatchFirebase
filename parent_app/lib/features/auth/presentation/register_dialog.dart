@@ -36,11 +36,24 @@ class _RegisterDialogState extends State<RegisterDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      scrollable: true,
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.border),
+      ),
       title: const Row(
         children: [
           Icon(Icons.shield_outlined, color: AppColors.primary),
           SizedBox(width: 8),
-          Text('Save Your Account', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Expanded(
+            child: Text(
+              'Save Your Account',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
       content: ConstrainedBox(
@@ -52,27 +65,49 @@ class _RegisterDialogState extends State<RegisterDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'Create a password to enable biometric login (Face ID/Fingerprint) and save your alert settings across devices.',
+                'Create a password to enable quick sign-in and save your alert settings across devices.',
                 style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
                   labelText: 'Your Name (Optional)',
-                  prefixIcon: Icon(Icons.person_outline_rounded),
+                  prefixIcon: const Icon(Icons.person_outline_rounded, color: AppColors.textMuted),
+                  filled: true,
+                  fillColor: AppColors.surfaceMuted,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _passwordController,
                 obscureText: true,
-                decoration: const InputDecoration(
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
                   labelText: 'Create Password',
-                  prefixIcon: Icon(Icons.lock_outline_rounded),
+                  prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.textMuted),
+                  filled: true,
+                  fillColor: AppColors.surfaceMuted,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.border),
+                  ),
                 ),
                 validator: (val) {
-                  if (val == null || val.length < 6) {
+                  if (val == null || val.trim().length < 6) {
                     return 'Password must be at least 6 characters';
                   }
                   return null;
@@ -89,7 +124,12 @@ class _RegisterDialogState extends State<RegisterDialog> {
         ),
         ElevatedButton(
           onPressed: _submit,
-          child: const Text('Create Account'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: const Color(0xFF0B101D),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          child: const Text('Create Account', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );
