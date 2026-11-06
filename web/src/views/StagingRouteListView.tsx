@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback, useDeferredValue, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Bus, ChevronDown, ChevronRight, Clock, Copy, MapPin, RefreshCw, Search, Users } from 'lucide-react';
+import { Bus, ChevronDown, ChevronRight, Clock, Copy, Download, MapPin, RefreshCw, Search, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { BusPlannerService, StagingRoute, StagingShift } from '../services/busplannerService';
 import { getShiftBadgeStyle } from '../types/route';
 import { getPagePermission } from '../utils/permissions';
+import { downloadStagingRouteSheet } from '../utils/stagingRouteSheet';
 
 export const StagingRouteListView: React.FC = () => {
   const { isFrench } = useI18n();
@@ -242,6 +243,7 @@ export const StagingRouteListView: React.FC = () => {
                       onToggle={toggleRoute}
                       onSelectShift={selectShift}
                       onCopy={copyRoute}
+                      onExportPdf={downloadStagingRouteSheet}
                     />
                   </div>
                 );
@@ -270,6 +272,7 @@ interface StagingRouteRowProps {
   onToggle: (routeId: string) => void;
   onSelectShift: (routeId: string, shiftId: string) => void;
   onCopy: (route: StagingRoute) => void;
+  onExportPdf: (route: StagingRoute) => void;
 }
 
 const StagingRouteRow = memo(function StagingRouteRow({
@@ -283,6 +286,7 @@ const StagingRouteRow = memo(function StagingRouteRow({
   onToggle,
   onSelectShift,
   onCopy,
+  onExportPdf,
 }: StagingRouteRowProps) {
   return (
     <div className="border-b border-slate-800/60">
@@ -332,6 +336,16 @@ const StagingRouteRow = memo(function StagingRouteRow({
                       <span className="text-xs text-slate-400 whitespace-nowrap">
                         {route.totalStops} {isFrench ? 'arrêts' : 'stops'} · {route.totalStudents} {isFrench ? 'élèves' : 'students'}
                       </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onExportPdf(route)}
+                      disabled={route.shifts.length === 0}
+                      title={isFrench ? 'Exporter la feuille de route' : 'Export a route sheet PDF'}
+                      className="shrink-0 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-[11px] font-bold hover:bg-slate-700 disabled:opacity-50 flex items-center gap-1"
+                    >
+                      <Download className="w-3.5 h-3.5 text-amber-400" />
+                      {isFrench ? 'Exporter PDF' : 'Export PDF'}
                     </button>
                     {canCopy && (
                       <button
