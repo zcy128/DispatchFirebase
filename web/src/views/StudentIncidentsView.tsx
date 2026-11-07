@@ -45,7 +45,15 @@ const StudentIncidentPdfModal = React.lazy(() =>
   }))
 );
 
-export const StudentIncidentsView: React.FC = () => {
+interface StudentIncidentsViewProps {
+  onSelectStudent?: (ref: { id?: string; name?: string }) => void;
+  onSelectSchool?: (schoolId?: number, schoolName?: string) => void;
+}
+
+export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
+  onSelectStudent,
+  onSelectSchool,
+}) => {
   const { currentUser } = useAuth();
   const { isFrench } = useI18n();
   const [incidents, setIncidents] = useState<StudentIncident[]>([]);
@@ -708,9 +716,26 @@ export const StudentIncidentsView: React.FC = () => {
                         </td>
 
                         <td className="px-4 py-3.5">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100">
-                            {r.studentName}
-                          </div>
+                          {onSelectStudent && r.studentName ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectStudent({
+                                  id: r.studentNo || (r.studentId ? String(r.studentId) : undefined),
+                                  name: r.studentName,
+                                });
+                              }}
+                              className="font-semibold text-slate-900 dark:text-slate-100 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left"
+                              title={isFrench ? "Voir la fiche élève" : 'View student details'}
+                            >
+                              {r.studentName}
+                            </button>
+                          ) : (
+                            <div className="font-semibold text-slate-900 dark:text-slate-100">
+                              {r.studentName}
+                            </div>
+                          )}
                           <div className="text-xs text-slate-400">
                             {r.grade ? `Gr ${r.grade}` : (isFrench ? 'Élève' : 'Student')}{' '}
                             {r.studentNo ? `· #${r.studentNo}` : ''}
@@ -718,12 +743,27 @@ export const StudentIncidentsView: React.FC = () => {
                         </td>
 
                         <td className="px-4 py-3.5">
-                          <div className="text-slate-900 dark:text-slate-200 flex items-center gap-1">
-                            <School className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                            <span className="truncate max-w-[180px]">
-                              {r.schoolName || (isFrench ? 'École non assignée' : 'Unassigned School')}
-                            </span>
-                          </div>
+                          {onSelectSchool && r.schoolName ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectSchool(r.schoolId, r.schoolName);
+                              }}
+                              className="text-slate-900 dark:text-slate-200 flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left max-w-full"
+                              title={isFrench ? "Voir la fiche école" : 'View school details'}
+                            >
+                              <School className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-[180px]">{r.schoolName}</span>
+                            </button>
+                          ) : (
+                            <div className="text-slate-900 dark:text-slate-200 flex items-center gap-1">
+                              <School className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-[180px]">
+                                {r.schoolName || (isFrench ? 'École non assignée' : 'Unassigned School')}
+                              </span>
+                            </div>
+                          )}
                           <div className="text-xs text-slate-400">
                             {isFrench ? 'Circuit' : 'Route'} {r.routeNo}{' '}
                             {r.routeName ? `· ${r.routeName}` : ''}
@@ -869,7 +909,27 @@ export const StudentIncidentsView: React.FC = () => {
                       Student
                     </span>
                     <div className="text-base font-bold text-slate-900 dark:text-slate-100">
-                      {selectedIncident.studentName}{' '}
+                      {onSelectStudent && selectedIncident.studentName ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onSelectStudent({
+                              id:
+                                selectedIncident.studentNo ||
+                                (selectedIncident.studentId
+                                  ? String(selectedIncident.studentId)
+                                  : undefined),
+                              name: selectedIncident.studentName,
+                            })
+                          }
+                          className="hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                          title="View student details"
+                        >
+                          {selectedIncident.studentName}
+                        </button>
+                      ) : (
+                        selectedIncident.studentName
+                      )}{' '}
                       <span className="text-xs font-normal text-slate-400">
                         ({selectedIncident.grade ? `Gr ${selectedIncident.grade}` : 'Student'}{' '}
                         {selectedIncident.studentNo ? `· #${selectedIncident.studentNo}` : ''})
@@ -888,7 +948,21 @@ export const StudentIncidentsView: React.FC = () => {
 
                 <div className="grid grid-cols-2 gap-2 text-xs pt-1 text-slate-600 dark:text-slate-400">
                   <div>
-                    <span className="font-semibold">School:</span> {selectedIncident.schoolName || 'N/A'}
+                    <span className="font-semibold">School:</span>{' '}
+                    {onSelectSchool && selectedIncident.schoolName ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onSelectSchool(selectedIncident.schoolId, selectedIncident.schoolName)
+                        }
+                        className="hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                        title="View school details"
+                      >
+                        {selectedIncident.schoolName}
+                      </button>
+                    ) : (
+                      selectedIncident.schoolName || 'N/A'
+                    )}
                   </div>
                   <div>
                     <span className="font-semibold">Route:</span> Route {selectedIncident.routeNo}

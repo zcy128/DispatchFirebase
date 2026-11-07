@@ -11,6 +11,7 @@ import {
   Calendar,
   X,
   User,
+  Phone,
   Route as RouteIcon,
   Tag,
   ShieldCheck,
@@ -29,13 +30,33 @@ import {
 } from '../types/expenseReimbursement';
 import { ExpenseReimbursementService } from '../services/expenseReimbursementService';
 import { useAuth } from '../contexts/AuthContext';
+import { Employee } from '../types/employee';
 
 // Pure helper to identify historical claims archived in BigQuery cold storage
 function isArchivedClaimDate(claimDate?: string): boolean {
   return ExpenseReimbursementService.isColdClaim(claimDate);
 }
 
-export const ExpenseReimbursementsView: React.FC = () => {
+function employeePhone(emp?: Employee | null): string {
+  if (!emp) return '';
+  return (
+    emp.preferredPhone ||
+    emp.mobilePhone ||
+    emp.workPhonePhone ||
+    emp.homePhone ||
+    ''
+  ).trim();
+}
+
+interface ExpenseReimbursementsViewProps {
+  employees?: Employee[];
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
+}
+
+export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps> = ({
+  employees = [],
+  onSelectEmployee,
+}) => {
   const { currentUser } = useAuth();
   const [claims, setClaims] = useState<ExpenseReimbursement[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -75,6 +96,34 @@ export const ExpenseReimbursementsView: React.FC = () => {
 
   // Claims older than six months are BigQuery cold data.
   const [timeRange, setTimeRange] = useState<'6months' | 'all'>('6months');
+
+  const resolveEmployeePhone = (employeeId?: string, employeeName?: string): string => {
+    const id = (employeeId || '').trim().toLowerCase();
+    const name = (employeeName || '').trim().toLowerCase();
+    if (!employees.length) return '';
+
+    const tokens = (e: Employee) =>
+      [e.id, e.employeeNumber, String(e.employeeId ?? ''), e.username || '']
+        .map((v) => v.trim().toLowerCase())
+        .filter(Boolean);
+
+    const byId = id
+      ? employees.find((e) => tokens(e).includes(id))
+      : undefined;
+    if (byId) return employeePhone(byId);
+
+    if (!name) return '';
+    const byName =
+      employees.find((e) => {
+        const full = (e.fullName || `${e.firstName} ${e.lastName}`).trim().toLowerCase();
+        return full === name;
+      }) ||
+      employees.find((e) => {
+        const full = (e.fullName || `${e.firstName} ${e.lastName}`).trim().toLowerCase();
+        return full.includes(name) || name.includes(full);
+      });
+    return employeePhone(byName);
+  };
 
   const loadClaims = async (targetQuery?: string, opts?: { isCancelled?: () => boolean }) => {
     const q = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
@@ -538,6 +587,7 @@ export const ExpenseReimbursementsView: React.FC = () => {
                     );
 
                     const isCold = isArchivedClaimDate(claim.claimDate);
+                    const phone = resolveEmployeePhone(claim.employeeId, claim.employeeName);
 
                     return (
                       <tr
@@ -589,13 +639,37 @@ export const ExpenseReimbursementsView: React.FC = () => {
                         </td>
 
                         <td className="px-4 py-3.5">
-                          <div className="font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
-                            <User className="w-3.5 h-3.5 text-slate-400" />
-                            {claim.employeeName || 'Unknown Driver'}
-                          </div>
-                          <div className="text-xs text-slate-400">
-                            ID: {claim.employeeId || 'N/A'}
-                          </div>
+                          {onSelectEmployee && claim.employeeName ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectEmployee(claim.employeeId, claim.employeeName);
+                              }}
+                              className="font-medium text-slate-900 dark:text-white flex items-center gap-1.5 hover:text-teal-600 dark:hover:text-teal-300 hover:underline transition text-left"
+                              title="View employee details"
+                            >
+                              <User className="w-3.5 h-3.5 text-slate-400" />
+                              {claim.employeeName}
+                            </button>
+                          ) : (
+                            <div className="font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
+                              <User className="w-3.5 h-3.5 text-slate-400" />
+                              {claim.employeeName || 'Unknown Driver'}
+                            </div>
+                          )}
+                          {phone ? (
+                            <div className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Phone className="w-3 h-3 shrink-0" />
+                              <a
+                                href={`tel:${phone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="hover:text-teal-600 dark:hover:text-teal-300 hover:underline"
+                              >
+                                {phone}
+                              </a>
+                            </div>
+                          ) : null}
                         </td>
 
                         <td className="px-4 py-3.5">
@@ -717,14 +791,28 @@ export const ExpenseReimbursementsView: React.FC = () => {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-700/60">
                 <div>
                   <span className="text-xs text-slate-400">Driver</span>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    {selectedClaim.employeeName}
-                  </p>
+                  {onSelectEmployee && selectedClaim.employeeName ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onSelectEmployee(selectedClaim.employeeId, selectedClaim.employeeName)
+                      }
+                      className="text-sm font-semibold text-slate-900 dark:text-white hover:text-teal-600 dark:hover:text-teal-300 hover:underline transition text-left"
+                      title="View employee details"
+                    >
+                      {selectedClaim.employeeName}
+                    </button>
+                  ) : (
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                      {selectedClaim.employeeName}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <span className="text-xs text-slate-400">Employee ID</span>
+                  <span className="text-xs text-slate-400">Phone</span>
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    {selectedClaim.employeeId || 'N/A'}
+                    {resolveEmployeePhone(selectedClaim.employeeId, selectedClaim.employeeName) ||
+                      'N/A'}
                   </p>
                 </div>
                 <div>

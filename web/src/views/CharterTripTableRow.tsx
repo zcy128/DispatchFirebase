@@ -18,6 +18,8 @@ export interface CharterTripTableRowProps {
   onEdit: (trip: CharterTrip) => void;
   onDelete: (trip: CharterTrip) => void;
   onReview: (openingId: string) => void;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
+  onSelectVehicle?: (vehicleId?: number, unitNumber?: string) => void;
 }
 
 export const CharterTripTableRow = memo(function CharterTripTableRow({
@@ -29,6 +31,8 @@ export const CharterTripTableRow = memo(function CharterTripTableRow({
   onEdit,
   onDelete,
   onReview,
+  onSelectEmployee,
+  onSelectVehicle,
 }: CharterTripTableRowProps) {
   const departsTime = trip.departsAt ? trip.departsAt.replace('T', ' ').slice(11, 16) : '-';
   const returnsTime = trip.returnsAt ? trip.returnsAt.replace('T', ' ').slice(11, 16) : '-';
@@ -191,25 +195,59 @@ export const CharterTripTableRow = memo(function CharterTripTableRow({
                               </span>
                             ) : (
                               <div className="space-y-1">
-                                {assignedShifts.slice(0, 4).map((asg, sIdx) => (
+                                {assignedShifts.slice(0, 4).map((asg, sIdx) => {
+                                  const hasVehicle = Boolean(
+                                    asg.vehicleId && asg.vehicleUnitNumber && asg.vehicleUnitNumber !== 'TBD'
+                                  );
+                                  const hasDriver = Boolean(asg.driverId || asg.driverName);
+                                  return (
                                   <div key={asg.id} className="text-xs flex items-center gap-1.5">
                                     <span className="text-[10px] font-mono px-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
                                       #{asg.runNumber || sIdx + 1}
                                     </span>
-                                    <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                                      {asg.vehicleUnitNumber || 'TBD'}
-                                    </span>
+                                    {hasVehicle ? (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onSelectVehicle?.(asg.vehicleId, asg.vehicleUnitNumber);
+                                        }}
+                                        className="font-mono font-bold text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                                        title={isFrench ? 'Voir la fiche véhicule' : 'View vehicle details'}
+                                      >
+                                        {asg.vehicleUnitNumber}
+                                      </button>
+                                    ) : (
+                                      <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                                        {asg.vehicleUnitNumber || 'TBD'}
+                                      </span>
+                                    )}
                                     <span className="text-slate-400">•</span>
-                                    <span className="text-slate-800 dark:text-slate-200">
-                                      {asg.driverName || (isFrench ? 'Chauffeur à assigner' : 'Driver TBD')}
-                                    </span>
+                                    {hasDriver ? (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onSelectEmployee?.(asg.driverId, asg.driverName);
+                                        }}
+                                        className="text-slate-800 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                                        title={isFrench ? 'Voir la fiche chauffeur' : 'View driver details'}
+                                      >
+                                        {asg.driverName}
+                                      </button>
+                                    ) : (
+                                      <span className="text-slate-800 dark:text-slate-200">
+                                        {isFrench ? 'Chauffeur à assigner' : 'Driver TBD'}
+                                      </span>
+                                    )}
                                     {asg.isDriverCheckedIn && (
                                       <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
                                         {isFrench ? 'Pointé' : 'Checked In'}
                                       </span>
                                     )}
                                   </div>
-                                ))}
+                                  );
+                                })}
                                 {assignedShifts.length > 4 && (
                                   <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">
                                     +{assignedShifts.length - 4} {isFrench ? 'autres assignés' : 'more assigned'}

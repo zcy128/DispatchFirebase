@@ -153,6 +153,10 @@ export const StudentService = {
     return apiRequest<Student>(`/api/students/${id}`);
   },
 
+  getByStudentId: async (studentId: number): Promise<Student> => {
+    return apiRequest<Student>(`/api/students/by-student-id/${studentId}`);
+  },
+
   create: async (student: Partial<Student>): Promise<Student> => {
     return apiRequest<Student>('/api/students', {
       method: 'POST',

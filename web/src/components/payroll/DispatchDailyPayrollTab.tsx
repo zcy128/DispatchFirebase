@@ -57,11 +57,13 @@ const formatModifiedAt = (dateStr?: string) => {
 interface DispatchDailyPayrollTabProps {
   initialDate?: string;
   onNavigateToFinanceLog?: () => void;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
 }
 
 export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
   initialDate,
   onNavigateToFinanceLog,
+  onSelectEmployee,
 }: DispatchDailyPayrollTabProps) {
   const { currentUser } = useAuth();
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
@@ -251,7 +253,7 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
   const payrollVirtualizer = useVirtualizer({
     count: filteredPayrolls.length,
     getScrollElement: () => payrollTableContainerRef.current,
-    estimateSize: () => 64,
+    estimateSize: () => 56,
     overscan: 8,
   });
 
@@ -372,40 +374,55 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
     const s = (rec.status || 'pending').toLowerCase();
     if (s === 'rejected') {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-700">
-          <XCircle className="w-3 h-3" />
+        <span
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-700"
+          title="Rejected"
+        >
+          <XCircle className="w-3 h-3 shrink-0" />
           <span>Rejected</span>
         </span>
       );
     }
     if (s === 'pending_approval') {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 animate-pulse">
-          <AlertCircle className="w-3 h-3" />
-          <span>Needs Review</span>
+        <span
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 animate-pulse"
+          title="Needs Review"
+        >
+          <AlertCircle className="w-3 h-3 shrink-0" />
+          <span>Review</span>
         </span>
       );
     }
     if (s === 'approved') {
       if (rec.syncedToFinance) {
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-            <CheckCircle2 className="w-3 h-3" />
-            <span>Synced to Finance</span>
+          <span
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700"
+            title="Synced to Finance"
+          >
+            <CheckCircle2 className="w-3 h-3 shrink-0" />
+            <span>Synced</span>
           </span>
         );
       }
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
-          <CheckCircle2 className="w-3 h-3" />
-          <span>Approved ($0 Rate)</span>
+        <span
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700"
+          title="Approved ($0 Rate)"
+        >
+          <CheckCircle2 className="w-3 h-3 shrink-0" />
+          <span>Approved</span>
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-        <Clock className="w-3 h-3" />
-        <span>Pending Checkout</span>
+      <span
+        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+        title="Pending Checkout"
+      >
+        <Clock className="w-3 h-3 shrink-0" />
+        <span>Checkout</span>
       </span>
     );
   };
@@ -706,32 +723,34 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
 
       {/* Main Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-        <div ref={payrollTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
-          <table className="w-full text-left text-sm min-w-[1100px] border-collapse table-fixed">
+        <div ref={payrollTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)]">
+          <table className="w-full text-left text-sm min-w-[980px] border-collapse table-fixed">
             <colgroup>
+              <col style={{ width: '120px' }} />
+              <col style={{ width: '72px' }} />
+              <col style={{ width: '140px' }} />
+              <col style={{ width: '96px' }} />
+              <col style={{ width: '84px' }} />
+              <col style={{ width: '72px' }} />
               <col style={{ width: '160px' }} />
-              <col style={{ width: '100px' }} />
-              <col style={{ width: '170px' }} />
-              <col style={{ width: '130px' }} />
-              <col style={{ width: '110px' }} />
-              <col style={{ width: '90px' }} />
-              <col style={{ minWidth: '200px' }} />
-              <col style={{ width: '150px' }} />
-              <col style={{ width: '150px' }} />
-              <col style={{ width: '110px' }} />
+              <col style={{ width: '120px' }} />
+              <col style={{ width: '120px' }} />
+              <col style={{ width: '132px' }} />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700 shadow-xs">
+            <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700 shadow-xs">
               <tr>
-                <th className="py-3.5 px-4">Route & Shift</th>
-                <th className="py-3.5 px-4">Role</th>
-                <th className="py-3.5 px-4">Employee</th>
-                <th className="py-3.5 px-4">Check-in / Out</th>
-                <th className="py-3.5 px-4 text-right">Pay Rate</th>
-                <th className="py-3.5 px-4 text-right">EI Hours</th>
-                <th className="py-3.5 px-4">Crew Comments</th>
-                <th className="py-3.5 px-4 text-center">Status</th>
-                <th className="py-3.5 px-4 text-left">Modified By / At</th>
-                <th className="py-3.5 px-4 text-center">Dispatcher Action</th>
+                <th className="py-2.5 px-2.5">Route & Shift</th>
+                <th className="py-2.5 px-2">Role</th>
+                <th className="py-2.5 px-2.5">Employee</th>
+                <th className="py-2.5 px-2">Check In/Out</th>
+                <th className="py-2.5 px-2 text-right">Pay</th>
+                <th className="py-2.5 px-2 text-right">EI</th>
+                <th className="py-2.5 px-2.5">Comments</th>
+                <th className="py-2.5 px-2 text-center">Status</th>
+                <th className="py-2.5 px-2 text-left">Modified</th>
+                <th className="sticky right-0 z-30 py-2.5 px-2 text-center bg-slate-100 dark:bg-slate-800 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.25)]">
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -777,135 +796,152 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
                   return (
                     <tr
                       key={rec.id}
-                      className={`h-16 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors ${
+                      className={`h-14 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors ${
                         isNeedsReviewRec && rec.status === 'pending_approval' ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
                       }`}
                     >
                       {/* Route & Shift */}
-                      <td className="py-2.5 px-4 align-middle h-16">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-slate-900 dark:text-white">
+                      <td className="py-2 px-2.5 align-middle h-14">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono font-bold text-slate-900 dark:text-white truncate">
                             {rec.routeNo}
                           </span>
                           {rec.isCharter || rec.shiftType === 'CHARTER' ? (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-extrabold bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                              CHARTER
+                            <span className="shrink-0 text-[9px] px-1 py-0.5 rounded font-extrabold bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                              CHR
                             </span>
                           ) : (
-                            <span className="text-[11px] px-1.5 py-0.5 rounded font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            <span className="shrink-0 text-[10px] px-1 py-0.5 rounded font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                               {rec.shiftType}
                             </span>
                           )}
                         </div>
                         {(rec.routeName || rec.clientName) && (
-                          <div className="text-xs text-slate-500 truncate max-w-[150px]" title={rec.routeName || rec.clientName}>
+                          <div className="text-[11px] text-slate-500 truncate" title={rec.routeName || rec.clientName}>
                             {rec.routeName || rec.clientName}
                           </div>
                         )}
                       </td>
 
                       {/* Role */}
-                      <td className="py-2.5 px-4 align-middle h-16">
+                      <td className="py-2 px-2 align-middle h-14">
                         {rec.role === 'driver' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800" title="Driver">
                             <Bus className="w-3 h-3" />
-                            <span>Driver</span>
+                            <span>Drv</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800" title="Attendant">
                             <UserCheck className="w-3 h-3" />
-                            <span>Attendant</span>
+                            <span>Att</span>
                           </span>
                         )}
                       </td>
 
                       {/* Employee */}
-                      <td className="py-2.5 px-4 align-middle h-16">
-                        <div className="font-medium text-slate-900 dark:text-slate-100">
-                          {rec.employeeName}
-                        </div>
-                        <div className="text-[11px] text-slate-400 font-mono">
+                      <td className="py-2 px-2.5 align-middle h-14">
+                        {onSelectEmployee && (rec.employeeId || rec.employeeName) ? (
+                          <button
+                            type="button"
+                            onClick={() => onSelectEmployee(rec.employeeId, rec.employeeName)}
+                            className="font-medium text-slate-900 dark:text-slate-100 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left truncate max-w-full block"
+                            title={rec.employeeName || 'View employee details'}
+                          >
+                            {rec.employeeName}
+                          </button>
+                        ) : (
+                          <div className="font-medium text-slate-900 dark:text-slate-100 truncate" title={rec.employeeName}>
+                            {rec.employeeName}
+                          </div>
+                        )}
+                        <div className="text-[10px] text-slate-400 font-mono truncate">
                           Unit: {rec.unitNumber || '-'}
                         </div>
                       </td>
 
                       {/* Check-in / Check-out */}
-                      <td className="py-2.5 px-4 align-middle h-16 text-xs font-mono">
-                        <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
-                          <span>In: {rec.checkInTime || '-'}</span>
+                      <td className="py-2 px-2 align-middle h-14 text-[11px] font-mono">
+                        <div className="text-slate-700 dark:text-slate-300">
+                          In {rec.checkInTime || '-'}
                         </div>
-                        <div className="flex items-center gap-1 text-slate-400">
-                          <span>Out: {rec.checkOutTime || '-'}</span>
+                        <div className="text-slate-400">
+                          Out {rec.checkOutTime || '-'}
                         </div>
                       </td>
 
                       {/* Pay Rate */}
-                      <td className="py-2.5 px-4 align-middle h-16 text-right">
-                        <span className="font-mono font-bold text-base text-emerald-600 dark:text-emerald-400">
+                      <td className="py-2 px-2 align-middle h-14 text-right">
+                        <span className="font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400">
                           ${(rec.payRate || 0).toFixed(2)}
                         </span>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] text-slate-400 truncate">
                           {rec.payOption}
                         </div>
                       </td>
 
                       {/* EI Hours */}
-                      <td className="py-2.5 px-4 align-middle h-16 text-right font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        {(rec.eiHours || 0).toFixed(1)} hrs
+                      <td className="py-2 px-2 align-middle h-14 text-right font-mono text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                        {(rec.eiHours || 0).toFixed(1)}h
                       </td>
 
                       {/* Crew Comments */}
-                      <td className="py-2.5 px-4 align-middle h-16">
+                      <td className="py-2 px-2.5 align-middle h-14">
                         {hasComm ? (
-                          <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 max-w-[200px]">
-                            <div className="font-bold flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400">
-                              <MessageSquare className="w-3 h-3" />
-                              <span>Crew Comment:</span>
-                            </div>
-                            <div className="truncate" title={rec.payrollComments}>
-                              {rec.payrollComments}
+                          <div
+                            className="px-1.5 py-1 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-900 dark:text-amber-200"
+                            title={rec.payrollComments}
+                          >
+                            <div className="font-bold flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400">
+                              <MessageSquare className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{rec.payrollComments}</span>
                             </div>
                           </div>
                         ) : (
-                          <span className="text-xs text-slate-400">No comments</span>
+                          <span className="text-[11px] text-slate-400">—</span>
                         )}
                       </td>
 
                       {/* Status */}
-                      <td className="py-2.5 px-4 align-middle h-16 text-center">
+                      <td className="py-2 px-2 align-middle h-14 text-center">
                         {getStatusBadge(rec)}
                       </td>
 
                       {/* Last Modified */}
-                      <td className="py-2.5 px-4 align-middle h-16 text-xs font-mono">
-                        <div className="font-semibold text-slate-800 dark:text-slate-200">
+                      <td className="py-2 px-2 align-middle h-14 text-[11px] font-mono">
+                        <div className="font-semibold text-slate-800 dark:text-slate-200 truncate" title={rec.updatedBy || rec.approvedBy || rec.rejectedBy || 'System'}>
                           {rec.updatedBy || rec.approvedBy || rec.rejectedBy || 'System'}
                         </div>
-                        <div className="text-[11px] text-slate-400">
+                        <div className="text-[10px] text-slate-400 truncate">
                           {formatModifiedAt(rec.updatedAt || rec.approvedAt || rec.rejectedAt || rec.createdAt)}
                         </div>
                       </td>
 
-                      {/* Dispatcher Actions */}
-                      <td className="py-2.5 px-4 align-middle h-16 text-center">
+                      {/* Dispatcher Actions — sticky so always visible when scrolling horizontally */}
+                      <td
+                        className={`sticky right-0 z-10 py-2 px-2 align-middle h-14 text-center shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.25)] ${
+                          isNeedsReviewRec && rec.status === 'pending_approval'
+                            ? 'bg-amber-50 dark:bg-amber-950/40'
+                            : 'bg-white dark:bg-slate-900'
+                        }`}
+                      >
                         <div className="inline-flex items-center gap-1">
                           {rec.status === 'pending_approval' && (
                             <>
                               <button
                                 onClick={() => handleQuickApprove(rec)}
                                 disabled={savingAction}
-                                className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-colors"
+                                className="px-1.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-semibold shadow-xs transition-colors"
                                 title="Approve & Send to Finance"
                               >
-                                Approve
+                                OK
                               </button>
                               <button
                                 onClick={() => handleQuickReject(rec)}
                                 disabled={savingAction}
-                                className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-semibold border border-rose-200 transition-colors"
+                                className="px-1.5 py-1 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-semibold border border-rose-200 transition-colors"
                                 title="Reject"
                               >
-                                Reject
+                                No
                               </button>
                             </>
                           )}
@@ -913,7 +949,7 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
                           <button
                             onClick={() => handleOpenEditModal(rec)}
                             disabled={savingAction}
-                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            className="p-1 rounded-md border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                             title="Edit Rate, Hours or Comments"
                           >
                             <Pencil className="w-3.5 h-3.5" />
@@ -960,6 +996,7 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
           actorName={actorName}
           onClose={() => setEditingPayroll(null)}
           onUpdated={applyPayrollUpdate}
+          onSelectEmployee={onSelectEmployee}
         />
       )}
     </div>
@@ -971,11 +1008,13 @@ function DispatchPayrollEditModal({
   actorName,
   onClose,
   onUpdated,
+  onSelectEmployee,
 }: {
   record: DispatchPayrollRecord;
   actorName: string;
   onClose: () => void;
   onUpdated: (updated: DispatchPayrollRecord) => void;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
 }) {
   const [payRate, setPayRate] = useState(record.payRate);
   const [eiHours, setEiHours] = useState(record.eiHours);
@@ -1083,7 +1122,21 @@ function DispatchPayrollEditModal({
                   <span>Role: <strong className="capitalize">{record.role}</strong></span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Employee: <strong>{record.employeeName}</strong></span>
+                  <span>
+                    Employee:{' '}
+                    {onSelectEmployee && (record.employeeId || record.employeeName) ? (
+                      <button
+                        type="button"
+                        onClick={() => onSelectEmployee(record.employeeId, record.employeeName)}
+                        className="font-bold hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                        title="View employee details"
+                      >
+                        {record.employeeName}
+                      </button>
+                    ) : (
+                      <strong>{record.employeeName}</strong>
+                    )}
+                  </span>
                   <span>Check-in / Out: <strong>{record.checkInTime || '-'} / {record.checkOutTime || '-'}</strong></span>
                 </div>
               </div>

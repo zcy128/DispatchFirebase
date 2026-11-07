@@ -10,7 +10,14 @@ import {
   CompanyContactsService,
   INITIAL_COMPANY_CONTACTS,
 } from '../../services/companyContactsService';
-import { buildRouteSheetPdf, routeSheetFileName, routeSheetPdfBase64 } from '../../utils/routeSheetPdf';
+import { StudentService } from '../../services/studentService';
+import {
+  buildRouteSheetPdf,
+  collectAssignedStudentIds,
+  routeSheetFileName,
+  routeSheetPdfBase64,
+  studentHasContactDetails,
+} from '../../utils/routeSheetPdf';
 
 interface RouteSheetShareModalProps {
   route: BusRoute;
@@ -128,7 +135,12 @@ export const RouteSheetShareModal: React.FC<RouteSheetShareModalProps> = ({
             subject: `Route sheet ${route.routeNo}`,
             note: note.trim(),
             fileName,
-            pdfBase64: routeSheetPdfBase64({ route, shifts, studentsMap, schools }),
+            pdfBase64: routeSheetPdfBase64({
+              route,
+              shifts,
+              studentsMap: await ensureRouteSheetStudents(shifts, studentsMap, route.routeNo),
+              schools,
+            }),
           }),
         },
       );
@@ -227,12 +239,59 @@ export const RouteSheetShareModal: React.FC<RouteSheetShareModalProps> = ({
   );
 };
 
-export function downloadRouteSheet(input: {
+/**
+ * Route sheets print guardian lines from student master records.
+ * The routes page often has an empty studentsMap until Students is opened,
+ * so fill missing riders (and any rider without contacts) before export.
+ */
+export async function ensureRouteSheetStudents(
+  shifts: BusRouteShift[],
+  existing: Record<number, Student> = {},
+  routeNo?: string,
+): Promise<Record<number, Student>> {
+  const needed = collectAssignedStudentIds(shifts);
+  const map: Record<number, Student> = { ...existing };
+  if (needed.length === 0) return map;
+
+  const missing = needed.filter((id) => !studentHasContactDetails(map[id]));
+  if (missing.length === 0) return map;
+
+  if (routeNo?.trim()) {
+    try {
+      const listed = await StudentService.list({ route: routeNo.trim() });
+      for (const student of listed) {
+        if (student.studentId > 0) map[student.studentId] = student;
+      }
+    } catch (error) {
+      console.warn('Failed to load route students for the sheet:', error);
+    }
+  }
+
+  const stillMissing = needed.filter((id) => !studentHasContactDetails(map[id]));
+  await Promise.all(
+    stillMissing.map(async (studentId) => {
+      try {
+        map[studentId] = await StudentService.getByStudentId(studentId);
+      } catch (error) {
+        console.warn(`Failed to load student ${studentId} for the sheet:`, error);
+      }
+    }),
+  );
+
+  return map;
+}
+
+export async function downloadRouteSheet(input: {
   route: BusRoute;
   shifts: BusRouteShift[];
   studentsMap: Record<number, Student>;
   schools: School[];
 }) {
-  const doc = buildRouteSheetPdf(input);
+  const studentsMap = await ensureRouteSheetStudents(
+    input.shifts,
+    input.studentsMap,
+    input.route.routeNo,
+  );
+  const doc = buildRouteSheetPdf({ ...input, studentsMap });
   doc.save(routeSheetFileName(input.route.routeNo));
 }

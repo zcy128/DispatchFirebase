@@ -24,6 +24,7 @@ interface RouteStudentItineraryViewProps {
   studentsMap: Record<number, Student>;
   schools: School[];
   onSelectStudent?: (student: Student) => void;
+  onSelectStudentId?: (studentId: number) => void;
   onRefreshShifts: () => Promise<void>;
 }
 
@@ -49,6 +50,7 @@ export const RouteStudentItineraryView: React.FC<RouteStudentItineraryViewProps>
   studentsMap,
   schools,
   onSelectStudent,
+  onSelectStudentId,
   onRefreshShifts
 }) => {
   const { t } = useI18n();
@@ -847,7 +849,13 @@ export const RouteStudentItineraryView: React.FC<RouteStudentItineraryViewProps>
                     {/* Student Identity Cell */}
                     <td className="py-3 px-4 align-middle">
                       <div
-                        onClick={() => stu.master && onSelectStudent && onSelectStudent(stu.master)}
+                        onClick={() => {
+                          if (onSelectStudentId) {
+                            onSelectStudentId(stu.studentId);
+                            return;
+                          }
+                          if (stu.master && onSelectStudent) onSelectStudent(stu.master);
+                        }}
                         className="cursor-pointer group"
                       >
                         <div className="font-bold text-slate-100 group-hover:text-amber-400 transition flex items-center space-x-1">

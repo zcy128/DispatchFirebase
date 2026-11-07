@@ -137,6 +137,9 @@ interface DispatchWorkbenchViewProps {
   vehicles: Vehicle[];
   yards: Yard[];
   studentsMap?: Record<number, Student>;
+  onSelectStudent?: (studentId: number) => void;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
+  onSelectVehicle?: (vehicleId?: number, unitNumber?: string) => void;
   onNavigateToChangeLog?: (date: string) => void;
   onNavigateToTemporaryAssignments?: () => void;
   onNavigateToAbsences?: () => void;
@@ -148,6 +151,9 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
   vehicles,
   yards,
   studentsMap = EMPTY_STUDENTS_MAP,
+  onSelectStudent,
+  onSelectEmployee,
+  onSelectVehicle,
   onNavigateToChangeLog,
   onNavigateToTemporaryAssignments,
   onNavigateToAbsences,
@@ -1586,7 +1592,14 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                           ) : (
                             <span
                               className="cursor-pointer hover:underline inline-flex items-center gap-1"
-                              onClick={() => setSelectedShiftForCrew(shift)}
+                              onClick={() => {
+                                if (onSelectEmployee && (shift.driverId || shift.driverName)) {
+                                  onSelectEmployee(shift.driverId, shift.driverName);
+                                  return;
+                                }
+                                setSelectedShiftForCrew(shift);
+                              }}
+                              title="View driver details"
                             >
                               <span>{shift.driverName}</span>
                               {shift.isTemporaryDriver && (
@@ -1614,7 +1627,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                           )}
                           {lateness.driverLateMinutes > 0 && (
                             <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">
-                              (Late {lateness.driverLateMinutes}m)
+                              (+{lateness.driverLateMinutes}m)
                             </span>
                           )}
                           {shift.driverName && (
@@ -1681,7 +1694,14 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                           <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-600 dark:text-slate-400">
                             <span
                               className="cursor-pointer hover:underline inline-flex items-center gap-1"
-                              onClick={() => setSelectedShiftForCrew(shift)}
+                              onClick={() => {
+                                if (onSelectEmployee && (shift.attendantId || shift.attendantName)) {
+                                  onSelectEmployee(shift.attendantId, shift.attendantName);
+                                  return;
+                                }
+                                setSelectedShiftForCrew(shift);
+                              }}
+                              title="View attendant details"
                             >
                               <span>Attendant: {shift.attendantName}</span>
                               {shift.isTemporaryAttendant && (
@@ -1766,7 +1786,14 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                         ) : (
                           <span
                             className="text-slate-700 dark:text-slate-300 cursor-pointer hover:underline"
-                            onClick={() => setSelectedShiftForCrew(shift)}
+                            onClick={() => {
+                              if (onSelectVehicle && (shift.vehicleId || shift.unitNumber)) {
+                                onSelectVehicle(shift.vehicleId, shift.unitNumber);
+                                return;
+                              }
+                              setSelectedShiftForCrew(shift);
+                            }}
+                            title={`View vehicle details: ${shift.unitNumber}`}
                           >
                             {shift.unitNumber}
                           </span>
@@ -1915,6 +1942,8 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                       onOpenSplit={handleOpenSplit}
                       onOpenPayroll={handleOpenPayroll}
                       onOpenHistory={handleOpenHistory}
+                      onSelectEmployee={onSelectEmployee}
+                      onSelectVehicle={onSelectVehicle}
                     />
                   </div>
                 </div>
@@ -1936,6 +1965,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
             initialStopId={initialStopId}
             initialTab={initialStopsTab}
             studentsMap={studentsMap}
+            onSelectStudent={onSelectStudent}
             isToday={isToday}
             onOpenNotification={(openedShift, stop) => {
               handleOpenNotification(openedShift, stop ? stop.stopId : undefined);
@@ -2185,6 +2215,8 @@ interface WorkbenchShiftRowProps {
   onOpenCheckOutModal: (shift: DispatchShift, role: 'driver' | 'attendant') => void;
   onOpenNotification: (shift: DispatchShift, stopId?: number) => void;
   onOpenHistory: (shift: DispatchShift) => void;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
+  onSelectVehicle?: (vehicleId?: number, unitNumber?: string) => void;
 }
 
 const StopBubbleChain: React.FC<{
@@ -2266,10 +2298,33 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
   onOpenCheckOutModal,
   onOpenNotification,
   onOpenHistory,
+  onSelectEmployee,
+  onSelectVehicle,
 }: WorkbenchShiftRowProps) {
   const openStop = useCallback((stopId?: number) => {
     onOpenStops(shift, stopId);
   }, [onOpenStops, shift]);
+  const openDriverDetails = useCallback(() => {
+    if (onSelectEmployee && (shift.driverId || shift.driverName)) {
+      onSelectEmployee(shift.driverId, shift.driverName);
+      return;
+    }
+    onOpenCrew(shift);
+  }, [onOpenCrew, onSelectEmployee, shift]);
+  const openAttendantDetails = useCallback(() => {
+    if (onSelectEmployee && (shift.attendantId || shift.attendantName)) {
+      onSelectEmployee(shift.attendantId, shift.attendantName);
+      return;
+    }
+    onOpenCrew(shift);
+  }, [onOpenCrew, onSelectEmployee, shift]);
+  const openVehicleDetails = useCallback(() => {
+    if (onSelectVehicle && (shift.vehicleId || shift.unitNumber)) {
+      onSelectVehicle(shift.vehicleId, shift.unitNumber);
+      return;
+    }
+    onOpenCrew(shift);
+  }, [onOpenCrew, onSelectVehicle, shift]);
   const isYellow = lateness.effectiveHealth === 'yellow';
   const isRed = lateness.effectiveHealth === 'red';
   const sentParentNotifications = getSentParentNotifications(shift);
@@ -2352,9 +2407,9 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   </button>
                 ) : (
                   <span
-                    onClick={() => onOpenCrew(shift)}
+                    onClick={openDriverDetails}
                     className="text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer hover:underline inline-flex items-center gap-1"
-                    title="Click to edit crew"
+                    title="View driver details"
                   >
                     <span>{shift.driverName}</span>
                     {shift.isTemporaryDriver && (
@@ -2371,7 +2426,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                 {/* Explicit Driver Late Notice */}
                 {lateness.driverLateMinutes > 0 && (
                   <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400 shrink-0">
-                    (Late {lateness.driverLateMinutes}m)
+                    (+{lateness.driverLateMinutes}m)
                   </span>
                 )}
 
@@ -2446,9 +2501,10 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   <span
                     onClick={(e) => {
                       e.stopPropagation();
-                      onOpenCrew(shift);
+                      openAttendantDetails();
                     }}
                     className="cursor-pointer hover:underline inline-flex items-center gap-1"
+                    title="View attendant details"
                   >
                     <span>Attendant: {shift.attendantName}</span>
                     {shift.isTemporaryAttendant && (
@@ -2541,7 +2597,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
               </span>
               {(firstStop?.actualArrivalTime || firstStop?.stopArrivalTime) && (
                 <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
-                  Act: {firstStop.actualArrivalTime || firstStop.stopArrivalTime}
+                  {firstStop.actualArrivalTime || firstStop.stopArrivalTime}
                 </span>
               )}
             </div>
@@ -2577,7 +2633,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                 </span>
                 {(lastStop?.actualArrivalTime || lastStop?.stopArrivalTime) && (
                   <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
-                    Act: {lastStop.actualArrivalTime || lastStop.stopArrivalTime}
+                    {lastStop.actualArrivalTime || lastStop.stopArrivalTime}
                   </span>
                 )}
               </div>
@@ -2600,7 +2656,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   title={`Max Delay: ${lateness.maxLateMinutes}m (Driver late: ${lateness.driverLateMinutes}m, Max Stop late: ${lateness.maxStopLateMinutes}m)`}
                 >
                   <Clock className="w-3 h-3 text-rose-600 dark:text-rose-400" />
-                  <span>Late {lateness.maxLateMinutes}m</span>
+                  <span>+{lateness.maxLateMinutes}m</span>
                 </span>
               )}
 
@@ -2636,9 +2692,9 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
             </button>
           ) : (
             <div
-              onClick={() => onOpenCrew(shift)}
+              onClick={openVehicleDetails}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 shrink-0 cursor-pointer hover:border-amber-400 transition"
-              title={`Vehicle Unit: ${shift.unitNumber}`}
+              title={`View vehicle details: ${shift.unitNumber}`}
             >
               <Truck className="w-3.5 h-3.5 text-slate-400" />
               <span>{shift.unitNumber}</span>
@@ -2798,8 +2854,9 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
               </button>
             ) : (
               <div
-                onClick={() => onOpenCrew(shift)}
+                onClick={openVehicleDetails}
                 className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                title={`View vehicle details: ${shift.unitNumber}`}
               >
                 <Truck className="w-3 h-3 text-slate-400" />
                 <span>{shift.unitNumber}</span>
@@ -2824,6 +2881,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   ? 'bg-rose-100 dark:bg-rose-950/80 border border-rose-400 text-rose-700 dark:text-rose-300 ring-1 ring-rose-200'
                   : 'bg-slate-200 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200'
               }`}
+              title="Assign driver or vehicle"
             >
               {lateness.isMissingDriver ? <UserX className="w-3 h-3" /> : 'D'}
             </div>
@@ -2838,15 +2896,16 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
               </button>
             ) : (
               <span
-                onClick={() => onOpenCrew(shift)}
+                onClick={openDriverDetails}
                 className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate cursor-pointer hover:underline"
+                title="View driver details"
               >
                 {shift.driverName}
               </span>
             )}
             {lateness.driverLateMinutes > 0 && (
               <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 shrink-0">
-                (Late {lateness.driverLateMinutes}m)
+                (+{lateness.driverLateMinutes}m)
               </span>
             )}
             {shift.driverPayOption && (
@@ -2857,7 +2916,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
             {lateness.maxLateMinutes > 0 && (
               <span className="text-[10px] font-bold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-300 dark:border-rose-800 flex items-center gap-0.5">
                 <Clock className="w-2.5 h-2.5" />
-                Late {lateness.maxLateMinutes}m
+                +{lateness.maxLateMinutes}m
               </span>
             )}
           </div>
@@ -2934,14 +2993,15 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                 A
               </div>
               <span
-                onClick={() => onOpenCrew(shift)}
+                onClick={openAttendantDetails}
                 className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate cursor-pointer hover:underline"
+                title="View attendant details"
               >
                 Attendant: {shift.attendantName}
               </span>
               {lateness.attendantLateMinutes > 0 && (
                 <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 shrink-0">
-                  (Late {lateness.attendantLateMinutes}m)
+                  (+{lateness.attendantLateMinutes}m)
                 </span>
               )}
             </div>
@@ -3013,7 +3073,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
               <span className="font-bold text-slate-800 dark:text-slate-200">{shift.firstStopTime || '--:--'}</span>
               {(firstStop?.actualArrivalTime || firstStop?.stopArrivalTime) && (
                 <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1 py-0.2 rounded border border-emerald-300 dark:border-emerald-800">
-                  Act: {firstStop.actualArrivalTime || firstStop.stopArrivalTime}
+                  {firstStop.actualArrivalTime || firstStop.stopArrivalTime}
                 </span>
               )}
             </div>
@@ -3030,7 +3090,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                 <span className="font-bold text-slate-800 dark:text-slate-200">{shift.lastStopTime || '--:--'}</span>
                 {(lastStop?.actualArrivalTime || lastStop?.stopArrivalTime) && (
                   <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1 py-0.2 rounded border border-emerald-300 dark:border-emerald-800">
-                    Act: {lastStop.actualArrivalTime || lastStop.stopArrivalTime}
+                    {lastStop.actualArrivalTime || lastStop.stopArrivalTime}
                   </span>
                 )}
               </div>

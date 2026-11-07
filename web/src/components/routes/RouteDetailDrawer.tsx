@@ -30,6 +30,7 @@ interface RouteDetailDrawerProps {
   studentsMap: Record<number, Student>;
   onClose: () => void;
   onSelectStudent?: (student: Student) => void;
+  onSelectStudentId?: (studentId: number) => void;
   onAssignCrew?: (route: BusRoute) => void;
   onRouteUpdated?: (route: BusRoute) => void;
   initialTab?: 'itinerary' | 'audit';
@@ -40,6 +41,7 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
   studentsMap,
   onClose,
   onSelectStudent,
+  onSelectStudentId,
   onAssignCrew,
   onRouteUpdated,
   initialTab = 'itinerary'
@@ -213,10 +215,10 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
     }
   }, [route]);
 
-  if (!route) return null;
-
   const orderedShifts = useMemo(() => sortRouteSheetShifts(shifts), [shifts]);
   const currentShift = orderedShifts.find((s) => s.id === activeShiftId) || orderedShifts[0];
+
+  if (!route) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/60 backdrop-blur-sm flex justify-end">
@@ -635,7 +637,13 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
                                   return (
                                     <div
                                       key={stu.studentId}
-                                      onClick={() => master && onSelectStudent && onSelectStudent(master)}
+                                      onClick={() => {
+                                        if (onSelectStudentId) {
+                                          onSelectStudentId(stu.studentId);
+                                          return;
+                                        }
+                                        if (master && onSelectStudent) onSelectStudent(master);
+                                      }}
                                       className="p-2.5 bg-slate-900/90 rounded-xl border border-slate-800/80 flex items-center justify-between hover:border-amber-500/40 transition cursor-pointer"
                                     >
                                       <div>

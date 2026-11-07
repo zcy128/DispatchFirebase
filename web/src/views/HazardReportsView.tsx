@@ -20,7 +20,6 @@ import {
   ChevronLeft,
   ChevronRight,
   MapPin,
-  Users,
   AlertOctagon,
   Flame,
   Printer,
@@ -77,7 +76,13 @@ const HazardReportPdfModal = React.lazy(() =>
   }))
 );
 
-export const HazardReportsView: React.FC = () => {
+interface HazardReportsViewProps {
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
+}
+
+export const HazardReportsView: React.FC<HazardReportsViewProps> = ({
+  onSelectEmployee,
+}) => {
   const { currentUser } = useAuth();
   const [reports, setReports] = useState<HazardReport[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -731,13 +736,13 @@ export const HazardReportsView: React.FC = () => {
         <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
           <table className="w-full text-left border-collapse text-sm">
             <colgroup>
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '15%' }} />
               <col style={{ width: '15%' }} />
               <col style={{ width: '18%' }} />
-              <col style={{ width: '16%' }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '9%' }} />
+              <col style={{ width: '11%' }} />
               <col style={{ width: '8%' }} />
+              <col style={{ width: '20%' }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               <tr>
@@ -865,10 +870,24 @@ export const HazardReportsView: React.FC = () => {
 
                         {/* Reported By / Unit / Route */}
                         <td className="px-4 py-3.5 align-top">
-                          <div className="font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
-                            <User className="w-3.5 h-3.5 text-slate-400" />
-                            {report.reportedBy || (isFrench ? 'Personnel inconnu' : 'Unknown Staff')}
-                          </div>
+                          {onSelectEmployee && report.reportedBy ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onSelectEmployee(report.reportedByEmployeeId, report.reportedBy)
+                              }
+                              className="font-medium text-slate-900 dark:text-white flex items-center gap-1.5 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left"
+                              title={isFrench ? 'Voir la fiche employé' : 'View employee details'}
+                            >
+                              <User className="w-3.5 h-3.5 text-slate-400" />
+                              {report.reportedBy}
+                            </button>
+                          ) : (
+                            <div className="font-medium text-slate-900 dark:text-white flex items-center gap-1.5">
+                              <User className="w-3.5 h-3.5 text-slate-400" />
+                              {report.reportedBy || (isFrench ? 'Personnel inconnu' : 'Unknown Staff')}
+                            </div>
+                          )}
                           <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
                             {report.unitNumber && (
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono">
@@ -896,12 +915,6 @@ export const HazardReportsView: React.FC = () => {
                           <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
                             {report.eventDescription}
                           </p>
-                          {report.witnesses && (
-                            <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
-                              <Users className="w-3 h-3 text-slate-400 shrink-0" />
-                              <span>{isFrench ? 'Témoin:' : 'Witness:'} {report.witnesses}</span>
-                            </div>
-                          )}
                         </td>
 
                         {/* Risk & Office Type */}
@@ -1029,9 +1042,25 @@ export const HazardReportsView: React.FC = () => {
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     Reported on {selectedReport.eventTime || selectedReport.createdAt.slice(0, 10)} by{' '}
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">
-                      {selectedReport.reportedBy}
-                    </span>
+                    {onSelectEmployee && selectedReport.reportedBy ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onSelectEmployee(
+                            selectedReport.reportedByEmployeeId,
+                            selectedReport.reportedBy,
+                          )
+                        }
+                        className="font-semibold text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                        title="View employee details"
+                      >
+                        {selectedReport.reportedBy}
+                      </button>
+                    ) : (
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                        {selectedReport.reportedBy}
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -1068,9 +1097,25 @@ export const HazardReportsView: React.FC = () => {
                     <div className="grid grid-cols-2 gap-3 text-xs">
                       <div>
                         <span className="text-slate-400 block">Reported By:</span>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">
-                          {selectedReport.reportedBy}
-                        </span>
+                        {onSelectEmployee && selectedReport.reportedBy ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onSelectEmployee(
+                                selectedReport.reportedByEmployeeId,
+                                selectedReport.reportedBy,
+                              )
+                            }
+                            className="font-semibold text-slate-800 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left"
+                            title="View employee details"
+                          >
+                            {selectedReport.reportedBy}
+                          </button>
+                        ) : (
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            {selectedReport.reportedBy}
+                          </span>
+                        )}
                       </div>
                       <div>
                         <span className="text-slate-400 block">Contact Phone:</span>

@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"dispatch-server/internal/models"
 	"dispatch-server/internal/repository"
+	"github.com/go-chi/chi/v5"
 )
 
 type StudentHandler struct {
@@ -59,6 +59,24 @@ func (h *StudentHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	student, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"student not found"}`, http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(student)
+}
+
+// GetByStudentID returns the student master record for a numeric student id.
+func (h *StudentHandler) GetByStudentID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	raw := chi.URLParam(r, "studentId")
+	studentID, err := strconv.Atoi(raw)
+	if err != nil || studentID <= 0 {
+		http.Error(w, `{"error":"invalid student id"}`, http.StatusBadRequest)
+		return
+	}
+
+	student, err := h.repo.FindByStudentID(r.Context(), studentID)
 	if err != nil {
 		http.Error(w, `{"error":"student not found"}`, http.StatusNotFound)
 		return
@@ -169,11 +187,11 @@ func (h *StudentHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stats := map[string]interface{}{
-		"totalStudents":   total,
-		"activeStudents":  active,
-		"metAtBusCount":   metAtBus,
-		"routesCovered":   len(routesCovered),
-		"gradeDistribution": gradeDist,
+		"totalStudents":      total,
+		"activeStudents":     active,
+		"metAtBusCount":      metAtBus,
+		"routesCovered":      len(routesCovered),
+		"gradeDistribution":  gradeDist,
 		"schoolDistribution": schoolDist,
 	}
 

@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -33,11 +34,16 @@ func (h *SchoolHandler) List(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(schools)
 }
 
-// GetByID returns a single school by document ID or schoolId
+// GetByID returns a single school by document ID or numeric schoolId
 func (h *SchoolHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	id := chi.URLParam(r, "id")
 	sch, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		if sid, parseErr := strconv.Atoi(strings.TrimSpace(id)); parseErr == nil && sid > 0 {
+			sch, err = h.repo.GetBySchoolID(r.Context(), sid)
+		}
+	}
 	if err != nil {
 		http.Error(w, `{"error":"school not found"}`, http.StatusNotFound)
 		return

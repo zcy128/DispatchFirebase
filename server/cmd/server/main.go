@@ -353,6 +353,7 @@ func main() {
 		// Student routes
 		protected.Get("/api/students", studentHandler.List)
 		protected.Get("/api/students/stats", studentHandler.Stats)
+		protected.Get("/api/students/by-student-id/{studentId}", studentHandler.GetByStudentID)
 		protected.Get("/api/students/{id}", studentHandler.GetByID)
 		protected.Post("/api/students", studentHandler.Create)
 		protected.Put("/api/students/{id}", studentHandler.Update)

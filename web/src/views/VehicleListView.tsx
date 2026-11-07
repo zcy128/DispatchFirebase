@@ -234,7 +234,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
   );
 
   return (
-    <div className="p-6 space-y-5 max-w-7xl mx-auto">
+    <div className="p-3.5 sm:p-4 space-y-5 w-full">
       {/* Top Search & Filter Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
