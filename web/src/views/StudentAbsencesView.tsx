@@ -953,7 +953,7 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
                       <td className="py-3 px-4">
                         {(() => {
                           const schoolName = rec.schoolName || studentObj?.schoolName || '';
-                          const schoolId = rec.schoolId || studentObj?.schoolId;
+                          const schoolId = studentObj?.schoolId;
                           if (onSelectSchool && schoolName) {
                             return (
                               <button
