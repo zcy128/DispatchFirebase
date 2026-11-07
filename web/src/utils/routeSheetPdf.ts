@@ -81,18 +81,40 @@ export interface SheetLine {
   bold?: boolean;
 }
 
-/** Student lines follow the CCSD-801 stop block and add the CBE-0400 care fields. */
-export function studentSheetLines(student: Student | undefined, fallbackName: string): SheetLine[] {
+export interface StudentSheetColumns {
+  left: SheetLine[];
+  right: SheetLine[];
+}
+
+/**
+ * Pack student care fields into two columns so the sheet uses the empty
+ * right side under Stop Ld / Run Ld instead of a tall single stack.
+ */
+export function studentSheetColumns(
+  student: Student | undefined,
+  fallbackName: string,
+): StudentSheetColumns {
   const name = student
     ? [student.lastName, student.firstName].filter((part) => part.trim()).join(', ') ||
       student.studentName ||
       student.fullName ||
       fallbackName
     : fallbackName;
-  const lines: SheetLine[] = [];
-  lines.push({ text: name, bold: true });
-  lines.push({ text: `Equip: ${student?.equipments?.trim() || 'No'}` });
 
+  const left: SheetLine[] = [
+    { text: name, bold: true },
+    { text: `Equip: ${student?.equipments?.trim() || 'No'}` },
+  ];
+  if (student?.grade?.trim()) left.push({ text: `Grade ${student.grade.trim()}` });
+  if (student?.studentAddress?.trim()) left.push({ text: student.studentAddress.trim() });
+  if (student?.schoolName?.trim()) left.push({ text: student.schoolName.trim() });
+
+  const notes = [student?.studentDispatchNotes, student?.studentSchoolNotes]
+    .map((note) => note?.trim() || '')
+    .filter(Boolean);
+  if (notes.length > 0) left.push({ text: `Notes: ${notes.join(' ')}` });
+
+  const right: SheetLine[] = [];
   const guardians = [...(student?.contacts ?? [])]
     .filter((contact) => contact.active !== false && contact.contactName.trim())
     .sort((a, b) => {
@@ -100,27 +122,53 @@ export function studentSheetLines(student: Student | undefined, fallbackName: st
       return a.contactIndex - b.contactIndex;
     });
   guardians.forEach((contact, index) => {
-    lines.push({ text: `Guardian #${index + 1}` });
-    lines.push({ text: formatGuardianLine(contact) });
+    right.push({ text: `Guardian #${index + 1}`, bold: true });
+    right.push({ text: formatGuardianLine(contact) });
   });
   if (guardians.length === 0 && student?.studentPhone?.trim()) {
-    lines.push({ text: `Guardian #1` });
-    lines.push({ text: student.studentPhone.trim() });
+    right.push({ text: 'Guardian #1', bold: true });
+    right.push({ text: student.studentPhone.trim() });
   }
-  if (student?.grade?.trim()) lines.push({ text: `Grade ${student.grade.trim()}` });
-  if (student?.studentAddress?.trim()) lines.push({ text: student.studentAddress.trim() });
-  if (student?.schoolName?.trim()) lines.push({ text: student.schoolName.trim() });
 
-  const notes = [student?.studentDispatchNotes, student?.studentSchoolNotes]
-    .map((note) => note?.trim() || '')
-    .filter(Boolean);
-  if (notes.length > 0) lines.push({ text: `Notes: ${notes.join(' ')}` });
-  return lines;
+  return { left, right };
+}
+
+/** Flat student lines for callers that do not need the two-column layout. */
+export function studentSheetLines(student: Student | undefined, fallbackName: string): SheetLine[] {
+  const columns = studentSheetColumns(student, fallbackName);
+  return [...columns.left, ...columns.right];
 }
 
 export function routeSheetFileName(routeNo: string): string {
   const safe = routeNo.trim().replace(/[^\w.-]+/g, '-') || 'route';
   return `Route-${safe}.pdf`;
+}
+
+/** Numeric student ids listed on the sheet stops. */
+export function collectAssignedStudentIds(shifts: BusRouteShift[]): number[] {
+  const ids = new Set<number>();
+  for (const shift of shifts) {
+    for (const stop of shift.stops ?? []) {
+      for (const student of stop.assignedStudents ?? []) {
+        if (student.studentId > 0) ids.add(student.studentId);
+      }
+    }
+  }
+  return Array.from(ids);
+}
+
+/** True when the master record can print guardian phone lines. */
+export function studentHasContactDetails(student: Student | undefined): boolean {
+  if (!student) return false;
+  if (student.studentPhone?.trim()) return true;
+  return (student.contacts ?? []).some(
+    (contact) =>
+      contact.active !== false &&
+      (contact.contactName.trim() ||
+        contact.mobilePhone?.trim() ||
+        contact.homePhone?.trim() ||
+        contact.workPhone?.trim()),
+  );
 }
 
 export interface RouteSheetPdfInput {
@@ -158,11 +206,63 @@ export function earliestRunDayRank(runDays?: string | null): number {
   return index === -1 ? WEEKDAY_ORDER.length : index;
 }
 
+function normalizedStopType(stopType: string): string {
+  return stopType.toLowerCase().replace(/[\s_-]/g, '');
+}
+
+/** School pickup or dropoff stops, not home / corner / yard stops. */
+export function isSchoolStop(stopType: string): boolean {
+  const type = normalizedStopType(stopType);
+  if (type.includes('home') || type.includes('corner') || type.includes('yard')) return false;
+  return type.includes('school') && (type.includes('drop') || type.includes('pick'));
+}
+
 /** A school dropoff is an AM run. Home dropoff and school pickup are not. */
 export function isSchoolDropoffStop(stopType: string): boolean {
-  const type = stopType.toLowerCase().replace(/[\s_-]/g, '');
+  const type = normalizedStopType(stopType);
   if (type.includes('home') || type.includes('corner') || type.includes('yard')) return false;
   return type.includes('school') && type.includes('drop');
+}
+
+export function schoolStopKindLabel(stopType: string): string {
+  if (isSchoolDropoffStop(stopType)) return 'SCHOOL DROPOFF';
+  const type = normalizedStopType(stopType);
+  if (type.includes('school') && type.includes('pick')) return 'SCHOOL PICKUP';
+  return 'SCHOOL';
+}
+
+export interface RouteSheetStopHeading {
+  isSchool: boolean;
+  kindLabel?: string;
+  title: string;
+  detail?: string;
+}
+
+/** School stops lead with the school name; home stops keep the street description. */
+export function routeSheetStopHeading(stop: {
+  stopType: string;
+  stopLocation?: string;
+  pickupLocation?: string;
+  schoolName?: string;
+}): RouteSheetStopHeading {
+  const location = [stop.stopLocation, stop.pickupLocation]
+    .filter((part) => part && part.trim())
+    .join(' — ');
+  if (!isSchoolStop(stop.stopType)) {
+    return { isSchool: false, title: location || 'Stop' };
+  }
+  const schoolName = stop.schoolName?.trim() || '';
+  const title = schoolName || location || 'School';
+  const detail =
+    schoolName && location && location.toLowerCase() !== schoolName.toLowerCase()
+      ? location
+      : undefined;
+  return {
+    isSchool: true,
+    kindLabel: schoolStopKindLabel(stop.stopType),
+    title,
+    detail,
+  };
 }
 
 export function isSchoolDropoffRun(stops?: { stopType?: string }[]): boolean {
@@ -339,32 +439,67 @@ export function buildRouteSheetPdf(input: RouteSheetPdfInput): jsPDF {
   };
 
   const drawStop = (stop: RouteStop, number: number, load: StopBoardCount) => {
-    const description = [stop.stopLocation, stop.pickupLocation]
-      .filter((part) => part && part.trim())
-      .join(' — ');
+    const heading = routeSheetStopHeading(stop);
     const note = [stop.comment, stop.instruction]
       .map((part) => part?.trim() || '')
       .filter(Boolean)
       .join(' ');
-    ensure(8);
+    const titleLines: string[] = doc.splitTextToSize(heading.title, width - 78);
+    const detailLines: string[] = heading.detail
+      ? doc.splitTextToSize(heading.detail, width - 78)
+      : [];
+    const kindStep = heading.isSchool && heading.kindLabel ? 3.8 : 0;
+    const titleStep = Math.max(titleLines.length - 1, 0) * 4;
+    const detailStep = detailLines.length * 3.6;
+    // Keep the highlight on this stop only; do not include the gap before the next stop.
+    const bandTopPad = 2.6;
+    const bandBottomPad = 1.8;
+    const bandHeight = bandTopPad + kindStep + titleStep + detailStep + bandBottomPad;
+    ensure(Math.max(8, bandHeight + 4));
     const rowY = y;
+    if (heading.isSchool) {
+      doc.setFillColor(255, 247, 237);
+      doc.rect(margin, rowY - bandTopPad, width, bandHeight, 'F');
+      doc.setFillColor(245, 158, 11);
+      doc.rect(margin, rowY - bandTopPad, 1.6, bandHeight, 'F');
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(heading.isSchool ? 146 : 15, heading.isSchool ? 64 : 23, heading.isSchool ? 14 : 42);
+    doc.text(String(number), margin + 1, rowY);
+    doc.text(formatRouteSheetClock(stop.pullawayTime), margin + 10, rowY);
+    if (heading.isSchool && heading.kindLabel) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(180, 83, 9);
+      doc.text(heading.kindLabel, margin + 32, y);
+      y += kindStep;
+    }
+    titleLines.forEach((line, lineIndex) => {
+      if (lineIndex > 0) {
+        y += 4;
+        ensure(5);
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(heading.isSchool ? 10 : 9);
+      doc.setTextColor(heading.isSchool ? 120 : 15, heading.isSchool ? 53 : 23, heading.isSchool ? 15 : 42);
+      doc.text(line, margin + 32, y);
+    });
+    detailLines.forEach((line) => {
+      y += 3.6;
+      ensure(5);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(line, margin + 32, y);
+    });
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
-    doc.text(String(number), margin + 1, rowY);
-    doc.text(formatRouteSheetClock(stop.pullawayTime), margin + 10, rowY);
-    const descLines: string[] = doc.splitTextToSize(description || 'Stop', width - 78);
-    descLines.forEach((line, lineIndex) => {
-      if (lineIndex > 0) y += 4;
-      ensure(5);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text(line, margin + 32, y);
-    });
     doc.text(String(load.stopLoad), margin + width - 32, rowY);
     doc.text(String(load.runLoad), margin + width - 14, rowY);
-    y += 4.5;
+    // Extra space after the school band so the next stop number stays clear.
+    y += heading.isSchool ? 5.5 : 4.5;
     if (note) {
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
@@ -379,19 +514,40 @@ export function buildRouteSheetPdf(input: RouteSheetPdfInput): jsPDF {
 
     (stop.assignedStudents ?? []).forEach((assigned) => {
       const student = studentsMap[assigned.studentId];
-      const lines = studentSheetLines(student, assigned.studentName || assigned.studentNo);
-      lines.forEach((line) => {
-        doc.setFont('helvetica', line.bold ? 'bold' : 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(30, 41, 59);
-        const wrapped: string[] = doc.splitTextToSize(line.text, width - 44);
-        wrapped.forEach((part) => {
-          ensure(4);
-          doc.text(part, margin + 36, y);
-          y += 3.6;
+      const columns = studentSheetColumns(student, assigned.studentName || assigned.studentNo);
+      const studentLeft = margin + 32;
+      const studentWidth = pageWidth - margin - studentLeft;
+      const gap = 5;
+      const hasRight = columns.right.length > 0;
+      const colWidth = hasRight ? (studentWidth - gap) / 2 : studentWidth;
+      const rightX = studentLeft + colWidth + gap;
+
+      const wrapColumn = (lines: SheetLine[], maxWidth: number) =>
+        lines.flatMap((line) => {
+          const parts: string[] = doc.splitTextToSize(line.text, maxWidth);
+          return parts.map((text, index) => ({
+            text,
+            bold: !!line.bold && index === 0,
+          }));
         });
-      });
-      y += 1.2;
+
+      const leftParts = wrapColumn(columns.left, colWidth);
+      const rightParts = hasRight ? wrapColumn(columns.right, colWidth) : [];
+      const rowCount = Math.max(leftParts.length, rightParts.length, 1);
+      ensure(rowCount * 3.6 + 1.4);
+      const top = y;
+
+      const paint = (parts: { text: string; bold: boolean }[], x: number) => {
+        parts.forEach((part, index) => {
+          doc.setFont('helvetica', part.bold ? 'bold' : 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(30, 41, 59);
+          doc.text(part.text, x, top + index * 3.6);
+        });
+      };
+      paint(leftParts, studentLeft);
+      if (hasRight) paint(rightParts, rightX);
+      y = top + rowCount * 3.6 + 1.4;
     });
     y += 1.5;
   };

@@ -63,6 +63,7 @@ interface PayrollRateViewProps {
   routes?: BusRoute[];
   employees?: Employee[];
   onBoardRatesChange?: (rates: SchoolBoardBaseRatesDTO[]) => void;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
 }
 
 export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
@@ -72,6 +73,7 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
   routes: propsRoutes,
   employees: propsEmployees,
   onBoardRatesChange,
+  onSelectEmployee,
 }) => {
   const { currentUser } = useAuth();
   // Navigation tabs
@@ -1229,14 +1231,17 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
       {/* TAB 5: DAILY DISPATCH PAYROLL */}
       {activeTab === 'dispatch-payroll' && (
         <Suspense fallback={TabFallback}>
-          <DispatchDailyPayrollTab onNavigateToFinanceLog={openPayrollFinanceLog} />
+          <DispatchDailyPayrollTab
+            onNavigateToFinanceLog={openPayrollFinanceLog}
+            onSelectEmployee={onSelectEmployee}
+          />
         </Suspense>
       )}
 
       {/* TAB 6: PAYROLL DEPARTMENT LOG */}
       {activeTab === 'payroll-dept-log' && (
         <Suspense fallback={TabFallback}>
-          <PayrollDepartmentLogView />
+          <PayrollDepartmentLogView onSelectEmployee={onSelectEmployee} />
         </Suspense>
       )}
 
@@ -1247,6 +1252,7 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
             boards={propsBoards}
             employees={propsEmployees}
             routes={propsRoutes}
+            onSelectEmployee={onSelectEmployee}
           />
         </Suspense>
       )}

@@ -60,7 +60,15 @@ const SAFETY_EQUIPMENT_ITEMS = [
   { key: 'checkQstraints', label: 'Wheelchair Q-Straints' },
 ] as const;
 
-export const VehicleSignoutView: React.FC = () => {
+interface VehicleSignoutViewProps {
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
+  onSelectVehicle?: (vehicleId?: number, unitNumber?: string) => void;
+}
+
+export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
+  onSelectEmployee,
+  onSelectVehicle,
+}) => {
   const { currentUser } = useAuth();
 
   // Role validation: Strictly only fleet or admin
@@ -425,7 +433,7 @@ export const VehicleSignoutView: React.FC = () => {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-3.5 sm:p-4 w-full space-y-5">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
@@ -794,10 +802,22 @@ export const VehicleSignoutView: React.FC = () => {
 
                         {/* Vehicle */}
                         <td className="py-3.5 px-4">
-                          <div className="font-bold text-slate-100 flex items-center gap-1.5">
-                            <Truck className="w-3.5 h-3.5 text-amber-400" />
-                            Unit #{r.unitNumber}
-                          </div>
+                          {onSelectVehicle && r.unitNumber ? (
+                            <button
+                              type="button"
+                              onClick={() => onSelectVehicle(r.unitId, r.unitNumber)}
+                              className="font-bold text-slate-100 flex items-center gap-1.5 hover:text-amber-300 hover:underline transition text-left"
+                              title={isFrench ? 'Voir la fiche véhicule' : 'View vehicle details'}
+                            >
+                              <Truck className="w-3.5 h-3.5 text-amber-400" />
+                              #{r.unitNumber}
+                            </button>
+                          ) : (
+                            <div className="font-bold text-slate-100 flex items-center gap-1.5">
+                              <Truck className="w-3.5 h-3.5 text-amber-400" />
+                              #{r.unitNumber}
+                            </div>
+                          )}
                           <div className="text-xs text-slate-400">
                             {r.unitMaker} {r.unitModel} {r.licensePlate ? `· ${r.licensePlate}` : ''}
                           </div>
@@ -805,10 +825,22 @@ export const VehicleSignoutView: React.FC = () => {
 
                         {/* Driver */}
                         <td className="py-3.5 px-4">
-                          <div className="font-medium text-slate-100 flex items-center gap-1.5">
-                            <User className="w-3.5 h-3.5 text-slate-400" />
-                            {r.employeeName}
-                          </div>
+                          {onSelectEmployee && r.employeeName ? (
+                            <button
+                              type="button"
+                              onClick={() => onSelectEmployee(r.employeeId, r.employeeName)}
+                              className="font-medium text-slate-100 flex items-center gap-1.5 hover:text-amber-300 hover:underline transition text-left"
+                              title={isFrench ? 'Voir la fiche chauffeur' : 'View employee details'}
+                            >
+                              <User className="w-3.5 h-3.5 text-slate-400" />
+                              {r.employeeName}
+                            </button>
+                          ) : (
+                            <div className="font-medium text-slate-100 flex items-center gap-1.5">
+                              <User className="w-3.5 h-3.5 text-slate-400" />
+                              {r.employeeName}
+                            </div>
+                          )}
                           <div className="text-xs text-slate-400">
                             {r.driverLicenseClass || 'Class 2-S'} {r.cellPhone ? `· ${r.cellPhone}` : ''}
                           </div>

@@ -210,6 +210,396 @@ export const AppContent: React.FC = () => {
     return map;
   }, [students]);
 
+  const studentsRef = useRef(students);
+  studentsRef.current = students;
+  const schoolsRef = useRef(schools);
+  schoolsRef.current = schools;
+  const studentDetailRequest = useRef(0);
+  const employeeDetailRequest = useRef(0);
+  const vehicleDetailRequest = useRef(0);
+  const openStudentDetailsByRef = useCallback((ref: { id?: string; name?: string }) => {
+    const id = ref.id?.trim() || '';
+    const name = ref.name?.trim() || '';
+    const nameLower = name.toLowerCase();
+    if (!id && !name) return;
+
+    const studentFullName = (student: Student) =>
+      (student.fullName || student.studentName || `${student.firstName} ${student.lastName}`).trim();
+
+    const matchStudent = (student: Student) => {
+      if (id) {
+        if (
+          student.studentNo === id ||
+          student.id === id ||
+          String(student.studentId) === id
+        ) {
+          return true;
+        }
+      }
+      if (!nameLower) return false;
+      return studentFullName(student).toLowerCase() === nameLower;
+    };
+
+    // Same approach as Dispatch: prefer in-memory/master match first.
+    const cached =
+      studentsRef.current.find(matchStudent) ||
+      (nameLower
+        ? studentsRef.current.find((student) =>
+            studentFullName(student).toLowerCase().includes(nameLower),
+          )
+        : undefined);
+    if (cached) {
+      setSelectedStudent(cached);
+      return;
+    }
+
+    const numericId = Number(id);
+    const hasNumericId = Number.isFinite(numericId) && numericId > 0 && String(numericId) === id;
+
+    const buildStub = (): Student => {
+      const parts = name.split(/\s+/).filter(Boolean);
+      const firstName = parts[0] || id || 'Unknown';
+      const lastName = parts.slice(1).join(' ');
+      return {
+        id: id || `lookup-${nameLower || 'student'}`,
+        studentId: hasNumericId ? numericId : 0,
+        studentNo: id || 'N/A',
+        firstName,
+        lastName,
+        studentName: name || id,
+        fullName: name || id,
+        studentAddress: '',
+        grade: '',
+        active: true,
+        metatBus: false,
+        schoolId: 0,
+        schoolName: '',
+      };
+    };
+
+    const requestId = ++studentDetailRequest.current;
+    const finish = (student: Student) => {
+      if (studentDetailRequest.current !== requestId) return;
+      setStudents((prev) =>
+        student.studentId > 0 && prev.some((item) => item.studentId === student.studentId)
+          ? prev
+          : [...prev.filter((item) => item.id !== student.id), student],
+      );
+      setSelectedStudent(student);
+    };
+
+    const searchThenMaybeId = () => {
+      const query = name || id;
+      void StudentService.search(query)
+        .then((list) => {
+          if (studentDetailRequest.current !== requestId) return;
+          const match =
+            list.find(matchStudent) ||
+            (nameLower
+              ? list.find((student) => studentFullName(student).toLowerCase() === nameLower)
+              : undefined);
+          if (match) {
+            finish(match);
+            return;
+          }
+          if (hasNumericId) {
+            void StudentService.getByStudentId(numericId)
+              .then((stu) => finish(stu))
+              .catch(() => finish(buildStub()));
+            return;
+          }
+          finish(buildStub());
+        })
+        .catch(() => {
+          if (hasNumericId) {
+            void StudentService.getByStudentId(numericId)
+              .then((stu) => finish(stu))
+              .catch(() => finish(buildStub()));
+            return;
+          }
+          finish(buildStub());
+        });
+    };
+
+    // Dispatch path usually has a real studentId — try it first, then name search.
+    if (hasNumericId && !name) {
+      void StudentService.getByStudentId(numericId)
+        .then((stu) => finish(stu))
+        .catch(() => searchThenMaybeId());
+      return;
+    }
+
+    searchThenMaybeId();
+  }, []);
+
+  const openStudentDetails = useCallback(
+    (studentId: number) => {
+      if (!studentId) return;
+      openStudentDetailsByRef({ id: String(studentId) });
+    },
+    [openStudentDetailsByRef],
+  );
+
+  const openSchoolDetails = useCallback((schoolId?: number, schoolName?: string) => {
+    const name = schoolName?.trim() || '';
+    const nameLower = name.toLowerCase();
+    if (!schoolId && !name) return;
+
+    const matchSchool = (school: School) => {
+      if (schoolId && Number(school.schoolId) === Number(schoolId)) return true;
+      if (!nameLower) return false;
+      return (school.schoolName || '').trim().toLowerCase() === nameLower;
+    };
+
+    const cached =
+      schoolsRef.current.find(matchSchool) ||
+      (nameLower
+        ? schoolsRef.current.find((school) =>
+            (school.schoolName || '').toLowerCase().includes(nameLower),
+          )
+        : undefined);
+    if (cached) {
+      setSelectedSchool(cached);
+      return;
+    }
+
+    const buildStub = (): School => ({
+      id: schoolId ? `school-${schoolId}` : `school-${nameLower || 'unknown'}`,
+      schoolId: schoolId || 0,
+      schoolName: name || `School #${schoolId}`,
+      schoolAddress: '',
+      schoolBoardId: 0,
+      isActive: true,
+      studentNum: 0,
+    });
+
+    void SchoolService.list()
+      .then((list) => {
+        const match =
+          list.find(matchSchool) ||
+          (nameLower
+            ? list.find((school) => (school.schoolName || '').toLowerCase().includes(nameLower))
+            : undefined);
+        if (match) {
+          setSchools((prev) => (prev.some((s) => s.id === match.id) ? prev : [...prev, match]));
+          setSelectedSchool(match);
+          return;
+        }
+        if (schoolId) {
+          return SchoolService.getById(String(schoolId))
+            .then((school) => {
+              setSchools((prev) => (prev.some((s) => s.id === school.id) ? prev : [...prev, school]));
+              setSelectedSchool(school);
+            })
+            .catch(() => setSelectedSchool(buildStub()));
+        }
+        setSelectedSchool(buildStub());
+      })
+      .catch(() => {
+        if (schoolId) {
+          void SchoolService.getById(String(schoolId))
+            .then((school) => setSelectedSchool(school))
+            .catch(() => setSelectedSchool(buildStub()));
+          return;
+        }
+        setSelectedSchool(buildStub());
+      });
+  }, []);
+
+  const vehiclesRef = useRef(vehicles);
+  vehiclesRef.current = vehicles;
+
+  const openEmployeeDetails = useCallback((employeeId?: string, employeeName?: string) => {
+    const id = employeeId?.trim() || '';
+    const name = employeeName?.trim() || '';
+    const nameLower = name.toLowerCase();
+    if (!id && !name) return;
+
+    const employeeTokens = (employee: Employee) =>
+      [
+        employee.id,
+        employee.employeeNumber,
+        String(employee.employeeId ?? ''),
+        employee.username || '',
+      ]
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean);
+
+    const matchEmployee = (employee: Employee) => {
+      if (id) {
+        const idLower = id.toLowerCase();
+        if (employeeTokens(employee).includes(idLower)) return true;
+      }
+      if (!nameLower) return false;
+      const fullName = (employee.fullName || `${employee.firstName} ${employee.lastName}`)
+        .trim()
+        .toLowerCase();
+      return fullName === nameLower;
+    };
+
+    // Same path as Dispatch / Routes: prefer in-memory master list first.
+    const cached =
+      employeesRef.current.find(matchEmployee) ||
+      (nameLower
+        ? employeesRef.current.find((employee) => {
+            const fullName = (employee.fullName || `${employee.firstName} ${employee.lastName}`)
+              .trim()
+              .toLowerCase();
+            return fullName.includes(nameLower) || nameLower.includes(fullName);
+          })
+        : undefined);
+    if (cached) {
+      setSelectedEmployee(cached);
+      return;
+    }
+
+    const buildStub = (): Employee => {
+      const parts = name.split(/\s+/).filter(Boolean);
+      const firstName = parts[0] || id || 'Unknown';
+      const lastName = parts.slice(1).join(' ');
+      return {
+        id: id || `lookup-${nameLower || 'employee'}`,
+        employeeNumber: id || 'N/A',
+        firstName,
+        lastName,
+        fullName: name || id,
+        jobPosition: 'Staff',
+        isActive: true,
+      };
+    };
+
+    const requestId = ++employeeDetailRequest.current;
+    const finish = (employee: Employee) => {
+      if (employeeDetailRequest.current !== requestId) return;
+      setSelectedEmployee(employee);
+    };
+
+    // Prefer name search (Dispatch-style), then id lookup. Avoid inventing document IDs.
+    const query = name || id;
+    void EmployeeService.list({ search: query })
+      .then((list) => {
+        if (employeeDetailRequest.current !== requestId) return;
+        const match =
+          list.find(matchEmployee) ||
+          (nameLower
+            ? list.find((employee) => {
+                const fullName = (employee.fullName || `${employee.firstName} ${employee.lastName}`)
+                  .trim()
+                  .toLowerCase();
+                return fullName === nameLower;
+              })
+            : undefined);
+        if (match) {
+          finish(match);
+          return;
+        }
+        if (id) {
+          return EmployeeService.getById(id)
+            .then((employee) => finish(employee))
+            .catch(() => finish(buildStub()));
+        }
+        finish(buildStub());
+      })
+      .catch(() => {
+        if (id) {
+          void EmployeeService.getById(id)
+            .then((employee) => finish(employee))
+            .catch(() => finish(buildStub()));
+          return;
+        }
+        finish(buildStub());
+      });
+  }, []);
+
+  const openVehicleDetails = useCallback((vehicleId?: number, unitNumber?: string) => {
+    const unit = (unitNumber || '').trim().replace(/^#/, '');
+    if (!vehicleId && !unit) return;
+
+    const normalizeUnit = (value?: string | number | null) => {
+      const raw = String(value ?? '')
+        .trim()
+        .replace(/^#/, '')
+        .toLowerCase();
+      if (!raw) return '';
+      const stripped = raw.replace(/^(veh|bus|van|unit)[-_\s]*/i, '');
+      return stripped.replace(/^0+(?=\d)/, '') || raw;
+    };
+
+    const unitKey = normalizeUnit(unit);
+    const vehicleIdKey = vehicleId ? String(vehicleId) : '';
+
+    const matchVehicle = (vehicle: Vehicle) => {
+      if (vehicleId && Number(vehicle.vehicleId) === Number(vehicleId)) return true;
+      const vehicleUnit = normalizeUnit(vehicle.unitNumber);
+      if (unitKey && vehicleUnit && (vehicleUnit === unitKey || vehicleUnit === normalizeUnit(unit))) {
+        return true;
+      }
+      if (unitKey && normalizeUnit(vehicle.plateNumber) === unitKey) return true;
+      if (vehicleIdKey && vehicleUnit === normalizeUnit(vehicleIdKey)) return true;
+      if (vehicleIdKey && normalizeUnit(vehicle.id) === vehicleIdKey) return true;
+      if (vehicleIdKey && normalizeUnit(vehicle.id.replace(/^veh-/i, '')) === vehicleIdKey) return true;
+      return false;
+    };
+
+    // Same path as Dispatch / Routes: prefer in-memory fleet list first.
+    const cached = vehiclesRef.current.find(matchVehicle);
+    if (cached) {
+      setSelectedVehicle(cached);
+      return;
+    }
+
+    const buildStub = (): Vehicle => ({
+      id: unit ? `unit-${unit}` : `vehicle-${vehicleIdKey}`,
+      vehicleId: vehicleId || 0,
+      unitNumber: unit || vehicleIdKey || 'Unknown',
+      plateNumber: '',
+      manufacturer: '',
+      model: '',
+      year: 0,
+      color: '',
+      unitType: 'Bus',
+      seatCap: 0,
+      wheelchairCap: 0,
+      fuelType: '',
+      active: true,
+      status: 'Spare',
+      yardName: '',
+    });
+
+    const requestId = ++vehicleDetailRequest.current;
+    const finish = (vehicle: Vehicle) => {
+      if (vehicleDetailRequest.current !== requestId) return;
+      setSelectedVehicle(vehicle);
+    };
+
+    const query = unit || vehicleIdKey;
+    void VehicleService.list({ search: query })
+      .then((list) => {
+        if (vehicleDetailRequest.current !== requestId) return;
+        const match = list.find(matchVehicle);
+        if (match) {
+          finish(match);
+          return;
+        }
+        // Backend GetVehicle also accepts unit number; try that once (no invented VEH- prefixes).
+        if (unit) {
+          return VehicleService.getById(unit)
+            .then((vehicle) => finish(vehicle))
+            .catch(() => finish(buildStub()));
+        }
+        finish(buildStub());
+      })
+      .catch(() => {
+        if (unit) {
+          void VehicleService.getById(unit)
+            .then((vehicle) => finish(vehicle))
+            .catch(() => finish(buildStub()));
+          return;
+        }
+        finish(buildStub());
+      });
+  }, []);
+
   const openDispatchChangeLog = useCallback((date?: string) => {
     if (date) setDispatchLogDate(date);
     setCurrentTab('dispatch_log');
@@ -1026,6 +1416,7 @@ export const AppContent: React.FC = () => {
               stats={studentStats}
               loading={dataLoading}
               onSelectStudent={setSelectedStudent}
+              onSelectSchool={openSchoolDetails}
               onEditStudent={handleEditStudent}
               onCreateStudent={handleCreateStudent}
               onDeleteStudent={handleDeleteStudent}
@@ -1038,12 +1429,8 @@ export const AppContent: React.FC = () => {
           {currentTab === 'student_absences' && (
             <StudentAbsencesView
               studentsMap={studentsMap}
-              onSelectStudent={(stuId) => {
-                const stu = studentsMap[stuId];
-                if (stu) {
-                  setSelectedStudent(stu);
-                }
-              }}
+              onSelectStudent={openStudentDetailsByRef}
+              onSelectSchool={openSchoolDetails}
             />
           )}
 
@@ -1053,6 +1440,9 @@ export const AppContent: React.FC = () => {
               vehicles={vehicles}
               yards={yards}
               studentsMap={studentsMap}
+              onSelectStudent={openStudentDetails}
+              onSelectEmployee={openEmployeeDetails}
+              onSelectVehicle={openVehicleDetails}
               onNavigateToChangeLog={openDispatchChangeLog}
               onNavigateToTemporaryAssignments={openTemporaryAssignments}
               onNavigateToAbsences={openStudentAbsences}
@@ -1066,13 +1456,16 @@ export const AppContent: React.FC = () => {
               vehicles={vehicles}
               schools={schools}
               onNavigateToPayroll={openDispatchPayroll}
+              onSelectEmployee={openEmployeeDetails}
+              onSelectVehicle={openVehicleDetails}
             />
           )}
 
           {currentTab === 'dispatch_payroll' && (
-            <div className="p-4 md:p-6 max-w-7xl mx-auto">
+            <div className="p-3 md:p-4 w-full">
               <DispatchDailyPayrollTab
                 onNavigateToFinanceLog={openPayrollFinanceLog}
+                onSelectEmployee={openEmployeeDetails}
               />
             </div>
           )}
@@ -1113,19 +1506,28 @@ export const AppContent: React.FC = () => {
           )}
 
           {currentTab === 'defects' && (
-            <DefectReportsView />
+            <DefectReportsView
+              onSelectEmployee={openEmployeeDetails}
+              onSelectVehicle={openVehicleDetails}
+            />
           )}
 
           {currentTab === 'student_incidents' && (
-            <StudentIncidentsView />
+            <StudentIncidentsView
+              onSelectStudent={openStudentDetailsByRef}
+              onSelectSchool={openSchoolDetails}
+            />
           )}
 
           {currentTab === 'expenses' && (
-            <ExpenseReimbursementsView />
+            <ExpenseReimbursementsView
+              employees={employees}
+              onSelectEmployee={openEmployeeDetails}
+            />
           )}
 
           {currentTab === 'hazards' && (
-            <HazardReportsView />
+            <HazardReportsView onSelectEmployee={openEmployeeDetails} />
           )}
 
           {currentTab === 'route_assessments' && (
@@ -1133,10 +1535,15 @@ export const AppContent: React.FC = () => {
           )}
 
           {currentTab === 'vehicle_signouts' && (
-            <VehicleSignoutView />
+            <VehicleSignoutView
+              onSelectEmployee={openEmployeeDetails}
+              onSelectVehicle={openVehicleDetails}
+            />
           )}
 
-          {currentTab === 'staging_routes' && <StagingRouteListView />}
+          {currentTab === 'staging_routes' && (
+            <StagingRouteListView onSelectStudent={openStudentDetailsByRef} />
+          )}
 
           {currentTab === 'routes' && (
             <RouteListView
@@ -1149,6 +1556,9 @@ export const AppContent: React.FC = () => {
               loading={dataLoading}
               onSelectRoute={setSelectedRoute}
               onSelectStudent={setSelectedStudent}
+              onSelectStudentId={openStudentDetails}
+              onSelectEmployee={openEmployeeDetails}
+              onSelectVehicle={openVehicleDetails}
               onAssignCrew={handleOpenAssignCrew}
               onRefresh={handleRouteRefresh}
               onRouteUpdated={handleRouteUpdated}
@@ -1177,7 +1587,10 @@ export const AppContent: React.FC = () => {
           )}
 
           {currentTab === 'pretrip_checks' && (
-            <PreTripInspectionsView />
+            <PreTripInspectionsView
+              onSelectEmployee={openEmployeeDetails}
+              onSelectVehicle={openVehicleDetails}
+            />
           )}
 
           {currentTab === 'vehicle_inspections' && (
@@ -1204,6 +1617,7 @@ export const AppContent: React.FC = () => {
               routes={routes}
               employees={employees}
               onBoardRatesChange={setPayrollBoardRates}
+              onSelectEmployee={openEmployeeDetails}
             />
           )}
 
@@ -1212,12 +1626,13 @@ export const AppContent: React.FC = () => {
               boards={boards}
               employees={employees}
               routes={routes}
+              onSelectEmployee={openEmployeeDetails}
             />
           )}
 
           {currentTab === 'payroll_dept_log' && (
-            <div className="p-4 md:p-6 max-w-7xl mx-auto">
-              <PayrollDepartmentLogView />
+            <div className="p-3 md:p-4 w-full">
+              <PayrollDepartmentLogView onSelectEmployee={openEmployeeDetails} />
             </div>
           )}
 
@@ -1290,6 +1705,7 @@ export const AppContent: React.FC = () => {
         onSelectStudent={(stu) => {
           setSelectedStudent(stu);
         }}
+        onSelectStudentId={openStudentDetails}
         onAssignCrew={handleOpenAssignCrew}
         onRouteUpdated={handleRouteUpdated}
       />

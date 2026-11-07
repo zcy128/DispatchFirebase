@@ -63,6 +63,8 @@ interface CharterManagementViewProps {
   vehicles?: Vehicle[];
   schools?: School[];
   onNavigateToPayroll?: () => void;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
+  onSelectVehicle?: (vehicleId?: number, unitNumber?: string) => void;
 }
 
 const EMPTY_EMPLOYEES: Employee[] = [];
@@ -74,6 +76,8 @@ export const CharterManagementView = memo(function CharterManagementView({
   vehicles = EMPTY_VEHICLES,
   schools = EMPTY_SCHOOLS,
   onNavigateToPayroll,
+  onSelectEmployee,
+  onSelectVehicle,
 }: CharterManagementViewProps) {
   const { currentUser } = useAuth();
   const { isFrench } = useI18n();
@@ -1586,7 +1590,7 @@ export const CharterManagementView = memo(function CharterManagementView({
   const reviewOpening = useCallback((openingId: string) => setReviewingOpeningId(openingId), []);
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-3.5 sm:p-4 w-full space-y-5">
       {/* Header & Sub-Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
         <div className="flex items-center gap-3">
@@ -1821,6 +1825,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                           onDelete={deleteTripRow}
                           onPublish={publishTrip}
                           onReview={reviewOpening}
+                          onSelectEmployee={onSelectEmployee}
+                          onSelectVehicle={onSelectVehicle}
                         />
                       );
                     })}
@@ -1948,8 +1954,17 @@ export const CharterManagementView = memo(function CharterManagementView({
 
       {/* TRIP DETAIL & ASSIGNMENTS DRAWER */}
       {selectedTrip && (
-        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/60 backdrop-blur-xs flex justify-end">
-          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
+        <div
+          className="fixed inset-0 z-50 overflow-hidden bg-slate-950/60 backdrop-blur-xs flex justify-end"
+          onClick={() => setSelectedTripId(null)}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-2xl bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
             {/* Drawer Header */}
             <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div>
@@ -2242,13 +2257,20 @@ export const CharterManagementView = memo(function CharterManagementView({
                               <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300">
                                 {isFrench ? `Quart #${shiftNum}` : `Shift #${shiftNum}`}
                               </span>
-                              <span className="font-mono font-bold text-sm text-slate-900 dark:text-white">
-                                {hasVehicle
-                                  ? `Unit ${asg.vehicleUnitNumber}`
-                                  : isFrench
-                                  ? 'Véhicule à assigner (TBD)'
-                                  : 'Vehicle TBD'}
-                              </span>
+                              {hasVehicle ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectVehicle?.(asg.vehicleId, asg.vehicleUnitNumber)}
+                                  className="font-mono font-bold text-sm text-slate-900 dark:text-white hover:text-amber-600 dark:hover:text-amber-300 transition"
+                                  title={isFrench ? 'Voir la fiche véhicule' : 'View vehicle details'}
+                                >
+                                  Unit {asg.vehicleUnitNumber}
+                                </button>
+                              ) : (
+                                <span className="font-mono font-bold text-sm text-slate-900 dark:text-white">
+                                  {isFrench ? 'Véhicule à assigner (TBD)' : 'Vehicle TBD'}
+                                </span>
+                              )}
                               {hasVehicle && asg.plateNumber && (
                                 <span className="text-[11px] text-slate-400 font-mono">
                                   ({asg.plateNumber})
@@ -2282,9 +2304,14 @@ export const CharterManagementView = memo(function CharterManagementView({
                                   {isFrench ? 'Chauffeur' : 'Driver'}
                                 </span>
                                 {hasDriver ? (
-                                  <span className="font-semibold text-slate-900 dark:text-white text-xs">
+                                  <button
+                                    type="button"
+                                    onClick={() => onSelectEmployee?.(asg.driverId, asg.driverName)}
+                                    className="font-semibold text-slate-900 dark:text-white text-xs hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                                    title={isFrench ? 'Voir la fiche chauffeur' : 'View driver details'}
+                                  >
                                     {asg.driverName}
-                                  </span>
+                                  </button>
                                 ) : (
                                   <span className="text-xs italic text-amber-600 dark:text-amber-400 font-medium">
                                     {isFrench ? 'Quart ouvert — Aucun chauffeur' : 'Open Shift — Unassigned'}
@@ -2355,9 +2382,14 @@ export const CharterManagementView = memo(function CharterManagementView({
                                   <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
                                     {isFrench ? 'Accompagnateur' : 'Attendant'}
                                   </span>
-                                  <span className="font-semibold text-slate-900 dark:text-white text-xs">
+                                  <button
+                                    type="button"
+                                    onClick={() => onSelectEmployee?.(asg.attendantId, asg.attendantName)}
+                                    className="font-semibold text-slate-900 dark:text-white text-xs hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                                    title={isFrench ? "Voir la fiche accompagnateur" : 'View attendant details'}
+                                  >
                                     {asg.attendantName}
-                                  </span>
+                                  </button>
                                 </div>
                                 <div className="text-[11px] text-slate-500 font-mono mt-0.5">
                                   ${asg.attendantPayRate?.toFixed(2)} • {asg.attendantEiHours}h EI

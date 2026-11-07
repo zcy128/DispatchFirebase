@@ -65,12 +65,14 @@ interface BiweeklyPayrollViewProps {
   boards?: SchoolBoard[];
   employees?: Employee[];
   routes?: BusRoute[];
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
 }
 
 export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
   boards: boardsProp = EMPTY_BOARDS,
   employees: employeesProp = EMPTY_EMPLOYEES,
   routes: routesProp = EMPTY_ROUTES,
+  onSelectEmployee,
 }: BiweeklyPayrollViewProps) {
   const [startDate, setStartDate] = useState<string>(getTodayDateString);
   const endDate = useMemo(() => addDaysToDateString(startDate, 13), [startDate]);
@@ -1352,27 +1354,46 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                     <tr className="bg-slate-50/80 dark:bg-slate-800/50 hover:bg-slate-100/70 dark:hover:bg-slate-800/80 transition-colors border-t border-slate-200 dark:border-slate-700">
                       <td colSpan={13} className="py-2.5 px-3">
                         <div className="flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleEmployee(empGroup.employeeId)}
-                            className="flex items-center gap-2 text-left font-bold text-slate-900 dark:text-white hover:text-amber-600 dark:hover:text-amber-400 transition-colors group"
-                          >
-                            <span className="text-slate-400 group-hover:text-amber-500 transition-colors">
+                          <div className="flex items-center gap-2 text-left font-bold text-slate-900 dark:text-white">
+                            <button
+                              type="button"
+                              onClick={() => toggleEmployee(empGroup.employeeId)}
+                              className="text-slate-400 hover:text-amber-500 transition-colors"
+                              title={isExpanded ? 'Collapse' : 'Expand'}
+                            >
                               {isExpanded ? (
                                 <ChevronDown className="w-4 h-4" />
                               ) : (
                                 <ChevronRight className="w-4 h-4" />
                               )}
-                            </span>
-                            <span className="text-sm">
-                              {empGroup.employeeName} ({empGroup.employeeId})
-                            </span>
+                            </button>
+                            {onSelectEmployee ? (
+                              <button
+                                type="button"
+                                onClick={() => onSelectEmployee(empGroup.employeeId, empGroup.employeeName)}
+                                className="text-sm hover:text-amber-600 dark:hover:text-amber-400 hover:underline transition-colors"
+                                title="View employee details"
+                              >
+                                {empGroup.employeeName}{' '}
+                                <span className="font-mono font-semibold text-slate-500 dark:text-slate-400">
+                                  ({empGroup.employeeId})
+                                </span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => toggleEmployee(empGroup.employeeId)}
+                                className="text-sm hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+                              >
+                                {empGroup.employeeName} ({empGroup.employeeId})
+                              </button>
+                            )}
                             {empGroup.schoolBoardCode && (
                               <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 uppercase">
                                 {empGroup.schoolBoardCode}
                               </span>
                             )}
-                          </button>
+                          </div>
 
                           {/* Quick summary badges on right of header */}
                           <div className="flex items-center gap-2 text-xs">
@@ -1827,9 +1848,22 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                        {selectedDetailGroup.employeeName}
-                      </h3>
+                      {onSelectEmployee ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onSelectEmployee(selectedDetailGroup.employeeId, selectedDetailGroup.employeeName)
+                          }
+                          className="text-lg font-bold text-slate-900 dark:text-white hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                          title="View employee details"
+                        >
+                          {selectedDetailGroup.employeeName}
+                        </button>
+                      ) : (
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                          {selectedDetailGroup.employeeName}
+                        </h3>
+                      )}
                       <span className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
                         ID: {selectedDetailGroup.employeeId}
                       </span>

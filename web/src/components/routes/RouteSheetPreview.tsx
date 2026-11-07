@@ -7,7 +7,8 @@ import {
   boardCountsForStops,
   routeRunFields,
   sortRouteSheetShifts,
-  studentSheetLines,
+  routeSheetStopHeading,
+  studentSheetColumns,
 } from '../../utils/routeSheetPdf';
 
 interface RouteSheetPreviewProps {
@@ -100,12 +101,35 @@ export const RouteSheetPreview: React.FC<RouteSheetPreviewProps> = ({
                         </tr>
                       </thead>
                       <tbody>
-                        {stops.map((stop, index) => (
-                          <tr key={stop.stopId || index} className="border-t border-slate-200 align-top">
-                            <td className="px-2 py-2 font-bold">{index + 1}</td>
-                            <td className="px-2 py-2 font-mono">{stop.pullawayTime}</td>
-                            <td className="px-2 py-2">
-                              <p className="font-semibold">{stop.stopLocation}</p>
+                        {stops.map((stop, index) => {
+                          const heading = routeSheetStopHeading(stop);
+                          return (
+                          <tr
+                            key={stop.stopId || index}
+                            className={`border-t align-top ${
+                              heading.isSchool
+                                ? 'border-amber-200 bg-amber-50/80'
+                                : 'border-slate-200'
+                            }`}
+                          >
+                            <td className={`px-2 py-2 font-bold ${heading.isSchool ? 'text-amber-900' : ''}`}>
+                              {index + 1}
+                            </td>
+                            <td className={`px-2 py-2 font-mono ${heading.isSchool ? 'text-amber-900' : ''}`}>
+                              {stop.pullawayTime}
+                            </td>
+                            <td className={`px-2 py-2 ${heading.isSchool ? 'border-l-4 border-amber-400' : ''}`}>
+                              {heading.isSchool && heading.kindLabel && (
+                                <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                                  {heading.kindLabel}
+                                </p>
+                              )}
+                              <p className={`font-semibold ${heading.isSchool ? 'text-amber-950 text-sm' : ''}`}>
+                                {heading.title}
+                              </p>
+                              {heading.detail && (
+                                <p className="mt-0.5 text-slate-600">{heading.detail}</p>
+                              )}
                               {(stop.comment || stop.instruction) && (
                                 <p className="mt-1 italic text-slate-600">
                                   NOTE: {[stop.comment, stop.instruction].filter(Boolean).join(' ')}
@@ -113,17 +137,37 @@ export const RouteSheetPreview: React.FC<RouteSheetPreviewProps> = ({
                               )}
                               <div className="mt-2 space-y-2">
                                 {(stop.assignedStudents ?? []).map((assigned) => {
-                                  const lines = studentSheetLines(
+                                  const columns = studentSheetColumns(
                                     studentsMap[assigned.studentId],
                                     assigned.studentName || assigned.studentNo,
                                   );
                                   return (
-                                    <div key={assigned.studentId || assigned.studentNo}>
-                                      {lines.map((line, lineIndex) => (
-                                        <p key={`${line.text}-${lineIndex}`} className={line.bold ? 'font-bold' : 'text-slate-700'}>
-                                          {line.text}
-                                        </p>
-                                      ))}
+                                    <div
+                                      key={assigned.studentId || assigned.studentNo}
+                                      className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2"
+                                    >
+                                      <div>
+                                        {columns.left.map((line, lineIndex) => (
+                                          <p
+                                            key={`left-${line.text}-${lineIndex}`}
+                                            className={line.bold ? 'font-bold' : 'text-slate-700'}
+                                          >
+                                            {line.text}
+                                          </p>
+                                        ))}
+                                      </div>
+                                      {columns.right.length > 0 && (
+                                        <div>
+                                          {columns.right.map((line, lineIndex) => (
+                                            <p
+                                              key={`right-${line.text}-${lineIndex}`}
+                                              className={line.bold ? 'font-bold' : 'text-slate-700'}
+                                            >
+                                              {line.text}
+                                            </p>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -132,7 +176,8 @@ export const RouteSheetPreview: React.FC<RouteSheetPreviewProps> = ({
                             <td className="px-2 py-2">{loads[index]?.stopLoad ?? 0}</td>
                             <td className="px-2 py-2">{loads[index]?.runLoad ?? 0}</td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

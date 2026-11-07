@@ -27,6 +27,7 @@ export interface PreTripInspection {
 
 export interface VehiclePretripStatus {
   unitNumber: string;
+  vehicleId?: number;
   vehiclePlate?: string;
   unitMaker?: string;
   unitModel?: string;

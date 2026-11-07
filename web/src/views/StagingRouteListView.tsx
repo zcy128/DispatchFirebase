@@ -8,7 +8,11 @@ import { getShiftBadgeStyle } from '../types/route';
 import { getPagePermission } from '../utils/permissions';
 import { downloadStagingRouteSheet } from '../utils/stagingRouteSheet';
 
-export const StagingRouteListView: React.FC = () => {
+interface StagingRouteListViewProps {
+  onSelectStudent?: (ref: { id?: string; name?: string }) => void;
+}
+
+export const StagingRouteListView: React.FC<StagingRouteListViewProps> = ({ onSelectStudent }) => {
   const { isFrench } = useI18n();
   const { currentUser } = useAuth();
   const canCopy = getPagePermission(currentUser, 'staging_routes') === 'readwrite';
@@ -134,7 +138,7 @@ export const StagingRouteListView: React.FC = () => {
   };
 
   return (
-    <div className="p-3.5 sm:p-6 space-y-4 sm:space-y-5 max-w-7xl mx-auto">
+    <div className="p-3.5 sm:p-4 space-y-4 sm:space-y-5 w-full">
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
@@ -244,6 +248,7 @@ export const StagingRouteListView: React.FC = () => {
                       onSelectShift={selectShift}
                       onCopy={copyRoute}
                       onExportPdf={downloadStagingRouteSheet}
+                      onSelectStudent={onSelectStudent}
                     />
                   </div>
                 );
@@ -273,6 +278,7 @@ interface StagingRouteRowProps {
   onSelectShift: (routeId: string, shiftId: string) => void;
   onCopy: (route: StagingRoute) => void;
   onExportPdf: (route: StagingRoute) => void;
+  onSelectStudent?: (ref: { id?: string; name?: string }) => void;
 }
 
 const StagingRouteRow = memo(function StagingRouteRow({
@@ -287,6 +293,7 @@ const StagingRouteRow = memo(function StagingRouteRow({
   onSelectShift,
   onCopy,
   onExportPdf,
+  onSelectStudent,
 }: StagingRouteRowProps) {
   return (
     <div className="border-b border-slate-800/60">
@@ -421,11 +428,17 @@ const StagingRouteRow = memo(function StagingRouteRow({
                                   ) : (
                                     <div className="space-y-0.5">
                                       {stop.students.map((student) => (
-                                        <div key={`${stop.id}-${student.id}-${student.name}`}>
-                                          <span className="text-white">{student.name}</span>
+                                        <button
+                                          key={`${stop.id}-${student.id}-${student.name}`}
+                                          type="button"
+                                          onClick={() => onSelectStudent?.({ id: student.id, name: student.name })}
+                                          className="block w-full text-left rounded-lg px-1 py-0.5 hover:bg-slate-800/80 transition"
+                                          title={isFrench ? 'Voir la fiche élève' : 'View student details'}
+                                        >
+                                          <span className="text-white hover:text-amber-300">{student.name}</span>
                                           {student.grade && <span className="text-slate-500"> · {student.grade}</span>}
                                           {student.schoolName && <span className="text-slate-500"> · {student.schoolName}</span>}
-                                        </div>
+                                        </button>
                                       ))}
                                     </div>
                                   )}

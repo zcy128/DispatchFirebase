@@ -65,7 +65,15 @@ const LIFECYCLE_STATUS_OPTIONS = [
   { id: 'resolved', label: 'Resolved' },
 ] as const;
 
-export const DefectReportsView: React.FC = () => {
+interface DefectReportsViewProps {
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
+  onSelectVehicle?: (vehicleId?: number, unitNumber?: string) => void;
+}
+
+export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
+  onSelectEmployee,
+  onSelectVehicle,
+}) => {
   const { currentUser } = useAuth();
   const [reports, setReports] = useState<VehicleDefectReport[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -714,14 +722,14 @@ export const DefectReportsView: React.FC = () => {
           <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
             <table className="w-full text-left text-xs">
               <colgroup>
-                <col style={{ width: '13%' }} />
-                <col style={{ width: '17%' }} />
-                <col style={{ width: '9%' }} />
+                <col style={{ width: '11%' }} />
                 <col style={{ width: '15%' }} />
-                <col style={{ width: '16%' }} />
-                <col style={{ width: '10%' }} />
-                <col style={{ width: '12%' }} />
                 <col style={{ width: '8%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '20%' }} />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
                 <tr>
@@ -755,21 +763,42 @@ export const DefectReportsView: React.FC = () => {
                           <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
                             <Car className="w-4 h-4" />
                           </div>
-                          <div>
-                            <span className="font-bold text-slate-900 dark:text-white text-sm">
-                              Unit #{report.vehicleUnitNumber}
+                          {onSelectVehicle ? (
+                            <button
+                              type="button"
+                              onClick={() => onSelectVehicle(report.vehicleId, report.vehicleUnitNumber)}
+                              className="font-bold text-slate-900 dark:text-white text-sm font-mono hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                              title={isFrench ? 'Voir la fiche véhicule' : 'View vehicle details'}
+                            >
+                              #{report.vehicleUnitNumber}
+                            </button>
+                          ) : (
+                            <span className="font-bold text-slate-900 dark:text-white text-sm font-mono">
+                              #{report.vehicleUnitNumber}
                             </span>
-                          </div>
+                          )}
                         </div>
                       </td>
 
                       {/* Driver & Date */}
                       <td className="py-3 px-4">
                         <div className="flex flex-col">
-                          <span className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
-                            <User className="w-3 h-3 text-slate-400" />
-                            {report.reportedByName}
-                          </span>
+                          {onSelectEmployee && report.reportedByName ? (
+                            <button
+                              type="button"
+                              onClick={() => onSelectEmployee(report.reportedByUserId, report.reportedByName)}
+                              className="font-medium text-slate-900 dark:text-white flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left"
+                              title={isFrench ? 'Voir la fiche chauffeur' : 'View employee details'}
+                            >
+                              <User className="w-3 h-3 text-slate-400" />
+                              {report.reportedByName}
+                            </button>
+                          ) : (
+                            <span className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
+                              <User className="w-3 h-3 text-slate-400" />
+                              {report.reportedByName}
+                            </span>
+                          )}
                           <span className="text-slate-400 text-[11px] flex items-center gap-1 mt-0.5">
                             <Calendar className="w-3 h-3" />
                             {report.reportDate} {report.reportTime}
@@ -896,9 +925,38 @@ export const DefectReportsView: React.FC = () => {
                   <Wrench className="w-5 h-5 text-amber-500" />
                   Fleet Assessment & Repair Dispatch
                 </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Unit #{selectedReport.vehicleUnitNumber} — Reported by {selectedReport.reportedByName} on{' '}
-                  {selectedReport.reportDate}
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-1">
+                  {onSelectVehicle ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectVehicle(selectedReport.vehicleId, selectedReport.vehicleUnitNumber)}
+                      className="font-mono font-semibold hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                      title="View vehicle details"
+                    >
+                      #{selectedReport.vehicleUnitNumber}
+                    </button>
+                  ) : (
+                    <span className="font-mono font-semibold">#{selectedReport.vehicleUnitNumber}</span>
+                  )}
+                  <span>—</span>
+                  <span>Reported by</span>
+                  {onSelectEmployee && selectedReport.reportedByName ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onSelectEmployee(selectedReport.reportedByUserId, selectedReport.reportedByName)
+                      }
+                      className="font-semibold hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                      title="View employee details"
+                    >
+                      {selectedReport.reportedByName}
+                    </button>
+                  ) : (
+                    <span className="font-semibold">{selectedReport.reportedByName}</span>
+                  )}
+                  <span>
+                    on {selectedReport.reportDate}
+                  </span>
                 </p>
               </div>
               <div className="flex items-center gap-2">

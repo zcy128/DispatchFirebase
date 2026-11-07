@@ -46,12 +46,14 @@ function isColdAbsenceRecord(rec: StudentAbsenceRecord): boolean {
 }
 
 interface StudentAbsencesViewProps {
-  onSelectStudent?: (studentId: number) => void;
+  onSelectStudent?: (ref: { id?: string; name?: string }) => void;
+  onSelectSchool?: (schoolId?: number, schoolName?: string) => void;
   studentsMap?: Record<number, Student>;
 }
 
 export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
   onSelectStudent,
+  onSelectSchool,
   studentsMap = {},
 }) => {
   const { isFrench } = useI18n();
@@ -928,8 +930,14 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
                           <div>
                             <button
                               type="button"
-                              onClick={() => onSelectStudent?.(rec.studentId)}
+                              onClick={() =>
+                                onSelectStudent?.({
+                                  id: rec.studentNo || String(rec.studentId || ''),
+                                  name: rec.studentName,
+                                })
+                              }
                               className="font-bold text-white hover:text-sky-400 transition text-left flex items-center gap-1 group/btn"
+                              title={isFrench ? "Voir la fiche élève" : 'View student details'}
                             >
                               <span>{rec.studentName}</span>
                               <ChevronRight className="w-3 h-3 text-slate-500 group-hover/btn:translate-x-0.5 transition" />
@@ -943,9 +951,27 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
 
                       {/* School & Route */}
                       <td className="py-3 px-4">
-                        <div className="text-slate-300 font-medium truncate max-w-[200px]" title={rec.schoolName}>
-                          {rec.schoolName || studentObj?.schoolName || '—'}
-                        </div>
+                        {(() => {
+                          const schoolName = rec.schoolName || studentObj?.schoolName || '';
+                          const schoolId = rec.schoolId || studentObj?.schoolId;
+                          if (onSelectSchool && schoolName) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => onSelectSchool(schoolId, schoolName)}
+                                className="text-slate-300 font-medium truncate max-w-[200px] hover:text-amber-300 hover:underline transition text-left block"
+                                title={isFrench ? "Voir la fiche école" : 'View school details'}
+                              >
+                                {schoolName}
+                              </button>
+                            );
+                          }
+                          return (
+                            <div className="text-slate-300 font-medium truncate max-w-[200px]" title={schoolName || undefined}>
+                              {schoolName || '—'}
+                            </div>
+                          );
+                        })()}
                         {rec.routeNo ? (
                           <div className="flex items-center space-x-1 text-slate-400 text-[11px] font-mono mt-0.5">
                             <Bus className="w-3 h-3 text-amber-400 shrink-0" />
@@ -1005,7 +1031,12 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
                           {onSelectStudent && (
                             <button
                               type="button"
-                              onClick={() => onSelectStudent(rec.studentId)}
+                              onClick={() =>
+                                onSelectStudent({
+                                  id: rec.studentNo || String(rec.studentId || ''),
+                                  name: rec.studentName,
+                                })
+                              }
                               className="p-1.5 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition"
                               title={isFrench ? 'Voir le profil de l\'élève' : 'View student profile details'}
                             >

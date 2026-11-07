@@ -6,6 +6,11 @@ import {
   buildRouteSheetPdf,
   formatRouteSheetClock,
   sortRouteSheetShifts,
+  collectAssignedStudentIds,
+  isSchoolStop,
+  routeSheetStopHeading,
+  studentHasContactDetails,
+  studentSheetColumns,
   studentSheetLines,
 } from './routeSheetPdf';
 
@@ -80,16 +85,88 @@ describe('route sheet PDF', () => {
       ],
     };
 
-    const lines = studentSheetLines(student, 'Maya').map((line) => line.text);
-    expect(lines).toContain('Mitica, Maya');
-    expect(lines).toContain('Emily Follensbee School');
-    expect(lines).toContain('Grade 4');
-    expect(lines).toContain('Equip: Attendant, Wheelchair');
-    expect(lines).toContain('Guardian #1');
-    expect(lines).toContain('(587) 578-5577 (403) 555-0100 Dorina Florentina Mitica');
-    expect(lines).toContain('Guardian #2');
-    expect(lines).toContain('(403) 888-8379 Romica Iuda');
-    expect(lines.some((line) => line.includes('Wheelchair securement required.'))).toBe(true);
+    const columns = studentSheetColumns(student, 'Maya');
+    const left = columns.left.map((line) => line.text);
+    const right = columns.right.map((line) => line.text);
+    expect(left).toContain('Mitica, Maya');
+    expect(left).toContain('Emily Follensbee School');
+    expect(left).toContain('Grade 4');
+    expect(left).toContain('Equip: Attendant, Wheelchair');
+    expect(left.some((line) => line.includes('Wheelchair securement required.'))).toBe(true);
+    expect(right).toContain('Guardian #1');
+    expect(right).toContain('(587) 578-5577 (403) 555-0100 Dorina Florentina Mitica');
+    expect(right).toContain('Guardian #2');
+    expect(right).toContain('(403) 888-8379 Romica Iuda');
+    expect(studentSheetLines(student, 'Maya').map((line) => line.text)).toEqual([...left, ...right]);
+  });
+
+  it('labels school stops with the school name and a school kind badge', () => {
+    expect(isSchoolStop('SchoolDropoff')).toBe(true);
+    expect(isSchoolStop('HomePickup')).toBe(false);
+    expect(
+      routeSheetStopHeading({
+        stopType: 'SchoolDropoff',
+        schoolName: 'Emily Follensbee School',
+        stopLocation: '1715 17 AV SE; CALGARY',
+      }),
+    ).toEqual({
+      isSchool: true,
+      kindLabel: 'SCHOOL DROPOFF',
+      title: 'Emily Follensbee School',
+      detail: '1715 17 AV SE; CALGARY',
+    });
+    expect(
+      routeSheetStopHeading({
+        stopType: 'HomePickup',
+        schoolName: 'Emily Follensbee School',
+        stopLocation: '242 CRAMOND CT SE',
+      }),
+    ).toEqual({
+      isSchool: false,
+      title: '242 CRAMOND CT SE',
+    });
+  });
+
+  it('knows when a rider still needs a master record for guardian lines', () => {
+    expect(studentHasContactDetails(undefined)).toBe(false);
+    expect(
+      studentHasContactDetails({
+        id: 'STU-1',
+        studentId: 1,
+        studentNo: '1',
+        firstName: 'Maya',
+        lastName: 'Mitica',
+        studentName: 'Maya Mitica',
+        fullName: 'Maya Mitica',
+        studentAddress: '',
+        grade: '4',
+        active: true,
+        metatBus: false,
+        schoolId: 1,
+        schoolName: 'School',
+      }),
+    ).toBe(false);
+    expect(collectAssignedStudentIds([
+      {
+        id: 's1',
+        shiftId: 1,
+        routeId: 'r1',
+        routeNo: 'CBE-0400',
+        routeName: 'Test',
+        shiftType: 'AM',
+        runDays: 'MTWRF',
+        stops: [
+          {
+            stopId: 1,
+            sequence: 1,
+            stopLocation: 'Home',
+            pullawayTime: '07:00',
+            stopType: 'HomePickup',
+            assignedStudents: [{ studentId: 11, studentName: 'A' }, { studentId: 22, studentName: 'B' }],
+          },
+        ],
+      } as BusRouteShift,
+    ])).toEqual([11, 22]);
   });
 
   it('starts each shift on a new page', () => {

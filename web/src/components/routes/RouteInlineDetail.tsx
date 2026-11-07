@@ -54,6 +54,7 @@ interface RouteInlineDetailProps {
   schools: School[];
   employees: Employee[];
   onSelectStudent?: (student: Student) => void;
+  onSelectStudentId?: (studentId: number) => void;
   onOpenDrawer?: (route: BusRoute) => void;
   onRouteUpdated?: (route: BusRoute) => void;
 }
@@ -64,6 +65,7 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
   schools,
   employees,
   onSelectStudent,
+  onSelectStudentId,
   onOpenDrawer,
   onRouteUpdated
 }: RouteInlineDetailProps) {
@@ -677,7 +679,11 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
           <button
             type="button"
             disabled={loading || shifts.length === 0}
-            onClick={() => downloadRouteSheet({ route, shifts: orderedShifts, studentsMap, schools })}
+            onClick={() => {
+              void downloadRouteSheet({ route, shifts: orderedShifts, studentsMap, schools }).catch(
+                (error) => console.warn('Failed to export route sheet PDF:', error),
+              );
+            }}
             title="Export a route sheet PDF"
             className="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition flex items-center space-x-1.5 disabled:opacity-40"
           >
@@ -721,6 +727,7 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
           studentsMap={studentsMap}
           schools={schools}
           onSelectStudent={onSelectStudent}
+          onSelectStudentId={onSelectStudentId}
           onRefreshShifts={async () => {
             await handleRefreshShifts();
           }}
@@ -890,10 +897,23 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
                               {ridersCount > 0 ? (
                                 <div className="font-bold text-slate-200 flex items-center space-x-1.5 flex-wrap">
                                   {stop.assignedStudents?.map((s, idx) => (
-                                    <span key={s.studentId} className="hover:text-amber-400 transition">
+                                    <button
+                                      key={s.studentId}
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        if (onSelectStudentId) {
+                                          onSelectStudentId(s.studentId);
+                                          return;
+                                        }
+                                        const master = studentsMap[s.studentId];
+                                        if (master && onSelectStudent) onSelectStudent(master);
+                                      }}
+                                      className="hover:text-amber-400 transition cursor-pointer"
+                                    >
                                       {s.studentName}
                                       {idx < (stop.assignedStudents?.length || 0) - 1 ? '; ' : ''}
-                                    </span>
+                                    </button>
                                   ))}
                                 </div>
                               ) : (
@@ -1067,6 +1087,10 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
                                       key={stu.studentId}
                                       onClick={(e) => {
                                         e.stopPropagation();
+                                        if (onSelectStudentId) {
+                                          onSelectStudentId(stu.studentId);
+                                          return;
+                                        }
                                         if (master && onSelectStudent) onSelectStudent(master);
                                       }}
                                       className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-amber-500/40 transition cursor-pointer flex items-center justify-between group"

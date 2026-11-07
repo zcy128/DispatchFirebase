@@ -35,11 +35,18 @@ import {
   Database,
   ShieldCheck,
 } from 'lucide-react';
+import { getLocalTodayString } from '../utils/dateUtils';
 
-export const PreTripInspectionsView: React.FC = () => {
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return new Date().toISOString().slice(0, 10);
-  });
+interface PreTripInspectionsViewProps {
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
+  onSelectVehicle?: (vehicleId?: number, unitNumber?: string) => void;
+}
+
+export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
+  onSelectEmployee,
+  onSelectVehicle,
+}) => {
+  const [selectedDate, setSelectedDate] = useState<string>(() => getLocalTodayString());
 
   const [inspections, setInspections] = useState<PreTripInspection[]>([]);
   const [shifts, setShifts] = useState<DispatchShift[]>([]);
@@ -125,6 +132,7 @@ export const PreTripInspectionsView: React.FC = () => {
       if (!existing) {
         map.set(unit, {
           unitNumber: unit,
+          vehicleId: sh.vehicleId,
           routeId: sh.routeNo || sh.routeId,
           routeName: sh.routeName || `Route ${sh.routeNo}`,
           driverId: sh.driverId,
@@ -139,6 +147,9 @@ export const PreTripInspectionsView: React.FC = () => {
         if (sh.routeNo && !existing.routeId?.includes(sh.routeNo)) {
           existing.routeId = `${existing.routeId}, ${sh.routeNo}`;
         }
+        if (!existing.vehicleId && sh.vehicleId) existing.vehicleId = sh.vehicleId;
+        if (!existing.driverId && sh.driverId) existing.driverId = sh.driverId;
+        if (!existing.driverName && sh.driverName) existing.driverName = sh.driverName;
       }
     });
 
@@ -152,14 +163,19 @@ export const PreTripInspectionsView: React.FC = () => {
         existing.hasInspection = true;
         existing.inspection = insp;
         existing.vehiclePlate = insp.vehiclePlate || existing.vehiclePlate;
+        if (!existing.vehicleId && insp.vehicleId) existing.vehicleId = insp.vehicleId;
         existing.status = insp.overallStatus;
         if (!existing.driverName && insp.inspectorName) {
           existing.driverName = insp.inspectorName;
+        }
+        if (!existing.driverId && insp.inspectorId) {
+          existing.driverId = insp.inspectorId;
         }
       } else {
         // Vehicle inspected but not currently assigned to a regular dispatch shift (e.g. reserve bus / charter)
         map.set(unit, {
           unitNumber: unit,
+          vehicleId: insp.vehicleId,
           vehiclePlate: insp.vehiclePlate,
           routeId: 'Terminal Reserve / Spare',
           driverName: insp.inspectorName,
@@ -178,6 +194,7 @@ export const PreTripInspectionsView: React.FC = () => {
       if (!map.has(unit)) {
         map.set(unit, {
           unitNumber: unit,
+          vehicleId: v.vehicleId,
           vehiclePlate: v.plateNumber,
           unitMaker: v.manufacturer,
           unitModel: v.model,
@@ -189,6 +206,7 @@ export const PreTripInspectionsView: React.FC = () => {
         });
       } else {
         const item = map.get(unit)!;
+        if (!item.vehicleId) item.vehicleId = v.vehicleId;
         item.vehiclePlate = item.vehiclePlate || v.plateNumber;
         item.unitMaker = v.manufacturer;
         item.unitModel = v.model;
@@ -633,10 +651,22 @@ export const PreTripInspectionsView: React.FC = () => {
 
                       {/* Unit Number */}
                       <td className="px-4 py-3.5 whitespace-nowrap font-bold text-slate-900 dark:text-slate-100 font-mono">
-                        <div className="flex items-center gap-1.5">
-                          <Truck className="w-3.5 h-3.5 text-amber-500" />
-                          #{item.unitNumber}
-                        </div>
+                        {onSelectVehicle ? (
+                          <button
+                            type="button"
+                            onClick={() => onSelectVehicle(item.vehicleId, item.unitNumber)}
+                            className="flex items-center gap-1.5 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                            title="View vehicle details"
+                          >
+                            <Truck className="w-3.5 h-3.5 text-amber-500" />
+                            #{item.unitNumber}
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <Truck className="w-3.5 h-3.5 text-amber-500" />
+                            #{item.unitNumber}
+                          </div>
+                        )}
                       </td>
 
                       {/* Plate & Vehicle Info */}
@@ -661,15 +691,43 @@ export const PreTripInspectionsView: React.FC = () => {
 
                       {/* Driver / Inspector */}
                       <td className="px-4 py-3.5 whitespace-nowrap text-xs">
-                        <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-1">
-                          <User className="w-3 h-3 text-slate-400" />
-                          {item.inspection?.inspectorName || item.driverName || '—'}
-                        </div>
-                        {item.driverId && (
-                          <div className="text-slate-400 font-mono text-[10px]">
-                            ID: {item.driverId}
-                          </div>
-                        )}
+                        {(() => {
+                          const name = item.inspection?.inspectorName || item.driverName || '';
+                          const id = item.inspection?.inspectorId || item.driverId;
+                          if (!name) {
+                            return (
+                              <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-1">
+                                <User className="w-3 h-3 text-slate-400" />
+                                —
+                              </div>
+                            );
+                          }
+                          return (
+                            <>
+                              {onSelectEmployee ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectEmployee(id, name)}
+                                  className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                                  title="View employee details"
+                                >
+                                  <User className="w-3 h-3 text-slate-400" />
+                                  {name}
+                                </button>
+                              ) : (
+                                <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-1">
+                                  <User className="w-3 h-3 text-slate-400" />
+                                  {name}
+                                </div>
+                              )}
+                              {id && (
+                                <div className="text-slate-400 font-mono text-[10px]">
+                                  ID: {id}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                       </td>
 
                       {/* Check Time */}

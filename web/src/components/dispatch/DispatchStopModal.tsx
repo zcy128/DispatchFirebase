@@ -22,6 +22,7 @@ interface DispatchStopModalProps {
   onOpenHistory?: (shift: DispatchShift) => void;
   initialTab?: 'stops' | 'map';
   studentsMap?: Record<number, Student>;
+  onSelectStudent?: (studentId: number) => void;
 }
 
 export const DispatchStopModal: React.FC<DispatchStopModalProps> = (props) => {
@@ -45,6 +46,7 @@ const DispatchStopModalContent: React.FC<DispatchStopModalProps & { shift: Dispa
   onOpenHistory,
   initialTab = 'stops',
   studentsMap = EMPTY_STUDENTS_MAP,
+  onSelectStudent,
 }) => {
   const { currentUser } = useAuth();
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
@@ -492,7 +494,12 @@ const DispatchStopModalContent: React.FC<DispatchStopModalProps & { shift: Dispa
                             key={st.studentId}
                             className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-800/70 shadow-sm"
                           >
-                            <div>
+                            <button
+                              type="button"
+                              onClick={() => onSelectStudent?.(st.studentId)}
+                              className="text-left min-w-0 hover:text-amber-600 dark:hover:text-amber-400"
+                              title="View student details"
+                            >
                               <div className="text-sm font-bold text-slate-900 dark:text-white">
                                 {st.studentName}
                               </div>
@@ -505,7 +512,7 @@ const DispatchStopModalContent: React.FC<DispatchStopModalProps & { shift: Dispa
                                   <span>Parent notified: {st.absenceReason}</span>
                                 </div>
                               )}
-                            </div>
+                            </button>
 
                             <div className="flex items-center gap-2">
                               {/* Status Badge */}

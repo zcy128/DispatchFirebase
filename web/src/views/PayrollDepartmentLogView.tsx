@@ -48,6 +48,7 @@ const formatModifiedAt = (dateStr?: string) => {
 
 interface PayrollDepartmentLogViewProps {
   initialDate?: string;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
 }
 
 const isSpareDriverRecord = (item: PayrollDepartmentLogRecord) => {
@@ -65,6 +66,7 @@ const isSpareDriverRecord = (item: PayrollDepartmentLogRecord) => {
 
 export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
   initialDate,
+  onSelectEmployee,
 }: PayrollDepartmentLogViewProps) {
   const { currentUser } = useAuth();
   const actorName = currentUser?.displayName || currentUser?.email || 'Payroll Staff';
@@ -677,9 +679,9 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
       {/* Main Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
         <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
-          <table className="w-full text-left text-sm table-fixed min-w-[1440px] border-collapse">
+          <table className="w-full text-left text-sm table-fixed min-w-[1470px] border-collapse">
             <colgroup>
-              <col style={{ width: '130px' }} /> {/* Route & Shift */}
+              <col style={{ width: '150px' }} /> {/* Route & Shift */}
               <col style={{ width: '80px' }} />  {/* Role */}
               <col style={{ width: '180px' }} /> {/* Employee */}
               <col style={{ width: '80px' }} />  {/* Unit # */}
@@ -755,28 +757,21 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
                   >
                     {/* Route & Shift */}
                     <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-1.5 font-mono font-bold text-slate-900 dark:text-white">
-                        <span>{rec.routeNo}</span>
+                      <div
+                        className="flex items-center gap-1.5 font-mono font-bold text-slate-900 dark:text-white truncate"
+                        title={[rec.routeNo, rec.routeName, rec.clientName].filter(Boolean).join(' · ')}
+                      >
+                        <span className="truncate">{rec.routeNo}</span>
                         {rec.isCharter || rec.shiftType === 'CHARTER' ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-extrabold bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-extrabold bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                             CHARTER
                           </span>
                         ) : (
-                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-sans">
+                          <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-sans">
                             {rec.shiftType}
                           </span>
                         )}
                       </div>
-                      {rec.routeName && (
-                        <div className="text-xs text-slate-400 truncate max-w-[150px]">
-                          {rec.routeName}
-                        </div>
-                      )}
-                      {rec.clientName && (
-                        <div className="text-[10px] text-indigo-600 dark:text-indigo-400 truncate max-w-[150px]">
-                          {rec.clientName}
-                        </div>
-                      )}
                     </td>
 
                     {/* Role */}
@@ -796,9 +791,20 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
 
                     {/* Employee */}
                     <td className="py-3.5 px-4">
-                      <div className="font-medium text-slate-900 dark:text-slate-100">
-                        {rec.employeeName}
-                      </div>
+                      {onSelectEmployee && (rec.employeeId || rec.employeeName) ? (
+                        <button
+                          type="button"
+                          onClick={() => onSelectEmployee(rec.employeeId, rec.employeeName)}
+                          className="font-medium text-slate-900 dark:text-slate-100 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left"
+                          title="View employee details"
+                        >
+                          {rec.employeeName}
+                        </button>
+                      ) : (
+                        <div className="font-medium text-slate-900 dark:text-slate-100">
+                          {rec.employeeName}
+                        </div>
+                      )}
                       {rec.employeeId && (
                         <div className="text-[11px] font-mono text-slate-400">
                           ID: {rec.employeeId}

@@ -42,6 +42,9 @@ interface RouteListViewProps {
   onRefresh?: () => void;
   onSelectRoute: (route: BusRoute) => void;
   onSelectStudent?: (student: Student) => void;
+  onSelectStudentId?: (studentId: number) => void;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
+  onSelectVehicle?: (vehicleId?: number, unitNumber?: string) => void;
   onAssignCrew?: (route: BusRoute) => void;
   onRouteUpdated?: (route: BusRoute) => void;
 }
@@ -56,6 +59,9 @@ export const RouteListView = memo(function RouteListView({
   onRefresh,
   onSelectRoute,
   onSelectStudent,
+  onSelectStudentId,
+  onSelectEmployee,
+  onSelectVehicle,
   onAssignCrew,
   onRouteUpdated
 }: RouteListViewProps) {
@@ -250,7 +256,7 @@ export const RouteListView = memo(function RouteListView({
   });
 
   return (
-    <div className="p-3.5 sm:p-6 space-y-4 sm:space-y-5 max-w-7xl mx-auto">
+    <div className="p-3.5 sm:p-4 space-y-4 sm:space-y-5 w-full">
       {/* Top Search & Filter Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -504,15 +510,15 @@ export const RouteListView = memo(function RouteListView({
           <>
             {/* Desktop Table View (visible on md screens and up) */}
             <div ref={routeTableContainerRef} className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
-              <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1250px]">
+              <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1100px]">
                 <colgroup>
                   <col style={{ width: '48px' }} />
-                  <col style={{ width: '220px' }} />
-                  <col style={{ width: '130px' }} />
-                  <col style={{ width: '170px' }} />
-                  <col style={{ minWidth: '220px' }} />
-                  <col style={{ width: '130px' }} />
-                  <col style={{ width: '330px' }} />
+                  <col style={{ width: '16%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '24%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '22%' }} />
                 </colgroup>
                 <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider text-[11px] shadow-xs">
                   <tr>
@@ -582,7 +588,7 @@ export const RouteListView = memo(function RouteListView({
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-[11px] text-slate-400 truncate max-w-[200px]" title={r.routeName}>
+                                <div className="text-[11px] text-slate-400 truncate" title={r.routeName}>
                                   {r.routeName}
                                 </div>
                               </div>
@@ -603,15 +609,46 @@ export const RouteListView = memo(function RouteListView({
                           {/* Assigned Crew (Driver & Bus) */}
                           <td className="py-2.5 px-4 align-middle h-[68px]">
                             <div className="space-y-0.5">
-                              <div className="font-bold text-slate-200 flex items-center space-x-1">
+                              <button
+                                type="button"
+                                disabled={!r.driverName}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (r.driverName) onSelectEmployee?.(r.driverId, r.driverName);
+                                }}
+                                className="font-bold text-slate-200 flex items-center space-x-1 disabled:cursor-default enabled:hover:text-amber-300 enabled:cursor-pointer"
+                                title={r.driverName ? 'View driver details' : undefined}
+                              >
                                 <User className="w-3.5 h-3.5 text-amber-400" />
                                 <span>{r.driverName || 'Unassigned'}</span>
-                              </div>
+                              </button>
                               {r.attendantName && (
-                                <div className="text-[10px] text-indigo-300 flex items-center space-x-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelectEmployee?.(r.attendantId, r.attendantName);
+                                  }}
+                                  className="text-[10px] text-indigo-300 flex items-center space-x-1 hover:text-indigo-200 cursor-pointer"
+                                  title="View attendant details"
+                                >
                                   <Shield className="w-3 h-3 text-indigo-400" />
                                   <span>Monitor: {r.attendantName}</span>
-                                </div>
+                                </button>
+                              )}
+                              {r.unitNumber && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelectVehicle?.(r.vehicleId, r.unitNumber);
+                                  }}
+                                  className="text-[10px] text-slate-300 font-mono flex items-center space-x-1 hover:text-amber-300 cursor-pointer"
+                                  title={`View vehicle details: ${r.unitNumber}`}
+                                >
+                                  <Bus className="w-3 h-3 text-slate-400" />
+                                  <span>Unit {r.unitNumber}</span>
+                                </button>
                               )}
                               {r.driverPhone && (
                                 <a
@@ -628,7 +665,7 @@ export const RouteListView = memo(function RouteListView({
 
                           {/* Operational Shifts (Dynamic Shift Badges Flow) */}
                           <td className="py-2.5 px-4 align-middle h-[68px]">
-                            <div className="flex flex-wrap items-center gap-1.5 max-w-[380px]">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               {r.shifts && r.shifts.length > 0 ? (
                                 r.shifts.map((s) => {
                                   const opDays = formatOpDays(s.runDays);
@@ -773,6 +810,7 @@ export const RouteListView = memo(function RouteListView({
                                 schools={schools}
                                 employees={employees}
                                 onSelectStudent={onSelectStudent}
+                                onSelectStudentId={onSelectStudentId}
                                 onOpenDrawer={onSelectRoute}
                                 onRouteUpdated={onRouteUpdated}
                               />
@@ -872,12 +910,46 @@ export const RouteListView = memo(function RouteListView({
                     {/* Crew row */}
                     <div className="bg-slate-950/60 rounded-xl p-2.5 border border-slate-800/80 flex items-center justify-between text-xs">
                       <div className="space-y-0.5 min-w-0">
-                        <div className="font-bold text-slate-200 flex items-center space-x-1.5">
+                        <button
+                          type="button"
+                          disabled={!r.driverName}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (r.driverName) onSelectEmployee?.(r.driverId, r.driverName);
+                          }}
+                          className="font-bold text-slate-200 flex items-center space-x-1.5 disabled:cursor-default enabled:hover:text-amber-300 enabled:cursor-pointer"
+                          title={r.driverName ? 'View driver details' : undefined}
+                        >
                           <User className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                           <span className="truncate">{r.driverName || 'No Driver Assigned'}</span>
-                        </div>
+                        </button>
                         <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-slate-400">
-                          {r.attendantName && <span>Monitor: {r.attendantName}</span>}
+                          {r.attendantName && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectEmployee?.(r.attendantId, r.attendantName);
+                              }}
+                              className="hover:text-indigo-200 cursor-pointer"
+                              title="View attendant details"
+                            >
+                              Monitor: {r.attendantName}
+                            </button>
+                          )}
+                          {r.unitNumber && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectVehicle?.(r.vehicleId, r.unitNumber);
+                              }}
+                              className="font-mono hover:text-amber-300 cursor-pointer"
+                              title={`View vehicle details: ${r.unitNumber}`}
+                            >
+                              Unit {r.unitNumber}
+                            </button>
+                          )}
                           {r.driverPhone && (
                             <a
                               href={`tel:${r.driverPhone}`}
@@ -989,6 +1061,7 @@ export const RouteListView = memo(function RouteListView({
                           schools={schools}
                           employees={employees}
                           onSelectStudent={onSelectStudent}
+                          onSelectStudentId={onSelectStudentId}
                           onOpenDrawer={onSelectRoute}
                           onRouteUpdated={onRouteUpdated}
                         />

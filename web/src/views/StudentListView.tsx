@@ -36,6 +36,7 @@ interface StudentListViewProps {
   loading?: boolean;
   onRefresh?: () => void;
   onSelectStudent: (student: Student) => void;
+  onSelectSchool?: (schoolId?: number, schoolName?: string) => void;
   onEditStudent?: (student: Student) => void;
   onCreateStudent?: () => void;
   onDeleteStudent?: (student: Student) => void;
@@ -49,6 +50,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
   stats,
   onRefresh,
   onSelectStudent,
+  onSelectSchool,
   onEditStudent,
   onCreateStudent,
   onDeleteStudent,
@@ -378,7 +380,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
   });
 
   return (
-    <div className="p-6 space-y-5 max-w-7xl mx-auto">
+    <div className="p-3.5 sm:p-4 space-y-5 w-full">
       {/* Top Header Card: Breadcrumb School Switcher + Primary Actions */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-4">
         {/* Row 1: Workspace Breadcrumb Navigation & Global Action Buttons */}
@@ -881,10 +883,25 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
 
                         {/* School */}
                         <td className="py-3 px-4">
-                          <div className="text-slate-200 font-medium flex items-center space-x-1">
-                            <SchoolIcon className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                            <span className="truncate max-w-[180px]">{s.schoolName}</span>
-                          </div>
+                          {onSelectSchool && s.schoolName ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectSchool(s.schoolId, s.schoolName);
+                              }}
+                              className="text-slate-200 font-medium flex items-center space-x-1 hover:text-amber-300 hover:underline transition text-left max-w-full"
+                              title="View school details"
+                            >
+                              <SchoolIcon className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                              <span className="truncate max-w-[180px]">{s.schoolName}</span>
+                            </button>
+                          ) : (
+                            <div className="text-slate-200 font-medium flex items-center space-x-1">
+                              <SchoolIcon className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                              <span className="truncate max-w-[180px]">{s.schoolName}</span>
+                            </div>
+                          )}
                           <div className="text-[11px] text-slate-400 mt-0.5">
                             School #{s.schoolId}
                           </div>
@@ -1096,10 +1113,25 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
 
                       {/* School & Route Tags */}
                       <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <div className="flex items-center space-x-1 text-slate-300 bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-700/60 max-w-[220px] truncate">
-                          <SchoolIcon className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                          <span className="truncate">{s.schoolName}</span>
-                        </div>
+                        {onSelectSchool && s.schoolName ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectSchool(s.schoolId, s.schoolName);
+                            }}
+                            className="flex items-center space-x-1 text-slate-300 bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-700/60 max-w-[220px] truncate hover:text-amber-300 hover:border-amber-500/40 transition"
+                            title="View school details"
+                          >
+                            <SchoolIcon className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                            <span className="truncate">{s.schoolName}</span>
+                          </button>
+                        ) : (
+                          <div className="flex items-center space-x-1 text-slate-300 bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-700/60 max-w-[220px] truncate">
+                            <SchoolIcon className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                            <span className="truncate">{s.schoolName}</span>
+                          </div>
+                        )}
 
                         {routeList.length > 0 ? (
                           routeList.map((rt: string) => (

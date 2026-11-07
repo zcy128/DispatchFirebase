@@ -52,8 +52,17 @@ export const SchoolDetailDrawer: React.FC<SchoolDetailDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/60 backdrop-blur-sm flex justify-end">
-      <div className="w-full max-w-xl bg-slate-900 border-l border-slate-800 text-slate-100 h-full overflow-y-auto shadow-2xl flex flex-col justify-between animate-in slide-in-from-right duration-200">
+    <div
+      className="fixed inset-0 z-[80] overflow-hidden bg-slate-950/60 backdrop-blur-sm flex justify-end"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-xl bg-slate-900 border-l border-slate-800 text-slate-100 h-full overflow-y-auto shadow-2xl flex flex-col justify-between animate-in slide-in-from-right duration-200"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
         <div>
           {/* Header */}
           <div className="p-6 border-b border-slate-800 flex items-start justify-between bg-slate-900/90 sticky top-0 backdrop-blur z-10">
