@@ -47,11 +47,34 @@ export function isClientHttpError(err: unknown): boolean {
   return err instanceof ApiError && err.status >= 400 && err.status < 500;
 }
 
+function reportApiFailure(payload: {
+  method?: string;
+  endpoint: string;
+  status?: number;
+  message: string;
+  action?: string;
+}): void {
+  void import('./clientErrorReporter')
+    .then(({ reportClientOperationError }) => {
+      reportClientOperationError({
+        method: payload.method,
+        endpoint: payload.endpoint,
+        status: payload.status,
+        message: payload.message,
+        action: payload.action || 'api_request',
+      });
+    })
+    .catch(() => {
+      // ignore reporter load failures
+    });
+}
+
 export async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
   const token = await getAuthToken();
+  const method = (options.method || 'GET').toUpperCase();
 
   const headers = new Headers(options.headers || {});
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
@@ -67,10 +90,23 @@ export async function apiRequest<T>(
 
   const url = joinApiUrl(API_BASE_URL, endpoint);
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Network request failed';
+    reportApiFailure({
+      method,
+      endpoint,
+      status: 0,
+      message,
+      action: 'network',
+    });
+    throw err;
+  }
 
   if (!response.ok) {
     let errorMsg = `HTTP Error ${response.status}`;
@@ -80,6 +116,12 @@ export async function apiRequest<T>(
     } catch {
       // ignore
     }
+    reportApiFailure({
+      method,
+      endpoint,
+      status: response.status,
+      message: errorMsg,
+    });
     throw new ApiError(errorMsg, response.status);
   }
 
@@ -93,6 +135,14 @@ export async function apiRequest<T>(
   try {
     return JSON.parse(raw) as T;
   } catch {
-    throw new Error(`HTTP ${response.status}: response was not JSON`);
+    const message = `HTTP ${response.status}: response was not JSON`;
+    reportApiFailure({
+      method,
+      endpoint,
+      status: response.status,
+      message,
+      action: 'parse',
+    });
+    throw new Error(message);
   }
 }

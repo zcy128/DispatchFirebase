@@ -39,6 +39,7 @@ var AllSystemModules = []string{
 	"company_contacts",
 	"login_logs",
 	"audit_logs",
+	"error_logs",
 	"external_sync",
 	"settings",
 }
@@ -93,7 +94,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"training": "readwrite", "expenses": "readwrite", "payroll": "readwrite",
 		"biweekly_payroll": "readwrite", "payroll_dept_log": "readwrite", "roles": "readwrite",
 		"company_contacts": "readwrite", "login_logs": "readwrite", "audit_logs": "readwrite",
-		"settings": "readwrite", "external_sync": "readwrite",
+		"error_logs": "readwrite", "settings": "readwrite", "external_sync": "readwrite",
 	},
 	"manager": {
 		"dashboard": "readonly", "dispatch": "readonly", "charter": "readonly",
@@ -106,7 +107,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"yards": "readonly", "compliance": "readonly", "time_off": "readonly",
 		"training": "readonly", "expenses": "readonly", "payroll": "readonly",
 		"biweekly_payroll": "readonly", "payroll_dept_log": "readonly", "roles": "readonly",
-		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none",
+		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none", "error_logs": "none",
 		"settings": "none", "external_sync": "none",
 	},
 	"dispatcher": {
@@ -120,7 +121,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"yards": "readonly", "compliance": "readonly", "time_off": "readonly",
 		"training": "readonly", "expenses": "none", "payroll": "none",
 		"biweekly_payroll": "none", "payroll_dept_log": "readonly", "roles": "readonly",
-		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none",
+		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none", "error_logs": "none",
 		"settings": "none", "external_sync": "none",
 	},
 	"office staff": {
@@ -134,7 +135,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"yards": "readonly", "compliance": "readonly", "time_off": "readonly",
 		"training": "readonly", "expenses": "readonly", "payroll": "none",
 		"biweekly_payroll": "none", "payroll_dept_log": "none", "roles": "readonly",
-		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none",
+		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none", "error_logs": "none",
 		"settings": "none", "external_sync": "none",
 	},
 	"studentcare": {
@@ -148,7 +149,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"yards": "none", "compliance": "none", "time_off": "none",
 		"training": "readonly", "expenses": "none", "payroll": "none",
 		"biweekly_payroll": "none", "payroll_dept_log": "none", "roles": "none",
-		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none",
+		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none", "error_logs": "none",
 		"settings": "none", "external_sync": "none",
 	},
 	"fleet": {
@@ -162,7 +163,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"yards": "readonly", "compliance": "readonly", "time_off": "none",
 		"training": "none", "expenses": "none", "payroll": "none",
 		"biweekly_payroll": "none", "payroll_dept_log": "none", "roles": "none",
-		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none",
+		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none", "error_logs": "none",
 		"settings": "none", "external_sync": "none",
 	},
 	"supervisor": {
@@ -176,7 +177,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"yards": "readonly", "compliance": "readonly", "time_off": "none",
 		"training": "none", "expenses": "none", "payroll": "none",
 		"biweekly_payroll": "none", "payroll_dept_log": "none", "roles": "none",
-		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none",
+		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none", "error_logs": "none",
 		"settings": "none", "external_sync": "none",
 	},
 	"HR": {
@@ -190,7 +191,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"yards": "readonly", "compliance": "readonly", "time_off": "readwrite",
 		"training": "readonly", "expenses": "readwrite", "payroll": "none",
 		"biweekly_payroll": "none", "payroll_dept_log": "none", "roles": "readwrite",
-		"company_contacts": "readwrite", "login_logs": "none", "audit_logs": "none",
+		"company_contacts": "readwrite", "login_logs": "none", "audit_logs": "none", "error_logs": "none",
 		"settings": "none", "external_sync": "none",
 	},
 	"payroll": {
@@ -204,7 +205,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"yards": "readonly", "compliance": "readonly", "time_off": "readonly",
 		"training": "readonly", "expenses": "readonly", "payroll": "readwrite",
 		"biweekly_payroll": "readwrite", "payroll_dept_log": "readwrite", "roles": "none",
-		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none",
+		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none", "error_logs": "none",
 		"settings": "none", "external_sync": "none",
 	},
 	"training": {
@@ -218,7 +219,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"yards": "none", "compliance": "readwrite", "time_off": "none",
 		"training": "readwrite", "expenses": "none", "payroll": "none",
 		"biweekly_payroll": "none", "payroll_dept_log": "none", "roles": "none",
-		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none",
+		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none", "error_logs": "none",
 		"settings": "none", "external_sync": "none",
 	},
 	"driver": {
@@ -232,7 +233,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"yards": "readonly", "compliance": "none", "time_off": "readwrite",
 		"training": "readonly", "expenses": "readwrite", "payroll": "none",
 		"biweekly_payroll": "none", "payroll_dept_log": "none", "roles": "none",
-		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none",
+		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none", "error_logs": "none",
 		"settings": "none", "external_sync": "none",
 	},
 	"helper": {
@@ -246,7 +247,7 @@ var FactoryRolePermissions = map[string]map[string]string{
 		"yards": "readonly", "compliance": "none", "time_off": "readwrite",
 		"training": "readonly", "expenses": "readwrite", "payroll": "none",
 		"biweekly_payroll": "none", "payroll_dept_log": "none", "roles": "none",
-		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none",
+		"company_contacts": "readonly", "login_logs": "none", "audit_logs": "none", "error_logs": "none",
 		"settings": "none", "external_sync": "none",
 	},
 }

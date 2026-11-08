@@ -23,6 +23,18 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[ErrorBoundary caught error]:', error, errorInfo);
+    void import('../../services/clientErrorReporter')
+      .then(({ reportClientOperationError }) => {
+        const componentStack = (errorInfo.componentStack || '').trim().slice(0, 500);
+        reportClientOperationError({
+          action: 'render',
+          message: `${error.message || 'Render error'}${componentStack ? ` | ${componentStack}` : ''}`,
+          status: 0,
+        });
+      })
+      .catch(() => {
+        // ignore reporter load failures
+      });
   }
 
   private handleReset = () => {

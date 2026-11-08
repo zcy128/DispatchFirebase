@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -530,6 +532,234 @@ func (h *DispatchHandler) SaveCheckInReminderSettings(w http.ResponseWriter, r *
 		return
 	}
 	json.NewEncoder(w).Encode(saved)
+}
+
+// GetErrorAlertSettings returns client operation error email alert configuration.
+func (h *DispatchHandler) GetErrorAlertSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	settings, err := h.repo.GetErrorAlertSettings(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"failed to get error alert settings: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(settings)
+}
+
+// SaveErrorAlertSettings updates client operation error email alert configuration.
+func (h *DispatchHandler) SaveErrorAlertSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || !authUser.HasModulePermission("settings", true) {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to update error alert settings"}`, http.StatusForbidden)
+		return
+	}
+	var settings models.ErrorAlertSettings
+	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+	cleaned := make([]string, 0, len(settings.Recipients))
+	seen := map[string]bool{}
+	for _, raw := range settings.Recipients {
+		email := strings.TrimSpace(strings.ToLower(raw))
+		if email == "" || seen[email] {
+			continue
+		}
+		seen[email] = true
+		cleaned = append(cleaned, email)
+	}
+	settings.Recipients = cleaned
+	if settings.ThrottleMinutes <= 0 {
+		settings.ThrottleMinutes = 5
+	}
+	if authUser.FullName != "" {
+		settings.UpdatedBy = authUser.FullName
+	} else if authUser.Username != "" {
+		settings.UpdatedBy = authUser.Username
+	} else {
+		settings.UpdatedBy = authUser.EmployeeID
+	}
+	saved, err := h.repo.SaveErrorAlertSettings(r.Context(), &settings)
+	if err != nil {
+		http.Error(w, `{"error":"failed to save error alert settings: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(saved)
+}
+
+func clientErrorFingerprint(page, method, endpoint string, status int, message string) string {
+	raw := strings.ToLower(strings.TrimSpace(page)) + "|" +
+		strings.ToUpper(strings.TrimSpace(method)) + "|" +
+		strings.TrimSpace(endpoint) + "|" +
+		strconv.Itoa(status) + "|" +
+		strings.TrimSpace(message)
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+// CreateClientOperationError records a web client operation failure and may email ops.
+func (h *DispatchHandler) CreateClientOperationError(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req models.CreateClientOperationErrorRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+	req.Message = strings.TrimSpace(req.Message)
+	if req.Message == "" {
+		http.Error(w, `{"error":"message is required"}`, http.StatusBadRequest)
+		return
+	}
+	if len(req.Message) > 2000 {
+		req.Message = req.Message[:2000]
+	}
+	req.Page = strings.TrimSpace(req.Page)
+	if req.Page == "" {
+		req.Page = "unknown"
+	}
+	req.Action = strings.TrimSpace(req.Action)
+	req.Method = strings.ToUpper(strings.TrimSpace(req.Method))
+	req.Endpoint = strings.TrimSpace(req.Endpoint)
+	if strings.Contains(req.Endpoint, "/api/client-operation-errors") {
+		http.Error(w, `{"error":"refusing to log the error-report endpoint"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Status == 401 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	authUser := auth.GetUser(r.Context())
+	userID := ""
+	userName := ""
+	if authUser != nil {
+		userID = authUser.EmployeeID
+		if userID == "" {
+			userID = authUser.UID
+		}
+		userName = authUser.FullName
+		if userName == "" {
+			userName = authUser.Username
+		}
+	}
+	userAgent := strings.TrimSpace(req.UserAgent)
+	if userAgent == "" {
+		userAgent = r.UserAgent()
+	}
+	if len(userAgent) > 500 {
+		userAgent = userAgent[:500]
+	}
+
+	now := time.Now().UTC()
+	fp := clientErrorFingerprint(req.Page, req.Method, req.Endpoint, req.Status, req.Message)
+	rec := &models.ClientOperationError{
+		ID:          fmt.Sprintf("coe-%d", now.UnixNano()),
+		Timestamp:   now.Format(time.RFC3339),
+		Date:        now.Format("2006-01-02"),
+		Page:        req.Page,
+		Action:      req.Action,
+		Method:      req.Method,
+		Endpoint:    req.Endpoint,
+		Status:      req.Status,
+		Message:     req.Message,
+		UserID:      userID,
+		UserName:    userName,
+		UserAgent:   userAgent,
+		Fingerprint: fp,
+	}
+
+	settings, err := h.repo.GetErrorAlertSettings(r.Context())
+	if err != nil || settings == nil {
+		settings = models.DefaultErrorAlertSettings()
+	}
+	pageEnabled := settings.Pages != nil && settings.Pages[req.Page]
+	if !pageEnabled {
+		rec.EmailSkipped = "page_disabled"
+	} else if len(settings.Recipients) == 0 {
+		rec.EmailSkipped = "no_recipients"
+	} else if h.email == nil {
+		rec.EmailSkipped = "email_unavailable"
+	} else {
+		throttle := settings.ThrottleMinutes
+		if throttle <= 0 {
+			throttle = 5
+		}
+		since := now.Add(-time.Duration(throttle) * time.Minute)
+		recent, thrErr := h.repo.HasRecentClientErrorEmail(r.Context(), fp, since)
+		if thrErr == nil && recent {
+			rec.EmailSkipped = "throttled"
+		} else {
+			subject := fmt.Sprintf("[Dispatch Error] %s · %s %s", req.Page, req.Method, req.Endpoint)
+			if req.Method == "" && req.Endpoint == "" {
+				subject = fmt.Sprintf("[Dispatch Error] %s · %s", req.Page, req.Action)
+			}
+			textBody := fmt.Sprintf(
+				"A client operation failed in Dispatch Web.\n\nPage: %s\nAction: %s\nMethod: %s\nEndpoint: %s\nStatus: %d\nMessage: %s\nUser: %s (%s)\nTime (UTC): %s\n",
+				req.Page, req.Action, req.Method, req.Endpoint, req.Status, req.Message, userName, userID, rec.Timestamp,
+			)
+			htmlBody := fmt.Sprintf(
+				`<p>A client operation failed in Dispatch Web.</p>
+<ul>
+<li><strong>Page:</strong> %s</li>
+<li><strong>Action:</strong> %s</li>
+<li><strong>Method:</strong> %s</li>
+<li><strong>Endpoint:</strong> %s</li>
+<li><strong>Status:</strong> %d</li>
+<li><strong>Message:</strong> %s</li>
+<li><strong>User:</strong> %s (%s)</li>
+<li><strong>Time (UTC):</strong> %s</li>
+</ul>`,
+				html.EscapeString(req.Page),
+				html.EscapeString(req.Action),
+				html.EscapeString(req.Method),
+				html.EscapeString(req.Endpoint),
+				req.Status,
+				html.EscapeString(req.Message),
+				html.EscapeString(userName),
+				html.EscapeString(userID),
+				html.EscapeString(rec.Timestamp),
+			)
+			if sendErr := h.email.SendEmail(settings.Recipients, subject, htmlBody, textBody); sendErr != nil {
+				rec.EmailSkipped = "send_failed"
+			} else {
+				rec.EmailSent = true
+			}
+		}
+	}
+
+	saved, err := h.repo.CreateClientOperationError(r.Context(), rec)
+	if err != nil {
+		http.Error(w, `{"error":"failed to save client operation error: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(saved)
+}
+
+// ListClientOperationErrors returns recent web client operation failures.
+func (h *DispatchHandler) ListClientOperationErrors(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || (!authUser.HasModulePermission("error_logs", false) && !authUser.HasModulePermission("audit_logs", false)) {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to view error logs"}`, http.StatusForbidden)
+		return
+	}
+	limit := 200
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+	page := strings.TrimSpace(r.URL.Query().Get("page"))
+	rows, err := h.repo.ListClientOperationErrors(r.Context(), limit, page)
+	if err != nil {
+		http.Error(w, `{"error":"failed to list client operation errors: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	if rows == nil {
+		rows = []*models.ClientOperationError{}
+	}
+	json.NewEncoder(w).Encode(rows)
 }
 
 // GetSimulationSettings returns the automated operations simulation settings

@@ -4,6 +4,7 @@ import { isDemoMode } from '../config/appMode';
 import { ComplianceSettingsSection } from '../components/settings/ComplianceSettingsSection';
 import { ThemeSettingsSection } from '../components/settings/ThemeSettingsSection';
 import { ReminderSettingsSection } from '../components/settings/ReminderSettingsSection';
+import { ErrorAlertSettingsSection } from '../components/settings/ErrorAlertSettingsSection';
 import { RouteOptSettingsSection } from '../components/settings/RouteOptSettingsSection';
 import { AdminAccountSection } from '../components/settings/AdminAccountSection';
 import { PlatformInfoSections } from '../components/settings/PlatformInfoSections';
@@ -40,6 +41,7 @@ export const SettingsView = memo(function SettingsView() {
       ) : null}
       {isDemoMode ? <ThemeSettingsSection /> : null}
       <ReminderSettingsSection />
+      <ErrorAlertSettingsSection />
       <RouteOptSettingsSection />
       <AdminAccountSection />
       <PlatformInfoSections />

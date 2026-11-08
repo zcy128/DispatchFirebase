@@ -154,6 +154,11 @@ type DispatchRepository interface {
 	SavePayrollSettings(ctx context.Context, settings *models.DispatchPayrollSettings) (*models.DispatchPayrollSettings, error)
 	GetCheckInReminderSettings(ctx context.Context) (*models.CheckInReminderSettings, error)
 	SaveCheckInReminderSettings(ctx context.Context, settings *models.CheckInReminderSettings) (*models.CheckInReminderSettings, error)
+	GetErrorAlertSettings(ctx context.Context) (*models.ErrorAlertSettings, error)
+	SaveErrorAlertSettings(ctx context.Context, settings *models.ErrorAlertSettings) (*models.ErrorAlertSettings, error)
+	CreateClientOperationError(ctx context.Context, rec *models.ClientOperationError) (*models.ClientOperationError, error)
+	ListClientOperationErrors(ctx context.Context, limit int, page string) ([]*models.ClientOperationError, error)
+	HasRecentClientErrorEmail(ctx context.Context, fingerprint string, since time.Time) (bool, error)
 	GetSimulationSettings(ctx context.Context) (*models.SimulationSettings, error)
 	SaveSimulationSettings(ctx context.Context, settings *models.SimulationSettings) (*models.SimulationSettings, error)
 	RunSimulationForDate(ctx context.Context, date string, forceOverwrite bool) (*models.SimulationRunResult, error)
@@ -3235,6 +3240,156 @@ func (r *FirestoreDispatchRepository) SaveCheckInReminderSettings(ctx context.Co
 	return settings, nil
 }
 
+func normalizeErrorAlertSettings(settings *models.ErrorAlertSettings) *models.ErrorAlertSettings {
+	if settings == nil {
+		return models.DefaultErrorAlertSettings()
+	}
+	if settings.Pages == nil {
+		settings.Pages = models.DefaultErrorAlertSettings().Pages
+	}
+	if settings.Recipients == nil {
+		settings.Recipients = []string{}
+	}
+	if settings.ThrottleMinutes <= 0 {
+		settings.ThrottleMinutes = 5
+	}
+	return settings
+}
+
+func (r *FirestoreDispatchRepository) GetErrorAlertSettings(ctx context.Context) (*models.ErrorAlertSettings, error) {
+	docRef := r.client.Collection("system_settings").Doc("error_alerts")
+	snap, err := docRef.Get(ctx)
+	if err != nil {
+		return models.DefaultErrorAlertSettings(), nil
+	}
+	var settings models.ErrorAlertSettings
+	if err := snap.DataTo(&settings); err != nil {
+		return models.DefaultErrorAlertSettings(), nil
+	}
+	return normalizeErrorAlertSettings(&settings), nil
+}
+
+func (r *FirestoreDispatchRepository) SaveErrorAlertSettings(ctx context.Context, settings *models.ErrorAlertSettings) (*models.ErrorAlertSettings, error) {
+	settings = normalizeErrorAlertSettings(settings)
+	settings.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	docRef := r.client.Collection("system_settings").Doc("error_alerts")
+	if _, err := docRef.Set(ctx, settings); err != nil {
+		return nil, fmt.Errorf("failed to save error alert settings: %w", err)
+	}
+	return settings, nil
+}
+
+func (r *FirestoreDispatchRepository) CreateClientOperationError(ctx context.Context, rec *models.ClientOperationError) (*models.ClientOperationError, error) {
+	if rec == nil {
+		return nil, fmt.Errorf("client operation error is required")
+	}
+	now := time.Now().UTC()
+	if rec.ID == "" {
+		rec.ID = fmt.Sprintf("coe-%d", now.UnixNano())
+	}
+	if rec.Timestamp == "" {
+		rec.Timestamp = now.Format(time.RFC3339)
+	}
+	if rec.Date == "" {
+		rec.Date = now.Format("2006-01-02")
+	}
+	docRef := r.client.Collection("client_operation_errors").Doc(rec.ID)
+	if _, err := docRef.Set(ctx, rec); err != nil {
+		return nil, fmt.Errorf("failed to save client operation error: %w", err)
+	}
+	return rec, nil
+}
+
+func (r *FirestoreDispatchRepository) ListClientOperationErrors(ctx context.Context, limit int, page string) ([]*models.ClientOperationError, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	q := r.client.Collection("client_operation_errors").OrderBy("timestamp", firestore.Desc).Limit(limit)
+	if strings.TrimSpace(page) != "" {
+		q = r.client.Collection("client_operation_errors").
+			Where("page", "==", strings.TrimSpace(page)).
+			OrderBy("timestamp", firestore.Desc).
+			Limit(limit)
+	}
+	docs, err := q.Documents(ctx).GetAll()
+	if err != nil {
+		if strings.TrimSpace(page) != "" {
+			// Composite index on (page, timestamp desc) may be missing; fall back to broader scan.
+			fallbackQ := r.client.Collection("client_operation_errors").OrderBy("timestamp", firestore.Desc).Limit(limit * 3)
+			if fbDocs, fbErr := fallbackQ.Documents(ctx).GetAll(); fbErr == nil {
+				pageVal := strings.TrimSpace(page)
+				out := make([]*models.ClientOperationError, 0, limit)
+				for _, doc := range fbDocs {
+					var rec models.ClientOperationError
+					if err := doc.DataTo(&rec); err != nil {
+						continue
+					}
+					if rec.Page != pageVal {
+						continue
+					}
+					if rec.ID == "" {
+						rec.ID = doc.Ref.ID
+					}
+					out = append(out, &rec)
+					if len(out) >= limit {
+						break
+					}
+				}
+				return out, nil
+			}
+		}
+		return nil, fmt.Errorf("failed to list client operation errors: %w", err)
+	}
+	out := make([]*models.ClientOperationError, 0, len(docs))
+	for _, doc := range docs {
+		var rec models.ClientOperationError
+		if err := doc.DataTo(&rec); err != nil {
+			continue
+		}
+		if rec.ID == "" {
+			rec.ID = doc.Ref.ID
+		}
+		out = append(out, &rec)
+	}
+	return out, nil
+}
+
+func (r *FirestoreDispatchRepository) HasRecentClientErrorEmail(ctx context.Context, fingerprint string, since time.Time) (bool, error) {
+	fingerprint = strings.TrimSpace(fingerprint)
+	if fingerprint == "" {
+		return false, nil
+	}
+	q := r.client.Collection("client_operation_errors").
+		Where("fingerprint", "==", fingerprint).
+		Where("emailSent", "==", true).
+		Where("timestamp", ">=", since.UTC().Format(time.RFC3339)).
+		Limit(1)
+	docs, err := q.Documents(ctx).GetAll()
+	if err != nil {
+		// Index may be missing; fall back to a broader recent scan.
+		fallback, fbErr := r.client.Collection("client_operation_errors").
+			Where("fingerprint", "==", fingerprint).
+			OrderBy("timestamp", firestore.Desc).
+			Limit(20).
+			Documents(ctx).GetAll()
+		if fbErr != nil {
+			return false, nil
+		}
+		sinceStr := since.UTC().Format(time.RFC3339)
+		for _, doc := range fallback {
+			var rec models.ClientOperationError
+			if err := doc.DataTo(&rec); err != nil {
+				continue
+			}
+			if rec.EmailSent && rec.Timestamp >= sinceStr {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	return len(docs) > 0, nil
+}
+
 // FormatDispatchLogTime formats a time into "2006-01-02 3:04:05 a.m./p.m." with correct 12-hour AM/PM period
 func FormatDispatchLogTime(t time.Time) string {
 	ampm := "a.m."
@@ -5993,6 +6148,8 @@ type MemoryDispatchRepository struct {
 	assignmentHistory       map[string]*models.AssignmentHistoryRecord
 	vehicleOdometers        map[string]int
 	checkInReminderSettings *models.CheckInReminderSettings
+	errorAlertSettings      *models.ErrorAlertSettings
+	clientOperationErrors   []*models.ClientOperationError
 	simulationSettings      *models.SimulationSettings
 	absences                map[string]*models.StudentAbsenceRecord
 }
@@ -6019,6 +6176,8 @@ func NewMemoryDispatchRepository() *MemoryDispatchRepository {
 		assignmentHistory:       make(map[string]*models.AssignmentHistoryRecord),
 		vehicleOdometers:        make(map[string]int),
 		checkInReminderSettings: models.DefaultCheckInReminderSettings(),
+		errorAlertSettings:      models.DefaultErrorAlertSettings(),
+		clientOperationErrors:   make([]*models.ClientOperationError, 0),
 		simulationSettings:      models.DefaultSimulationSettings(),
 		absences:                make(map[string]*models.StudentAbsenceRecord),
 	}
@@ -6070,6 +6229,79 @@ func (m *MemoryDispatchRepository) SaveCheckInReminderSettings(ctx context.Conte
 	settings.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	m.checkInReminderSettings = settings
 	return settings, nil
+}
+
+func (m *MemoryDispatchRepository) GetErrorAlertSettings(ctx context.Context) (*models.ErrorAlertSettings, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return normalizeErrorAlertSettings(m.errorAlertSettings), nil
+}
+
+func (m *MemoryDispatchRepository) SaveErrorAlertSettings(ctx context.Context, settings *models.ErrorAlertSettings) (*models.ErrorAlertSettings, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	settings = normalizeErrorAlertSettings(settings)
+	settings.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	m.errorAlertSettings = settings
+	return settings, nil
+}
+
+func (m *MemoryDispatchRepository) CreateClientOperationError(ctx context.Context, rec *models.ClientOperationError) (*models.ClientOperationError, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if rec == nil {
+		return nil, fmt.Errorf("client operation error is required")
+	}
+	now := time.Now().UTC()
+	if rec.ID == "" {
+		rec.ID = fmt.Sprintf("coe-%d", now.UnixNano())
+	}
+	if rec.Timestamp == "" {
+		rec.Timestamp = now.Format(time.RFC3339)
+	}
+	if rec.Date == "" {
+		rec.Date = now.Format("2006-01-02")
+	}
+	cp := *rec
+	m.clientOperationErrors = append([]*models.ClientOperationError{&cp}, m.clientOperationErrors...)
+	return &cp, nil
+}
+
+func (m *MemoryDispatchRepository) ListClientOperationErrors(ctx context.Context, limit int, page string) ([]*models.ClientOperationError, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	page = strings.TrimSpace(page)
+	out := make([]*models.ClientOperationError, 0, limit)
+	for _, rec := range m.clientOperationErrors {
+		if page != "" && rec.Page != page {
+			continue
+		}
+		cp := *rec
+		out = append(out, &cp)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (m *MemoryDispatchRepository) HasRecentClientErrorEmail(ctx context.Context, fingerprint string, since time.Time) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	fingerprint = strings.TrimSpace(fingerprint)
+	if fingerprint == "" {
+		return false, nil
+	}
+	sinceStr := since.UTC().Format(time.RFC3339)
+	for _, rec := range m.clientOperationErrors {
+		if rec.Fingerprint == fingerprint && rec.EmailSent && rec.Timestamp >= sinceStr {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (m *MemoryDispatchRepository) GetPayrollSettings(ctx context.Context) (*models.DispatchPayrollSettings, error) {

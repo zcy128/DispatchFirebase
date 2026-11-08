@@ -26,6 +26,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { CreateParentChannelPayload } from '../types/chat';
+import type { StudentModalTab } from '../components/students/StudentModal';
 
 const AVAILABLE_GRADES = ['JK', 'SK', '1', '2', '3', '4', '5', '6', '7', '8'] as const;
 
@@ -37,7 +38,8 @@ interface StudentListViewProps {
   onRefresh?: () => void;
   onSelectStudent: (student: Student) => void;
   onSelectSchool?: (schoolId?: number, schoolName?: string) => void;
-  onEditStudent?: (student: Student) => void;
+  onEditStudent?: (student: Student, initialTab?: StudentModalTab) => void;
+  onViewStudentStops?: (student: Student) => void;
   onCreateStudent?: () => void;
   onDeleteStudent?: (student: Student) => void;
   onMessageParent?: (payload: CreateParentChannelPayload) => void;
@@ -52,11 +54,21 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
   onSelectStudent,
   onSelectSchool,
   onEditStudent,
+  onViewStudentStops,
   onCreateStudent,
   onDeleteStudent,
   onMessageParent,
   onStudentsLoaded,
 }) => {
+  const handleOpenStops = (student: Student) => {
+    if (onViewStudentStops) {
+      onViewStudentStops(student);
+    } else if (onEditStudent) {
+      onEditStudent(student, 'stops');
+    } else {
+      onSelectStudent(student);
+    }
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
   // School selection defaults to saved preference or first active school
@@ -908,21 +920,45 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                         </td>
 
                         {/* Routes */}
-                        <td className="py-3 px-4">
+                        <td
+                          className="py-3 px-4 cursor-pointer group/route"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenStops(s);
+                          }}
+                          title="Click to view and manage route stops"
+                        >
                           {routeList.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
+                            <div className="flex flex-wrap items-center gap-1">
                               {routeList.map((rt: string) => (
                                 <span
                                   key={rt}
-                                  className="inline-flex items-center px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono text-[11px] font-semibold"
+                                  className="inline-flex items-center px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover/route:border-amber-400/50 group-hover/route:bg-amber-500/20 font-mono text-[11px] font-semibold transition"
                                 >
-                                  <Bus className="w-3 h-3 mr-1" />
+                                  <Bus className="w-3 h-3 mr-1 flex-shrink-0" />
                                   {rt}
                                 </span>
                               ))}
+                              <span className="text-[10px] text-amber-400 opacity-0 group-hover/route:opacity-100 transition-opacity ml-1 font-semibold flex items-center space-x-0.5">
+                                <span>Stops</span>
+                                <ChevronRight className="w-3 h-3 inline" />
+                              </span>
                             </div>
                           ) : (
-                            <span className="text-slate-500 text-[11px] italic">Unassigned</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenStops(s);
+                              }}
+                              className="text-slate-500 hover:text-amber-400 text-[11px] italic hover:underline flex items-center space-x-1 transition cursor-pointer"
+                              title="Click to view stops and assign route"
+                            >
+                              <span>Unassigned</span>
+                              <span className="text-[10px] not-italic text-slate-600 hover:text-amber-400">
+                                (View Stops)
+                              </span>
+                            </button>
                           )}
                         </td>
 
@@ -1134,19 +1170,36 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                         )}
 
                         {routeList.length > 0 ? (
-                          routeList.map((rt: string) => (
-                            <span
-                              key={rt}
-                              className="inline-flex items-center px-2 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono text-[11px] font-semibold"
-                            >
-                              <Bus className="w-3 h-3 mr-1" />
-                              {rt}
-                            </span>
-                          ))
+                          <div className="flex flex-wrap gap-1">
+                            {routeList.map((rt: string) => (
+                              <button
+                                type="button"
+                                key={rt}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenStops(s);
+                                }}
+                                className="inline-flex items-center px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 text-amber-400 border border-amber-500/20 font-mono text-[11px] font-semibold transition cursor-pointer"
+                                title="Click to view and manage route stops"
+                              >
+                                <Bus className="w-3 h-3 mr-1" />
+                                <span>{rt}</span>
+                                <ChevronRight className="w-3 h-3 ml-0.5 text-amber-400/70" />
+                              </button>
+                            ))}
+                          </div>
                         ) : (
-                          <span className="text-slate-500 text-[11px] italic bg-slate-800/50 px-2 py-1 rounded-lg">
-                            No Route Assigned
-                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenStops(s);
+                            }}
+                            className="text-slate-500 hover:text-amber-400 text-[11px] italic bg-slate-800/50 hover:bg-slate-800 px-2 py-1 rounded-lg transition cursor-pointer"
+                            title="Click to view stops and assign route"
+                          >
+                            No Route Assigned (View Stops)
+                          </button>
                         )}
                       </div>
 

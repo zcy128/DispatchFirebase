@@ -81,13 +81,15 @@ interface TimeOffViewProps {
   routes?: BusRoute[];
   vehicles?: Vehicle[];
   onNavigateToTemporaryAssignments?: () => void;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
 }
 
 export const TimeOffView = memo(function TimeOffView({
   employees = EMPTY_EMPLOYEES,
   routes = EMPTY_ROUTES,
   vehicles = EMPTY_VEHICLES,
-  onNavigateToTemporaryAssignments
+  onNavigateToTemporaryAssignments,
+  onSelectEmployee
 }: TimeOffViewProps) {
   const { currentUser } = useAuth();
   const todayStr = getLocalTodayString();
@@ -621,6 +623,7 @@ export const TimeOffView = memo(function TimeOffView({
             routes={routes}
             vehicles={vehicles}
             onExportPdf={(r) => handleOpenPdfExport(r)}
+            onSelectEmployee={onSelectEmployee}
           />
         </Suspense>
       ) : (
@@ -1044,26 +1047,63 @@ export const TimeOffView = memo(function TimeOffView({
                     >
                       {/* Employee */}
                       <td className="py-2.5 px-4 align-middle h-[70px]">
-                        <div className="font-semibold text-white flex items-center space-x-1.5">
-                          <User className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                          <span>{r.employeeName}</span>
-                        </div>
-                        <div className="flex items-center space-x-1.5 mt-0.5">
-                          {r.employeeNumber && (
-                            <span className="text-[11px] text-slate-400">
-                              ID: {r.employeeNumber}
-                            </span>
-                          )}
-                          {isArchived && (
-                            <span
-                              className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30"
-                              title="Cold archive stored in BigQuery (>30 days past endDate, within 1 year)"
-                            >
-                              <Database className="w-2.5 h-2.5 mr-1 text-sky-400" />
-                              BigQuery (1Y)
-                            </span>
-                          )}
-                        </div>
+                        {onSelectEmployee ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectEmployee(r.employeeId || r.employeeNumber, r.employeeName);
+                            }}
+                            className="text-left group/emp focus:outline-none focus:ring-1 focus:ring-amber-400/50 rounded p-1 -m-1 transition cursor-pointer"
+                            title="Click to view employee profile"
+                          >
+                            <div className="font-semibold text-white group-hover/emp:text-amber-300 flex items-center space-x-1.5 transition">
+                              <User className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 group-hover/emp:scale-110 transition-transform" />
+                              <span className="group-hover/emp:underline decoration-dotted underline-offset-2">
+                                {r.employeeName}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-1.5 mt-0.5">
+                              {r.employeeNumber && (
+                                <span className="text-[11px] text-slate-400 group-hover/emp:text-slate-300 font-mono">
+                                  ID: {r.employeeNumber}
+                                </span>
+                              )}
+                              {isArchived && (
+                                <span
+                                  className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30"
+                                  title="Cold archive stored in BigQuery (>30 days past endDate, within 1 year)"
+                                >
+                                  <Database className="w-2.5 h-2.5 mr-1 text-sky-400" />
+                                  BigQuery (1Y)
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        ) : (
+                          <>
+                            <div className="font-semibold text-white flex items-center space-x-1.5">
+                              <User className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                              <span>{r.employeeName}</span>
+                            </div>
+                            <div className="flex items-center space-x-1.5 mt-0.5">
+                              {r.employeeNumber && (
+                                <span className="text-[11px] text-slate-400">
+                                  ID: {r.employeeNumber}
+                                </span>
+                              )}
+                              {isArchived && (
+                                <span
+                                  className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30"
+                                  title="Cold archive stored in BigQuery (>30 days past endDate, within 1 year)"
+                                >
+                                  <Database className="w-2.5 h-2.5 mr-1 text-sky-400" />
+                                  BigQuery (1Y)
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </td>
 
                       {/* Leave Type */}
@@ -1354,6 +1394,7 @@ export const TimeOffView = memo(function TimeOffView({
             request={reviewingRequest}
             employees={employees}
             onDecisionCompleted={() => {}}
+            onSelectEmployee={onSelectEmployee}
           />
         </Suspense>
       )}

@@ -13,6 +13,7 @@ interface TimeOffReviewModalProps {
   request: TimeOffRequest | null;
   employees?: Employee[];
   onDecisionCompleted: () => void;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
 }
 
 export const TimeOffReviewModal: React.FC<TimeOffReviewModalProps> = ({
@@ -20,7 +21,8 @@ export const TimeOffReviewModal: React.FC<TimeOffReviewModalProps> = ({
   onClose,
   request,
   employees = [],
-  onDecisionCompleted
+  onDecisionCompleted,
+  onSelectEmployee
 }) => {
   const { currentUser } = useAuth();
   const [approvalNotes, setApprovalNotes] = useState('');
@@ -167,9 +169,20 @@ export const TimeOffReviewModal: React.FC<TimeOffReviewModalProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <User className="w-4 h-4 text-amber-400" />
-                <span className="font-semibold text-white text-sm">
-                  {request.employeeName}
-                </span>
+                {onSelectEmployee ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelectEmployee(request.employeeId || request.employeeNumber, request.employeeName)}
+                    className="font-semibold text-white text-sm hover:text-amber-300 hover:underline decoration-dotted underline-offset-2 transition text-left cursor-pointer"
+                    title="Click to view employee profile"
+                  >
+                    {request.employeeName}
+                  </button>
+                ) : (
+                  <span className="font-semibold text-white text-sm">
+                    {request.employeeName}
+                  </span>
+                )}
                 {request.employeeNumber && (
                   <span className="text-xs text-slate-400">({request.employeeNumber})</span>
                 )}
