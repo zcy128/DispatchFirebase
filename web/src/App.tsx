@@ -9,7 +9,7 @@ import { ComplianceView } from './views/ComplianceView';
 import { ExternalSyncView } from './views/ExternalSyncView';
 import { LoginView } from './views/LoginView';
 import { StudentDetailDrawer } from './components/students/StudentDetailDrawer';
-import { StudentModal } from './components/students/StudentModal';
+import { StudentModal, StudentModalTab } from './components/students/StudentModal';
 import { RouteDetailDrawer } from './components/routes/RouteDetailDrawer';
 import { VehicleDetailDrawer } from './components/vehicles/VehicleDetailDrawer';
 import { VehicleModal } from './components/vehicles/VehicleModal';
@@ -22,6 +22,7 @@ const RoleManagementView = React.lazy(() => import('./views/RoleManagementView')
 const CompanyContactsView = React.lazy(() => import('./views/CompanyContactsView').then((m) => ({ default: m.CompanyContactsView })));
 const LoginLogsView = React.lazy(() => import('./views/LoginLogsView').then((m) => ({ default: m.LoginLogsView })));
 const AuditLogsView = React.lazy(() => import('./views/AuditLogsView').then((m) => ({ default: m.AuditLogsView })));
+const ErrorLogsView = React.lazy(() => import('./views/ErrorLogsView').then((m) => ({ default: m.ErrorLogsView })));
 const SettingsView = React.lazy(() => import('./views/SettingsView').then((m) => ({ default: m.SettingsView })));
 const DispatchWorkbenchView = React.lazy(() => import('./views/DispatchWorkbenchView').then((m) => ({ default: m.DispatchWorkbenchView })));
 const RouteListView = React.lazy(() => import('./views/RouteListView').then((m) => ({ default: m.RouteListView })));
@@ -114,6 +115,12 @@ export const AppContent: React.FC = () => {
     mainRef.current?.scrollTo({ top: 0 });
   }, [currentTab]);
 
+  useEffect(() => {
+    void import('./services/clientErrorReporter').then(({ setClientErrorPage }) => {
+      setClientErrorPage(currentTab);
+    });
+  }, [currentTab]);
+
   // Global shortcut (Ctrl+J / Cmd+J) to toggle AI Copilot
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -174,6 +181,7 @@ export const AppContent: React.FC = () => {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isStudentModalOpen, setIsStudentModalOpen] = useState<boolean>(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [studentModalInitialTab, setStudentModalInitialTab] = useState<StudentModalTab>('profile');
 
   // Route states
   const [routes, setRoutes] = useState<BusRoute[]>([]);
@@ -943,7 +951,7 @@ export const AppContent: React.FC = () => {
       'compliance', 'training', 'students', 'student_incidents',
       'hazards', 'route_assessments', 'schools', 'calendar',
       'expenses', 'company_contacts', 'roles', 'login_logs',
-      'audit_logs', 'external_sync', 'settings'
+      'audit_logs', 'error_logs', 'external_sync', 'settings'
     ];
     const allowedTab = allTabs.find((t) => hasPageAccess(currentUser, t));
     if (allowedTab) {
@@ -1212,11 +1220,13 @@ export const AppContent: React.FC = () => {
 
   const handleCreateStudent = () => {
     setEditingStudent(null);
+    setStudentModalInitialTab('profile');
     setIsStudentModalOpen(true);
   };
 
-  const handleEditStudent = (student: Student) => {
+  const handleEditStudent = (student: Student, initialTab: StudentModalTab = 'profile') => {
     setEditingStudent(student);
+    setStudentModalInitialTab(initialTab);
     setIsStudentModalOpen(true);
     setSelectedStudent(null);
   };
@@ -1418,6 +1428,7 @@ export const AppContent: React.FC = () => {
               onSelectStudent={setSelectedStudent}
               onSelectSchool={openSchoolDetails}
               onEditStudent={handleEditStudent}
+              onViewStudentStops={(student) => handleEditStudent(student, 'stops')}
               onCreateStudent={handleCreateStudent}
               onDeleteStudent={handleDeleteStudent}
               onRefresh={handleStudentRefresh}
@@ -1498,6 +1509,7 @@ export const AppContent: React.FC = () => {
               routes={routes}
               vehicles={vehicles}
               onNavigateToTemporaryAssignments={openTemporaryAssignments}
+              onSelectEmployee={openEmployeeDetails}
             />
           )}
 
@@ -1668,6 +1680,8 @@ export const AppContent: React.FC = () => {
 
           {currentTab === 'audit_logs' && <AuditLogsView />}
 
+          {currentTab === 'error_logs' && <ErrorLogsView />}
+
           {currentTab === 'external_sync' && <ExternalSyncView />}
 
           {currentTab === 'settings' && <SettingsView />}
@@ -1799,6 +1813,7 @@ export const AppContent: React.FC = () => {
           onSave={handleSaveStudent}
           initialData={editingStudent}
           schools={schools}
+          initialTab={studentModalInitialTab}
         />
       </ErrorBoundary>
 

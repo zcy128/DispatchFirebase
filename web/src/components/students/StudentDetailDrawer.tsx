@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Student } from '../../types/student';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Student, StudentStop } from '../../types/student';
 import { School } from '../../types/school';
 import {
   X,
@@ -13,22 +13,27 @@ import {
   Users,
   Edit2,
   Trash2,
-  History,
   FileText,
   MessageSquare,
   UserX
 } from 'lucide-react';
-import { EntityOperationLogPanel } from '../common/EntityOperationLogPanel';
 import { CreateParentChannelPayload } from '../../types/chat';
 import { RecordStudentAbsenceModal } from '../dispatch/RecordStudentAbsenceModal';
+import { StudentModalTab } from './StudentModal';
+import { RouteService } from '../../services/routeService';
+import {
+  generateDefaultStudentStops,
+  extractStudentStopsFromShifts
+} from '../../utils/studentStopsHelper';
 
 interface StudentDetailDrawerProps {
   student: Student | null;
   school?: School | null;
   onClose: () => void;
-  onEdit?: (student: Student) => void;
+  onEdit?: (student: Student, initialTab?: StudentModalTab) => void;
   onDelete?: (student: Student) => void;
   onMessageParent?: (payload: CreateParentChannelPayload) => void;
+  initialTab?: 'profile' | 'stops';
 }
 
 export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
@@ -38,15 +43,72 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   onEdit,
   onDelete,
   onMessageParent,
+  initialTab = 'profile',
 }) => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'audit'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'stops'>(initialTab);
   const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
+  const [asyncShiftStops, setAsyncShiftStops] = useState<StudentStop[]>([]);
 
-  if (!student) return null;
+  useEffect(() => {
+    if (student) {
+      setActiveTab(initialTab || 'profile');
+    }
+  }, [student?.id, initialTab]);
 
-  const routesList = student.routes
+  useEffect(() => {
+    if (!student || (student.stops && student.stops.length > 0)) {
+      setAsyncShiftStops([]);
+      return;
+    }
+
+    const routeNo = student.routes ? student.routes.split(',')[0].trim() : '';
+    if (!routeNo) return;
+
+    let isMounted = true;
+    RouteService.list()
+      .then(async (allRoutes) => {
+        if (!isMounted) return;
+        const matched = (allRoutes || []).find((r) => r.routeNo === routeNo);
+        if (!matched) return;
+        const shifts = await RouteService.getShiftsForRoute(matched.id);
+        if (!isMounted) return;
+        const extracted = extractStudentStopsFromShifts(
+          student.studentId,
+          student.studentNo,
+          student.fullName || student.studentName,
+          shifts
+        );
+        if (extracted.length > 0 && isMounted) {
+          setAsyncShiftStops(extracted);
+        }
+      })
+      .catch((e) => console.warn('[StudentDetailDrawer] Failed to resolve shifts for student:', e));
+
+    return () => {
+      isMounted = false;
+    };
+  }, [student?.id, student?.routes, student?.studentId, student?.studentNo]);
+
+  const routesList = student?.routes
     ? student.routes.split(',').map((r) => r.trim()).filter(Boolean)
     : [];
+
+  const effectiveStops = useMemo<StudentStop[]>(() => {
+    if (!student) return [];
+    if (student.stops && Array.isArray(student.stops) && student.stops.length > 0) {
+      return student.stops;
+    }
+    if (asyncShiftStops.length > 0) {
+      return asyncShiftStops;
+    }
+    return generateDefaultStudentStops(
+      student.studentAddress || '',
+      student.schoolName || (school ? school.schoolName : ''),
+      student.routes || routesList[0] || ''
+    );
+  }, [student, school, routesList, asyncShiftStops]);
+
+  if (!student) return null;
 
   return (
     <div
@@ -135,28 +197,143 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
               <span>Student Profile</span>
             </button>
             <button
-              onClick={() => setActiveTab('audit')}
+              onClick={() => setActiveTab('stops')}
               className={`flex items-center space-x-2 px-3 py-2 text-xs font-bold border-b-2 transition ${
-                activeTab === 'audit'
-                  ? 'border-amber-500 text-amber-400'
+                activeTab === 'stops'
+                  ? 'border-sky-500 text-sky-400'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
-              <History className="w-3.5 h-3.5" />
-              <span>Operation History & Logs</span>
+              <Bus className="w-3.5 h-3.5" />
+              <span>Stops ({effectiveStops.length})</span>
             </button>
           </div>
 
-          {activeTab === 'audit' ? (
-            <div className="p-6">
-              <EntityOperationLogPanel
-                targetType="student"
-                targetId={student.id}
-                targetIdentifier={student.studentNo}
-                title={`Audit Log: ${student.fullName || student.studentName}`}
-                subtitle={`Track all creation, modification, and route assignment actions for #${student.studentNo}`}
-                compact={true}
-              />
+          {activeTab === 'stops' ? (
+            <div className="p-6 space-y-4">
+              {/* Header Context Banner */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-sky-500/10 border border-sky-500/20">
+                <div>
+                  <div className="text-xs font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-2">
+                    <Bus className="w-4 h-4" />
+                    <span>
+                      Route: {routesList.join(', ') || 'No Route Assigned'}
+                    </span>
+                  </div>
+                  <div className="text-sm font-semibold text-white mt-1 flex items-center space-x-2">
+                    <span>{student.fullName || student.studentName}</span>
+                    {(school?.schoolName || student.schoolName) && (
+                      <span className="text-xs text-slate-400 font-normal">
+                        • {school?.schoolName || student.schoolName}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(student, 'stops')}
+                    className="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs rounded-xl transition flex items-center space-x-1.5 self-start sm:self-auto shadow-md shadow-sky-500/10 cursor-pointer"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Manage Stops</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Stops Table */}
+              {effectiveStops.length > 0 ? (
+                <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/40">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                        <th className="py-2.5 px-3 whitespace-nowrap">Time</th>
+                        <th className="py-2.5 px-2 whitespace-nowrap">Type</th>
+                        <th className="py-2.5 px-2 whitespace-nowrap">Op Days</th>
+                        <th className="py-2.5 px-3">Location</th>
+                        <th className="py-2.5 px-2 whitespace-nowrap">Comment</th>
+                        <th className="py-2.5 px-2 whitespace-nowrap">Route</th>
+                        <th className="py-2.5 px-2 whitespace-nowrap">Shift</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 font-sans">
+                      {effectiveStops.map((stop, idx) => (
+                        <tr
+                          key={stop.stopId || idx}
+                          className="hover:bg-slate-800/40 transition group"
+                        >
+                          <td className="py-2 px-3 font-semibold text-white whitespace-nowrap">
+                            <div className="flex items-center space-x-1.5">
+                              <Clock className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
+                              <span className="font-mono text-xs">{stop.time}</span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                stop.type.toLowerCase().includes('pickup')
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                  : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                              }`}
+                            >
+                              {stop.type}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 font-mono text-slate-300 whitespace-nowrap text-[11px]">
+                            {stop.opDays}
+                          </td>
+                          <td className="py-2 px-3 text-slate-200 text-xs max-w-[200px] truncate" title={stop.location}>
+                            <div className="flex items-center space-x-1.5">
+                              <MapPin className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                              <span className="truncate">{stop.location}</span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-2 text-amber-300 font-mono text-[10px] whitespace-nowrap">
+                            {stop.comment ? (
+                              <span className="bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 font-medium">
+                                {stop.comment}
+                              </span>
+                            ) : (
+                              <span className="text-slate-600">-</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2 font-mono text-sky-300 text-xs whitespace-nowrap">
+                            {stop.route || <span className="text-slate-600">-</span>}
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap">
+                            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold">
+                              {stop.shift || 'AM'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-8 text-center bg-slate-950/40 rounded-2xl border border-slate-800 space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-400 mx-auto">
+                    <Bus className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-white">No Scheduled Stops Found</div>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                      This student does not have any stop schedule configured yet.
+                    </p>
+                  </div>
+                  {onEdit && (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(student, 'stops')}
+                      className="px-4 py-2 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-xl text-xs font-semibold transition inline-flex items-center space-x-1.5 cursor-pointer"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Configure Stops & Route</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="p-6 space-y-6">
@@ -220,26 +397,65 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
 
             {/* Transportation / Bus Routes */}
             <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4.5 space-y-3">
-              <div className="flex items-center space-x-2 text-xs font-semibold text-amber-400 uppercase tracking-wider">
-                <Bus className="w-4 h-4" />
-                <span>Transportation & Route Assignment</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-xs font-semibold text-amber-400 uppercase tracking-wider">
+                  <Bus className="w-4 h-4" />
+                  <span>Transportation & Route Assignment</span>
+                </div>
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(student, 'stops')}
+                    className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold flex items-center space-x-1 hover:underline"
+                    title="Edit routes and stops"
+                  >
+                    <Edit2 className="w-3 h-3" />
+                    <span>Manage</span>
+                  </button>
+                )}
               </div>
 
               {routesList.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {routesList.map((rt) => (
-                    <span
+                    <button
+                      type="button"
                       key={rt}
-                      className="inline-flex items-center px-3 py-1 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono text-xs font-bold"
+                      onClick={() => onEdit?.(student, 'stops')}
+                      className="inline-flex items-center px-3 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 font-mono text-xs font-bold transition cursor-pointer"
+                      title="Manage stops for this route"
                     >
                       <Bus className="w-3 h-3 mr-1.5" />
                       {rt}
-                    </span>
+                    </button>
                   ))}
                 </div>
               ) : (
-                <div className="text-xs text-slate-400 italic bg-slate-900/60 p-3 rounded-xl border border-slate-800">
-                  No active route shift assigned yet.
+                <div className="text-xs text-slate-400 italic bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                  <span>No active route shift assigned yet.</span>
+                  {onEdit && (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(student, 'stops')}
+                      className="text-amber-400 hover:underline not-italic font-semibold ml-2 cursor-pointer"
+                    >
+                      + Assign Stops
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {effectiveStops.length > 0 && (
+                <div className="pt-2 border-t border-slate-800/60">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('stops')}
+                    className="text-xs text-sky-400 hover:text-sky-300 hover:underline flex items-center space-x-1 font-semibold cursor-pointer"
+                  >
+                    <Bus className="w-3.5 h-3.5 mr-1 text-sky-400" />
+                    <span>View all {effectiveStops.length} scheduled stops in Stops tab</span>
+                    <span aria-hidden="true">&rarr;</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -271,17 +487,37 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
             </div>
 
             {/* Scheduled Stops & Route Itinerary */}
-            {student.stops && student.stops.length > 0 && (
+            {effectiveStops.length > 0 && (
               <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4.5 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2 text-xs font-semibold text-sky-400 uppercase tracking-wider">
                     <Bus className="w-4 h-4" />
-                    <span>Scheduled Stops & Itinerary ({student.stops.length})</span>
+                    <span>Scheduled Stops & Itinerary ({effectiveStops.length})</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('stops')}
+                      className="text-[11px] text-sky-400 hover:text-sky-300 font-semibold hover:underline cursor-pointer"
+                    >
+                      View Table &rarr;
+                    </button>
+                    {onEdit && (
+                      <button
+                        type="button"
+                        onClick={() => onEdit(student, 'stops')}
+                        className="text-[11px] text-slate-400 hover:text-sky-300 font-semibold flex items-center space-x-1 hover:underline cursor-pointer"
+                        title="Manage stops in editor"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                        <span>Manage</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  {student.stops.map((st, i) => (
+                  {effectiveStops.map((st, i) => (
                     <div
                       key={st.stopId || i}
                       className="p-2.5 bg-slate-900/80 border border-slate-800 rounded-xl flex items-center justify-between text-xs"

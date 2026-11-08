@@ -156,6 +156,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
         { id: 'roles' as NavTab, label: isFrench ? 'Rôles et permissions' : 'Roles & Permissions', icon: ShieldCheck },
         { id: 'login_logs' as NavTab, label: isFrench ? 'Journaux de connexion' : 'Login Audit Logs', icon: History },
         { id: 'audit_logs' as NavTab, label: isFrench ? 'Journaux d\'audit système' : 'System Audit Logs', icon: FileText },
+        { id: 'error_logs' as NavTab, label: isFrench ? 'Journaux d\'erreurs client' : 'Client Error Logs', icon: AlertTriangle },
         { id: 'external_sync' as NavTab, label: isFrench ? 'Synchronisation externe' : 'External Sync', icon: RefreshCw },
         { id: 'settings' as NavTab, label: t.nav.settings, icon: Settings }
       ]

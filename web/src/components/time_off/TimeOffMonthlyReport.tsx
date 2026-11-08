@@ -37,6 +37,7 @@ interface TimeOffMonthlyReportProps {
   routes: BusRoute[];
   vehicles: Vehicle[];
   onExportPdf?: (request: TimeOffRequest) => void;
+  onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
 }
 
 export interface EmployeeMonthlyStats {
@@ -62,7 +63,8 @@ export const TimeOffMonthlyReport: React.FC<TimeOffMonthlyReportProps> = ({
   requests,
   employees,
   routes,
-  onExportPdf
+  onExportPdf,
+  onSelectEmployee
 }) => {
   const todayStr = getLocalTodayString();
   const currentMonthStr = todayStr.substring(0, 7); // "YYYY-MM"
@@ -828,19 +830,40 @@ export const TimeOffMonthlyReport: React.FC<TimeOffMonthlyReportProps> = ({
 
                         {/* Employee Details */}
                         <td className="py-3.5 px-4">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-amber-400 flex-shrink-0">
-                              {stat.employeeName.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <div className="font-bold text-slate-100 text-sm">
-                                {stat.employeeName}
+                          {onSelectEmployee ? (
+                            <button
+                              type="button"
+                              onClick={() => onSelectEmployee(stat.employeeId, stat.employeeName)}
+                              className="flex items-center space-x-3 text-left group/emp focus:outline-none transition cursor-pointer"
+                              title="Click to view employee details"
+                            >
+                              <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-amber-400 flex-shrink-0 group-hover/emp:border-amber-400/50 group-hover/emp:scale-105 transition">
+                                {stat.employeeName.charAt(0).toUpperCase()}
                               </div>
-                              <div className="text-[11px] text-slate-400 font-mono">
-                                ID: {stat.employeeNumber}
+                              <div>
+                                <div className="font-bold text-slate-100 text-sm group-hover/emp:text-amber-300 group-hover/emp:underline decoration-dotted underline-offset-2 transition">
+                                  {stat.employeeName}
+                                </div>
+                                <div className="text-[11px] text-slate-400 font-mono group-hover/emp:text-slate-300">
+                                  ID: {stat.employeeNumber}
+                                </div>
+                              </div>
+                            </button>
+                          ) : (
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-amber-400 flex-shrink-0">
+                                {stat.employeeName.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-100 text-sm">
+                                  {stat.employeeName}
+                                </div>
+                                <div className="text-[11px] text-slate-400 font-mono">
+                                  ID: {stat.employeeNumber}
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          )}
                         </td>
 
                         {/* Role & Yard */}
@@ -966,8 +989,21 @@ export const TimeOffMonthlyReport: React.FC<TimeOffMonthlyReportProps> = ({
                           <td colSpan={9} className="p-4 pl-14">
                             <div className="space-y-3">
                               <div className="flex items-center justify-between text-xs">
-                                <span className="font-bold text-slate-300 uppercase tracking-wider">
-                                  Absence Records for {stat.employeeName} in {monthDisplayName} ({stat.requests.length} requests)
+                                <span className="font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 flex-wrap">
+                                  <span>Absence Records for</span>
+                                  {onSelectEmployee ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => onSelectEmployee(stat.employeeId, stat.employeeName)}
+                                      className="text-amber-400 hover:text-amber-300 hover:underline transition font-bold"
+                                      title="Click to view employee details"
+                                    >
+                                      {stat.employeeName}
+                                    </button>
+                                  ) : (
+                                    <span className="text-amber-400">{stat.employeeName}</span>
+                                  )}
+                                  <span>in {monthDisplayName} ({stat.requests.length} requests)</span>
                                 </span>
                               </div>
 

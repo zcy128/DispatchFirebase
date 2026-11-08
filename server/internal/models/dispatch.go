@@ -369,6 +369,67 @@ func DefaultCheckInReminderSettings() *CheckInReminderSettings {
 	}
 }
 
+// ClientOperationError is a web client operation failure captured for ops review.
+type ClientOperationError struct {
+	ID           string `json:"id" firestore:"id"`
+	Timestamp    string `json:"timestamp" firestore:"timestamp"`
+	Date         string `json:"date" firestore:"date"` // YYYY-MM-DD (UTC)
+	Page         string `json:"page" firestore:"page"`
+	Action       string `json:"action,omitempty" firestore:"action,omitempty"`
+	Method       string `json:"method,omitempty" firestore:"method,omitempty"`
+	Endpoint     string `json:"endpoint,omitempty" firestore:"endpoint,omitempty"`
+	Status       int    `json:"status,omitempty" firestore:"status,omitempty"`
+	Message      string `json:"message" firestore:"message"`
+	UserID       string `json:"userId,omitempty" firestore:"userId,omitempty"`
+	UserName     string `json:"userName,omitempty" firestore:"userName,omitempty"`
+	UserAgent    string `json:"userAgent,omitempty" firestore:"userAgent,omitempty"`
+	Fingerprint  string `json:"fingerprint" firestore:"fingerprint"`
+	EmailSent    bool   `json:"emailSent" firestore:"emailSent"`
+	EmailSkipped string `json:"emailSkipped,omitempty" firestore:"emailSkipped,omitempty"`
+}
+
+// CreateClientOperationErrorRequest is the payload posted by the web client.
+type CreateClientOperationErrorRequest struct {
+	Page      string `json:"page"`
+	Action    string `json:"action,omitempty"`
+	Method    string `json:"method,omitempty"`
+	Endpoint  string `json:"endpoint,omitempty"`
+	Status    int    `json:"status,omitempty"`
+	Message   string `json:"message"`
+	UserAgent string `json:"userAgent,omitempty"`
+}
+
+// ErrorAlertSettings controls per-page email alerts for client operation errors.
+type ErrorAlertSettings struct {
+	Recipients      []string        `json:"recipients" firestore:"recipients"`
+	Pages           map[string]bool `json:"pages" firestore:"pages"`
+	ThrottleMinutes int             `json:"throttleMinutes" firestore:"throttleMinutes"`
+	UpdatedAt       string          `json:"updatedAt,omitempty" firestore:"updatedAt,omitempty"`
+	UpdatedBy       string          `json:"updatedBy,omitempty" firestore:"updatedBy,omitempty"`
+}
+
+// DefaultErrorAlertSettings returns disabled page alerts with a 5-minute throttle.
+func DefaultErrorAlertSettings() *ErrorAlertSettings {
+	return &ErrorAlertSettings{
+		Recipients: []string{},
+		Pages: map[string]bool{
+			"dispatch":         false,
+			"charter":          false,
+			"routes":           false,
+			"students":         false,
+			"expenses":         false,
+			"hazards":          false,
+			"payroll":          false,
+			"time_off":         false,
+			"pretrip_checks":   false,
+			"vehicle_signouts": false,
+		},
+		ThrottleMinutes: 5,
+		UpdatedAt:       time.Now().UTC().Format(time.RFC3339),
+		UpdatedBy:       "system",
+	}
+}
+
 // SimulationSettings defines system-wide automated operations simulation settings
 type SimulationSettings struct {
 	Enabled                    bool   `json:"enabled" firestore:"enabled"`                                       // Master switch for simulation mode

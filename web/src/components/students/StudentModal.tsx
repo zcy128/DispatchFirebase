@@ -28,12 +28,15 @@ import {
   Search
 } from 'lucide-react';
 
+export type StudentModalTab = 'profile' | 'school' | 'stops' | 'contacts' | 'care';
+
 interface StudentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (studentData: Partial<Student>) => Promise<void>;
   initialData?: Student | null;
   schools: School[];
+  initialTab?: StudentModalTab;
 }
 
 const safeFormatDateForInput = (val?: any): string => {
@@ -63,90 +66,27 @@ const safeFormatDateForInput = (val?: any): string => {
   return '';
 };
 
-const generateDefaultStops = (addr: string, schName: string, rt: string): StudentStop[] => {
-  const cleanRt = rt ? rt.split(',')[0].trim() : 'OCDSB-001';
-  const cleanAddr = addr.trim() || 'Home Stop (Curbside)';
-  const cleanSch = schName.trim() || 'Children\'s Village School';
-  return [
-    {
-      stopId: `STP-1`,
-      time: '7:10 a.m.',
-      type: 'Pickup',
-      opDays: 'M T W R F',
-      location: cleanAddr,
-      comment: 'Eastbound front curb / driveway',
-      instruction: 'Met at bus by parent',
-      route: cleanRt,
-      shift: 'AM'
-    },
-    {
-      stopId: `STP-2`,
-      time: '8:30 a.m.',
-      type: 'School Dropoff',
-      opDays: 'M T W R F',
-      location: cleanSch,
-      comment: 'Main school bus arrival loop',
-      instruction: '',
-      route: cleanRt,
-      shift: 'AM'
-    },
-    {
-      stopId: `STP-3`,
-      time: '12:25 p.m.',
-      type: 'School Pickup',
-      opDays: '---- F',
-      location: cleanSch,
-      comment: 'Friday early dismissal loading zone',
-      instruction: '',
-      route: cleanRt,
-      shift: 'NOON'
-    },
-    {
-      stopId: `STP-4`,
-      time: '1:33 p.m.',
-      type: 'Dropoff',
-      opDays: '---- F',
-      location: cleanAddr,
-      comment: 'Friday early dismissal dropoff at curb',
-      instruction: '',
-      route: cleanRt,
-      shift: 'NOON'
-    },
-    {
-      stopId: `STP-5`,
-      time: '2:40 p.m.',
-      type: 'School Pickup',
-      opDays: 'M T W R -',
-      location: cleanSch,
-      comment: 'Afternoon regular dismissal loop',
-      instruction: '',
-      route: cleanRt,
-      shift: 'PM'
-    },
-    {
-      stopId: `STP-6`,
-      time: '3:48 p.m.',
-      type: 'Dropoff',
-      opDays: 'M T W R -',
-      location: cleanAddr,
-      comment: 'Afternoon dropoff at house curb',
-      instruction: '',
-      route: cleanRt,
-      shift: 'PM'
-    }
-  ];
-};
+import {
+  generateDefaultStudentStops as generateDefaultStops
+} from '../../utils/studentStopsHelper';
 
 export const StudentModal: React.FC<StudentModalProps> = ({
   isOpen,
   onClose,
   onSave,
   initialData,
-  schools = []
+  schools = [],
+  initialTab = 'profile'
 }) => {
   const { t } = useI18n();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'profile' | 'school' | 'stops' | 'contacts' | 'care'>('profile');
+  const [activeTab, setActiveTab] = useState<StudentModalTab>(initialTab);
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab || 'profile');
+    }
+  }, [isOpen, initialTab, initialData?.id]);
 
   // Basic Profile
   const [firstName, setFirstName] = useState('');
@@ -999,15 +939,14 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-800 bg-slate-900/80 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-                        <th className="py-3 px-3.5 whitespace-nowrap">{t.stops?.time || 'Time'}</th>
-                        <th className="py-3 px-3 whitespace-nowrap">{t.stops?.type || 'Type'}</th>
-                        <th className="py-3 px-3 whitespace-nowrap">{t.stops?.opDays || 'Op Days'}</th>
-                        <th className="py-3 px-3 min-w-[200px]">{t.stops?.location || 'Location'}</th>
-                        <th className="py-3 px-3 whitespace-nowrap">{t.stops?.comment || 'Comment'}</th>
-                        <th className="py-3 px-3 whitespace-nowrap">{t.stops?.instruction || 'Instruction'}</th>
-                        <th className="py-3 px-3 whitespace-nowrap">{t.stops?.route || 'Route'}</th>
-                        <th className="py-3 px-3 whitespace-nowrap">{t.stops?.shift || 'Shift'}</th>
-                        <th className="py-3 px-3 text-right whitespace-nowrap">Actions</th>
+                        <th className="py-2 px-2.5 whitespace-nowrap">{t.stops?.time || 'Time'}</th>
+                        <th className="py-2 px-2 whitespace-nowrap">{t.stops?.type || 'Type'}</th>
+                        <th className="py-2 px-2 whitespace-nowrap">{t.stops?.opDays || 'Op Days'}</th>
+                        <th className="py-2 px-2.5">{t.stops?.location || 'Location'}</th>
+                        <th className="py-2 px-2 whitespace-nowrap">{t.stops?.comment || 'Comment'}</th>
+                        <th className="py-2 px-2 whitespace-nowrap">{t.stops?.route || 'Route'}</th>
+                        <th className="py-2 px-2 whitespace-nowrap">{t.stops?.shift || 'Shift'}</th>
+                        <th className="py-2 px-2.5 text-right whitespace-nowrap">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 font-sans">
@@ -1016,15 +955,15 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                           key={stop.stopId || idx}
                           className="hover:bg-slate-800/40 transition group"
                         >
-                          <td className="py-2.5 px-3.5 font-semibold text-white whitespace-nowrap">
+                          <td className="py-1.5 px-2.5 font-semibold text-white whitespace-nowrap">
                             <div className="flex items-center space-x-1.5">
                               <Clock className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
-                              <span className="font-mono">{stop.time}</span>
+                              <span className="font-mono text-xs">{stop.time}</span>
                             </div>
                           </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
+                          <td className="py-1.5 px-2 whitespace-nowrap">
                             <span
-                              className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
                                 stop.type.toLowerCase().includes('pickup')
                                   ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                                   : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
@@ -1033,16 +972,16 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                               {stop.type}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 font-mono text-slate-300 whitespace-nowrap">
+                          <td className="py-1.5 px-2 font-mono text-slate-300 whitespace-nowrap text-[11px]">
                             {stop.opDays}
                           </td>
-                          <td className="py-2.5 px-3 text-slate-200 max-w-xs truncate" title={stop.location}>
+                          <td className="py-1.5 px-2.5 text-slate-200 max-w-[220px] truncate text-xs" title={stop.location}>
                             <div className="flex items-center space-x-1.5">
                               <MapPin className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
                               <span className="truncate">{stop.location}</span>
                             </div>
                           </td>
-                          <td className="py-2.5 px-3 text-amber-300 font-mono text-[11px] whitespace-nowrap">
+                          <td className="py-1.5 px-2 text-amber-300 font-mono text-[10px] whitespace-nowrap">
                             {stop.comment ? (
                               <span className="bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 font-medium">
                                 {stop.comment}
@@ -1051,26 +990,17 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                               <span className="text-slate-600">-</span>
                             )}
                           </td>
-                          <td className="py-2.5 px-3 text-slate-400 text-[11px] max-w-xs truncate">
-                            {stop.instruction || <span className="text-slate-600">-</span>}
-                          </td>
-                          <td className="py-2.5 px-3 font-mono text-sky-300 whitespace-nowrap">
+                          <td className="py-1.5 px-2 font-mono text-sky-300 text-xs whitespace-nowrap">
                             {stop.route || <span className="text-slate-600">-</span>}
                           </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap">
+                          <td className="py-1.5 px-2 whitespace-nowrap">
                             <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold">
                               {stop.shift || 'AM'}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                          <td className="py-1.5 px-2.5 text-right whitespace-nowrap">
                             {isSchoolStop(stop.type) ? (
-                              <span
-                                className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-slate-800/80 text-slate-500 text-[10px] font-semibold border border-slate-700/60 cursor-not-allowed select-none"
-                                title={t.stops?.schoolStopNotice || 'School stops cannot be edited'}
-                              >
-                                <Lock className="w-3 h-3 text-slate-500" />
-                                <span>{t.stops?.schoolStopReadOnly || 'School Stop (Read-only)'}</span>
-                              </span>
+                              <span className="text-slate-600 font-mono text-xs pr-2 select-none">-</span>
                             ) : (
                               <div className="flex items-center justify-end space-x-1">
                                 <button
@@ -1097,7 +1027,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
 
                       {stops.length === 0 && (
                         <tr>
-                          <td colSpan={9} className="py-8 text-center text-slate-500">
+                          <td colSpan={8} className="py-6 text-center text-slate-500">
                             {t.stops?.noStops || 'No scheduled stops configured for this student.'}
                           </td>
                         </tr>

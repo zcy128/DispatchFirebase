@@ -72,6 +72,7 @@ export type NavTab =
   | 'roles'
   | 'login_logs'
   | 'audit_logs'
+  | 'error_logs'
   | 'external_sync'
   | 'settings';
 
@@ -353,6 +354,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'audit_logs',
           label: isFrench ? 'Journaux d\'audit système' : 'System Audit Logs',
           icon: FileText,
+          badge: null
+        },
+        {
+          id: 'error_logs',
+          label: isFrench ? 'Journaux d\'erreurs client' : 'Client Error Logs',
+          icon: AlertTriangle,
           badge: null
         },
         {
