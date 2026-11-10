@@ -501,6 +501,9 @@ export interface CheckInReminderSettings {
   reminderGraceMinutes: number;
   pretripReminderGraceMinutes?: number; // default: 60
   enabled: boolean;
+  autoDelayAlertEnabled?: boolean; // default: true
+  autoDelayFirstAlertMinutes?: number; // default: 15
+  autoDelaySecondAlertMinutes?: number; // default: 45
   reminderWindowStart: string;
   reminderWindowEnd: string;
   updatedAt?: string;

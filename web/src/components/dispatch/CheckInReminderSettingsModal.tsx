@@ -21,6 +21,8 @@ interface CheckInReminderSettingsModalProps {
 
 const PRESET_MINUTES = [10, 15, 20, 25, 30, 45];
 const PRESET_PRETRIP_MINUTES = [30, 45, 60, 90, 120];
+const PRESET_FIRST_DELAY_MINUTES = [10, 15, 20, 30];
+const PRESET_SECOND_DELAY_MINUTES = [30, 45, 60, 90];
 
 export const CheckInReminderSettingsModal: React.FC<CheckInReminderSettingsModalProps> = ({
   isOpen,
@@ -36,6 +38,9 @@ export const CheckInReminderSettingsModal: React.FC<CheckInReminderSettingsModal
   const [enabled, setEnabled] = useState(true);
   const [graceMinutes, setGraceMinutes] = useState(20);
   const [pretripGraceMinutes, setPretripGraceMinutes] = useState(60);
+  const [autoDelayAlertEnabled, setAutoDelayAlertEnabled] = useState(true);
+  const [autoDelayFirstAlertMinutes, setAutoDelayFirstAlertMinutes] = useState(15);
+  const [autoDelaySecondAlertMinutes, setAutoDelaySecondAlertMinutes] = useState(45);
   const [windowStart, setWindowStart] = useState('06:00');
   const [windowEnd, setWindowEnd] = useState('18:00');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -54,6 +59,9 @@ export const CheckInReminderSettingsModal: React.FC<CheckInReminderSettingsModal
         setEnabled(settings.enabled ?? true);
         setGraceMinutes(settings.reminderGraceMinutes || 20);
         setPretripGraceMinutes(settings.pretripReminderGraceMinutes || 60);
+        setAutoDelayAlertEnabled(settings.autoDelayAlertEnabled ?? true);
+        setAutoDelayFirstAlertMinutes(settings.autoDelayFirstAlertMinutes || 15);
+        setAutoDelaySecondAlertMinutes(settings.autoDelaySecondAlertMinutes || 45);
         setWindowStart(settings.reminderWindowStart || '06:00');
         setWindowEnd(settings.reminderWindowEnd || '18:00');
         setLastUpdated(settings.updatedAt || null);
@@ -65,6 +73,9 @@ export const CheckInReminderSettingsModal: React.FC<CheckInReminderSettingsModal
         setEnabled(true);
         setGraceMinutes(20);
         setPretripGraceMinutes(60);
+        setAutoDelayAlertEnabled(true);
+        setAutoDelayFirstAlertMinutes(15);
+        setAutoDelaySecondAlertMinutes(45);
         setWindowStart('06:00');
         setWindowEnd('18:00');
       })
@@ -87,11 +98,19 @@ export const CheckInReminderSettingsModal: React.FC<CheckInReminderSettingsModal
 
     const safeMinutes = Math.max(1, Math.min(180, Number(graceMinutes) || 20));
     const safePretripMinutes = Math.max(1, Math.min(240, Number(pretripGraceMinutes) || 60));
+    const safeFirstDelayMinutes = Math.max(1, Math.min(180, Number(autoDelayFirstAlertMinutes) || 15));
+    const safeSecondDelayMinutes = Math.max(
+      safeFirstDelayMinutes + 1,
+      Math.min(240, Number(autoDelaySecondAlertMinutes) || 45)
+    );
 
     const payload: CheckInReminderSettings = {
       enabled,
       reminderGraceMinutes: safeMinutes,
       pretripReminderGraceMinutes: safePretripMinutes,
+      autoDelayAlertEnabled,
+      autoDelayFirstAlertMinutes: safeFirstDelayMinutes,
+      autoDelaySecondAlertMinutes: safeSecondDelayMinutes,
       reminderWindowStart: windowStart.trim() || '06:00',
       reminderWindowEnd: windowEnd.trim() || '18:00',
     };
@@ -117,6 +136,9 @@ export const CheckInReminderSettingsModal: React.FC<CheckInReminderSettingsModal
     setEnabled(true);
     setGraceMinutes(20);
     setPretripGraceMinutes(60);
+    setAutoDelayAlertEnabled(true);
+    setAutoDelayFirstAlertMinutes(15);
+    setAutoDelaySecondAlertMinutes(45);
     setWindowStart('06:00');
     setWindowEnd('18:00');
     setSuccessMsg(null);
@@ -279,6 +301,110 @@ export const CheckInReminderSettingsModal: React.FC<CheckInReminderSettingsModal
                   />
                   <span className="text-xs text-slate-400">(1 - 240 min)</span>
                 </div>
+              </div>
+
+              {/* Automated Vehicle Delay Alert Message Configuration (15m / 45m) */}
+              <div className="space-y-3 p-4 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/40 dark:bg-rose-950/20">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <Bell className="w-4 h-4 text-rose-500" />
+                      <span>Automated Vehicle Delay Alert Message</span>
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Automatically dispatch parent delay alert messages when a vehicle is late at two milestone thresholds
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={autoDelayAlertEnabled}
+                      onChange={(e) => setAutoDelayAlertEnabled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                  </label>
+                </div>
+
+                {autoDelayAlertEnabled && (
+                  <div className="space-y-3 pt-2 border-t border-rose-200/70 dark:border-rose-900/50">
+                    {/* 1st Alert Threshold (Default 15m) */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          1st Auto-Alert Threshold (Initial Delay)
+                        </span>
+                        <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                          +{autoDelayFirstAlertMinutes} min late
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {PRESET_FIRST_DELAY_MINUTES.map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setAutoDelayFirstAlertMinutes(m)}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition ${
+                              autoDelayFirstAlertMinutes === m
+                                ? 'bg-rose-600 text-white border-rose-600 font-bold shadow-xs'
+                                : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {m} min {m === 15 ? '(Default)' : ''}
+                          </button>
+                        ))}
+                        <input
+                          type="number"
+                          min="1"
+                          max="180"
+                          value={autoDelayFirstAlertMinutes}
+                          onChange={(e) =>
+                            setAutoDelayFirstAlertMinutes(Math.max(1, parseInt(e.target.value, 10) || 15))
+                          }
+                          className="w-20 px-2.5 py-1 text-xs font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 2nd Alert Threshold (Default 45m) */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          2nd Auto-Alert Threshold (Extended Delay Escalation)
+                        </span>
+                        <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                          +{autoDelaySecondAlertMinutes} min late
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {PRESET_SECOND_DELAY_MINUTES.map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setAutoDelaySecondAlertMinutes(m)}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition ${
+                              autoDelaySecondAlertMinutes === m
+                                ? 'bg-rose-600 text-white border-rose-600 font-bold shadow-xs'
+                                : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {m} min {m === 45 ? '(Default)' : ''}
+                          </button>
+                        ))}
+                        <input
+                          type="number"
+                          min="2"
+                          max="240"
+                          value={autoDelaySecondAlertMinutes}
+                          onChange={(e) =>
+                            setAutoDelaySecondAlertMinutes(Math.max(2, parseInt(e.target.value, 10) || 45))
+                          }
+                          className="w-20 px-2.5 py-1 text-xs font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Operational Reminder Window */}

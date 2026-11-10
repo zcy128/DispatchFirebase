@@ -346,11 +346,14 @@ type ListStudentAbsencesFilter struct {
 	Query     string `json:"query,omitempty"`
 }
 
-// CheckInReminderSettings defines configuration for late check-in reminders via FCM
+// CheckInReminderSettings defines configuration for late check-in reminders via FCM and automated vehicle delay alerts
 type CheckInReminderSettings struct {
 	ReminderGraceMinutes        int    `json:"reminderGraceMinutes" firestore:"reminderGraceMinutes"`               // default: 20
 	PretripReminderGraceMinutes int    `json:"pretripReminderGraceMinutes" firestore:"pretripReminderGraceMinutes"` // default: 60
 	Enabled                     bool   `json:"enabled" firestore:"enabled"`                                         // default: true
+	AutoDelayAlertEnabled       *bool  `json:"autoDelayAlertEnabled,omitempty" firestore:"autoDelayAlertEnabled,omitempty"` // default: true
+	AutoDelayFirstAlertMinutes  int    `json:"autoDelayFirstAlertMinutes" firestore:"autoDelayFirstAlertMinutes"`   // default: 15
+	AutoDelaySecondAlertMinutes int    `json:"autoDelaySecondAlertMinutes" firestore:"autoDelaySecondAlertMinutes"` // default: 45
 	ReminderWindowStart         string `json:"reminderWindowStart" firestore:"reminderWindowStart"`                 // default: "06:00"
 	ReminderWindowEnd           string `json:"reminderWindowEnd" firestore:"reminderWindowEnd"`                     // default: "18:00"
 	UpdatedAt                   string `json:"updatedAt,omitempty" firestore:"updatedAt,omitempty"`
@@ -358,10 +361,14 @@ type CheckInReminderSettings struct {
 }
 
 func DefaultCheckInReminderSettings() *CheckInReminderSettings {
+	autoEnabled := true
 	return &CheckInReminderSettings{
 		ReminderGraceMinutes:        20,
 		PretripReminderGraceMinutes: 60,
 		Enabled:                     true,
+		AutoDelayAlertEnabled:       &autoEnabled,
+		AutoDelayFirstAlertMinutes:  15,
+		AutoDelaySecondAlertMinutes: 45,
 		ReminderWindowStart:         "06:00",
 		ReminderWindowEnd:           "18:00",
 		UpdatedAt:                   time.Now().UTC().Format(time.RFC3339),

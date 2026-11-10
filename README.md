@@ -37,7 +37,22 @@ The platform consists of a deeply integrated ecosystem of specialized applicatio
 ### 1. Dispatch Office Management Console (`web`)
 *Desktop & tablet operations console built with React, TypeScript, and Tailwind CSS for fleet dispatchers, supervisors, safety managers, and payroll accountants.*
 
-- **Interactive Shift Dispatch Board**: Visual Kanban-style morning (AM), midday (MD), and afternoon (PM) shift boards with real-time status indicators (Unassigned, Scheduled, Checked-In, In-Progress, Completed).
+- **Interactive Shift Dispatch Board & Triage Workbench Mode**:
+  - **3-Mode Dispatch Console (`Workbench` / `Card` / `Sheet`)**: Switch seamlessly between the split-pane **Workbench Mode** (default), virtualized **Card View**, and tabular **Sheet View** across morning (AM), midday (MD), and afternoon (PM) shifts.
+  - **Top Category Cards & Status Filters**: Real-time health and issue categorization across `Total Shifts`, `On Track`, `Attention`, `Unassigned`, `Check-In Overdue`, `Stop Delayed`, and **`Alert Message`**.
+  - **Left Issue Queue & Context-Aware Recommended Actions**: Left pane prioritizes shifts requiring intervention (`No Driver`, `No Vehicle`, `Late Check-In`, `Stop Delayed`, `Alert Message`). Selecting a shift automatically opens the tailored upper-right **Recommended Action** tool—deadhead-ranked and conflict-checked **Driver Assignment** list, safety-compliant **Vehicle Assignment** list, or inline **Parent Delay Alert & Driver Outreach** console—while the lower-right pane displays full **Shift Details, Crew/Vehicle Status, and Stop Arrival Timeline** with inline arrival timestamps and student boarding controls.
+  - **Shift AI Copilot Command Window (Targeting Active Shift)**: Embedded directly at the top of the Shift Detail panel, with an active target badge (`Target: Route ...`). Enables dispatchers to execute instant natural-language dispatch commands:
+    - *Driver Assignment*: `driver <name/id>` (e.g., `driver driver21` or `driver Alice`) fuzzy-matches roster by name, employee number, or numeric ID.
+    - *Vehicle Assignment*: `vehicle <unit>` (e.g., `vehicle 1001` or `bus 2021`) strips unit prefixes and assigns verified fleet units.
+    - *Student Passenger Boarding*: `pickup <student>`, `dropoff <student>`, and `absent <student>` (e.g., `pickup Benjamin`) updates stop manifests in real time.
+    - *Crew Status & Check-In*: `checkin`, `attendant checkin`, and `checkout` trigger immediate punch records.
+    - *Audit Log Feed*: Displays recent command execution history with color-coded status badges and fallback to Gemini AI for general shift queries.
+  - **Two-Way SMS Driver & Attendant Outreach (Twilio Integration)**:
+    - Dedicated `[SMS]` buttons on driver and attendant cards alongside internal chat and phone links.
+    - Interactive conversation modal (`SmsConversationModal`) rendering today's bidirectional message timeline (outbound messages and incoming replies via Twilio webhooks).
+    - 4 quick-response dispatch templates (*Check-In Reminder*, *Delay Notice*, *Urgent Callback*, *Pre-Trip Inspection*), 160-character segment counter, and Native SMS fallback.
+  - **1-Click Vehicle Map Launcher**: Direct route and vehicle trajectory map button (`Navigation` icon) beside the assigned unit number.
+  - **Automated Vehicle Delay Alert Messages (15 min & 45 min Thresholds)**: Configurable two-tier automatic parent SMS/Email delay notifications in **Reminder Settings**. Automatically dispatches the 1st alert when a vehicle runs **15 minutes** behind schedule and a 2nd escalation alert at **45 minutes** late, with idempotent tracking in `parentNotifications`.
 - **Dynamic Crew & Substitute Driver Planning**: One-click driver and attendant substitution; pre-assign replacement drivers for approved time-off or emergency absences with zero schedule disruption.
 - **Fleet & Vehicle Maintenance Center**: Full vehicle master registry (make, model, passenger capacity, wheelchair accessibility, VIN, odometer, fuel type). Tracks active status, maintenance history, and preventative service cycles.
 - **Statutory 6-Month Inspection & SAAQ / CVOR Compliance**: Automated countdown for regulatory government safety inspections. Vehicles due or overdue for inspection or with critical defects are automatically blocked and excluded from the active dispatch assignment pool.
@@ -117,7 +132,8 @@ The platform consists of a deeply integrated ecosystem of specialized applicatio
 
 - **Clean & CQRS Architecture**: High-concurrency REST API using Go 1.24+ and the Chi router, optimized for high-throughput mobile telemetry and web socket streaming.
 - **Zero-Login Frictionless Email Workflows**: Twilio SendGrid / Amazon SES webhook integration allowing drivers to request time off via email and managers to approve directly from their corporate email inbox with 1-click signed URLs.
-- **Twilio SMS Gateway**: Automated SMS dispatch for parent passwordless authentication codes and critical route alerts.
+- **Twilio SMS Gateway & Two-Way Messaging Pipeline**: Automated SMS dispatch for parent passwordless authentication codes, operational route alerts, and two-way crew SMS conversation API (`POST /api/sms/send`, `GET /api/sms/history`) with Twilio webhook ingestion (`POST /api/integrations/twilio/sms-inbound`), phone normalizer, and dev simulation fallback.
+- **API Version & Health Inspection**: Public `/api/version` and `/health` endpoints reporting live server version (`v1.0.8`), operational mode, and timestamp.
 - **External Integration Pipeline**: Robust background sync engine interfacing with BambooHR (HR directory), Zonar Systems (GPS vehicle breadcrumbs and idle detection), and BusPlanner (staging route schedules).
 - **Google BigQuery Cold Archiving**: Automated scheduled data pipeline that archives completed dispatch records, driver logs, and student attendance to BigQuery for regulatory compliance, long-term auditing, and analytics.
 
@@ -238,6 +254,7 @@ DispatchFirebase/
 │   └── internal/                        # Auth, repository layer, ETA, email/SMS services, AI engine & MCP handler
 ├── docs/                                # Technical specifications, testing guides (testing-guide.md) & manuals
 ├── deploy/                              # Google Cloud Run deployment scripts & Docker configurations
+├── scripts/                             # Automated version bumping and CI release automation scripts
 ├── pcyweb/                              # Partner & carrier public web portal
 ├── design-demos/                        # UI/UX interactive prototypes and mockups
 ├── .env.example                         # Root environment variables template
@@ -341,7 +358,7 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
 ## 🛠️ Operations & Data Lifecycle Guides
 
 - 🧪 **[Monorepo Master Testing Guide & Browser QA Agent](docs/testing-guide.md#english)** ([Français](docs/testing-guide.md#français) | [简体中文](docs/testing-guide.md#简体中文)):
-  - **Single Source of Truth** for testing across the entire monorepo: Web console (79 Vitest tests), Driver mobile app (49 Flutter tests), Parent tracker app (51 Flutter tests), and autonomous browser E2E QA testing ([`.agents/agents/qa-tester.md`](.agents/agents/qa-tester.md)).
+  - **Single Source of Truth** for testing across the entire monorepo: Web console (104 Vitest tests across 18 test suites), Driver mobile app (49 Flutter tests), Parent tracker app (51 Flutter tests), and autonomous browser E2E QA testing ([`.agents/agents/qa-tester.md`](.agents/agents/qa-tester.md)).
   - Direct links to subsystem test guides: [Web Unit Tests](docs/unit-test-instructions.md), [Driver App Testing](driver_app/TESTING.md), and [Parent App Testing](parent_app/TESTING.md).
 - 📘 **[Firestore TTL & Cloud Scheduler Archiving Guide](docs/firestore-ttl-cloud-scheduler-instructions.md#english)** ([Français](docs/firestore-ttl-cloud-scheduler-instructions.md#français) | [简体中文](docs/firestore-ttl-cloud-scheduler-instructions.md#简体中文)):
   - Instructions for configuring Firestore Time-to-Live (TTL) in Google Cloud Console.

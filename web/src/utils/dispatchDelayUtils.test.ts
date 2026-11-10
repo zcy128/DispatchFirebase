@@ -3,6 +3,8 @@ import type { DispatchShift } from '../types/dispatch';
 import {
   calculateDynamicShiftLateness,
   diffMinutes,
+  evaluateAutoDelayAlertTrigger,
+  isAlertMessageShift,
   minutesToTimeString,
   subtractMinutesFromTime,
   timeStringToMinutes,
@@ -99,5 +101,80 @@ describe('calculateDynamicShiftLateness', () => {
     expect(lateStop.maxStopLateMinutes).toBe(20);
     expect(lateStop.hasStopDelay).toBe(true);
     expect(lateStop.effectiveHealth).toBe('red');
+  });
+});
+
+describe('evaluateAutoDelayAlertTrigger and isAlertMessageShift', () => {
+  it('triggers tier 1 auto delay alert at 15 minutes late and tier 2 at 45 minutes late', () => {
+    const s15 = shift({
+      isDriverCheckedIn: true,
+      driverCheckedInAt: '06:30',
+      stops: [
+        {
+          stopId: 1,
+          sequence: 1,
+          stopLocation: 'Stop 1',
+          stopScheduleTime: '07:00',
+          stopType: 'StudentPickup',
+        },
+      ],
+    });
+    const info15 = calculateDynamicShiftLateness(s15, '07:16', true);
+    const trigger1 = evaluateAutoDelayAlertTrigger(s15, info15, {
+      autoDelayAlertEnabled: true,
+      autoDelayFirstAlertMinutes: 15,
+      autoDelaySecondAlertMinutes: 45,
+    });
+    expect(trigger1.shouldSend).toBe(true);
+    expect(trigger1.tier).toBe(1);
+    expect(trigger1.thresholdMinutes).toBe(15);
+    expect(trigger1.actualLateMinutes).toBe(16);
+
+    // Once tier 1 is recorded in parentNotifications, 20m late should NOT re-trigger tier 1
+    const sWithTier1 = shift({
+      ...s15,
+      parentNotifications: [
+        {
+          id: 'PN-1',
+          timestamp: '2026-11-02T07:16:00Z',
+          timeStr: '07:16',
+          delayMinutes: 16,
+          reasonCategory: 'other',
+          reasonLabel: 'Auto Delay Alert (15m Threshold)',
+          messageText: 'Delayed 16m',
+          channels: ['sms'],
+          scope: 'all',
+          recipientsCount: 1,
+        },
+      ],
+    });
+    const info20 = calculateDynamicShiftLateness(sWithTier1, '07:20', true);
+    const triggerAfterTier1 = evaluateAutoDelayAlertTrigger(sWithTier1, info20, {
+      autoDelayAlertEnabled: true,
+      autoDelayFirstAlertMinutes: 15,
+      autoDelaySecondAlertMinutes: 45,
+    });
+    expect(triggerAfterTier1.shouldSend).toBe(false);
+
+    // At 46 minutes late, tier 2 (45m threshold) triggers
+    const info46 = calculateDynamicShiftLateness(sWithTier1, '07:46', true);
+    const trigger2 = evaluateAutoDelayAlertTrigger(sWithTier1, info46, {
+      autoDelayAlertEnabled: true,
+      autoDelayFirstAlertMinutes: 15,
+      autoDelaySecondAlertMinutes: 45,
+    });
+    expect(trigger2.shouldSend).toBe(true);
+    expect(trigger2.tier).toBe(2);
+    expect(trigger2.thresholdMinutes).toBe(45);
+    expect(trigger2.actualLateMinutes).toBe(46);
+
+    // When disabled, never triggers
+    const triggerDisabled = evaluateAutoDelayAlertTrigger(s15, info15, {
+      autoDelayAlertEnabled: false,
+      autoDelayFirstAlertMinutes: 15,
+      autoDelaySecondAlertMinutes: 45,
+    });
+    expect(triggerDisabled.shouldSend).toBe(false);
+    expect(isAlertMessageShift(sWithTier1, info20)).toBe(true);
   });
 });

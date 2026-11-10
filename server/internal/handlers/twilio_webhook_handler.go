@@ -27,6 +27,11 @@ type TwilioWebhookHandler struct {
 	parentRepo    repository.ParentRepository
 	twilioService *services.TwilioService
 	etaService    *services.ETAService
+	smsRepo       repository.SMSRepository
+}
+
+func (h *TwilioWebhookHandler) UseSMSRepository(smsRepo repository.SMSRepository) {
+	h.smsRepo = smsRepo
 }
 
 func NewTwilioWebhookHandler(
@@ -64,6 +69,24 @@ func (h *TwilioWebhookHandler) HandleTwilioInboundSMS(w http.ResponseWriter, r *
 	msgSid := r.FormValue("MessageSid")
 
 	log.Printf("[TWILIO-INBOUND] Received SMS from %s (SID: %s): '%s'", fromPhone, msgSid, smsBody)
+
+	if h.smsRepo != nil && fromPhone != "" {
+		now := time.Now().UTC()
+		toNum := "+18005550199"
+		if h.twilioService != nil {
+			toNum = h.twilioService.FromNumber()
+		}
+		_ = h.smsRepo.Save(r.Context(), &models.SMSMessage{
+			Direction:       "inbound",
+			FromPhone:       fromPhone,
+			ToPhone:         toNum,
+			NormalizedPhone: repository.NormalizePhone(fromPhone),
+			Message:         smsBody,
+			Status:          "received",
+			CreatedAt:       now,
+			DateStr:         now.Format("2006-01-02"),
+		})
+	}
 
 	replyText := h.generateReplyForParent(r.Context(), fromPhone, smsBody)
 

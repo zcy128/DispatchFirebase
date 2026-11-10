@@ -31,10 +31,12 @@ import {
   UserCheck,
   Users,
   Navigation,
-  Wrench
+  Wrench,
+  Bell
 } from 'lucide-react';
-import { DispatchShift, DispatchShiftStop } from '../types/dispatch';
+import { DispatchShift, DispatchShiftStop, CheckInReminderSettings } from '../types/dispatch';
 import { DispatchService } from '../services/dispatchService';
+import { apiRequest } from '../services/api';
 import { DefectService } from '../services/defectService';
 import { VehicleInspectionService } from '../services/vehicleInspectionService';
 import { VehicleDefectReport } from '../types/defect';
@@ -54,11 +56,15 @@ import {
   getCurrentHHmm,
   calculateDynamicShiftLateness,
   getSentParentNotifications,
+  evaluateAutoDelayAlertTrigger,
+  isAlertMessageShift,
   type ShiftLatenessInfo,
 } from '../utils/dispatchDelayUtils';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { logDispatchAction } from '../utils/dispatchLogger';
+import { DispatchWorkbenchModePanel } from '../components/dispatch/DispatchWorkbenchModePanel';
+import { CrewCheckOutModal, CrewCheckOutModalState } from '../components/dispatch/CrewCheckOutModal';
 
 const EMPTY_STUDENTS_MAP: Record<number, Student> = {};
 
@@ -167,14 +173,15 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
   const [currentTimeStr, setCurrentTimeStr] = useState<string>(() => getCurrentHHmm());
   const isToday = selectedDate === getLocalTodayString();
 
-  // Refresh lateness once per minute. The visible badge keeps its own clock.
+  // Refresh lateness once per minute only when viewing today's shifts.
   useEffect(() => {
+    if (!isToday) return;
     const timer = setInterval(() => {
       const next = getCurrentHHmm();
       setCurrentTimeStr((prev) => (prev === next ? prev : next));
     }, 60000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isToday]);
 
   const [shifts, setShifts] = useState<DispatchShift[]>([]);
   const [loading, setLoading] = useState(false);
@@ -302,9 +309,47 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
   const [vehicleFilter, setVehicleFilter] = useState('');
   const [shiftTypeFilter, setShiftTypeFilter] = useState<'ALL' | 'AM' | 'PM' | 'Midday'>('ALL');
   const [yardFilter, setYardFilter] = useState<string>('ALL');
-  const [healthFilter, setHealthFilter] = useState<'ALL' | 'green' | 'attention' | 'unassigned' | 'checkin_overdue' | 'stop_delayed'>('ALL');
-  const [isSheetView, setIsSheetView] = useState(false);
+  const [healthFilter, setHealthFilter] = useState<'ALL' | 'green' | 'attention' | 'unassigned' | 'checkin_overdue' | 'stop_delayed' | 'alert_message'>('ALL');
+  const [viewMode, setViewMode] = useState<'workbench' | 'card' | 'sheet'>('workbench');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  // Reminder & Auto-Delay Alert Settings state
+  const [reminderSettings, setReminderSettings] = useState<CheckInReminderSettings>({
+    enabled: true,
+    reminderGraceMinutes: 20,
+    pretripReminderGraceMinutes: 60,
+    autoDelayAlertEnabled: true,
+    autoDelayFirstAlertMinutes: 15,
+    autoDelaySecondAlertMinutes: 45,
+    reminderWindowStart: '06:00',
+    reminderWindowEnd: '18:00',
+  });
+  const autoAlertDispatchedKeysRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    let isMounted = true;
+    DispatchService.getCheckInReminderSettings()
+      .then((s) => {
+        if (!isMounted || !s) return;
+        setReminderSettings({
+          enabled: s.enabled ?? true,
+          reminderGraceMinutes: s.reminderGraceMinutes || 20,
+          pretripReminderGraceMinutes: s.pretripReminderGraceMinutes || 60,
+          autoDelayAlertEnabled: s.autoDelayAlertEnabled ?? true,
+          autoDelayFirstAlertMinutes: s.autoDelayFirstAlertMinutes || 15,
+          autoDelaySecondAlertMinutes: s.autoDelaySecondAlertMinutes || 45,
+          reminderWindowStart: s.reminderWindowStart || '06:00',
+          reminderWindowEnd: s.reminderWindowEnd || '18:00',
+          updatedAt: s.updatedAt,
+        });
+      })
+      .catch(() => {
+        // Keep defaults
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Modal states
   const [selectedShiftForStops, setSelectedShiftForStops] = useState<DispatchShift | null>(null);
@@ -596,13 +641,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
   }, [actorName, handleRefresh, selectedDate]);
 
   // Check-Out Modal state
-  const [checkoutModal, setCheckoutModal] = useState<{
-    isOpen: boolean;
-    shift: DispatchShift;
-    role: 'driver' | 'attendant';
-    checkOutTime: string;
-    comments: string;
-  } | null>(null);
+  const [checkoutModal, setCheckoutModal] = useState<CrewCheckOutModalState | null>(null);
 
   // Quick Crew Check-Out toggle / submission
   const handleQuickCheckOut = useCallback(async (
@@ -691,13 +730,26 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
     let unassignedTotal = 0;
     let checkInOverdue = 0;
     let stopDelayed = 0;
+    let alertMessageCount = 0;
+    let sentAlertsTotal = 0;
 
-    for (const info of latenessByShiftId.values()) {
+    const safeShifts = Array.isArray(effectiveShifts) ? effectiveShifts : [];
+    for (const shift of safeShifts) {
+      const info = latenessByShiftId.get(shift.id);
+      if (!info) continue;
       if (info.isMissingDriver) missingDriver++;
       if (info.isMissingVehicle) missingVehicle++;
       if (info.isMissingCrewOrVehicle) unassignedTotal++;
       if (info.isCheckInOverdue) checkInOverdue++;
       if (info.hasStopDelay) stopDelayed++;
+
+      const sentList = getSentParentNotifications(shift);
+      if (sentList.length > 0) {
+        sentAlertsTotal += sentList.length;
+      }
+      if (isAlertMessageShift(shift, info)) {
+        alertMessageCount++;
+      }
 
       if (info.effectiveHealth === 'green') {
         onTrack++;
@@ -714,8 +766,102 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
       unassignedTotal,
       checkInOverdue,
       stopDelayed,
+      alertMessageCount,
+      sentAlertsTotal,
     };
-  }, [latenessByShiftId]);
+  }, [effectiveShifts, latenessByShiftId]);
+
+  // Automatic Vehicle Delay Alert Message dispatcher (triggers at 1st & 2nd thresholds, default 15m and 45m)
+  useEffect(() => {
+    if (!isToday) return;
+    if (reminderSettings.autoDelayAlertEnabled === false) return;
+    const safeShifts = Array.isArray(effectiveShifts) ? effectiveShifts : [];
+    if (safeShifts.length === 0) return;
+
+    safeShifts.forEach((shift) => {
+      const info = latenessByShiftId.get(shift.id);
+      if (!info) return;
+      const trigger = evaluateAutoDelayAlertTrigger(shift, info, reminderSettings);
+      if (!trigger.shouldSend || !trigger.tier) return;
+
+      const dispatchKey = `${shift.id}:tier${trigger.tier}:${trigger.thresholdMinutes}`;
+      if (autoAlertDispatchedKeysRef.current.has(dispatchKey)) return;
+
+      const recipients: Array<{
+        studentId: number;
+        studentName: string;
+        contactName: string;
+        phone: string;
+        email: string;
+      }> = [];
+      const seenStudentIds = new Set<number>();
+      (shift.stops || []).forEach((stop) => {
+        const list = stop.assignedStudents || stop.students || [];
+        list.forEach((stu) => {
+          if (seenStudentIds.has(stu.studentId)) return;
+          seenStudentIds.add(stu.studentId);
+          const full = studentsMap[stu.studentId];
+          const primary =
+            full?.contacts?.find((c) => c.primaryContact) || full?.contacts?.[0];
+          const phone =
+            primary?.mobilePhone ||
+            primary?.homePhone ||
+            primary?.workPhone ||
+            full?.studentPhone ||
+            full?.studentEmergencyPhone ||
+            '';
+          const email = primary?.email || '';
+          if (phone || email) {
+            recipients.push({
+              studentId: stu.studentId,
+              studentName: stu.studentName,
+              contactName: primary?.contactName || 'Parent / Guardian',
+              phone,
+              email,
+            });
+          }
+        });
+      });
+
+      // Wait until student contacts are available before locking this auto-alert tier
+      if (recipients.length === 0) return;
+      autoAlertDispatchedKeysRef.current.add(dispatchKey);
+
+      const autoReasonLabel = `Auto Delay Alert (${trigger.thresholdMinutes}m Threshold)`;
+      const autoMessageText = `[Translink Dispatch Auto-Alert] Please be advised that Route ${shift.routeNo} (${shift.shiftType} shift) is currently running approximately ${trigger.actualLateMinutes} minutes behind schedule (>${trigger.thresholdMinutes} min threshold). Thank you for your patience.`;
+      const auditStamp = `[Auto Alert ${getCurrentHHmm()}] Sent +${trigger.actualLateMinutes}m (${autoReasonLabel}) via SMS, Email to ${recipients.length} parent(s) (All Stops)`;
+
+      apiRequest<{
+        shift: DispatchShift;
+      }>(`/api/dispatch/shifts/${shift.id}/notify-parents`, {
+        method: 'POST',
+        body: JSON.stringify({
+          delayMinutes: trigger.actualLateMinutes,
+          reasonLabel: autoReasonLabel,
+          messageText: autoMessageText,
+          channels: ['sms', 'email'],
+          scope: 'all',
+          notes: shift.notes ? `${shift.notes} | ${auditStamp}` : auditStamp,
+          recipients,
+        }),
+      })
+        .then((res: { shift?: DispatchShift }) => {
+          if (res?.shift) {
+            setShifts((prev) => prev.map((s) => (s.id === shift.id ? res.shift! : s)));
+          }
+          return logDispatchAction({
+            date: shift.dispatchDate || selectedDate,
+            type: 'Parent Notification',
+            detail: `${autoReasonLabel} (+${trigger.actualLateMinutes}m) automatically sent for Shift ${shift.routeNo}`,
+            shift,
+            user: 'Auto-Alert System',
+          });
+        })
+        .catch((err: unknown) => {
+          console.warn('[AutoDelayAlert] Failed to dispatch auto delay alert:', err);
+        });
+    });
+  }, [isToday, effectiveShifts, latenessByShiftId, reminderSettings, studentsMap, selectedDate]);
 
   const latenessForHealthFilter = healthFilter === 'ALL' ? null : latenessByShiftId;
 
@@ -766,6 +912,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
         if (healthFilter === 'unassigned' && !info.isMissingCrewOrVehicle) return false;
         if (healthFilter === 'checkin_overdue' && !info.isCheckInOverdue) return false;
         if (healthFilter === 'stop_delayed' && !info.hasStopDelay) return false;
+        if (healthFilter === 'alert_message' && !isAlertMessageShift(shift, info)) return false;
       }
 
       return true;
@@ -866,18 +1013,48 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
             Today
           </button>
 
-          {/* Sheet / Card View Toggle */}
-          <button
-            onClick={() => setIsSheetView(!isSheetView)}
-            className={`px-2.5 sm:px-3 py-1 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition ${
-              isSheetView
-                ? 'bg-amber-100 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300'
-                : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            {isSheetView ? <Layers className="w-3.5 h-3.5" /> : <TableIcon className="w-3.5 h-3.5" />}
-            <span className="hidden sm:inline">{isSheetView ? 'Card view' : 'Sheet view'}</span>
-          </button>
+          {/* Workbench / Card / Sheet View Switcher */}
+          <div className="flex items-center gap-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-800 p-0.5 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setViewMode('workbench')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${
+                viewMode === 'workbench'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs font-bold'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              title="Workbench Mode: Issue Queue, Recommended Actions & Shift Detail"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Workbench</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('card')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${
+                viewMode === 'card'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs font-bold'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              title="Card View"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Card view</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('sheet')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${
+                viewMode === 'sheet'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs font-bold'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              title="Sheet View"
+            >
+              <TableIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sheet view</span>
+            </button>
+          </div>
 
           {/* Log Student Absence Button */}
           <button
@@ -1008,7 +1185,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
       )}
 
       {/* Top Metrics Cards Row: responsive grid on mobile */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3">
         {/* Total Shifts Card */}
         <button
           onClick={() => {
@@ -1157,6 +1334,37 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
             </div>
           </div>
         </button>
+
+        {/* Alert Message Filter Card */}
+        <button
+          onClick={() => setHealthFilter(healthFilter === 'alert_message' ? 'ALL' : 'alert_message')}
+          className={`p-2.5 sm:px-4 sm:py-2.5 rounded-xl border flex flex-col sm:flex-row items-center sm:items-center gap-1.5 sm:gap-3 transition-all ${
+            healthFilter === 'alert_message'
+              ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-400 dark:border-blue-700 shadow-sm ring-1 ring-blue-400'
+              : metrics.alertMessageCount > 0
+              ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/80 hover:bg-blue-50'
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+          }`}
+          title="Filter shifts with sent or pending parent delay alert messages (auto-sends at 15m / 45m late)"
+        >
+          <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
+            metrics.alertMessageCount > 0
+              ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+          }`}>
+            <Bell className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </div>
+          <div className="text-center sm:text-left min-w-0">
+            <div className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
+              Alert Message
+            </div>
+            <div className={`text-sm sm:text-base font-bold ${
+              metrics.alertMessageCount > 0 ? 'text-blue-700 dark:text-blue-400' : 'text-slate-700 dark:text-slate-300'
+            }`}>
+              {metrics.alertMessageCount}
+            </div>
+          </div>
+        </button>
       </div>
 
       {/* Dispatcher Alert Banner for Missing Driver or Vehicle */}
@@ -1259,6 +1467,51 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
             <button
               onClick={() => setHealthFilter('ALL')}
               className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs bg-white dark:bg-slate-800 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 hover:bg-rose-100/60"
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>Show All Shifts</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Alert Message Filter Banner */}
+      {healthFilter === 'alert_message' && (
+        <div className="rounded-2xl border border-blue-300 dark:border-blue-800 bg-blue-50/90 dark:bg-blue-950/40 p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+              <Bell className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-bold text-blue-950 dark:text-blue-100">
+                  Filter Active: Alert Message ({filteredShifts.length} Shift{filteredShifts.length !== 1 ? 's' : ''})
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-200/80 dark:bg-blue-900/60 text-blue-900 dark:text-blue-100">
+                  {reminderSettings.autoDelayAlertEnabled !== false
+                    ? `Auto-Send ON (+${reminderSettings.autoDelayFirstAlertMinutes || 15}m / +${reminderSettings.autoDelaySecondAlertMinutes || 45}m)`
+                    : 'Auto-Send OFF'}
+                </span>
+              </div>
+              <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
+                Displaying shifts with sent parent delay notifications or active route/check-in delays requiring parent communication.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsReminderSettingsOpen(true)}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <BellRing className="w-3.5 h-3.5" />
+              <span>Time Settings ({reminderSettings.autoDelayFirstAlertMinutes || 15}m / {reminderSettings.autoDelaySecondAlertMinutes || 45}m)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setHealthFilter('ALL')}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs bg-white dark:bg-slate-800 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-100/60"
             >
               <Filter className="w-3.5 h-3.5" />
               <span>Show All Shifts</span>
@@ -1508,6 +1761,22 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
             )}
           </button>
+
+          <button
+            type="button"
+            onClick={() => setHealthFilter(healthFilter === 'alert_message' ? 'ALL' : 'alert_message')}
+            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${
+              healthFilter === 'alert_message'
+                ? 'bg-blue-600 text-white shadow-2xs ring-2 ring-blue-400'
+                : metrics.alertMessageCount > 0
+                ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-700 hover:bg-blue-100'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'
+            }`}
+            title="Filter shifts with sent or pending parent delay alert messages"
+          >
+            <Bell className="w-3 h-3 text-blue-500" />
+            <span>Alert Message ({metrics.alertMessageCount})</span>
+          </button>
         </div>
       </div>
 
@@ -1517,7 +1786,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-3 text-amber-500" />
           <p className="text-sm font-medium">Loading dispatch shifts for {selectedDate}...</p>
         </div>
-      ) : (!filteredShifts || filteredShifts.length === 0) ? (
+      ) : !effectiveShifts || effectiveShifts.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center">
           <ShieldAlert className="w-10 h-10 mx-auto text-amber-500 mb-2 opacity-80" />
           <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
@@ -1535,7 +1804,64 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
             <span>Generate Dispatch for {selectedDate}</span>
           </button>
         </div>
-      ) : isSheetView ? (
+      ) : viewMode !== 'workbench' && (!filteredShifts || filteredShifts.length === 0) ? (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center">
+          <Filter className="w-10 h-10 mx-auto text-slate-400 mb-2 opacity-80" />
+          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+            No Shifts Match the Current Filters
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+            There are {effectiveShifts.length} dispatch shifts on {selectedDate}, but none match your active status or search filters.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setRouteFilter('');
+              setDriverFilter('');
+              setStopFilter('');
+              setVehicleFilter('');
+              setShiftTypeFilter('ALL');
+              setYardFilter('ALL');
+              setHealthFilter('ALL');
+            }}
+            className="mt-4 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold inline-flex items-center gap-1.5 shadow"
+          >
+            <span>Reset Filters</span>
+          </button>
+        </div>
+      ) : viewMode === 'workbench' ? (
+        <DispatchWorkbenchModePanel
+          shifts={filteredShifts}
+          allDayShifts={effectiveShifts}
+          latenessByShiftId={latenessByShiftId}
+          employees={employees}
+          availableVehicles={availableVehiclesForDate}
+          studentsMap={studentsMap}
+          selectedDate={selectedDate}
+          currentTimeStr={currentTimeStr}
+          isToday={isToday}
+          healthFilter={healthFilter}
+          onShiftUpdated={(updated) => {
+            setShifts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+          }}
+          onQuickCheckIn={handleQuickCheckIn}
+          onQuickAttendantCheckIn={handleQuickAttendantCheckIn}
+          onQuickCheckOut={handleQuickCheckOut}
+          onOpenCheckOutModal={handleOpenCheckOutModal}
+          onOpenMap={handleOpenMap}
+          onOpenStops={handleOpenStops}
+          onOpenCrew={handleOpenCrew}
+          onOpenSplit={handleOpenSplit}
+          onOpenPayroll={handleOpenPayroll}
+          onOpenHistory={handleOpenHistory}
+          onMessageDriver={onMessageDriver}
+          onSelectEmployee={onSelectEmployee}
+          onSelectVehicle={onSelectVehicle}
+          onSelectStudent={onSelectStudent}
+          reminderSettings={reminderSettings}
+          onOpenReminderSettings={() => setIsReminderSettingsOpen(true)}
+        />
+      ) : viewMode === 'sheet' ? (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
           <div ref={sheetContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
             <table className="w-full text-left text-xs whitespace-nowrap">
@@ -2085,111 +2411,17 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           <CheckInReminderSettingsModal
             isOpen
             onClose={() => setIsReminderSettingsOpen(false)}
+            onSettingsSaved={(saved) => setReminderSettings(saved)}
           />
         </Suspense>
       )}
 
       {/* Modal for Crew Check-Out */}
-      {checkoutModal && checkoutModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
-                  <LogOut className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base">
-                    Check Out {checkoutModal.role === 'driver' ? 'Driver' : 'Attendant'}
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {checkoutModal.role === 'driver'
-                      ? (checkoutModal.shift.driverName || 'Driver')
-                      : (checkoutModal.shift.attendantName || 'Attendant')} • Route {checkoutModal.shift.routeNo}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setCheckoutModal(null)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-purple-500" />
-                  <span>Check-Out Time</span>
-                </label>
-                <input
-                  type="time"
-                  value={checkoutModal.checkOutTime}
-                  onChange={(e) =>
-                    setCheckoutModal((prev) => (prev ? { ...prev, checkOutTime: e.target.value } : null))
-                  }
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5 text-purple-500" />
-                  <span>Payroll Comments (Optional)</span>
-                </label>
-                <textarea
-                  rows={3}
-                  value={checkoutModal.comments}
-                  onChange={(e) =>
-                    setCheckoutModal((prev) => (prev ? { ...prev, comments: e.target.value } : null))
-                  }
-                  placeholder="Leave empty for standard check-out without issues..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="p-3 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-[11px] text-purple-900 dark:text-purple-200 space-y-1">
-                <p className="font-semibold">Workflow Rule:</p>
-                <p>
-                  • <strong>Without comments:</strong> Automatically approved and immediately synced to Finance Department Payroll Log.
-                </p>
-                <p>
-                  • <strong>With comments:</strong> Held as Pending Approval for dispatcher review before syncing to Finance.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setCheckoutModal(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const modal = checkoutModal;
-                  setCheckoutModal(null);
-                  handleQuickCheckOut(
-                    modal.shift,
-                    modal.role,
-                    false,
-                    modal.checkOutTime,
-                    modal.comments.trim() || undefined
-                  );
-                }}
-                className="px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 active:bg-purple-800 rounded-xl shadow-md transition flex items-center gap-1.5"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Confirm Check-Out</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CrewCheckOutModal
+        data={checkoutModal}
+        onClose={() => setCheckoutModal(null)}
+        onConfirm={handleQuickCheckOut}
+      />
     </div>
   );
 };
