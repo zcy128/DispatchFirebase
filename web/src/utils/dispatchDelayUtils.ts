@@ -1,4 +1,4 @@
-import { DispatchShift, SentParentNotificationRecord } from '../types/dispatch';
+import { CheckInReminderSettings, DispatchShift, SentParentNotificationRecord } from '../types/dispatch';
 import { getLocalTodayString } from './dateUtils';
 
 /**
@@ -250,4 +250,87 @@ export function getSentParentNotifications(shift: DispatchShift): SentParentNoti
 
   return [];
 }
+
+export interface AutoDelayAlertTriggerResult {
+  shouldSend: boolean;
+  tier: 1 | 2 | null;
+  thresholdMinutes: number;
+  actualLateMinutes: number;
+}
+
+/**
+ * Evaluates whether a shift should automatically dispatch a parent delay alert message
+ * based on the configured 1st (default 15m) and 2nd (default 45m) vehicle delay thresholds.
+ */
+export function evaluateAutoDelayAlertTrigger(
+  shift: DispatchShift,
+  lateness: ShiftLatenessInfo | undefined,
+  settings?: Partial<CheckInReminderSettings> | null
+): AutoDelayAlertTriggerResult {
+  const autoEnabled = settings?.autoDelayAlertEnabled ?? true;
+  const firstMin =
+    settings?.autoDelayFirstAlertMinutes && settings.autoDelayFirstAlertMinutes > 0
+      ? settings.autoDelayFirstAlertMinutes
+      : 15;
+  const secondMin =
+    settings?.autoDelaySecondAlertMinutes && settings.autoDelaySecondAlertMinutes > 0
+      ? settings.autoDelaySecondAlertMinutes
+      : 45;
+
+  const stopLate = lateness?.maxStopLateMinutes ?? 0;
+  const shiftLate = typeof shift.lateMinutes === 'number' ? shift.lateMinutes : 0;
+  const vehicleLateMinutes = Math.max(stopLate, shiftLate);
+
+  if (!autoEnabled || vehicleLateMinutes <= 0) {
+    return {
+      shouldSend: false,
+      tier: null,
+      thresholdMinutes: 0,
+      actualLateMinutes: vehicleLateMinutes,
+    };
+  }
+
+  const sentAlerts = getSentParentNotifications(shift);
+  const hasTier2Sent = sentAlerts.some((a) => (a.delayMinutes || 0) >= secondMin);
+  const hasTier1Sent = sentAlerts.some((a) => (a.delayMinutes || 0) >= firstMin);
+
+  if (vehicleLateMinutes >= secondMin && !hasTier2Sent) {
+    return {
+      shouldSend: true,
+      tier: 2,
+      thresholdMinutes: secondMin,
+      actualLateMinutes: vehicleLateMinutes,
+    };
+  }
+
+  if (vehicleLateMinutes >= firstMin && !hasTier1Sent) {
+    return {
+      shouldSend: true,
+      tier: 1,
+      thresholdMinutes: firstMin,
+      actualLateMinutes: vehicleLateMinutes,
+    };
+  }
+
+  return {
+    shouldSend: false,
+    tier: null,
+    thresholdMinutes: 0,
+    actualLateMinutes: vehicleLateMinutes,
+  };
+}
+
+/**
+ * Returns true if a shift belongs to the "Alert Message" category
+ * (either has sent parent alert messages, or currently has a stop delay / overdue check-in).
+ */
+export function isAlertMessageShift(
+  shift: DispatchShift,
+  lateness?: ShiftLatenessInfo
+): boolean {
+  if (getSentParentNotifications(shift).length > 0) return true;
+  if (lateness?.hasStopDelay || lateness?.isCheckInOverdue) return true;
+  return false;
+}
+
 

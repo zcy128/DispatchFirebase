@@ -14,12 +14,12 @@ export default function Stats() {
         {t.stats.map((stat) => (
           <div
             key={stat.label}
-            className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-card transition-shadow duration-200 hover:shadow-card-hover"
+            className="bento-card p-6 text-center shadow-xl transition-all duration-300 hover:scale-[1.02] hover:border-amber-400/40"
           >
-            <p className="text-3xl font-bold tracking-tight text-primary md:text-4xl">
+            <p className="text-3xl font-extrabold tracking-tight text-amber-400 md:text-4xl font-mono">
               {stat.value}
             </p>
-            <p className="mt-1 text-sm font-medium text-muted">{stat.label}</p>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-slate-300">{stat.label}</p>
           </div>
         ))}
       </div>

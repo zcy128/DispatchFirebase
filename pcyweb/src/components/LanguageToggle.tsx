@@ -26,7 +26,7 @@ export default function LanguageToggle({ variant = 'light' }: LanguageToggleProp
     <div
       className={`flex items-center gap-1 rounded-full border p-1 ${containerClass}`}
       role="group"
-      aria-label="Language"
+      aria-label="Language selection"
     >
       <button
         type="button"
@@ -40,13 +40,13 @@ export default function LanguageToggle({ variant = 'light' }: LanguageToggleProp
       </button>
       <button
         type="button"
-        onClick={() => setLanguage('zh')}
+        onClick={() => setLanguage('fr')}
         className={`cursor-pointer rounded-full px-3 py-1 text-xs font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 ${
-          language === 'zh' ? activeClass : inactiveClass
+          language === 'fr' ? activeClass : inactiveClass
         }`}
-        aria-pressed={language === 'zh'}
+        aria-pressed={language === 'fr'}
       >
-        中文
+        FR
       </button>
     </div>
   )

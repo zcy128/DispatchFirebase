@@ -3197,6 +3197,35 @@ func (r *FirestoreDispatchRepository) SavePayrollSettings(ctx context.Context, s
 	return settings, nil
 }
 
+func normalizeCheckInReminderSettings(settings *models.CheckInReminderSettings) *models.CheckInReminderSettings {
+	if settings == nil {
+		return models.DefaultCheckInReminderSettings()
+	}
+	if settings.ReminderGraceMinutes <= 0 {
+		settings.ReminderGraceMinutes = 20
+	}
+	if settings.PretripReminderGraceMinutes <= 0 {
+		settings.PretripReminderGraceMinutes = 60
+	}
+	if settings.AutoDelayAlertEnabled == nil {
+		enabled := true
+		settings.AutoDelayAlertEnabled = &enabled
+	}
+	if settings.AutoDelayFirstAlertMinutes <= 0 {
+		settings.AutoDelayFirstAlertMinutes = 15
+	}
+	if settings.AutoDelaySecondAlertMinutes <= 0 {
+		settings.AutoDelaySecondAlertMinutes = 45
+	}
+	if settings.ReminderWindowStart == "" {
+		settings.ReminderWindowStart = "06:00"
+	}
+	if settings.ReminderWindowEnd == "" {
+		settings.ReminderWindowEnd = "18:00"
+	}
+	return settings
+}
+
 func (r *FirestoreDispatchRepository) GetCheckInReminderSettings(ctx context.Context) (*models.CheckInReminderSettings, error) {
 	docRef := r.client.Collection("system_settings").Doc("checkin_reminder")
 	snap, err := docRef.Get(ctx)
@@ -3207,31 +3236,11 @@ func (r *FirestoreDispatchRepository) GetCheckInReminderSettings(ctx context.Con
 	if err := snap.DataTo(&settings); err != nil {
 		return models.DefaultCheckInReminderSettings(), nil
 	}
-	if settings.ReminderGraceMinutes <= 0 {
-		settings.ReminderGraceMinutes = 20
-	}
-	if settings.PretripReminderGraceMinutes <= 0 {
-		settings.PretripReminderGraceMinutes = 60
-	}
-	return &settings, nil
+	return normalizeCheckInReminderSettings(&settings), nil
 }
 
 func (r *FirestoreDispatchRepository) SaveCheckInReminderSettings(ctx context.Context, settings *models.CheckInReminderSettings) (*models.CheckInReminderSettings, error) {
-	if settings == nil {
-		settings = models.DefaultCheckInReminderSettings()
-	}
-	if settings.ReminderGraceMinutes <= 0 {
-		settings.ReminderGraceMinutes = 20
-	}
-	if settings.PretripReminderGraceMinutes <= 0 {
-		settings.PretripReminderGraceMinutes = 60
-	}
-	if settings.ReminderWindowStart == "" {
-		settings.ReminderWindowStart = "06:00"
-	}
-	if settings.ReminderWindowEnd == "" {
-		settings.ReminderWindowEnd = "18:00"
-	}
+	settings = normalizeCheckInReminderSettings(settings)
 	settings.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	docRef := r.client.Collection("system_settings").Doc("checkin_reminder")
 	if _, err := docRef.Set(ctx, settings); err != nil {
@@ -6205,27 +6214,13 @@ func (m *MemoryDispatchRepository) GetCheckInReminderSettings(ctx context.Contex
 	if m.checkInReminderSettings == nil {
 		return models.DefaultCheckInReminderSettings(), nil
 	}
-	if m.checkInReminderSettings.ReminderGraceMinutes <= 0 {
-		m.checkInReminderSettings.ReminderGraceMinutes = 20
-	}
-	if m.checkInReminderSettings.PretripReminderGraceMinutes <= 0 {
-		m.checkInReminderSettings.PretripReminderGraceMinutes = 60
-	}
-	return m.checkInReminderSettings, nil
+	return normalizeCheckInReminderSettings(m.checkInReminderSettings), nil
 }
 
 func (m *MemoryDispatchRepository) SaveCheckInReminderSettings(ctx context.Context, settings *models.CheckInReminderSettings) (*models.CheckInReminderSettings, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if settings == nil {
-		settings = models.DefaultCheckInReminderSettings()
-	}
-	if settings.ReminderGraceMinutes <= 0 {
-		settings.ReminderGraceMinutes = 20
-	}
-	if settings.PretripReminderGraceMinutes <= 0 {
-		settings.PretripReminderGraceMinutes = 60
-	}
+	settings = normalizeCheckInReminderSettings(settings)
 	settings.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	m.checkInReminderSettings = settings
 	return settings, nil

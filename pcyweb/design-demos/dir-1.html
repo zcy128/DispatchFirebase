@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Direction 1 · Mission-Control Operations Hub | Dispatch OS</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #070B14;
+      color: #E2E8F0;
+      overflow-x: hidden;
+    }
+    .font-display { font-family: 'Space Grotesk', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    .bus-yellow { color: #FACC15; }
+    .bg-bus-yellow { background-color: #FACC15; }
+    .glow-yellow {
+      box-shadow: 0 0 35px -5px rgba(250, 204, 21, 0.25);
+    }
+    .glow-cyan {
+      box-shadow: 0 0 35px -5px rgba(2, 132, 199, 0.3);
+    }
+    .grid-lines {
+      background-size: 40px 40px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    }
+  </style>
+</head>
+<body class="selection:bg-amber-400 selection:text-black">
+
+  <!-- Top Sticky HUD Navigation Bar -->
+  <header class="sticky top-0 z-50 border-b border-white/10 bg-[#070B14]/80 backdrop-blur-xl">
+    <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+      <div class="flex items-center gap-3">
+        <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400 text-black shadow-lg shadow-amber-400/20 font-black text-xl">
+          🚌
+        </div>
+        <div>
+          <span class="font-display text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            DISPATCH <span class="rounded bg-amber-400/20 px-1.5 py-0.5 text-xs font-mono font-semibold text-amber-300 border border-amber-400/30">OS</span>
+          </span>
+          <p class="text-[10px] text-slate-400 uppercase tracking-widest font-mono">Mission-Control Hub</p>
+        </div>
+      </div>
+
+      <nav class="hidden md:flex items-center gap-8 text-xs font-semibold uppercase tracking-wider text-slate-300">
+        <a href="#cockpit" class="hover:text-amber-300 transition-colors">Live Cockpit</a>
+        <a href="#apps" class="hover:text-amber-300 transition-colors">3-App Suite</a>
+        <a href="#architecture" class="hover:text-amber-300 transition-colors">Cloud vs Enterprise</a>
+        <a href="#demo" class="hover:text-amber-300 transition-colors text-amber-400 font-bold">1-Click Demos</a>
+      </nav>
+
+      <div class="flex items-center gap-3">
+        <!-- Bilingual Indicator -->
+        <div class="flex items-center rounded-lg border border-white/10 bg-white/5 p-1 text-[11px] font-mono">
+          <button class="px-2 py-0.5 rounded bg-amber-400 text-black font-bold">EN</button>
+          <button class="px-2 py-0.5 text-slate-400 hover:text-white" onclick="alert('French translation available in production translations.ts')">FR</button>
+        </div>
+        <a href="#demo" class="hidden sm:inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2 text-xs font-bold text-black transition-all hover:bg-amber-300 shadow-md shadow-amber-400/20">
+          <span>Launch Demo</span>
+          <span>⚡</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero: Mission-Control Command Center -->
+  <section class="relative pt-16 pb-24 px-6 grid-lines overflow-hidden">
+    <div class="absolute -top-32 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-sky-500/10 rounded-full blur-[120px] pointer-events-none"></div>
+    <div class="absolute top-48 left-1/4 w-[500px] h-[400px] bg-amber-400/10 rounded-full blur-[100px] pointer-events-none"></div>
+
+    <div class="mx-auto max-w-6xl text-center relative z-10">
+      <!-- Status Chip -->
+      <div class="inline-flex items-center gap-2.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-4 py-1.5 text-xs font-mono text-amber-300 mb-8 backdrop-blur-md">
+        <span class="flex h-2 w-2 relative">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-400"></span>
+        </span>
+        <span class="font-bold uppercase tracking-wider">Operational Engine Active · 3-Run Daily Cycle</span>
+      </div>
+
+      <h1 class="font-display text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-white mb-6 leading-[1.08]">
+        The Operating System for <br>
+        <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-400 to-yellow-200">
+          Student Transportation
+        </span>
+      </h1>
+
+      <p class="mx-auto max-w-3xl text-base sm:text-lg text-slate-300 leading-relaxed mb-10">
+        Engineered specifically for North American school bus fleet operations. Unites dispatchers, drivers, and parents with sub-second synchronization, defect quarantine locks, and shift-driven payroll precision.
+      </p>
+
+      <!-- Primary Action Row -->
+      <div class="flex flex-wrap items-center justify-center gap-4 mb-14">
+        <a href="#demo" class="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-6 py-3.5 text-sm font-bold text-black transition-all hover:bg-amber-300 hover:scale-105 shadow-lg shadow-amber-400/25">
+          <span>Explore Live Demos (Zero Setup)</span>
+          <span>→</span>
+        </a>
+        <a href="#architecture" class="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3.5 text-sm font-bold text-white transition-all hover:bg-white/10 hover:border-white/30 backdrop-blur-md">
+          <span>Compare Dual Architectures</span>
+          <span class="text-slate-400 font-mono text-xs">(Firebase / .NET)</span>
+        </a>
+      </div>
+
+      <!-- Live Interactive Cockpit Frame -->
+      <div id="cockpit" class="relative mx-auto max-w-5xl rounded-3xl border border-white/15 bg-slate-950/80 p-3 sm:p-4 shadow-2xl glow-yellow backdrop-blur-2xl">
+        <!-- Cockpit Header / Status Bar -->
+        <div class="flex flex-wrap items-center justify-between border-b border-white/10 px-4 py-2.5 text-xs font-mono text-slate-400 gap-2 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-rose-500"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-amber-500"></span>
+            <span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+            <span class="ml-2 font-bold text-slate-200">DISPATCH_BOARD_LIVE_HUD</span>
+          </div>
+          <div class="flex items-center gap-4 text-[11px]">
+            <span class="text-emerald-400 flex items-center gap-1">● AM RUN IN PROGRESS</span>
+            <span class="text-slate-400">SYNC_LATENCY: <strong class="text-sky-300">42ms</strong></span>
+            <span class="hidden sm:inline text-amber-300">ACTIVE BUSES: 128 / 130</span>
+          </div>
+        </div>
+
+        <!-- Embedded Dashboard Visual Preview -->
+        <div class="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900 aspect-[16/9] max-h-[500px]">
+          <img src="/bus_dashboard_mockup.png" alt="Dispatch Console" class="w-full h-full object-cover object-top opacity-95">
+          
+          <!-- Overlay HUD Metric Pills -->
+          <div class="absolute bottom-4 left-4 right-4 flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-950/90 border border-white/10 backdrop-blur-md text-xs font-mono">
+            <div class="flex items-center gap-3">
+              <span class="text-amber-400 font-bold">SHIFTS:</span>
+              <span class="text-slate-300">Morning (AM) 98% Checked-In</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="text-sky-400 font-bold">SAFETY GATE:</span>
+              <span class="text-emerald-400">2 Defect Units Quarantined</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="text-emerald-400 font-bold">PAYROLL:</span>
+              <span class="text-slate-200">100% Shift-Linked (EI 2 Decimals)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 2: The Three Purpose-Built Applications -->
+  <section id="apps" class="py-24 px-6 border-t border-white/10 bg-slate-950/60 relative">
+    <div class="mx-auto max-w-6xl">
+      <div class="text-center mb-16">
+        <span class="text-xs font-mono font-bold uppercase tracking-widest text-amber-400 mb-2 inline-block">
+          Complete Tri-Party Operations Loop
+        </span>
+        <h2 class="font-display text-3xl sm:text-5xl font-extrabold text-white mb-4">
+          Three Dedicated Client Apps
+        </h2>
+        <p class="mx-auto max-w-2xl text-slate-400 text-sm sm:text-base">
+          Dispatchers, school bus drivers, and parents each have their own purpose-built client applications, all communicating with a single high-performance API backend.
+        </p>
+      </div>
+
+      <div class="grid gap-8 lg:grid-cols-3">
+        <!-- App 1: Dispatch Console -->
+        <div class="rounded-3xl border border-white/10 bg-slate-900/60 p-8 flex flex-col justify-between hover:border-amber-400/50 transition-all group">
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-2xl">🖥️</span>
+              <span class="text-[10px] font-mono font-bold text-amber-300 bg-amber-400/10 border border-amber-400/30 px-2 py-0.5 rounded uppercase">
+                Desktop / PWA
+              </span>
+            </div>
+            <h3 class="font-display text-xl font-bold text-white mb-2 group-hover:text-amber-300 transition-colors">
+              Dispatch Console
+            </h3>
+            <p class="text-xs text-slate-400 mb-6 leading-relaxed">
+              For fleet dispatchers & safety officers. Interactive AM/MD/PM Kanban boards, automated cover shifts, statutory 6-month inspection locks, and bi-weekly payroll suite.
+            </p>
+            <ul class="space-y-2 text-xs text-slate-300 mb-6 font-mono">
+              <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Three-run daily structure</li>
+              <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Vehicle defect quarantine gate</li>
+              <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Automated payroll & EI hours</li>
+              <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Built-in AI Copilot assistant</li>
+            </ul>
+          </div>
+          <div class="pt-4 border-t border-white/10">
+            <a href="https://schoolbus.pcytech.ca/" target="_blank" class="w-full inline-flex justify-center items-center gap-2 rounded-xl bg-white/10 hover:bg-amber-400 hover:text-black py-2.5 text-xs font-bold transition-all">
+              <span>Open Console Demo</span>
+              <span>↗</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- App 2: Driver Mobile Hub -->
+        <div class="rounded-3xl border border-white/10 bg-slate-900/60 p-8 flex flex-col justify-between hover:border-sky-400/50 transition-all group">
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-2xl">📱</span>
+              <span class="text-[10px] font-mono font-bold text-sky-300 bg-sky-400/10 border border-sky-400/30 px-2 py-0.5 rounded uppercase">
+                Flutter / PWA Offline
+              </span>
+            </div>
+            <h3 class="font-display text-xl font-bold text-white mb-2 group-hover:text-sky-300 transition-colors">
+              Driver & Monitor Hub
+            </h3>
+            <p class="text-xs text-slate-400 mb-6 leading-relaxed">
+              Turn-by-turn stop itinerary, tap-to-board student manifests, Schedule 5 pre-trip walkaround inspection (DVIR), and instant roadside photo defect reporting.
+            </p>
+            <ul class="space-y-2 text-xs text-slate-300 mb-6 font-mono">
+              <li class="flex items-center gap-2"><span class="text-sky-400">✓</span> GPS-verified shift check-in</li>
+              <li class="flex items-center gap-2"><span class="text-sky-400">✓</span> Offline student boarding manifest</li>
+              <li class="flex items-center gap-2"><span class="text-sky-400">✓</span> Schedule 5 DVIR inspection</li>
+              <li class="flex items-center gap-2"><span class="text-sky-400">✓</span> Real-time dispatch chat & push</li>
+            </ul>
+          </div>
+          <div class="pt-4 border-t border-white/10">
+            <a href="https://schoolbus.pcytech.ca/driver" target="_blank" class="w-full inline-flex justify-center items-center gap-2 rounded-xl bg-white/10 hover:bg-sky-400 hover:text-black py-2.5 text-xs font-bold transition-all">
+              <span>Open Driver App Demo</span>
+              <span>↗</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- App 3: Parent Bus Tracker -->
+        <div class="rounded-3xl border border-white/10 bg-slate-900/60 p-8 flex flex-col justify-between hover:border-emerald-400/50 transition-all group">
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-2xl">👨‍👩‍👧</span>
+              <span class="text-[10px] font-mono font-bold text-emerald-300 bg-emerald-400/10 border border-emerald-400/30 px-2 py-0.5 rounded uppercase">
+                Family Bento Portal
+              </span>
+            </div>
+            <h3 class="font-display text-xl font-bold text-white mb-2 group-hover:text-emerald-300 transition-colors">
+              Parent Bus Tracker
+            </h3>
+            <p class="text-xs text-slate-400 mb-6 leading-relaxed">
+              Direction C calming dark UI. Real-time GPS bus breadcrumb tracking, live arrival countdown (&lt; 2 MINS AWAY), safe boarding confirmations, and 1-tap absence reporting.
+            </p>
+            <ul class="space-y-2 text-xs text-slate-300 mb-6 font-mono">
+              <li class="flex items-center gap-2"><span class="text-emerald-400">✓</span> Live bus GPS route & ETA</li>
+              <li class="flex items-center gap-2"><span class="text-emerald-400">✓</span> Student safe boarding alerts</li>
+              <li class="flex items-center gap-2"><span class="text-emerald-400">✓</span> 1-tap direct absence notice</li>
+              <li class="flex items-center gap-2"><span class="text-emerald-400">✓</span> Passwordless OTP authentication</li>
+            </ul>
+          </div>
+          <div class="pt-4 border-t border-white/10">
+            <a href="https://schoolbus.pcytech.ca/parent" target="_blank" class="w-full inline-flex justify-center items-center gap-2 rounded-xl bg-white/10 hover:bg-emerald-400 hover:text-black py-2.5 text-xs font-bold transition-all">
+              <span>Open Parent App Demo</span>
+              <span>↗</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 3: Dual Deployment Architectures (Cloud vs Enterprise) -->
+  <section id="architecture" class="py-24 px-6 border-t border-white/10 relative">
+    <div class="mx-auto max-w-6xl">
+      <div class="text-center mb-16">
+        <span class="text-xs font-mono font-bold uppercase tracking-widest text-sky-400 mb-2 inline-block">
+          Two Production Architectures
+        </span>
+        <h2 class="font-display text-3xl sm:text-5xl font-extrabold text-white mb-4">
+          Tailored to Your Fleet Scale
+        </h2>
+        <p class="mx-auto max-w-2xl text-slate-400 text-sm sm:text-base">
+          Whether you operate a 10-bus regional contractor or manage a multi-yard municipal district with 1,000+ vehicles, we provide the exact architectural fit.
+        </p>
+      </div>
+
+      <div class="grid gap-8 lg:grid-cols-2">
+        <!-- Edition 1: Cloud Edition (Firebase) -->
+        <div class="rounded-3xl border border-sky-400/30 bg-slate-900/80 p-8 flex flex-col justify-between relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-32 h-32 bg-sky-500/10 rounded-full blur-2xl pointer-events-none"></div>
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="inline-flex items-center gap-1.5 rounded-lg bg-sky-400/10 border border-sky-400/30 px-3 py-1 text-xs font-mono font-bold text-sky-300">
+                ☁️ CLOUD EDITION (FIREBASE)
+              </span>
+              <span class="text-xs text-slate-400 font-mono">&lt; 2,000 Shifts/Day</span>
+            </div>
+            <h3 class="font-display text-2xl font-bold text-white mb-2">
+              Serverless Cloud Suite
+            </h3>
+            <p class="text-xs text-slate-400 mb-6">
+              Zero server management. Scales to zero when idle with true pay-as-you-grow economics. Fast rollout in under 24 hours.
+            </p>
+
+            <div class="rounded-2xl bg-slate-950 p-4 border border-white/10 space-y-2 text-xs font-mono mb-6">
+              <div class="flex justify-between pb-1 border-b border-white/5">
+                <span class="text-slate-500">DATABASE:</span>
+                <span class="text-sky-300 font-bold">Firestore NoSQL + BigQuery Cold Archive</span>
+              </div>
+              <div class="flex justify-between pb-1 border-b border-white/5">
+                <span class="text-slate-500">BACKEND API:</span>
+                <span class="text-white font-bold">Go Microservices + Google Cloud Run</span>
+              </div>
+              <div class="flex justify-between pb-1 border-b border-white/5">
+                <span class="text-slate-500">REALTIME:</span>
+                <span class="text-emerald-400 font-bold">Firestore Snapshot Listeners & SSE</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">AI AGENT MCP:</span>
+                <span class="text-amber-400 font-bold">Native /api/mcp Token Protocol</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-3">
+            <a href="https://schoolbus.pcytech.ca/" target="_blank" class="w-full inline-flex justify-center items-center gap-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-black py-3 text-xs font-bold transition-all shadow-md">
+              <span>Launch Firebase Cloud Demo (schoolbus.pcytech.ca)</span>
+              <span>↗</span>
+            </a>
+            <div class="text-[11px] font-mono text-center text-slate-400">
+              Mirror: <a href="https://schoolbusdispatchapp.web.app/" target="_blank" class="text-sky-300 hover:underline">schoolbusdispatchapp.web.app</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Edition 2: Enterprise Edition (.NET 10 + SQL) -->
+        <div class="rounded-3xl border border-amber-400/40 bg-slate-900/80 p-8 flex flex-col justify-between relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="inline-flex items-center gap-1.5 rounded-lg bg-amber-400/10 border border-amber-400/30 px-3 py-1 text-xs font-mono font-bold text-amber-300">
+                🏢 ENTERPRISE EDITION (.NET / SQL)
+              </span>
+              <span class="text-xs text-slate-400 font-mono">80 ~ 1,000+ Buses</span>
+            </div>
+            <h3 class="font-display text-2xl font-bold text-white mb-2">
+              High-Concurrency Relational Suite
+            </h3>
+            <p class="text-xs text-slate-400 mb-6">
+              Strict ACID compliance, Quartz.NET automated scheduling & simulation engine, SignalR sub-second WebSockets, and on-premises / private VPC deployment.
+            </p>
+
+            <div class="rounded-2xl bg-slate-950 p-4 border border-white/10 space-y-2 text-xs font-mono mb-6">
+              <div class="flex justify-between pb-1 border-b border-white/5">
+                <span class="text-slate-500">DATABASE:</span>
+                <span class="text-amber-300 font-bold">MySQL 8.4+ / SQL Server 2022 (EF Core)</span>
+              </div>
+              <div class="flex justify-between pb-1 border-b border-white/5">
+                <span class="text-slate-500">BACKEND API:</span>
+                <span class="text-white font-bold">.NET 10 (C#) Minimal APIs + HybridCache</span>
+              </div>
+              <div class="flex justify-between pb-1 border-b border-white/5">
+                <span class="text-slate-500">REALTIME:</span>
+                <span class="text-emerald-400 font-bold">ASP.NET Core SignalR (&lt; 100ms)</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">SIMULATION:</span>
+                <span class="text-sky-300 font-bold">Quartz.NET Background Route Simulation</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-3">
+            <a href="https://dispatch.pcytech.ca" target="_blank" class="w-full inline-flex justify-center items-center gap-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black py-3 text-xs font-bold transition-all shadow-md">
+              <span>Launch Enterprise Demo (dispatch.pcytech.ca)</span>
+              <span>↗</span>
+            </a>
+            <div class="text-[11px] font-mono text-center text-slate-400">
+              API Hub: <a href="https://api.pcytech.ca" target="_blank" class="text-amber-300 hover:underline">api.pcytech.ca</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 4: Live Demo Credentials HUD -->
+  <section id="demo" class="py-24 px-6 border-t border-white/10 bg-black relative">
+    <div class="mx-auto max-w-6xl">
+      <div class="text-center mb-14">
+        <span class="text-xs font-mono font-bold uppercase tracking-widest text-amber-400 mb-2 inline-block">
+          Instant Browser Sandbox
+        </span>
+        <h2 class="font-display text-3xl sm:text-5xl font-extrabold text-white mb-4">
+          Interactive Live Credentials
+        </h2>
+        <p class="mx-auto max-w-2xl text-slate-400 text-sm">
+          Both environments are 100% online. Use the preconfigured 1-click credentials below to explore end-to-end fleet operations.
+        </p>
+      </div>
+
+      <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <!-- Card 1 -->
+        <div class="rounded-2xl border border-white/15 bg-slate-900/90 p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between text-xs font-mono text-sky-400 mb-2">
+              <span>CLOUD (FIREBASE)</span>
+              <span>ADMIN</span>
+            </div>
+            <h4 class="text-base font-bold text-white mb-2">Dispatch Console</h4>
+            <div class="rounded-xl bg-slate-950 p-3 text-xs font-mono border border-white/5 space-y-1 mb-4">
+              <div class="text-amber-300 font-semibold">👉 Click "Demo Access" → "Demo Admin"</div>
+              <div class="text-slate-400 text-[11px]">AI Copilot direct: /?mode=ai</div>
+            </div>
+          </div>
+          <a href="https://schoolbus.pcytech.ca/" target="_blank" class="w-full inline-flex justify-center items-center gap-1.5 rounded-lg bg-sky-500 text-black py-2 text-xs font-bold hover:bg-sky-400 transition-colors">
+            <span>Launch Cloud Console</span>
+            <span>↗</span>
+          </a>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="rounded-2xl border border-white/15 bg-slate-900/90 p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between text-xs font-mono text-sky-400 mb-2">
+              <span>CLOUD (FIREBASE)</span>
+              <span>DRIVER</span>
+            </div>
+            <h4 class="text-base font-bold text-white mb-2">Driver Mobile Web</h4>
+            <div class="rounded-xl bg-slate-950 p-3 text-xs font-mono border border-white/5 space-y-1 mb-4">
+              <div class="text-amber-300 font-semibold">👉 Click "Quick Demo Credentials"</div>
+              <div class="text-slate-400 text-[11px]">driver1d / Dispatch2026!</div>
+            </div>
+          </div>
+          <a href="https://schoolbus.pcytech.ca/driver" target="_blank" class="w-full inline-flex justify-center items-center gap-1.5 rounded-lg bg-sky-500 text-black py-2 text-xs font-bold hover:bg-sky-400 transition-colors">
+            <span>Launch Cloud Driver</span>
+            <span>↗</span>
+          </a>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="rounded-2xl border border-white/15 bg-slate-900/90 p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between text-xs font-mono text-sky-400 mb-2">
+              <span>CLOUD (FIREBASE)</span>
+              <span>PARENT</span>
+            </div>
+            <h4 class="text-base font-bold text-white mb-2">Parent Bus Tracker</h4>
+            <div class="rounded-xl bg-slate-950 p-3 text-xs font-mono border border-white/5 space-y-1 mb-4">
+              <div class="text-amber-300 font-semibold">👉 Tap "Demo Phone" → "Dev Passcode"</div>
+              <div class="text-slate-400 text-[11px]">Passwordless OTP Autofill</div>
+            </div>
+          </div>
+          <a href="https://schoolbus.pcytech.ca/parent" target="_blank" class="w-full inline-flex justify-center items-center gap-1.5 rounded-lg bg-sky-500 text-black py-2 text-xs font-bold hover:bg-sky-400 transition-colors">
+            <span>Launch Cloud Parent</span>
+            <span>↗</span>
+          </a>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="rounded-2xl border border-amber-400/30 bg-slate-900/90 p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between text-xs font-mono text-amber-400 mb-2">
+              <span>ENTERPRISE (.NET)</span>
+              <span>CONSOLE</span>
+            </div>
+            <h4 class="text-base font-bold text-white mb-2">Enterprise Console</h4>
+            <div class="rounded-xl bg-slate-950 p-3 text-xs font-mono border border-white/5 space-y-1 mb-4">
+              <div class="text-amber-300 font-semibold">👉 Instant 1-Click Access</div>
+              <div class="text-slate-400 text-[11px]">Live Simulation Engine & SignalR</div>
+            </div>
+          </div>
+          <a href="https://dispatch.pcytech.ca" target="_blank" class="w-full inline-flex justify-center items-center gap-1.5 rounded-lg bg-amber-400 text-black py-2 text-xs font-bold hover:bg-amber-300 transition-colors">
+            <span>Launch Enterprise Console</span>
+            <span>↗</span>
+          </a>
+        </div>
+
+        <!-- Card 5 -->
+        <div class="rounded-2xl border border-amber-400/30 bg-slate-900/90 p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between text-xs font-mono text-amber-400 mb-2">
+              <span>ENTERPRISE (.NET)</span>
+              <span>DRIVER</span>
+            </div>
+            <h4 class="text-base font-bold text-white mb-2">Enterprise Driver</h4>
+            <div class="rounded-xl bg-slate-950 p-3 text-xs font-mono border border-white/5 space-y-1 mb-4">
+              <div class="text-amber-300 font-semibold">👉 Instant 1-Click Access</div>
+              <div class="text-slate-400 text-[11px]">Turn-by-Turn GPS Itinerary</div>
+            </div>
+          </div>
+          <a href="https://driver.pcytech.ca" target="_blank" class="w-full inline-flex justify-center items-center gap-1.5 rounded-lg bg-amber-400 text-black py-2 text-xs font-bold hover:bg-amber-300 transition-colors">
+            <span>Launch Enterprise Driver</span>
+            <span>↗</span>
+          </a>
+        </div>
+
+        <!-- Card 6 -->
+        <div class="rounded-2xl border border-amber-400/30 bg-slate-900/90 p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between text-xs font-mono text-amber-400 mb-2">
+              <span>ENTERPRISE (.NET)</span>
+              <span>PARENT</span>
+            </div>
+            <h4 class="text-base font-bold text-white mb-2">Enterprise Parent</h4>
+            <div class="rounded-xl bg-slate-950 p-3 text-xs font-mono border border-white/5 space-y-1 mb-4">
+              <div class="text-amber-300 font-semibold">👉 Instant 1-Click Access</div>
+              <div class="text-slate-400 text-[11px]">Live GPS Telemetry & Arrival ETA</div>
+            </div>
+          </div>
+          <a href="https://parent.pcytech.ca" target="_blank" class="w-full inline-flex justify-center items-center gap-1.5 rounded-lg bg-amber-400 text-black py-2 text-xs font-bold hover:bg-amber-300 transition-colors">
+            <span>Launch Enterprise Parent</span>
+            <span>↗</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-white/10 py-12 px-6 bg-slate-950 text-xs text-slate-500 font-mono">
+    <div class="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div>© 2026 P&CY Technical. Calgary, AB, Canada. All rights reserved.</div>
+      <div class="flex items-center gap-6">
+        <a href="#cockpit" class="hover:text-slate-300">Cockpit</a>
+        <a href="#apps" class="hover:text-slate-300">Apps</a>
+        <a href="#architecture" class="hover:text-slate-300">Editions</a>
+        <a href="#demo" class="hover:text-slate-300 text-amber-400">Demo Sites</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

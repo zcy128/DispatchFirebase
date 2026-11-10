@@ -10,16 +10,19 @@ export default function Contact() {
   const { ref, visible } = useScrollReveal<HTMLDivElement>()
 
   return (
-    <section id="contact" className="bg-primary px-6 py-20 md:py-28">
+    <section id="contact" className="bg-[#0B101D] px-6 py-20 md:py-28 border-t border-white/5 relative">
       <div
         ref={ref}
         className={`reveal mx-auto max-w-4xl ${visible ? 'visible' : ''}`}
       >
         <div className="mb-12 text-center">
-          <h2 className="mb-4 text-3xl font-bold tracking-tight text-white md:text-4xl">
+          <span className="text-xs font-mono font-bold uppercase tracking-widest text-amber-400 mb-2 inline-block">
+            Partnership & Architecture
+          </span>
+          <h2 className="mb-4 text-3xl font-extrabold tracking-tight text-white md:text-5xl">
             {t.contact.title}
           </h2>
-          <p className="mx-auto max-w-2xl text-lg text-white/70">
+          <p className="mx-auto max-w-2xl text-base text-slate-300 leading-relaxed md:text-lg">
             {t.contact.subtitle}
           </p>
         </div>
@@ -27,37 +30,37 @@ export default function Contact() {
         <div className="mb-10 grid gap-6 sm:grid-cols-2">
           <a
             href={`mailto:${EMAIL}`}
-            className="group cursor-pointer rounded-2xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-sm transition-colors duration-200 hover:border-accent/40 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-light focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
+            className="bento-card group p-6 text-center shadow-xl transition-all duration-300 hover:border-amber-400/50 hover:scale-[1.02]"
           >
-            <div className="mb-3 inline-flex rounded-xl bg-accent/20 p-3 text-accent-light transition-colors duration-200 group-hover:bg-accent/30">
+            <div className="mb-3 inline-flex rounded-xl bg-amber-400/10 border border-amber-400/30 p-3 text-amber-400 transition-colors duration-200 group-hover:bg-amber-400 group-hover:text-slate-950">
               <MailIcon className="h-6 w-6" />
             </div>
-            <p className="mb-1 text-xs font-bold uppercase tracking-widest text-white/50">
+            <p className="mb-1 text-xs font-mono font-bold uppercase tracking-widest text-slate-400">
               {t.contact.emailLabel}
             </p>
-            <p className="text-lg font-semibold text-white transition-colors duration-200 group-hover:text-accent-light">
+            <p className="text-base font-bold text-white transition-colors duration-200 group-hover:text-amber-300">
               {EMAIL}
             </p>
           </a>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-sm">
-            <div className="mb-3 inline-flex rounded-xl bg-accent/20 p-3 text-accent-light">
+          <div className="bento-card p-6 text-center shadow-xl">
+            <div className="mb-3 inline-flex rounded-xl bg-amber-400/10 border border-amber-400/30 p-3 text-amber-400">
               <MapPinIcon className="h-6 w-6" />
             </div>
-            <p className="mb-1 text-xs font-bold uppercase tracking-widest text-white/50">
+            <p className="mb-1 text-xs font-mono font-bold uppercase tracking-widest text-slate-400">
               {t.contact.locationLabel}
             </p>
-            <p className="text-lg font-semibold text-white">{LOCATION}</p>
+            <p className="text-base font-bold text-white">{LOCATION}</p>
           </div>
         </div>
 
         <div className="text-center">
           <a
             href={`mailto:${EMAIL}`}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-accent px-8 py-3.5 text-sm font-semibold text-white shadow-lg shadow-accent/30 transition-colors duration-200 hover:bg-accent-light focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-amber-400 px-8 py-3.5 text-sm font-bold text-slate-950 shadow-lg shadow-amber-400/25 transition-all duration-200 hover:bg-amber-300 hover:scale-105 focus:outline-none"
           >
-            <MailIcon className="h-5 w-5" />
-            {t.contact.cta}
+            <MailIcon className="h-5 w-5 text-slate-950" />
+            <span>{t.contact.cta}</span>
           </a>
         </div>
       </div>

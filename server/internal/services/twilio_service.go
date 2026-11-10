@@ -25,6 +25,14 @@ func NewTwilioService(cfg *config.Config) *TwilioService {
 	}
 }
 
+// FromNumber returns the configured Twilio originating number or the fallback default.
+func (s *TwilioService) FromNumber() string {
+	if s.cfg != nil && s.cfg.TwilioFromNumber != "" {
+		return s.cfg.TwilioFromNumber
+	}
+	return "+18005550199"
+}
+
 // SendSMS sends an SMS message via Twilio REST API, or logs locally in development mode
 func (s *TwilioService) SendSMS(toPhone, messageBody string) error {
 	normalizedTo := s.FormatE164(toPhone)

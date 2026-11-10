@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useLanguage } from '../i18n/LanguageContext'
 import LanguageToggle from './LanguageToggle'
+import { SparklesIcon } from './icons'
 
 const navLinks = [
+  { href: '#ecosystem', key: 'ecosystem' as const },
+  { href: '#editions', key: 'editions' as const },
+  { href: '#highlights', key: 'highlights' as const },
+  { href: '#demo', key: 'demo' as const },
   { href: '#about', key: 'about' as const },
-  { href: '#services', key: 'services' as const },
   { href: '#contact', key: 'contact' as const },
 ]
 
@@ -28,102 +32,108 @@ export default function Navbar() {
 
   const handleNavClick = () => setMenuOpen(false)
 
-  const linkClass =
-    'cursor-pointer text-sm font-medium text-secondary transition-colors duration-200 hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded-sm'
-
   return (
-    <header className="fixed left-0 right-0 top-0 z-50 px-4 pt-4 md:px-6">
+    <header className="fixed left-0 right-0 top-0 z-50 px-4 pt-3 md:px-6">
       <nav
-        className={`mx-auto flex max-w-6xl items-center justify-between rounded-2xl px-5 py-3 transition-all duration-300 ${
+        className={`mx-auto flex max-w-6xl items-center justify-between rounded-2xl px-5 py-3 transition-all duration-300 border ${
           scrolled
-            ? 'border border-slate-200/80 bg-white/90 shadow-nav backdrop-blur-md'
-            : 'bg-transparent'
+            ? 'border-white/10 bg-[#0B101D]/90 shadow-2xl backdrop-blur-xl'
+            : 'border-white/10 bg-[#0B101D]/70 shadow-lg backdrop-blur-md'
         }`}
         aria-label="Main navigation"
       >
         <a
           href="#"
-          className={`flex items-center gap-2.5 cursor-pointer text-lg font-bold tracking-tight transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 rounded-sm ${
-            scrolled ? 'text-primary' : 'text-white'
-          }`}
+          className="flex items-center gap-2.5 cursor-pointer text-base md:text-lg font-bold tracking-tight text-white transition-colors duration-200 focus:outline-none"
         >
-          <img
-            src="/pcy_tech_logo.png"
-            alt="P&CY Technical Logo"
-            className="h-10 w-10 object-contain"
-          />
-          <span>P&CY Technical</span>
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-400 text-slate-950 font-black text-xl shadow-md shadow-amber-400/20">
+            🚌
+          </div>
+          <div className="flex flex-col">
+            <span className="leading-tight text-white font-extrabold">P&CY Technical</span>
+            <span className="text-[10px] font-semibold tracking-wider uppercase text-amber-300 font-mono">
+              Dispatch OS
+            </span>
+          </div>
         </a>
 
-        <div className="hidden items-center gap-8 md:flex">
+        {/* Desktop Navigation Links */}
+        <div className="hidden items-center gap-2 lg:gap-4 md:flex">
           {navLinks.map((link) => (
             <a
               key={link.key}
               href={link.href}
-              className={`${linkClass} ${scrolled ? '' : '!text-white/85 hover:!text-white'}`}
+              className="cursor-pointer text-xs font-semibold text-slate-300 transition-colors duration-200 hover:text-amber-300 rounded-md px-2.5 py-1"
             >
               {t.nav[link.key]}
             </a>
           ))}
 
-          <LanguageToggle variant={scrolled ? 'light' : 'dark'} />
+          <LanguageToggle variant="dark" />
 
           <a
-            href="#contact"
-            className="cursor-pointer rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors duration-200 hover:bg-accent-light focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+            href="#demo"
+            className="cursor-pointer inline-flex items-center gap-1.5 rounded-full bg-amber-400 px-4 py-2 text-xs font-bold text-slate-950 shadow-md shadow-amber-400/20 transition-all duration-200 hover:bg-amber-300 hover:scale-105 focus:outline-none"
           >
-            {t.nav.cta}
+            <SparklesIcon className="w-3.5 h-3.5 text-slate-950" />
+            <span>{t.nav.cta}</span>
           </a>
         </div>
 
-        <button
-          type="button"
-          className="flex cursor-pointer flex-col gap-1.5 rounded-md p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent md:hidden"
-          onClick={() => setMenuOpen(!menuOpen)}
-          aria-label="Toggle menu"
-          aria-expanded={menuOpen}
-        >
-          <span
-            className={`block h-0.5 w-6 transition-transform duration-200 ${
-              scrolled ? 'bg-primary' : 'bg-white'
-            } ${menuOpen ? 'translate-y-2 rotate-45' : ''}`}
-          />
-          <span
-            className={`block h-0.5 w-6 transition-opacity duration-200 ${
-              scrolled ? 'bg-primary' : 'bg-white'
-            } ${menuOpen ? 'opacity-0' : ''}`}
-          />
-          <span
-            className={`block h-0.5 w-6 transition-transform duration-200 ${
-              scrolled ? 'bg-primary' : 'bg-white'
-            } ${menuOpen ? '-translate-y-2 -rotate-45' : ''}`}
-          />
-        </button>
+        {/* Mobile Hamburger Button */}
+        <div className="flex items-center gap-2 md:hidden">
+          <LanguageToggle variant="dark" />
+          <button
+            type="button"
+            className="flex cursor-pointer flex-col gap-1.5 rounded-md p-1.5 focus:outline-none text-white"
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label="Toggle menu"
+            aria-expanded={menuOpen}
+          >
+            <span
+              className={`block h-0.5 w-6 rounded-full bg-white transition-transform duration-200 ${
+                menuOpen ? 'translate-y-2 rotate-45' : ''
+              }`}
+            />
+            <span
+              className={`block h-0.5 w-6 rounded-full bg-white transition-opacity duration-200 ${
+                menuOpen ? 'opacity-0' : ''
+              }`}
+            />
+            <span
+              className={`block h-0.5 w-6 rounded-full bg-white transition-transform duration-200 ${
+                menuOpen ? '-translate-y-2 -rotate-45' : ''
+              }`}
+            />
+          </button>
+        </div>
       </nav>
 
+      {/* Mobile Menu Dropdown */}
       {menuOpen && (
-        <div className="mx-auto mt-2 max-w-6xl rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-nav md:hidden">
+        <div className="fixed inset-0 top-[76px] z-40 bg-[#0B101D]/95 backdrop-blur-2xl px-6 py-8 md:hidden flex flex-col justify-between">
           <div className="flex flex-col gap-4">
             {navLinks.map((link) => (
               <a
                 key={link.key}
                 href={link.href}
                 onClick={handleNavClick}
-                className={linkClass}
+                className="text-lg font-bold text-slate-200 hover:text-amber-400 py-2 border-b border-white/10"
               >
                 {t.nav[link.key]}
               </a>
             ))}
-            <div className="flex items-center justify-between border-t border-slate-100 pt-4">
-              <LanguageToggle variant="light" />
-              <a
-                href="#contact"
-                onClick={handleNavClick}
-                className="cursor-pointer rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white transition-colors duration-200 hover:bg-accent-light"
-              >
-                {t.nav.cta}
-              </a>
-            </div>
+          </div>
+
+          <div className="pt-6">
+            <a
+              href="#demo"
+              onClick={handleNavClick}
+              className="w-full inline-flex justify-center items-center gap-2 rounded-2xl bg-amber-400 text-slate-950 font-bold py-3.5 shadow-lg shadow-amber-400/20"
+            >
+              <SparklesIcon className="w-4 h-4 text-slate-950" />
+              <span>{t.nav.cta}</span>
+            </a>
           </div>
         </div>
       )}

@@ -7,6 +7,15 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { ComplianceProvider } from './contexts/ComplianceContext';
 import './index.css';
 
+// Unregister any stale Service Worker in local development to prevent aggressive asset caching
+if (import.meta.env.DEV && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) {
+      registration.unregister();
+    }
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider>

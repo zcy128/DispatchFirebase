@@ -20,7 +20,7 @@ const STORAGE_KEY = 'pcytech-language'
 
 function getInitialLanguage(): Language {
   const stored = localStorage.getItem(STORAGE_KEY)
-  if (stored === 'en' || stored === 'zh') return stored
+  if (stored === 'en' || stored === 'fr') return stored
   return 'en'
 }
 
@@ -30,7 +30,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const setLanguage = useCallback((lang: Language) => {
     setLanguageState(lang)
     localStorage.setItem(STORAGE_KEY, lang)
-    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en'
+    document.documentElement.lang = lang === 'fr' ? 'fr' : 'en'
   }, [])
 
   const value = useMemo(

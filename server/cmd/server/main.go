@@ -74,6 +74,7 @@ func main() {
 	var dispatchRepo repository.DispatchRepository
 	var parentRepo repository.ParentRepository
 	var charterRepo repository.CharterRepository
+	var smsRepo repository.SMSRepository
 
 	var app *firebase.App
 	var err error
@@ -118,6 +119,7 @@ func main() {
 			yardRepo = repository.NewFirestoreYardRepository(fsClient)
 			parentRepo = repository.NewFirestoreParentRepository(fsClient)
 			charterRepo = repository.NewFirestoreCharterRepository(fsClient)
+			smsRepo = repository.NewFirestoreSMSRepository(fsClient)
 
 			if saPath != "" {
 				bqClient, _ = bigquery.NewClient(ctx, cfg.ProjectID, option.WithCredentialsFile(saPath))
@@ -161,6 +163,7 @@ func main() {
 		dispatchRepo = repository.NewMemoryDispatchRepository()
 		parentRepo = repository.NewMemoryParentRepository()
 		charterRepo = repository.NewMemoryCharterRepository()
+		smsRepo = repository.NewMemorySMSRepository()
 		seedMemoryParentAndStudentData(ctx, studentRepo, parentRepo, dispatchRepo, vehicleRepo, yardRepo)
 	}
 
@@ -264,11 +267,31 @@ func main() {
 	dispatchHandler.UseStudentLookup(studentRepo)
 	parentHandler := handlers.NewParentHandler(cfg, studentRepo, parentRepo, dispatchRepo, routeRepo, twilioService, emailService, etaService, googleRoutesService)
 	twilioWebhookHandler := handlers.NewTwilioWebhookHandler(cfg, studentRepo, dispatchRepo, parentRepo, twilioService, etaService)
+	twilioWebhookHandler.UseSMSRepository(smsRepo)
+	smsHandler := handlers.NewSMSHandler(twilioService, smsRepo, repo)
 
-	// Health check for Cloud Run
+	const defaultAPIVersion = "1.0.8"
+	getAPIVersion := func() string {
+		if v := os.Getenv("APP_VERSION"); v != "" {
+			return v
+		}
+		return defaultAPIVersion
+	}
+
+	// Health check for Cloud Run & monitoring
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"healthy","mode":"%s","time":"%s"}`, cfg.AppMode, time.Now().Format(time.RFC3339))
+		fmt.Fprintf(w, `{"status":"healthy","version":"%s","mode":"%s","time":"%s"}`, getAPIVersion(), cfg.AppMode, time.Now().Format(time.RFC3339))
+	})
+
+	// Public API version inspection endpoints
+	r.Get("/api/version", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"version":"%s","status":"online","mode":"%s","server":"dispatch-server","time":"%s"}`, getAPIVersion(), cfg.AppMode, time.Now().Format(time.RFC3339))
+	})
+	r.Get("/api/public/version", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"version":"%s","status":"online","mode":"%s","server":"dispatch-server","time":"%s"}`, getAPIVersion(), cfg.AppMode, time.Now().Format(time.RFC3339))
 	})
 
 	// Demo keeps these open for the public walkthrough. Production requires the admin secret.
@@ -449,6 +472,10 @@ func main() {
 		protected.Get("/api/dispatch/simulation-settings", dispatchHandler.GetSimulationSettings)
 		protected.Put("/api/dispatch/simulation-settings", dispatchHandler.SaveSimulationSettings)
 		protected.Post("/api/dispatch/simulation/run", dispatchHandler.RunSimulation)
+
+		// SMS Messaging API (Twilio REST gateway & history)
+		protected.Post("/api/sms/send", smsHandler.SendSMS)
+		protected.Get("/api/sms/history", smsHandler.GetHistory)
 		protected.Get("/api/busplanner/staging/routes", busplannerHandler.ListStagingRoutes)
 		protected.Post("/api/busplanner/staging/routes/{id}/copy", busplannerHandler.CopyStagingRoute)
 		protected.With(auth.RequireRole("admin")).Get("/api/busplanner/settings", busplannerHandler.GetSettings)
@@ -676,6 +703,10 @@ func main() {
 		publicDev.Get("/api/public/dispatch/simulation-settings", dispatchHandler.GetSimulationSettings)
 		publicDev.Put("/api/public/dispatch/simulation-settings", dispatchHandler.SaveSimulationSettings)
 		publicDev.Post("/api/public/dispatch/simulation/run", dispatchHandler.RunSimulation)
+
+		// SMS Messaging API public dev routes
+		publicDev.Post("/api/public/sms/send", smsHandler.SendSMS)
+		publicDev.Get("/api/public/sms/history", smsHandler.GetHistory)
 		publicDev.Get("/api/public/dispatch/change-logs", dispatchHandler.ListChangeLogs)
 		publicDev.Post("/api/public/dispatch/change-logs", dispatchHandler.CreateChangeLog)
 		publicDev.Get("/api/public/dispatch/audit-logs", dispatchHandler.ListSystemAuditLogs)
