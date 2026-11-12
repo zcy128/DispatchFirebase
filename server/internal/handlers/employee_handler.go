@@ -251,6 +251,18 @@ func (h *EmployeeHandler) Update(w http.ResponseWriter, r *http.Request) {
 			existing.IsActive = active
 		}
 	}
+	if value, ok := raw["hasCoveredAsDriver"]; ok {
+		var covered bool
+		if json.Unmarshal(value, &covered) == nil {
+			existing.HasCoveredAsDriver = covered
+		}
+	}
+	if value, ok := raw["hasCoveredAsAttendant"]; ok {
+		var covered bool
+		if json.Unmarshal(value, &covered) == nil {
+			existing.HasCoveredAsAttendant = covered
+		}
+	}
 	if value, ok := raw["lat"]; ok && string(value) != "null" {
 		var lat float64
 		if json.Unmarshal(value, &lat) == nil {

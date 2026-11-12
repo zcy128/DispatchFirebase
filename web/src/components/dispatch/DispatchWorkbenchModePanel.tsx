@@ -28,6 +28,8 @@ import {
   SlidersHorizontal,
   ShieldCheck,
   Bell,
+  CalendarOff,
+  HeartHandshake,
 } from 'lucide-react';
 import {
   CheckInReminderSettings,
@@ -37,6 +39,7 @@ import {
   DelayReasonCategory,
   ParentNotificationRecipient,
 } from '../../types/dispatch';
+import { CharterTrip } from '../../types/charter';
 import { Employee } from '../../types/employee';
 import { Vehicle } from '../../types/vehicle';
 import { Student } from '../../types/student';
@@ -52,12 +55,31 @@ import {
 import {
   sortDriversByDeadhead,
   calculateDriverDeadhead,
+  sortAttendantsByDeadhead,
+  calculateAttendantDeadhead,
 } from '../../utils/deadheadCalculator';
+import {
+  classifyEmployeeForRole,
+  compareCrewPriority,
+  CrewCandidateClassification,
+} from '../../utils/crewEligibilityUtils';
 import {
   ScheduledShift,
   checkDriverShiftConflict,
   checkVehicleConflict,
 } from '../../utils/dispatchConflictDetector';
+import {
+  UnavailableVehicleInfo,
+  EmployeeTimeOffInfo,
+  getVehicleUnavailabilityReason,
+  getEmployeeTimeOffReason,
+} from '../../utils/vehicleAvailabilityUtils';
+import {
+  EmployeeDayTask,
+  buildEmployeeTaskIndex,
+  formatEmployeeTaskShortLabel,
+  getEmployeeDayTasks,
+} from '../../utils/employeeTaskUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../contexts/I18nContext';
 import { logDispatchAction } from '../../utils/dispatchLogger';
@@ -65,8 +87,49 @@ import { SmsConversationModal } from './SmsConversationModal';
 import { ShiftAiCopilotBar } from './ShiftAiCopilotBar';
 
 const EMPTY_STOPS: DispatchShiftStop[] = [];
+const EMPTY_CHARTER_TRIPS: CharterTrip[] = [];
 
-export type WorkbenchActionTab = 'assign_driver' | 'assign_vehicle' | 'late_alert';
+export type WorkbenchActionTab = 'assign_driver' | 'assign_attendant' | 'assign_vehicle' | 'late_alert';
+
+function getEligibilityBadgeClass(cls: CrewCandidateClassification): string {
+  if (cls.tier === 1) {
+    return 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700';
+  }
+  if (cls.hasCoverExperience) {
+    return 'bg-sky-100 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800 font-bold';
+  }
+  if (cls.isSupervisor) {
+    return 'bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 font-bold';
+  }
+  return 'bg-slate-100/70 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 border border-slate-200/70 dark:border-slate-700/70';
+}
+
+function renderCandidateTaskPills(
+  otherTasks: EmployeeDayTask[],
+  isFrench: boolean,
+  testId?: string
+) {
+  if (otherTasks.length === 0) return null;
+  return (
+    <div data-testid={testId} className="flex flex-wrap items-center gap-1 mt-1">
+      {otherTasks.map((task) => (
+        <span
+          key={`${task.source}:${task.id}:${task.role}`}
+          className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+            task.isOverlap
+              ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+              : task.source === 'charter'
+                ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                : 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+          }`}
+        >
+          <Clock className="w-2.5 h-2.5 shrink-0" />
+          <span>{formatEmployeeTaskShortLabel(task, isFrench)}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
 export type WorkbenchQueueSubFilter =
   | 'all_filtered'
   | 'issues_only'
@@ -163,9 +226,12 @@ export function filterAndSortWorkbenchQueue(
 interface DispatchWorkbenchModePanelProps {
   shifts: DispatchShift[];
   allDayShifts: DispatchShift[];
+  charterTrips?: CharterTrip[];
   latenessByShiftId: Map<string, ShiftLatenessInfo>;
   employees: Employee[];
   availableVehicles: Vehicle[];
+  unavailableVehiclesMap?: Map<string, UnavailableVehicleInfo>;
+  employeeTimeOffMap?: Map<string, EmployeeTimeOffInfo>;
   studentsMap: Record<number, Student>;
   selectedDate: string;
   currentTimeStr: string;
@@ -200,9 +266,12 @@ interface DispatchWorkbenchModePanelProps {
 export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProps> = ({
   shifts,
   allDayShifts,
+  charterTrips = EMPTY_CHARTER_TRIPS,
   latenessByShiftId,
   employees,
   availableVehicles,
+  unavailableVehiclesMap,
+  employeeTimeOffMap,
   studentsMap,
   selectedDate,
   currentTimeStr,
@@ -227,7 +296,7 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
   onSelectStudent,
 }) => {
   const { currentUser } = useAuth();
-  const { t } = useI18n();
+  const { t, isFrench } = useI18n();
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
 
   // Left queue sub-filter & search (derived state reset during render, avoiding extra useEffect render pass)
@@ -317,6 +386,19 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
     }));
   }, [allDayShifts]);
 
+  // Index other Dispatch shifts and Charter trips on selectedShift.dispatchDate for every candidate
+  const employeeTaskIndex = useMemo(() => {
+    if (!selectedShift) return null;
+    return buildEmployeeTaskIndex({
+      targetDate: selectedShift.dispatchDate || selectedDate,
+      dispatchShifts: allDayShifts,
+      charterTrips,
+      excludeDispatchShiftId: selectedShift.id,
+      windowStartTime: selectedShift.firstStopTime || '07:00',
+      windowEndTime: selectedShift.lastStopTime || '09:00',
+    });
+  }, [selectedShift, selectedDate, allDayShifts, charterTrips]);
+
   // Resolved phone numbers for assigned driver and attendant
   const driverPhone = useMemo(() => {
     if (!selectedShift) return '';
@@ -356,6 +438,7 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
   const [driverSearch, setDriverSearch] = useState('');
   const [sortByDeadhead, setSortByDeadhead] = useState(true);
   const [onlyAvailableDrivers, setOnlyAvailableDrivers] = useState(false);
+  const [onlyQualifiedDrivers, setOnlyQualifiedDrivers] = useState(false);
   const [assigningDriverId, setAssigningDriverId] = useState<string | null>(null);
 
   const rankedDriverCandidates = useMemo(() => {
@@ -366,28 +449,47 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
     const baseList =
       shiftStops.length > 0 && sortByDeadhead
         ? sortDriversByDeadhead(activeEmps, shiftStops)
-        : activeEmps.map((d) => ({
-            employee: d,
-            deadhead: calculateDriverDeadhead(d, shiftStops),
-          }));
+        : [...activeEmps]
+            .sort((a, b) => compareCrewPriority(a, b, 'driver'))
+            .map((d) => ({
+              employee: d,
+              deadhead: calculateDriverDeadhead(d, shiftStops),
+            }));
 
     const q = driverSearch.trim().toLowerCase();
     const result: Array<{
       employee: Employee;
       deadhead: ReturnType<typeof calculateDriverDeadhead>;
       conflict: ReturnType<typeof checkDriverShiftConflict>;
+      timeOff: EmployeeTimeOffInfo | undefined;
+      eligibility: CrewCandidateClassification;
+      otherTasks: EmployeeDayTask[];
+      hasTaskOverlap: boolean;
     }> = [];
 
     for (let i = 0; i < baseList.length; i++) {
       const { employee, deadhead } = baseList[i];
+      const eligibility = classifyEmployeeForRole(employee, 'driver');
+
       if (q) {
         const fullName = `${employee.firstName} ${employee.lastName}`.toLowerCase();
         const pos = (employee.jobPosition || '').toLowerCase();
         const addr = (employee.personalAddress || '').toLowerCase();
         const phone = (employee.preferredPhone || employee.mobilePhone || '').toLowerCase();
-        if (!fullName.includes(q) && !pos.includes(q) && !addr.includes(q) && !phone.includes(q)) {
+        const badge = eligibility.badgeTextEn.toLowerCase();
+        if (
+          !fullName.includes(q) &&
+          !pos.includes(q) &&
+          !addr.includes(q) &&
+          !phone.includes(q) &&
+          !badge.includes(q)
+        ) {
           continue;
         }
+      }
+
+      if (onlyQualifiedDrivers && !eligibility.isQualifiedRelief && employee.id !== selectedShift.driverId) {
+        continue;
       }
 
       const conflict = checkDriverShiftConflict(
@@ -398,12 +500,19 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
         scheduledShiftsForConflict,
         selectedShift.id
       );
+      const timeOff = getEmployeeTimeOffReason(employee, employeeTimeOffMap);
+      const otherTasks = getEmployeeDayTasks(employee, employeeTaskIndex);
+      const hasTaskOverlap = conflict.hasConflict || otherTasks.some((task) => task.isOverlap);
 
-      if (onlyAvailableDrivers && conflict.hasConflict && employee.id !== selectedShift.driverId) {
+      if (
+        onlyAvailableDrivers &&
+        (hasTaskOverlap || Boolean(timeOff)) &&
+        employee.id !== selectedShift.driverId
+      ) {
         continue;
       }
 
-      result.push({ employee, deadhead, conflict });
+      result.push({ employee, deadhead, conflict, timeOff, eligibility, otherTasks, hasTaskOverlap });
     }
 
     return result;
@@ -413,7 +522,10 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
     sortByDeadhead,
     driverSearch,
     onlyAvailableDrivers,
+    onlyQualifiedDrivers,
     scheduledShiftsForConflict,
+    employeeTimeOffMap,
+    employeeTaskIndex,
   ]);
 
   const handleAssignDriver = async (driver: Employee) => {
@@ -458,6 +570,7 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
     const result: Array<{
       vehicle: Vehicle;
       conflict: ReturnType<typeof checkVehicleConflict>;
+      unavail: UnavailableVehicleInfo | undefined;
     }> = [];
 
     for (let i = 0; i < activeVehs.length; i++) {
@@ -480,20 +593,32 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
         scheduledShiftsForConflict,
         selectedShift.id
       );
+      const unavail = getVehicleUnavailabilityReason(
+        vehicle.unitNumber,
+        vehicle.vehicleId || vehicle.id,
+        unavailableVehiclesMap
+      );
 
       if (
         onlyAvailableVehicles &&
-        conflict.hasConflict &&
+        (conflict.hasConflict || Boolean(unavail)) &&
         vehicle.unitNumber !== selectedShift.unitNumber
       ) {
         continue;
       }
 
-      result.push({ vehicle, conflict });
+      result.push({ vehicle, conflict, unavail });
     }
 
     return result;
-  }, [selectedShift, availableVehicles, vehicleSearch, onlyAvailableVehicles, scheduledShiftsForConflict]);
+  }, [
+    selectedShift,
+    availableVehicles,
+    vehicleSearch,
+    onlyAvailableVehicles,
+    scheduledShiftsForConflict,
+    unavailableVehiclesMap,
+  ]);
 
   const handleAssignVehicle = async (vehicle: Vehicle) => {
     if (!selectedShift) return;
@@ -520,9 +645,101 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
     }
   };
 
+  const [attendantSearch, setAttendantSearch] = useState('');
+  const [onlyAvailableAttendants, setOnlyAvailableAttendants] = useState(false);
+  const [onlyQualifiedAttendants, setOnlyQualifiedAttendants] = useState(false);
+  const [assigningAttendantId, setAssigningAttendantId] = useState<string | null>(null);
+
+  const selectedShiftDriverObj = useMemo(() => {
+    if (!selectedShift?.driverId) return null;
+    return employees.find((e) => e.id === selectedShift.driverId) || null;
+  }, [selectedShift, employees]);
+
+  const rankedAttendantCandidates = useMemo(() => {
+    if (!selectedShift) return [];
+    const activeEmps = employees.filter((e) => e.isActive !== false);
+    const shiftStops = Array.isArray(selectedShift.stops) ? selectedShift.stops : EMPTY_STOPS;
+
+    const baseList =
+      shiftStops.length > 0 && sortByDeadhead
+        ? sortAttendantsByDeadhead(activeEmps, selectedShiftDriverObj, shiftStops)
+        : [...activeEmps]
+            .sort((a, b) => compareCrewPriority(a, b, 'attendant'))
+            .map((a) => ({
+              employee: a,
+              deadhead: calculateAttendantDeadhead(a, selectedShiftDriverObj, shiftStops),
+            }));
+
+    const q = attendantSearch.trim().toLowerCase();
+    const result: Array<{
+      employee: Employee;
+      deadhead: ReturnType<typeof calculateAttendantDeadhead>;
+      timeOff: EmployeeTimeOffInfo | undefined;
+      eligibility: CrewCandidateClassification;
+      otherTasks: EmployeeDayTask[];
+      hasTaskOverlap: boolean;
+    }> = [];
+
+    for (let i = 0; i < baseList.length; i++) {
+      const { employee, deadhead } = baseList[i];
+      const eligibility = classifyEmployeeForRole(employee, 'attendant');
+
+      if (q) {
+        const fullName = `${employee.firstName} ${employee.lastName}`.toLowerCase();
+        const pos = (employee.jobPosition || '').toLowerCase();
+        const addr = (employee.personalAddress || '').toLowerCase();
+        const phone = (employee.preferredPhone || employee.mobilePhone || '').toLowerCase();
+        const badge = eligibility.badgeTextEn.toLowerCase();
+        if (
+          !fullName.includes(q) &&
+          !pos.includes(q) &&
+          !addr.includes(q) &&
+          !phone.includes(q) &&
+          !badge.includes(q)
+        ) {
+          continue;
+        }
+      }
+
+      if (
+        onlyQualifiedAttendants &&
+        !eligibility.isQualifiedRelief &&
+        employee.id !== selectedShift.attendantId
+      ) {
+        continue;
+      }
+
+      const timeOff = getEmployeeTimeOffReason(employee, employeeTimeOffMap);
+      const otherTasks = getEmployeeDayTasks(employee, employeeTaskIndex);
+      const hasTaskOverlap = otherTasks.some((task) => task.isOverlap);
+      if (
+        onlyAvailableAttendants &&
+        (hasTaskOverlap || Boolean(timeOff)) &&
+        employee.id !== selectedShift.attendantId
+      ) {
+        continue;
+      }
+
+      result.push({ employee, deadhead, timeOff, eligibility, otherTasks, hasTaskOverlap });
+    }
+
+    return result;
+  }, [
+    selectedShift,
+    employees,
+    selectedShiftDriverObj,
+    sortByDeadhead,
+    attendantSearch,
+    onlyAvailableAttendants,
+    onlyQualifiedAttendants,
+    employeeTimeOffMap,
+    employeeTaskIndex,
+  ]);
+
   const handleAssignAttendant = async (attendant: Employee) => {
     if (!selectedShift) return;
     try {
+      setAssigningAttendantId(attendant.id);
       const newAttendantName = `${attendant.firstName} ${attendant.lastName}`.trim();
       const newAttendantPhone = attendant.preferredPhone || attendant.mobilePhone || '';
       const updated = await DispatchService.updateShift(selectedShift.id, {
@@ -541,6 +758,8 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
     } catch (err) {
       console.error('Failed to assign attendant:', err);
       alert('Failed to assign attendant: ' + (err as Error).message);
+    } finally {
+      setAssigningAttendantId(null);
     }
   };
 
@@ -1182,6 +1401,8 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                     <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                       {activeActionTab === 'assign_driver'
                         ? `Assign Driver for ${selectedShift.routeNo} (${selectedShift.shiftType})`
+                        : activeActionTab === 'assign_attendant'
+                        ? `Assign Attendant for ${selectedShift.routeNo} (${selectedShift.shiftType})`
                         : activeActionTab === 'assign_vehicle'
                         ? `Assign Vehicle for ${selectedShift.routeNo} (${selectedShift.shiftType})`
                         : `Delay Alert & Outreach for ${selectedShift.routeNo} (${selectedShift.shiftType})`}
@@ -1189,7 +1410,9 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                     {activeActionTab === 'assign_driver'
-                      ? 'Drivers ranked by deadhead distance to first/last stop and checked for schedule conflicts.'
+                      ? 'Drivers ranked by qualification tier (Drivers -> Supervisors / Experienced Cover Staff -> Others) and deadhead distance.'
+                      : activeActionTab === 'assign_attendant'
+                      ? 'Attendants ranked by qualification tier (Attendants -> Supervisors / Experienced Cover Staff -> Others) and proximity.'
                       : activeActionTab === 'assign_vehicle'
                       ? 'Showing compliant vehicles available for dispatch (defective and due-inspection units are excluded).'
                       : 'Send SMS/Email delay alerts to parents or message/check in the assigned driver.'}
@@ -1213,6 +1436,20 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                     {selectedLateness?.isMissingDriver && (
                       <span className="w-2 h-2 rounded-full bg-rose-500" />
                     )}
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="action-tab-assign-attendant"
+                    onClick={() => setActiveActionTab('assign_attendant')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                      activeActionTab === 'assign_attendant'
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-2xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <HeartHandshake className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Attendants</span>
                   </button>
 
                   <button
@@ -1285,6 +1522,16 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                         <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
                           <input
                             type="checkbox"
+                            checked={onlyQualifiedDrivers}
+                            onChange={(e) => setOnlyQualifiedDrivers(e.target.checked)}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span>{isFrench ? 'Qualifiés seulement' : 'Qualified Relief Only'}</span>
+                        </label>
+
+                        <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                          <input
+                            type="checkbox"
                             checked={onlyAvailableDrivers}
                             onChange={(e) => setOnlyAvailableDrivers(e.target.checked)}
                             className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
@@ -1300,7 +1547,7 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                           No matching drivers found.
                         </div>
                       ) : (
-                        rankedDriverCandidates.slice(0, 40).map(({ employee: d, deadhead, conflict }) => {
+                        rankedDriverCandidates.slice(0, 40).map(({ employee: d, deadhead, conflict, timeOff, eligibility, otherTasks, hasTaskOverlap }) => {
                           const isCurrent =
                             (selectedShift.driverId && selectedShift.driverId === d.id) ||
                             (selectedShift.driverName &&
@@ -1314,7 +1561,11 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                               className={`p-2.5 sm:px-3.5 flex items-center justify-between gap-3 transition ${
                                 isCurrent
                                   ? 'bg-emerald-50/70 dark:bg-emerald-950/30'
-                                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                                  : timeOff
+                                    ? 'bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-50/70 dark:hover:bg-rose-950/30'
+                                    : hasTaskOverlap
+                                      ? 'bg-amber-50/40 dark:bg-amber-950/15 hover:bg-amber-50/70 dark:hover:bg-amber-950/25'
+                                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
                               }`}
                             >
                               <div className="min-w-0 flex-1">
@@ -1325,24 +1576,48 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                                   <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium">
                                     {d.jobPosition || 'Driver'}
                                   </span>
+                                  <span
+                                    data-testid={`driver-eligibility-badge-${d.id}`}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${getEligibilityBadgeClass(eligibility)}`}
+                                  >
+                                    {isFrench ? eligibility.badgeTextFr : eligibility.badgeTextEn}
+                                  </span>
                                   {deadhead.hasCoordinates && (
                                     <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
                                       ~{deadhead.totalDeadheadKm} km ({deadhead.pullOutKm} km to start • {deadhead.totalMinutes}m)
                                     </span>
                                   )}
-                                  {conflict.hasConflict && !isCurrent ? (
+                                  {timeOff && (
+                                    <span
+                                      data-testid={`driver-timeoff-badge-${d.id}`}
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800"
+                                      title={isFrench ? timeOff.detailFr : timeOff.detailEn}
+                                    >
+                                      <CalendarOff className="w-3 h-3 shrink-0" />
+                                      <span>
+                                        {isFrench ? timeOff.badgeTextFr : timeOff.badgeTextEn}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {hasTaskOverlap && !isCurrent ? (
                                     <span
                                       className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
                                       title={conflict.messageEn}
                                     >
                                       Overlap
                                     </span>
-                                  ) : (
+                                  ) : !timeOff && otherTasks.length === 0 ? (
                                     <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
                                       Available
                                     </span>
-                                  )}
+                                  ) : null}
                                 </div>
+                                {timeOff && (
+                                  <div className="text-[11px] font-medium text-rose-600 dark:text-rose-400 mt-0.5">
+                                    {isFrench ? timeOff.detailFr : timeOff.detailEn}
+                                  </div>
+                                )}
+                                {renderCandidateTaskPills(otherTasks, isFrench, `driver-other-tasks-${d.id}`)}
                                 <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-3 flex-wrap">
                                   {(d.preferredPhone || d.mobilePhone) && (
                                     <span className="inline-flex items-center gap-1">
@@ -1380,6 +1655,181 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                                     className="px-3 py-1 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-2xs transition disabled:opacity-50"
                                   >
                                     {isBusy ? 'Assigning...' : 'Assign Driver'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* CASE 1B: ASSIGN ATTENDANT LIST */}
+                {activeActionTab === 'assign_attendant' && (
+                  <div data-testid="recommended-attendant-list" className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="relative flex-1 min-w-[200px]">
+                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder={
+                            isFrench
+                              ? 'Rechercher par nom, poste, expérience de remplacement...'
+                              : 'Search attendants, supervisors, or experienced cover staff...'
+                          }
+                          value={attendantSearch}
+                          onChange={(e) => setAttendantSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => setSortByDeadhead(!sortByDeadhead)}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition ${
+                            sortByDeadhead
+                              ? 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300'
+                              : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          <Zap className="w-3.5 h-3.5 text-amber-500" />
+                          <span>{sortByDeadhead ? t.deadhead.sortByDeadhead : t.deadhead.sortByName}</span>
+                        </button>
+
+                        <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={onlyQualifiedAttendants}
+                            onChange={(e) => setOnlyQualifiedAttendants(e.target.checked)}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span>{isFrench ? 'Qualifiés seulement' : 'Qualified Relief Only'}</span>
+                        </label>
+
+                        <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={onlyAvailableAttendants}
+                            onChange={(e) => setOnlyAvailableAttendants(e.target.checked)}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span>Available Only</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl">
+                      {rankedAttendantCandidates.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-slate-400">
+                          No matching attendants found.
+                        </div>
+                      ) : (
+                        rankedAttendantCandidates.slice(0, 40).map(({ employee: a, deadhead, timeOff, eligibility, otherTasks, hasTaskOverlap }) => {
+                          const isCurrent =
+                            (selectedShift.attendantId && selectedShift.attendantId === a.id) ||
+                            (selectedShift.attendantName &&
+                              selectedShift.attendantName.toLowerCase() ===
+                                `${a.firstName} ${a.lastName}`.trim().toLowerCase());
+                          const isBusy = assigningAttendantId === a.id;
+
+                          return (
+                            <div
+                              key={a.id}
+                              className={`p-2.5 sm:px-3.5 flex items-center justify-between gap-3 transition ${
+                                isCurrent
+                                  ? 'bg-emerald-50/70 dark:bg-emerald-950/30'
+                                  : timeOff
+                                    ? 'bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-50/70 dark:hover:bg-rose-950/30'
+                                    : hasTaskOverlap
+                                      ? 'bg-amber-50/40 dark:bg-amber-950/15 hover:bg-amber-50/70 dark:hover:bg-amber-950/25'
+                                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-bold text-slate-900 dark:text-white">
+                                    {a.firstName} {a.lastName}
+                                  </span>
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium">
+                                    {a.jobPosition || a.role || 'Staff'}
+                                  </span>
+                                  <span
+                                    data-testid={`attendant-eligibility-badge-${a.id}`}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${getEligibilityBadgeClass(eligibility)}`}
+                                  >
+                                    {isFrench ? eligibility.badgeTextFr : eligibility.badgeTextEn}
+                                  </span>
+                                  {deadhead.hasCoordinates && (
+                                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
+                                      {deadhead.distanceToDriverKm !== undefined
+                                        ? `${deadhead.distanceToDriverKm} km to driver`
+                                        : `${deadhead.distanceToFirstStopKm} km to 1st stop`}
+                                    </span>
+                                  )}
+                                  {timeOff && (
+                                    <span
+                                      data-testid={`attendant-timeoff-badge-${a.id}`}
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800"
+                                      title={isFrench ? timeOff.detailFr : timeOff.detailEn}
+                                    >
+                                      <CalendarOff className="w-3 h-3 shrink-0" />
+                                      <span>
+                                        {isFrench ? timeOff.badgeTextFr : timeOff.badgeTextEn}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {hasTaskOverlap && !isCurrent && (
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                      Overlap
+                                    </span>
+                                  )}
+                                </div>
+                                {timeOff && (
+                                  <div className="text-[11px] font-medium text-rose-600 dark:text-rose-400 mt-0.5">
+                                    {isFrench ? timeOff.detailFr : timeOff.detailEn}
+                                  </div>
+                                )}
+                                {renderCandidateTaskPills(otherTasks, isFrench, `attendant-other-tasks-${a.id}`)}
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-3 flex-wrap">
+                                  {(a.preferredPhone || a.mobilePhone) && (
+                                    <span className="inline-flex items-center gap-1">
+                                      <Phone className="w-3 h-3 text-slate-400" />
+                                      {a.preferredPhone || a.mobilePhone}
+                                    </span>
+                                  )}
+                                  {a.personalAddress && (
+                                    <span className="truncate max-w-xs">{a.personalAddress}</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {onMessageDriver && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onMessageDriver(a.id)}
+                                    title={`Chat with ${a.firstName} ${a.lastName}`}
+                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 transition"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {isCurrent ? (
+                                  <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-600 text-white inline-flex items-center gap-1">
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Assigned</span>
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => handleAssignAttendant(a)}
+                                    className="px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs transition disabled:opacity-50"
+                                  >
+                                    {isBusy ? 'Assigning...' : 'Assign Attendant'}
                                   </button>
                                 )}
                               </div>
@@ -1430,7 +1880,7 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                           No matching compliant vehicles found.
                         </div>
                       ) : (
-                        rankedVehicleCandidates.slice(0, 40).map(({ vehicle: v, conflict }) => {
+                        rankedVehicleCandidates.slice(0, 40).map(({ vehicle: v, conflict, unavail }) => {
                           const isCurrent =
                             (selectedShift.vehicleId && selectedShift.vehicleId === v.vehicleId) ||
                             (selectedShift.unitNumber &&
@@ -1443,7 +1893,9 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                               className={`p-2.5 sm:px-3.5 flex items-center justify-between gap-3 transition ${
                                 isCurrent
                                   ? 'bg-emerald-50/70 dark:bg-emerald-950/30'
-                                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                                  : unavail
+                                    ? 'bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-50/70 dark:hover:bg-rose-950/30'
+                                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
                               }`}
                             >
                               <div className="min-w-0 flex-1">
@@ -1462,6 +1914,18 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                                       {v.seatCap} seats{v.wheelchairCap > 0 ? ` + ${v.wheelchairCap} WC` : ''}
                                     </span>
                                   )}
+                                  {unavail && (
+                                    <span
+                                      data-testid={`vehicle-maintenance-badge-${v.unitNumber}`}
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800"
+                                      title={isFrench ? unavail.detailFr : unavail.detailEn}
+                                    >
+                                      <Wrench className="w-3 h-3 shrink-0" />
+                                      <span>
+                                        {isFrench ? unavail.badgeTextFr : unavail.badgeTextEn}
+                                      </span>
+                                    </span>
+                                  )}
                                   {conflict.hasConflict && !isCurrent ? (
                                     <span
                                       className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
@@ -1469,12 +1933,17 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                                     >
                                       In Use
                                     </span>
-                                  ) : (
+                                  ) : !unavail ? (
                                     <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
                                       Available
                                     </span>
-                                  )}
+                                  ) : null}
                                 </div>
+                                {unavail && (
+                                  <div className="text-[11px] font-medium text-rose-600 dark:text-rose-400 mt-0.5">
+                                    {isFrench ? unavail.detailFr : unavail.detailEn}
+                                  </div>
+                                )}
                                 {v.yardName && (
                                   <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                                     Yard: {v.yardName} • Status: {v.status || 'In Service'}
@@ -2207,11 +2676,11 @@ export const DispatchWorkbenchModePanel: React.FC<DispatchWorkbenchModePanelProp
                         ) : (
                           <button
                             type="button"
-                            onClick={() => onOpenCrew(selectedShift)}
-                            className="text-xs font-semibold text-slate-400 hover:underline hover:text-slate-600 dark:hover:text-slate-300"
-                            title="Assign an attendant"
+                            onClick={() => setActiveActionTab('assign_attendant')}
+                            className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline"
+                            title="Assign an attendant in workbench"
                           >
-                            None
+                            + Assign Attendant
                           </button>
                         )}
                       </div>

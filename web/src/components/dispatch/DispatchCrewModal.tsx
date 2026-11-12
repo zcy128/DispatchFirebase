@@ -10,13 +10,22 @@ import {
   Zap,
   Home,
   Navigation,
-  Shield
+  Shield,
+  Wrench,
+  CalendarOff
 } from 'lucide-react';
 import { DispatchShift, DispatchPayrollSettings } from '../../types/dispatch';
+import { CharterTrip } from '../../types/charter';
 import { DispatchService } from '../../services/dispatchService';
 import { getScheduledCheckInTime, getCurrentHHmm } from '../../utils/dispatchDelayUtils';
 import { Employee } from '../../types/employee';
 import { Vehicle } from '../../types/vehicle';
+import {
+  UnavailableVehicleInfo,
+  EmployeeTimeOffInfo,
+  getVehicleUnavailabilityReason,
+  getEmployeeTimeOffReason
+} from '../../utils/vehicleAvailabilityUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../contexts/I18nContext';
 import { logDispatchAction } from '../../utils/dispatchLogger';
@@ -26,6 +35,22 @@ import {
   calculateDriverDeadhead,
   calculateAttendantDeadhead
 } from '../../utils/deadheadCalculator';
+import {
+  classifyEmployeeForRole,
+  compareCrewPriority,
+  groupCrewCandidates,
+  getOptGroupLabels,
+} from '../../utils/crewEligibilityUtils';
+import {
+  buildEmployeeTaskIndex,
+  formatEmployeeTaskShortLabel,
+  formatEmployeeTasksOptionSuffix,
+  getEmployeeDayTasks,
+} from '../../utils/employeeTaskUtils';
+import { SearchableSelect, SearchableSelectOption } from '../common/SearchableSelect';
+
+const EMPTY_SHIFTS: DispatchShift[] = [];
+const EMPTY_CHARTER_TRIPS: CharterTrip[] = [];
 
 interface DispatchCrewModalProps {
   isOpen: boolean;
@@ -33,6 +58,10 @@ interface DispatchCrewModalProps {
   shift: DispatchShift | null;
   employees: Employee[];
   vehicles: Vehicle[];
+  allDayShifts?: DispatchShift[];
+  charterTrips?: CharterTrip[];
+  unavailableVehiclesMap?: Map<string, UnavailableVehicleInfo>;
+  employeeTimeOffMap?: Map<string, EmployeeTimeOffInfo>;
   onShiftUpdated: (updatedShift: DispatchShift) => void;
 }
 
@@ -46,6 +75,10 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
   shift,
   employees,
   vehicles,
+  allDayShifts = EMPTY_SHIFTS,
+  charterTrips = EMPTY_CHARTER_TRIPS,
+  unavailableVehiclesMap,
+  employeeTimeOffMap,
   onShiftUpdated,
 }) => {
   const { currentUser } = useAuth();
@@ -98,7 +131,7 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
-  const { t } = useI18n();
+  const { t, isFrench } = useI18n();
   const [sortByDeadhead, setSortByDeadhead] = useState(true);
 
   const activeDrivers = employees.filter((e) => e.isActive !== false);
@@ -108,23 +141,61 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
   const shiftStops = shift?.stops || [];
   const selectedDriverObj = employees.find((e) => e.id === driverId) || null;
   const selectedAttendantObj = employees.find((e) => e.id === attendantId) || null;
+  const selectedVehicleObj = activeVehicles.find((v) => String(v.vehicleId) === vehicleId) || null;
+
+  const selectedDriverTimeOff = getEmployeeTimeOffReason(selectedDriverObj, employeeTimeOffMap);
+  const selectedAttendantTimeOff = getEmployeeTimeOffReason(selectedAttendantObj, employeeTimeOffMap);
+
+  const employeeTaskIndex = React.useMemo(
+    () =>
+      buildEmployeeTaskIndex({
+        targetDate: shift.dispatchDate,
+        dispatchShifts: allDayShifts,
+        charterTrips,
+        excludeDispatchShiftId: shift.id,
+        windowStartTime: shift.firstStopTime || '07:00',
+        windowEndTime: shift.lastStopTime || '09:00',
+      }),
+    [shift.dispatchDate, shift.id, shift.firstStopTime, shift.lastStopTime, allDayShifts, charterTrips]
+  );
+
+  const selectedDriverOtherTasks = React.useMemo(
+    () => getEmployeeDayTasks(selectedDriverObj, employeeTaskIndex),
+    [selectedDriverObj, employeeTaskIndex]
+  );
+
+  const selectedAttendantOtherTasks = React.useMemo(
+    () => getEmployeeDayTasks(selectedAttendantObj, employeeTaskIndex),
+    [selectedAttendantObj, employeeTaskIndex]
+  );
+  const selectedVehicleUnavail = selectedVehicleObj
+    ? getVehicleUnavailabilityReason(
+        selectedVehicleObj.unitNumber,
+        selectedVehicleObj.vehicleId || selectedVehicleObj.id,
+        unavailableVehiclesMap
+      )
+    : undefined;
 
   const rankedDrivers = React.useMemo(() => {
     if (shiftStops.length === 0 || !sortByDeadhead) {
-      return activeDrivers.map((d) => ({
-        employee: d,
-        deadhead: calculateDriverDeadhead(d, shiftStops)
-      }));
+      return [...activeDrivers]
+        .sort((a, b) => compareCrewPriority(a, b, 'driver'))
+        .map((d) => ({
+          employee: d,
+          deadhead: calculateDriverDeadhead(d, shiftStops)
+        }));
     }
     return sortDriversByDeadhead(activeDrivers, shiftStops);
   }, [activeDrivers, shiftStops, sortByDeadhead]);
 
   const rankedAttendants = React.useMemo(() => {
     if (shiftStops.length === 0 || !sortByDeadhead) {
-      return activeAttendants.map((a) => ({
-        employee: a,
-        deadhead: calculateAttendantDeadhead(a, selectedDriverObj, shiftStops)
-      }));
+      return [...activeAttendants]
+        .sort((a, b) => compareCrewPriority(a, b, 'attendant'))
+        .map((a) => ({
+          employee: a,
+          deadhead: calculateAttendantDeadhead(a, selectedDriverObj, shiftStops)
+        }));
     }
     return sortAttendantsByDeadhead(activeAttendants, selectedDriverObj, shiftStops);
   }, [activeAttendants, selectedDriverObj, shiftStops, sortByDeadhead]);
@@ -138,6 +209,169 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
     if (!selectedAttendantObj || shiftStops.length === 0) return null;
     return calculateAttendantDeadhead(selectedAttendantObj, selectedDriverObj, shiftStops);
   }, [selectedAttendantObj, selectedDriverObj, shiftStops]);
+
+  const driverSelectOptions = React.useMemo<SearchableSelectOption[]>(() => {
+    const groups = groupCrewCandidates(rankedDrivers, 'driver');
+    const labels = getOptGroupLabels('driver', isFrench);
+    const buildOpt = (groupLabel: string) => ({ employee: d, deadhead }: (typeof rankedDrivers)[number]): SearchableSelectOption => {
+      const eligibility = classifyEmployeeForRole(d, 'driver');
+      const roleTag = isFrench ? eligibility.optionTagFr : eligibility.optionTagEn;
+      const deadheadText = deadhead.hasCoordinates
+        ? `~${deadhead.totalDeadheadKm} km deadhead (${deadhead.pullOutKm} km to start • ${deadhead.totalMinutes}m)`
+        : t.deadhead.noGpsCoordinates;
+      const timeOff = getEmployeeTimeOffReason(d, employeeTimeOffMap);
+      const otherTasks = getEmployeeDayTasks(d, employeeTaskIndex);
+      const tasksText = otherTasks.length > 0 ? formatEmployeeTasksOptionSuffix(otherTasks, isFrench) : '';
+      const timeOffLabel = timeOff ? (isFrench ? timeOff.badgeTextFr : timeOff.badgeTextEn) : undefined;
+      return {
+        value: d.id,
+        label: `${d.firstName} ${d.lastName} (${d.jobPosition || 'Driver'})`,
+        groupLabel,
+        badgeText: roleTag || undefined,
+        secondaryBadgeText: timeOffLabel ? `🏖️ ${timeOffLabel}` : otherTasks.length > 0 ? `${otherTasks.length} task(s)` : undefined,
+        secondaryBadgeClassName: timeOffLabel
+          ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+          : otherTasks.some((task) => task.isOverlap)
+            ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+            : 'bg-sky-100 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800',
+        subtext: [deadheadText, d.preferredPhone || d.mobilePhone || ''].filter(Boolean).join(' • '),
+        warningText: [timeOff ? (isFrench ? timeOff.detailFr : timeOff.detailEn) : '', tasksText]
+          .filter(Boolean)
+          .join(' • ') || undefined,
+        isHighlighted: Boolean(timeOff || otherTasks.some((task) => task.isOverlap)),
+        searchText: [
+          d.firstName,
+          d.lastName,
+          d.employeeNumber,
+          d.jobPosition,
+          d.role,
+          roleTag,
+          d.preferredPhone,
+          d.mobilePhone,
+          d.personalAddress,
+          timeOffLabel,
+          tasksText,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      };
+    };
+    return [
+      ...groups.primary.map(buildOpt(labels.primary)),
+      ...groups.relief.map(buildOpt(labels.relief)),
+      ...groups.other.map(buildOpt(labels.other)),
+    ];
+  }, [rankedDrivers, isFrench, t.deadhead.noGpsCoordinates, employeeTimeOffMap, employeeTaskIndex]);
+
+  const attendantSelectOptions = React.useMemo<SearchableSelectOption[]>(() => {
+    const groups = groupCrewCandidates(rankedAttendants, 'attendant');
+    const labels = getOptGroupLabels('attendant', isFrench);
+    const buildOpt = (groupLabel: string) => ({ employee: a, deadhead }: (typeof rankedAttendants)[number]): SearchableSelectOption => {
+      const eligibility = classifyEmployeeForRole(a, 'attendant');
+      const roleTag = isFrench ? eligibility.optionTagFr : eligibility.optionTagEn;
+      let deadheadText = '';
+      if (deadhead.hasCoordinates) {
+        if (deadhead.distanceToDriverKm !== undefined) {
+          deadheadText = `${deadhead.distanceToDriverKm} km ${t.deadhead.toDriverHome}${deadhead.detourKm ? ` • +${deadhead.detourKm}km detour` : ''}`;
+        } else {
+          deadheadText = `${deadhead.distanceToFirstStopKm} km ${t.deadhead.toFirstStop}`;
+        }
+      } else {
+        deadheadText = t.deadhead.noGpsCoordinates;
+      }
+      const timeOff = getEmployeeTimeOffReason(a, employeeTimeOffMap);
+      const otherTasks = getEmployeeDayTasks(a, employeeTaskIndex);
+      const tasksText = otherTasks.length > 0 ? formatEmployeeTasksOptionSuffix(otherTasks, isFrench) : '';
+      const timeOffLabel = timeOff ? (isFrench ? timeOff.badgeTextFr : timeOff.badgeTextEn) : undefined;
+      return {
+        value: a.id,
+        label: `${a.firstName} ${a.lastName} (${a.jobPosition || 'Attendant'})`,
+        groupLabel,
+        badgeText: roleTag || undefined,
+        secondaryBadgeText: timeOffLabel ? `🏖️ ${timeOffLabel}` : otherTasks.length > 0 ? `${otherTasks.length} task(s)` : undefined,
+        secondaryBadgeClassName: timeOffLabel
+          ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800'
+          : otherTasks.some((task) => task.isOverlap)
+            ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+            : 'bg-sky-100 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800',
+        subtext: [deadheadText, a.preferredPhone || a.mobilePhone || ''].filter(Boolean).join(' • '),
+        warningText: [timeOff ? (isFrench ? timeOff.detailFr : timeOff.detailEn) : '', tasksText]
+          .filter(Boolean)
+          .join(' • ') || undefined,
+        isHighlighted: Boolean(timeOff || otherTasks.some((task) => task.isOverlap)),
+        searchText: [
+          a.firstName,
+          a.lastName,
+          a.employeeNumber,
+          a.jobPosition,
+          a.role,
+          roleTag,
+          a.preferredPhone,
+          a.mobilePhone,
+          a.personalAddress,
+          timeOffLabel,
+          tasksText,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      };
+    };
+    return [
+      ...groups.primary.map(buildOpt(labels.primary)),
+      ...groups.relief.map(buildOpt(labels.relief)),
+      ...groups.other.map(buildOpt(labels.other)),
+    ];
+  }, [
+    rankedAttendants,
+    isFrench,
+    t.deadhead.noGpsCoordinates,
+    t.deadhead.toDriverHome,
+    t.deadhead.toFirstStop,
+    employeeTimeOffMap,
+    employeeTaskIndex,
+  ]);
+
+  const vehicleSelectOptions = React.useMemo<SearchableSelectOption[]>(() => {
+    return activeVehicles.map((v) => {
+      const unavail = getVehicleUnavailabilityReason(
+        v.unitNumber,
+        v.vehicleId || v.id,
+        unavailableVehiclesMap
+      );
+      const unavailBadge = unavail
+        ? `🔧 ${isFrench ? unavail.badgeTextFr : unavail.badgeTextEn}`
+        : undefined;
+      return {
+        value: String(v.vehicleId),
+        label: `Unit ${v.unitNumber} (${v.manufacturer} ${v.model}, Plate: ${v.plateNumber})`,
+        secondaryBadgeText: unavailBadge,
+        secondaryBadgeClassName: unavailBadge
+          ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+          : undefined,
+        subtext: [
+          v.seatCap ? `${v.seatCap} seats` : '',
+          v.yardName || '',
+          v.driverName ? `Driver: ${v.driverName}` : '',
+        ]
+          .filter(Boolean)
+          .join(' • '),
+        warningText: unavail ? (isFrench ? unavail.detailFr : unavail.detailEn) : undefined,
+        isHighlighted: Boolean(unavail),
+        searchText: [
+          v.unitNumber,
+          v.plateNumber,
+          v.manufacturer,
+          v.model,
+          v.fuelType,
+          v.yardName,
+          v.driverName,
+          unavailBadge,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      };
+    });
+  }, [activeVehicles, unavailableVehiclesMap, isFrench]);
 
   const driverPD = payrollSettings?.driver?.partialPayRate ?? 25;
   const driverDD = payrollSettings?.driver?.doublePartialPayRate ?? 50;
@@ -366,23 +600,67 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
                 <span>{sortByDeadhead ? t.deadhead.sortByDeadhead : t.deadhead.sortByName}</span>
               </button>
             </div>
-            <select
+            <SearchableSelect
+              testId="dispatch-crew-driver-select"
               value={driverId}
-              onChange={(e) => setDriverId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none"
-            >
-              <option value="">-- No Driver Assigned --</option>
-              {rankedDrivers.map(({ employee: d, deadhead }) => {
-                const deadheadText = deadhead.hasCoordinates
-                  ? ` [~${deadhead.totalDeadheadKm} km deadhead (${deadhead.pullOutKm} km to start) • ${deadhead.totalMinutes}m]`
-                  : ` [${t.deadhead.noGpsCoordinates}]`;
-                return (
-                  <option key={d.id} value={d.id}>
-                    {d.firstName} {d.lastName} ({d.jobPosition || 'Driver'}){deadheadText}
-                  </option>
-                );
-              })}
-            </select>
+              onChange={setDriverId}
+              options={driverSelectOptions}
+              emptyOptionLabel="-- No Driver Assigned --"
+              searchPlaceholder={
+                isFrench ? 'Rechercher chauffeur (nom, #, rôle)...' : 'Search driver (name, #, role, task)...'
+              }
+              noResultsText={isFrench ? 'Aucun chauffeur trouvé' : 'No matching drivers found'}
+              icon={<User className="w-4 h-4 text-amber-500" />}
+              accentColor="amber"
+            />
+
+            {selectedDriverOtherTasks.length > 0 && (
+              <div
+                data-testid="crew-modal-driver-other-tasks"
+                className={`mt-2 p-2.5 rounded-xl border text-xs space-y-1 ${
+                  selectedDriverOtherTasks.some((task) => task.isOverlap)
+                    ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/80 text-amber-900 dark:text-amber-200'
+                    : 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800/70 text-sky-900 dark:text-sky-200'
+                }`}
+              >
+                <div className="font-bold flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {isFrench
+                      ? `Autres tâches le ${shift.dispatchDate} :`
+                      : `Other tasks on ${shift.dispatchDate}:`}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {selectedDriverOtherTasks.map((task) => (
+                    <span
+                      key={`${task.source}:${task.id}:${task.role}`}
+                      className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                        task.isOverlap
+                          ? 'bg-rose-100/80 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-700'
+                          : 'bg-white/80 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200 border-sky-200 dark:border-sky-800'
+                      }`}
+                    >
+                      {formatEmployeeTaskShortLabel(task, isFrench)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedDriverTimeOff && (
+              <div className="mt-2 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 dark:border-rose-700/80 flex items-start gap-2 text-xs text-rose-800 dark:text-rose-200">
+                <CalendarOff className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold">
+                    {isFrench ? selectedDriverTimeOff.badgeTextFr : selectedDriverTimeOff.badgeTextEn}
+                  </div>
+                  <div className="text-[11px] opacity-90 mt-0.5">
+                    {isFrench ? selectedDriverTimeOff.detailFr : selectedDriverTimeOff.detailEn}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Deadhead Proximity Card for Selected Driver */}
             {selectedDriverDeadhead && selectedDriverDeadhead.hasCoordinates && (
@@ -534,30 +812,67 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
               <HeartHandshake className="w-3.5 h-3.5 text-emerald-500" />
               <span>Assigned Attendant</span>
             </label>
-            <select
+            <SearchableSelect
+              testId="dispatch-crew-attendant-select"
               value={attendantId}
-              onChange={(e) => setAttendantId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none"
-            >
-              <option value="">-- No Attendant Assigned --</option>
-              {rankedAttendants.map(({ employee: a, deadhead }) => {
-                let deadheadText = '';
-                if (deadhead.hasCoordinates) {
-                  if (deadhead.distanceToDriverKm !== undefined) {
-                    deadheadText = ` [${deadhead.distanceToDriverKm} km ${t.deadhead.toDriverHome}${deadhead.detourKm ? ` • +${deadhead.detourKm}km detour` : ''}]`;
-                  } else {
-                    deadheadText = ` [${deadhead.distanceToFirstStopKm} km ${t.deadhead.toFirstStop}]`;
-                  }
-                } else {
-                  deadheadText = ` [${t.deadhead.noGpsCoordinates}]`;
-                }
-                return (
-                  <option key={a.id} value={a.id}>
-                    {a.firstName} {a.lastName} ({a.jobPosition || 'Attendant'}){deadheadText}
-                  </option>
-                );
-              })}
-            </select>
+              onChange={setAttendantId}
+              options={attendantSelectOptions}
+              emptyOptionLabel="-- No Attendant Assigned --"
+              searchPlaceholder={
+                isFrench ? 'Rechercher accompagnateur (nom, #, rôle)...' : 'Search attendant (name, #, role, task)...'
+              }
+              noResultsText={isFrench ? 'Aucun accompagnateur trouvé' : 'No matching attendants found'}
+              icon={<HeartHandshake className="w-4 h-4 text-emerald-500" />}
+              accentColor="emerald"
+            />
+
+            {selectedAttendantOtherTasks.length > 0 && (
+              <div
+                data-testid="crew-modal-attendant-other-tasks"
+                className={`mt-2 p-2.5 rounded-xl border text-xs space-y-1 ${
+                  selectedAttendantOtherTasks.some((task) => task.isOverlap)
+                    ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/80 text-amber-900 dark:text-amber-200'
+                    : 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800/70 text-sky-900 dark:text-sky-200'
+                }`}
+              >
+                <div className="font-bold flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {isFrench
+                      ? `Autres tâches le ${shift.dispatchDate} :`
+                      : `Other tasks on ${shift.dispatchDate}:`}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {selectedAttendantOtherTasks.map((task) => (
+                    <span
+                      key={`${task.source}:${task.id}:${task.role}`}
+                      className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                        task.isOverlap
+                          ? 'bg-rose-100/80 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-700'
+                          : 'bg-white/80 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200 border-sky-200 dark:border-sky-800'
+                      }`}
+                    >
+                      {formatEmployeeTaskShortLabel(task, isFrench)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedAttendantTimeOff && (
+              <div className="mt-2 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 dark:border-rose-700/80 flex items-start gap-2 text-xs text-rose-800 dark:text-rose-200">
+                <CalendarOff className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold">
+                    {isFrench ? selectedAttendantTimeOff.badgeTextFr : selectedAttendantTimeOff.badgeTextEn}
+                  </div>
+                  <div className="text-[11px] opacity-90 mt-0.5">
+                    {isFrench ? selectedAttendantTimeOff.detailFr : selectedAttendantTimeOff.detailEn}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Deadhead Proximity Card for Selected Attendant */}
             {selectedAttendantDeadhead && selectedAttendantDeadhead.hasCoordinates && (
@@ -685,18 +1000,35 @@ const DispatchCrewModalContent: React.FC<DispatchCrewModalProps & { shift: Dispa
               <Truck className="w-3.5 h-3.5 text-blue-500" />
               <span>Assigned Vehicle Unit</span>
             </label>
-            <select
+            <SearchableSelect
+              testId="dispatch-crew-vehicle-select"
               value={vehicleId}
-              onChange={(e) => setVehicleId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none"
-            >
-              <option value="">-- No Vehicle Assigned --</option>
-              {activeVehicles.map((v) => (
-                <option key={v.vehicleId} value={v.vehicleId}>
-                  Unit {v.unitNumber} ({v.manufacturer} {v.model}, Plate: {v.plateNumber})
-                </option>
-              ))}
-            </select>
+              onChange={setVehicleId}
+              options={vehicleSelectOptions}
+              emptyOptionLabel="-- No Vehicle Assigned --"
+              searchPlaceholder={
+                isFrench
+                  ? 'Rechercher véhicule (unité, plaque, modèle, chauffeur)...'
+                  : 'Search vehicle (unit #, plate, model, driver)...'
+              }
+              noResultsText={isFrench ? 'Aucun véhicule trouvé' : 'No matching vehicles found'}
+              icon={<Truck className="w-4 h-4 text-blue-500" />}
+              accentColor="blue"
+            />
+
+            {selectedVehicleUnavail && (
+              <div className="mt-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700/80 flex items-start gap-2 text-xs text-amber-900 dark:text-amber-200">
+                <Wrench className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold">
+                    {isFrench ? selectedVehicleUnavail.badgeTextFr : selectedVehicleUnavail.badgeTextEn}
+                  </div>
+                  <div className="text-[11px] opacity-90 mt-0.5">
+                    {isFrench ? selectedVehicleUnavail.detailFr : selectedVehicleUnavail.detailEn}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Dispatch Payroll Comment Section */}

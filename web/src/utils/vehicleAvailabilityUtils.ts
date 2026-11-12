@@ -1,6 +1,7 @@
 import { VehicleDefectReport } from '../types/defect';
 import { VehicleInspectionRecord, PreventiveMaintenanceRecord } from '../types/vehicleInspection';
 import { Vehicle } from '../types/vehicle';
+import { TimeOffRequest, LEAVE_TYPE_LABELS } from '../types/timeOff';
 import { getLocalTodayString } from './dateUtils';
 
 export interface UnavailableVehicleInfo {
@@ -87,6 +88,10 @@ export function getUnavailableVehiclesForDate(
     const srvDate = (pm.serviceDate || '').slice(0, 10);
     const schedDate = (pm.scheduledServiceDate || '').slice(0, 10);
     const isInProgressToday = pm.maintenanceStatus === 'in_progress' && targetDate >= (schedDate || srvDate || todayStr);
+    const isFutureScheduled =
+      pm.maintenanceStatus !== 'completed' &&
+      targetDate >= todayStr &&
+      ((schedDate && schedDate > targetDate) || (srvDate && srvDate > targetDate));
 
     if (srvDate === targetDate || schedDate === targetDate || isInProgressToday) {
       registerUnavailable({
@@ -97,6 +102,18 @@ export function getUnavailableVehiclesForDate(
         badgeTextFr: 'Entretien périodique',
         detailEn: `Unit #${pm.unitNumber} is undergoing Preventive Maintenance (${pm.serviceTier}) on ${targetDate}`,
         detailFr: `L'unité #${pm.unitNumber} est en entretien préventif (${pm.serviceTier}) le ${targetDate}`,
+        sourceId: pm.id,
+      });
+    } else if (isFutureScheduled) {
+      const futureDate = schedDate || srvDate;
+      registerUnavailable({
+        unitNumber: pm.unitNumber,
+        vehicleId: pm.vehicleId,
+        reason: 'preventive_maintenance',
+        badgeTextEn: `Maintenance (${futureDate})`,
+        badgeTextFr: `Entretien (${futureDate})`,
+        detailEn: `Unit #${pm.unitNumber} has Preventive Maintenance (${pm.serviceTier}) scheduled for ${futureDate}`,
+        detailFr: `L'unité #${pm.unitNumber} a un entretien préventif (${pm.serviceTier}) prévu le ${futureDate}`,
         sourceId: pm.id,
       });
     }
@@ -111,6 +128,11 @@ export function getUnavailableVehiclesForDate(
       insp.inspectionStatus === 'in_inspection' &&
       (!schedDate || targetDate >= schedDate) &&
       targetDate >= todayStr;
+    const isFutureInspection =
+      insp.inspectionStatus === 'in_inspection' &&
+      targetDate >= todayStr &&
+      schedDate &&
+      schedDate > targetDate;
 
     if (inspDate === targetDate || schedDate === targetDate || isActivelyInInspection) {
       registerUnavailable({
@@ -121,6 +143,17 @@ export function getUnavailableVehiclesForDate(
         badgeTextFr: 'Inspection périodique',
         detailEn: `Unit #${insp.unitNumber} is undergoing Semi-Annual Periodic Inspection on ${targetDate}`,
         detailFr: `L'unité #${insp.unitNumber} est en inspection mécanique périodique semestrielle le ${targetDate}`,
+        sourceId: insp.id,
+      });
+    } else if (isFutureInspection) {
+      registerUnavailable({
+        unitNumber: insp.unitNumber,
+        vehicleId: insp.vehicleId,
+        reason: 'periodic_inspection',
+        badgeTextEn: `Periodic Inspection (${schedDate})`,
+        badgeTextFr: `Inspection périodique (${schedDate})`,
+        detailEn: `Unit #${insp.unitNumber} has Semi-Annual Periodic Inspection scheduled for ${schedDate}`,
+        detailFr: `L'unité #${insp.unitNumber} a une inspection périodique prévue le ${schedDate}`,
         sourceId: insp.id,
       });
     }
@@ -256,3 +289,163 @@ export function getUniqueUnavailableVehicleList(
 
   return list.sort((a, b) => a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true }));
 }
+
+export interface EmployeeTimeOffInfo {
+  requestId: string;
+  employeeId: string;
+  employeeName: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  shiftType: string;
+  status: 'approved' | 'pending';
+  badgeTextEn: string;
+  badgeTextFr: string;
+  detailEn: string;
+  detailFr: string;
+  comments?: string;
+}
+
+const LEAVE_LABELS_FR: Record<string, string> = {
+  vacation: 'Vacances',
+  sick_leave: 'Congé de maladie',
+  personal_days: 'Congé personnel',
+  jury_duty: 'Devoir de juré',
+  bereavement_leave: 'Congé de deuil',
+  aboriginal_practices: 'Pratiques autochtones',
+  other: 'Autre congé',
+};
+
+/**
+ * Computes active/upcoming employee Time Off records for a given dispatch date (`date`, YYYY-MM-DD).
+ * Returns an empty Map if `date` is in the past (`date < todayStr`), since past dispatches
+ * do not display time-off or maintenance badges.
+ */
+export function getEmployeeTimeOffMapForDate(
+  date: string,
+  timeOffRequests: TimeOffRequest[] = [],
+  todayOverride?: string
+): Map<string, EmployeeTimeOffInfo> {
+  const map = new Map<string, EmployeeTimeOffInfo>();
+  if (!date) return map;
+
+  const targetDate = date.slice(0, 10);
+  const todayStr = (todayOverride || getLocalTodayString()).slice(0, 10);
+
+  // Do not show time-off badges for yesterday or past dispatch dates
+  if (targetDate < todayStr) {
+    return map;
+  }
+
+  const safeRequests = Array.isArray(timeOffRequests) ? timeOffRequests : [];
+
+  for (const req of safeRequests) {
+    if (!req || (req.status !== 'approved' && req.status !== 'pending')) continue;
+
+    const start = (req.startDate || '').slice(0, 10);
+    const end = (req.endDate || start).slice(0, 10);
+    if (!start) continue;
+
+    // Match if the time-off covers targetDate
+    const coversTargetDate = start <= targetDate && end >= targetDate;
+    if (!coversTargetDate) continue;
+
+    const leaveLabelEn = LEAVE_TYPE_LABELS[req.leaveType] || req.leaveType || 'Time Off';
+    const leaveLabelFr = LEAVE_LABELS_FR[req.leaveType] || leaveLabelEn;
+    const shiftSuffix = req.shiftType && req.shiftType !== 'ALL' ? ` • ${req.shiftType}` : '';
+    const statusSuffixEn = req.status === 'pending' ? ' (Pending)' : '';
+    const statusSuffixFr = req.status === 'pending' ? ' (En attente)' : '';
+    const dateRangeStr = start === end ? start : `${start} – ${end}`;
+
+    const info: EmployeeTimeOffInfo = {
+      requestId: req.id,
+      employeeId: req.employeeId,
+      employeeName: req.employeeName,
+      leaveType: req.leaveType,
+      startDate: start,
+      endDate: end,
+      shiftType: req.shiftType || 'ALL',
+      status: req.status,
+      badgeTextEn: `Time Off: ${leaveLabelEn}${shiftSuffix}${statusSuffixEn}`,
+      badgeTextFr: `Congé : ${leaveLabelFr}${shiftSuffix}${statusSuffixFr}`,
+      detailEn: `${req.employeeName} is on ${leaveLabelEn}${statusSuffixEn} (${dateRangeStr}, Shift: ${req.shiftType || 'ALL'})${
+        req.comments ? ` — ${req.comments}` : ''
+      }`,
+      detailFr: `${req.employeeName} est en ${leaveLabelFr.toLowerCase()}${statusSuffixFr} (${dateRangeStr}, Quart : ${req.shiftType || 'ALL'})${
+        req.comments ? ` — ${req.comments}` : ''
+      }`,
+      comments: req.comments,
+    };
+
+    const empIdKey = String(req.employeeId ?? '').trim().toUpperCase();
+    const empNumKey = String(req.employeeNumber ?? '').trim().toUpperCase();
+    const empNameKey = String(req.employeeName ?? '').trim().toLowerCase();
+
+    // Approved request takes priority over pending
+    if (empIdKey) {
+      const existing = map.get(`ID:${empIdKey}`);
+      if (!existing || existing.status === 'pending') {
+        map.set(`ID:${empIdKey}`, info);
+      }
+    }
+    if (empNumKey) {
+      const existing = map.get(`NUM:${empNumKey}`);
+      if (!existing || existing.status === 'pending') {
+        map.set(`NUM:${empNumKey}`, info);
+      }
+    }
+    if (empNameKey) {
+      const existing = map.get(`NAME:${empNameKey}`);
+      if (!existing || existing.status === 'pending') {
+        map.set(`NAME:${empNameKey}`, info);
+      }
+    }
+  }
+
+  return map;
+}
+
+/**
+ * Looks up whether an employee (driver or attendant) has a Time Off record on the dispatch date.
+ */
+export function getEmployeeTimeOffReason(
+  employee?: {
+    id?: string;
+    employeeId?: number | string;
+    employeeNumber?: string;
+    firstName?: string;
+    lastName?: string;
+    fullName?: string;
+  } | null,
+  timeOffMap?: Map<string, EmployeeTimeOffInfo>
+): EmployeeTimeOffInfo | undefined {
+  if (!employee || !timeOffMap || timeOffMap.size === 0) return undefined;
+
+  if (employee.id) {
+    const byId = timeOffMap.get(`ID:${String(employee.id).trim().toUpperCase()}`);
+    if (byId) return byId;
+  }
+  if (employee.employeeId !== undefined && employee.employeeId !== null) {
+    const byEmpId = timeOffMap.get(`ID:${String(employee.employeeId).trim().toUpperCase()}`);
+    if (byEmpId) return byEmpId;
+    const byEmpNum = timeOffMap.get(`NUM:${String(employee.employeeId).trim().toUpperCase()}`);
+    if (byEmpNum) return byEmpNum;
+  }
+  if (employee.employeeNumber) {
+    const byNum = timeOffMap.get(`NUM:${String(employee.employeeNumber).trim().toUpperCase()}`);
+    if (byNum) return byNum;
+  }
+
+  const fullName = (
+    employee.fullName || `${employee.firstName || ''} ${employee.lastName || ''}`
+  )
+    .trim()
+    .toLowerCase();
+  if (fullName) {
+    const byName = timeOffMap.get(`NAME:${fullName}`);
+    if (byName) return byName;
+  }
+
+  return undefined;
+}
+

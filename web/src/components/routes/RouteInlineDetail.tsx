@@ -35,7 +35,8 @@ import {
   Navigation,
   Zap,
   Download,
-  Mail
+  Mail,
+  GripVertical
 } from 'lucide-react';
 import { RouteStudentItineraryView } from './RouteStudentItineraryView';
 import { ShiftEditModal } from './ShiftEditModal';
@@ -46,7 +47,7 @@ import { RouteSheetShareModal, downloadRouteSheet } from './RouteSheetShareModal
 import { RouteSheetPreview } from './RouteSheetPreview';
 import { sortRouteSheetShifts } from '../../utils/routeSheetPdf';
 import { RouteSettingsService } from '../../services/routeSettingsService';
-import { recalculateStopTimes } from '../../utils/routeOptimizer';
+import { reorderStopsAndUpdateSequence } from '../../utils/routeOptimizer';
 
 interface RouteInlineDetailProps {
   route: BusRoute;
@@ -83,11 +84,17 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<number | ''>('');
   const [targetScope, setTargetScope] = useState<'shift' | 'route'>('shift');
+  const [assignmentMode, setAssignmentMode] = useState<'new_stop' | 'existing_stop'>('new_stop');
+  const [selectedExistingStopId, setSelectedExistingStopId] = useState<number | ''>('');
   const [studentSearch, setStudentSearch] = useState('');
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assigning, setAssigning] = useState(false);
   const [isOptimizeModalOpen, setIsOptimizeModalOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isAddStopModalOpen, setIsAddStopModalOpen] = useState(false);
+  const [draggedStopIdx, setDraggedStopIdx] = useState<number | null>(null);
+  const [dragOverStopIdx, setDragOverStopIdx] = useState<number | null>(null);
+  const [isReorderingStops, setIsReorderingStops] = useState(false);
 
   const handleRefreshShifts = async () => {
     try {
@@ -170,17 +177,108 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
 
     const oldStop = targetShift.stops?.find((s) => s.stopId === updatedStop.stopId);
 
-    const updatedStops = (targetShift.stops || []).map((s) =>
-      s.stopId === updatedStop.stopId ? updatedStop : s
-    );
+    const updatedStops = oldStop
+      ? (targetShift.stops || []).map((s) =>
+          s.stopId === updatedStop.stopId ? updatedStop : s
+        )
+      : [...(targetShift.stops || []), updatedStop];
 
     await RouteService.updateShift(shiftId, {
       stops: updatedStops,
     });
 
+    // Synchronize student records if riders changed
+    const oldStudentIds = new Set(oldStop?.assignedStudents?.map((s) => s.studentId) || []);
+    const newStudentIds = new Set(updatedStop.assignedStudents?.map((s) => s.studentId) || []);
+
+    // 1. Newly assigned riders
+    for (const rider of updatedStop.assignedStudents || []) {
+      if (!oldStudentIds.has(rider.studentId)) {
+        const student = studentsMap[rider.studentId];
+        if (student) {
+          const existingStops = [...(student.stops || [])];
+          const hasThisStop = existingStops.some(
+            (st) =>
+              st.route === route.routeNo &&
+              st.shift === targetShift.shiftType &&
+              st.location === updatedStop.stopLocation
+          );
+          if (!hasThisStop) {
+            existingStops.push({
+              stopId: String(updatedStop.stopId),
+              time: updatedStop.pullawayTime,
+              type: updatedStop.stopType?.toLowerCase().includes('dropoff') ? 'Dropoff' : 'Pickup',
+              opDays: updatedStop.runDays || targetShift.runDays || 'MTWRF',
+              location: updatedStop.stopLocation,
+              comment: updatedStop.comment,
+              instruction: updatedStop.instruction,
+              route: route.routeNo,
+              shift: targetShift.shiftType
+            });
+          }
+          const currentRoutesSet = new Set(
+            student.routes ? student.routes.split(',').map((r) => r.trim()).filter(Boolean) : []
+          );
+          currentRoutesSet.add(route.routeNo);
+          await StudentService.update(student.id, {
+            stops: existingStops,
+            routes: Array.from(currentRoutesSet).join(', ')
+          }).catch((err) => console.warn('[RouteInlineDetail] Failed to sync student stops:', err));
+        }
+      }
+    }
+
+    // 2. Removed riders
+    for (const oldRider of oldStop?.assignedStudents || []) {
+      if (!newStudentIds.has(oldRider.studentId)) {
+        const student = studentsMap[oldRider.studentId];
+        if (student && student.stops) {
+          const remainingStops = student.stops.filter(
+            (st) =>
+              !(
+                st.route === route.routeNo &&
+                st.shift === targetShift.shiftType &&
+                (st.stopId === String(updatedStop.stopId) || (oldStop && st.location === oldStop.stopLocation))
+              )
+          );
+          await StudentService.update(student.id, {
+            stops: remainingStops
+          }).catch((err) => console.warn('[RouteInlineDetail] Failed to remove student stop:', err));
+        }
+      }
+    }
+
     // Audit Log: Stop Changes
-    const diffs: RouteChangeFieldDiff[] = [];
-    if (oldStop) {
+    const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
+    const actorId = currentUser?.employeeId || currentUser?.uid || 'usr-dispatcher';
+    const actorRole = currentUser?.role || 'dispatcher';
+    const actorEmail = currentUser?.email || undefined;
+
+    if (!oldStop) {
+      RouteAuditService.logRouteChange({
+        routeId: route.id,
+        routeNo: route.routeNo,
+        routeName: route.routeName,
+        category: 'stop',
+        action: 'create',
+        shiftId,
+        shiftType: targetShift.shiftType,
+        stopId: updatedStop.stopId,
+        stopSequence: updatedStop.sequence,
+        stopLocation: updatedStop.stopLocation,
+        summary: `Created Stop #${updatedStop.sequence} (${updatedStop.stopLocation}) on ${targetShift.shiftType} shift.`,
+        diffs: [
+          { field: 'stopLocation', fieldLabel: 'Stop Location', oldValue: '', newValue: updatedStop.stopLocation },
+          { field: 'pullawayTime', fieldLabel: 'Pullaway Time', oldValue: '', newValue: updatedStop.pullawayTime },
+          { field: 'stopType', fieldLabel: 'Stop Type', oldValue: '', newValue: updatedStop.stopType }
+        ],
+        userId: actorId,
+        userName: actorName,
+        userEmail: actorEmail,
+        userRole: actorRole
+      }).catch((err) => console.warn('[RouteInlineDetail] Stop audit warning:', err));
+    } else {
+      const diffs: RouteChangeFieldDiff[] = [];
       if (oldStop.pullawayTime !== updatedStop.pullawayTime) {
         diffs.push({ field: 'pullawayTime', fieldLabel: 'Pullaway Time', oldValue: oldStop.pullawayTime, newValue: updatedStop.pullawayTime });
       }
@@ -202,94 +300,103 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
       if ((oldStop.comment || '') !== (updatedStop.comment || '')) {
         diffs.push({ field: 'comment', fieldLabel: 'Comment', oldValue: oldStop.comment || '', newValue: updatedStop.comment || '' });
       }
+      const oldRidersCount = oldStop.assignedStudents?.length || 0;
+      const newRidersCount = updatedStop.assignedStudents?.length || 0;
+      if (oldRidersCount !== newRidersCount) {
+        diffs.push({ field: 'assignedStudents', fieldLabel: 'Assigned Riders', oldValue: `${oldRidersCount} riders`, newValue: `${newRidersCount} riders` });
+      }
+
+      if (diffs.length > 0) {
+        RouteAuditService.logRouteChange({
+          routeId: route.id,
+          routeNo: route.routeNo,
+          routeName: route.routeName,
+          category: 'stop',
+          action: 'update',
+          shiftId,
+          shiftType: targetShift.shiftType,
+          stopId: updatedStop.stopId,
+          stopSequence: updatedStop.sequence,
+          stopLocation: updatedStop.stopLocation,
+          summary: `Modified Stop #${updatedStop.sequence} (${updatedStop.stopLocation}): ${diffs.map((d) => `${d.fieldLabel} (${d.oldValue || 'None'} -> ${d.newValue || 'None'})`).join(', ')}`,
+          diffs,
+          userId: actorId,
+          userName: actorName,
+          userEmail: actorEmail,
+          userRole: actorRole
+        }).catch((err) => console.warn('[RouteInlineDetail] Stop audit warning:', err));
+      }
     }
 
-    if (diffs.length > 0) {
-      const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
-      const actorId = currentUser?.employeeId || currentUser?.uid || 'usr-dispatcher';
-      const actorRole = currentUser?.role || 'dispatcher';
-      const actorEmail = currentUser?.email || undefined;
+    await handleRefreshShifts();
+  };
 
+  const handleReorderStop = async (fromIndex: number, toIndex: number) => {
+    if (!activeShift || !activeShift.stops || isReorderingStops) return;
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= activeShift.stops.length ||
+      toIndex >= activeShift.stops.length
+    ) {
+      return;
+    }
+
+    const movedStop = activeShift.stops[fromIndex];
+    setIsReorderingStops(true);
+
+    try {
+      // Load configured dwell time & average speed from settings
+      const optSettings = await RouteSettingsService.getSettings();
+      const cleanStops = reorderStopsAndUpdateSequence(
+        activeShift.stops,
+        fromIndex,
+        toIndex,
+        {
+          recalculateTimes: true,
+          dwellMinutes: optSettings.defaultStopDwellMinutes,
+          speedKmH: optSettings.averageSpeedKmH,
+          schoolBoardOrRouteName: route.schoolBoardCode || route.routeName,
+          shiftType: activeShift.shiftType
+        }
+      );
+
+      const updatedShift: BusRouteShift = {
+        ...activeShift,
+        stops: cleanStops,
+        updatedAt: new Date().toISOString()
+      };
+
+      setShifts((prev) => prev.map((s) => (s.id === updatedShift.id ? updatedShift : s)));
+
+      await RouteService.updateShift(activeShift.id, {
+        stops: cleanStops
+      });
+
+      // Audit log entry for parental special request manual reordering
       RouteAuditService.logRouteChange({
         routeId: route.id,
         routeNo: route.routeNo,
         routeName: route.routeName,
         category: 'stop',
         action: 'update',
-        shiftId,
-        shiftType: targetShift.shiftType,
-        stopId: updatedStop.stopId,
-        stopSequence: updatedStop.sequence,
-        stopLocation: updatedStop.stopLocation,
-        summary: `Modified Stop #${updatedStop.sequence} (${updatedStop.stopLocation}): ${diffs.map((d) => `${d.fieldLabel} (${d.oldValue || 'None'} -> ${d.newValue || 'None'})`).join(', ')}`,
-        diffs,
-        userId: actorId,
-        userName: actorName,
-        userEmail: actorEmail,
-        userRole: actorRole
-      }).catch((err) => console.warn('[RouteInlineDetail] Stop audit warning:', err));
+        shiftId: activeShift.id,
+        shiftType: activeShift.shiftType,
+        summary: `Manually reordered Stop #${movedStop.sequence} (${movedStop.stopLocation}) to position #${toIndex + 1} and recalculated arrival times`,
+        userId: currentUser?.employeeId || currentUser?.uid || 'usr-dispatcher',
+        userName: currentUser?.displayName || currentUser?.email || 'Dispatcher',
+        userEmail: currentUser?.email || undefined,
+        userRole: currentUser?.role || 'dispatcher'
+      }).catch(console.warn);
+
+      await handleRefreshShifts();
+    } catch (err) {
+      console.error('Failed to reorder stop:', err);
+      await handleRefreshShifts();
+    } finally {
+      setIsReorderingStops(false);
     }
-
-    await handleRefreshShifts();
-  };
-
-  const handleManualMoveStop = async (currentIndex: number, direction: -1 | 1) => {
-    if (!activeShift || !activeShift.stops) return;
-    const targetIndex = currentIndex + direction;
-    if (targetIndex < 0 || targetIndex >= activeShift.stops.length) return;
-
-    const stopsCopy = [...activeShift.stops];
-    const movedStop = stopsCopy[currentIndex];
-    stopsCopy[currentIndex] = stopsCopy[targetIndex];
-    stopsCopy[targetIndex] = movedStop;
-
-    // Load configured dwell time & average speed from settings
-    const optSettings = await RouteSettingsService.getSettings();
-    const recalculated = recalculateStopTimes(
-      stopsCopy,
-      optSettings.defaultStopDwellMinutes,
-      optSettings.averageSpeedKmH,
-      route.schoolBoardCode || route.routeName,
-      activeShift.shiftType
-    );
-
-    const cleanStops = recalculated.map((s) => {
-      const clean: any = {};
-      for (const [k, v] of Object.entries(s)) {
-        if (v !== undefined) clean[k] = v;
-      }
-      return clean as RouteStop;
-    });
-
-    const updatedShift: BusRouteShift = {
-      ...activeShift,
-      stops: cleanStops,
-      updatedAt: new Date().toISOString()
-    };
-
-    setShifts((prev) => prev.map((s) => (s.id === updatedShift.id ? updatedShift : s)));
-
-    await RouteService.updateShift(activeShift.id, {
-      stops: cleanStops
-    });
-
-    // Audit log entry for parental special request manual reordering
-    RouteAuditService.logRouteChange({
-      routeId: route.id,
-      routeNo: route.routeNo,
-      routeName: route.routeName,
-      category: 'stop',
-      action: 'update',
-      shiftId: activeShift.id,
-      shiftType: activeShift.shiftType,
-      summary: `Manually reordered Stop #${movedStop.sequence} (${movedStop.stopLocation}) to position #${targetIndex + 1} and recalculated arrival times`,
-      userId: currentUser?.employeeId || currentUser?.uid || 'usr-dispatcher',
-      userName: currentUser?.displayName || currentUser?.email || 'Dispatcher',
-      userEmail: currentUser?.email || undefined,
-      userRole: currentUser?.role || 'dispatcher'
-    }).catch(console.warn);
-
-    handleRefreshShifts();
   };
 
   const handleApplyOptimizedStopsFromModal = async (optimizedStops: RouteStop[]) => {
@@ -370,6 +477,8 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
   const handleOpenAddStudentModal = () => {
     setSelectedStudentId('');
     setTargetScope('shift');
+    setAssignmentMode('new_stop');
+    setSelectedExistingStopId('');
     setStudentSearch('');
     setAssignError(null);
     setIsAddStudentModalOpen(true);
@@ -389,6 +498,185 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
 
     setAssigning(true);
     setAssignError(null);
+
+    // If assigning to an existing stop
+    if (assignmentMode === 'existing_stop') {
+      if (!selectedExistingStopId) {
+        setAssignError('Please select an existing stop to assign the student to.');
+        setAssigning(false);
+        return;
+      }
+
+      if (!activeShift) {
+        setAssignError('No active shift selected.');
+        setAssigning(false);
+        return;
+      }
+
+      const targetStop = activeShift.stops?.find((s) => s.stopId === Number(selectedExistingStopId));
+      if (!targetStop) {
+        setAssignError('Selected stop was not found on the active shift.');
+        setAssigning(false);
+        return;
+      }
+
+      try {
+        // 1. Add student to target stop
+        const updatedAssigned = [...(targetStop.assignedStudents || [])];
+        if (!updatedAssigned.some((s) => s.studentId === student.studentId)) {
+          updatedAssigned.push({
+            studentId: student.studentId,
+            studentNo: student.studentNo,
+            studentName: student.fullName || `${student.firstName} ${student.lastName}`,
+            schoolName: student.schoolName
+          });
+        }
+        targetStop.assignedStudents = updatedAssigned;
+
+        // 2. Also ensure student is in the school stop of this shift
+        const studentSchool = schools.find((sch) => sch.schoolId === student.schoolId);
+        const isAM = (activeShift.shiftType || '').toUpperCase() === 'AM';
+        let schoolStop = activeShift.stops?.find((st) => {
+          const isSchool = st.stopType === 'SchoolDropoff' || st.stopType === 'SchoolPickup';
+          if (!isSchool) return false;
+          if (st.schoolId && st.schoolId === student.schoolId) return true;
+          if (
+            st.schoolName &&
+            student.schoolName &&
+            st.schoolName.toLowerCase().trim() === student.schoolName.toLowerCase().trim()
+          ) {
+            return true;
+          }
+          return false;
+        });
+
+        if (schoolStop) {
+          schoolStop.assignedStudents = schoolStop.assignedStudents || [];
+          if (!schoolStop.assignedStudents.some((s) => s.studentId === student.studentId)) {
+            schoolStop.assignedStudents.push({
+              studentId: student.studentId,
+              studentNo: student.studentNo,
+              studentName: student.fullName || `${student.firstName} ${student.lastName}`,
+              schoolName: student.schoolName
+            });
+          }
+        } else if (studentSchool) {
+          const defaultSchoolStopType = isAM ? 'SchoolDropoff' : 'SchoolPickup';
+          const defaultSchoolTimeStr = isAM
+            ? studentSchool.startTime || '08:30 AM'
+            : studentSchool.dismissalTime || (activeShift.shiftType === 'NOON' ? '12:25 PM' : '02:40 PM');
+          const nextStopId = Date.now() + Math.floor(Math.random() * 1000);
+          const newSchoolStop: RouteStop = {
+            stopId: nextStopId,
+            sequence: isAM ? (activeShift.stops?.length || 0) + 1 : 1,
+            stopLocation: studentSchool.schoolAddress || studentSchool.schoolName,
+            pullawayTime: defaultSchoolTimeStr,
+            stopType: defaultSchoolStopType,
+            schoolId: student.schoolId,
+            schoolName: student.schoolName,
+            runDays: activeShift.runDays,
+            comment: `School bell terminal stop for ${student.schoolName}`,
+            assignedStudents: [
+              {
+                studentId: student.studentId,
+                studentNo: student.studentNo,
+                studentName: student.fullName || `${student.firstName} ${student.lastName}`,
+                schoolName: student.schoolName
+              }
+            ]
+          };
+          if (isAM) {
+            activeShift.stops?.push(newSchoolStop);
+          } else {
+            activeShift.stops?.unshift(newSchoolStop);
+          }
+        }
+
+        // 3. Save shift
+        await RouteService.updateShift(activeShift.id, {
+          stops: activeShift.stops || []
+        });
+
+        // 4. Update student record
+        const existingStops = [...(student.stops || [])];
+        const hasStop = existingStops.some(
+          (st) =>
+            st.route === route.routeNo &&
+            st.shift === activeShift.shiftType &&
+            (st.stopId === String(targetStop.stopId) || st.location === targetStop.stopLocation)
+        );
+        if (!hasStop) {
+          existingStops.push({
+            stopId: String(targetStop.stopId),
+            time: targetStop.pullawayTime,
+            type: targetStop.stopType?.toLowerCase().includes('dropoff') ? 'Dropoff' : 'Pickup',
+            opDays: targetStop.runDays || activeShift.runDays || 'MTWRF',
+            location: targetStop.stopLocation,
+            comment: targetStop.comment,
+            instruction: targetStop.instruction,
+            route: route.routeNo,
+            shift: activeShift.shiftType
+          });
+        }
+
+        const currentRoutesSet = new Set(
+          student.routes
+            ? student.routes.split(',').map((r) => r.trim()).filter(Boolean)
+            : []
+        );
+        currentRoutesSet.add(route.routeNo);
+
+        await StudentService.update(student.id, {
+          stops: existingStops,
+          routes: Array.from(currentRoutesSet).join(', ')
+        });
+
+        // 5. Refresh shift data locally
+        const refreshedShifts = await RouteService.getShiftsForRoute(route.id);
+        setShifts(refreshedShifts);
+
+        // 6. Audit Log
+        const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
+        const actorId = currentUser?.employeeId || currentUser?.uid || 'usr-dispatcher';
+        const actorRole = currentUser?.role || 'dispatcher';
+        const actorEmail = currentUser?.email || undefined;
+
+        RouteAuditService.logRouteChange({
+          routeId: route.id,
+          routeNo: route.routeNo,
+          routeName: route.routeName,
+          category: 'student',
+          action: 'assign',
+          studentId: student.studentId,
+          studentNo: student.studentNo,
+          studentName: student.fullName || student.studentName,
+          shiftId: activeShift.id,
+          shiftType: activeShift.shiftType,
+          summary: `Assigned student ${student.fullName || student.studentName} (#${student.studentNo}) to existing stop #${targetStop.sequence} (${targetStop.stopLocation}) on ${activeShift.shiftType}`,
+          diffs: [
+            {
+              field: 'assignedStudents',
+              fieldLabel: 'Assigned Riders',
+              oldValue: `${targetStop.assignedStudents.length - 1} riders`,
+              newValue: `${targetStop.assignedStudents.length} riders`
+            }
+          ],
+          userId: actorId,
+          userName: actorName,
+          userEmail: actorEmail,
+          userRole: actorRole
+        }).catch((auditErr) => console.warn('[RouteInlineDetail] Student assignment audit error:', auditErr));
+
+        setIsAddStudentModalOpen(false);
+      } catch (err: unknown) {
+        console.error('Error in handleConfirmAddStudent (existing stop):', err);
+        const msg = err instanceof Error ? err.message : 'An unexpected error occurred during assignment.';
+        setAssignError(msg);
+      } finally {
+        setAssigning(false);
+      }
+      return;
+    }
 
     try {
       const target: AssignmentTarget =
@@ -724,6 +1012,7 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
         <RouteStudentItineraryView
           route={route}
           shifts={orderedShifts}
+          activeShift={activeShift}
           studentsMap={studentsMap}
           schools={schools}
           onSelectStudent={onSelectStudent}
@@ -731,6 +1020,10 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
           onRefreshShifts={async () => {
             await handleRefreshShifts();
           }}
+          onViewMap={() => setViewMode('map')}
+          onOptimizeOrder={() => setIsOptimizeModalOpen(true)}
+          onAddStop={() => setIsAddStopModalOpen(true)}
+          onAddStudent={handleOpenAddStudentModal}
         />
       ) : viewMode === 'map' ? (
         <LazyShiftGoogleMapView
@@ -775,6 +1068,16 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
                 <span>Op Days: {formatOpDays(activeShift.runDays)}</span>
               </span>
             )}
+            {activeShift && activeShift.stops && activeShift.stops.length > 1 && (
+              <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-medium bg-slate-800/80 border border-slate-700/80 text-slate-400">
+                <GripVertical className="w-3 h-3 text-amber-400/80" />
+                <span>
+                  {isReorderingStops
+                    ? 'Updating stop sequence & times...'
+                    : 'Drag stops to reorder (adjusts pickup times)'}
+                </span>
+              </span>
+            )}
           </div>
 
           <div className="flex items-center space-x-2">
@@ -799,12 +1102,13 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
               </button>
             )}
             <button
-              disabled
-              title="Add stop placeholder"
-              className="px-2.5 py-1 rounded-lg bg-slate-800/60 border border-slate-700/60 text-slate-400 text-xs flex items-center space-x-1 opacity-70 cursor-not-allowed"
+              type="button"
+              onClick={() => setIsAddStopModalOpen(true)}
+              title={t.stops?.addStop || 'Add Stop to Shift'}
+              className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs flex items-center space-x-1 font-medium transition cursor-pointer"
             >
               <Plus className="w-3 h-3" />
-              <span>Add Stop</span>
+              <span>{t.stops?.addStop || 'Add Stop'}</span>
             </button>
             <button
               type="button"
@@ -850,17 +1154,66 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
                   const ridersCount = stop.assignedStudents?.length || 0;
                   const stopOpDays = formatOpDays(stop.runDays || activeShift.runDays);
 
+                  const isDragging = draggedStopIdx === idx;
+                  const isDragOver =
+                    dragOverStopIdx === idx && draggedStopIdx !== null && draggedStopIdx !== idx;
+                  const dropRowHighlight = isDragOver
+                    ? draggedStopIdx! > idx
+                      ? 'bg-amber-500/15 border-t-2 border-t-amber-400'
+                      : 'bg-amber-500/15 border-b-2 border-b-amber-400'
+                    : '';
+
                   return (
                     <React.Fragment key={stop.stopId}>
                       <tr
+                        data-testid={`route-stop-row-${stop.stopId}`}
+                        draggable={!isReorderingStops}
+                        onDragStart={(e) => {
+                          if (isReorderingStops) {
+                            e.preventDefault();
+                            return;
+                          }
+                          setDraggedStopIdx(idx);
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.dataTransfer.setData('text/plain', String(idx));
+                        }}
+                        onDragOver={(e) => {
+                          if (draggedStopIdx === null || draggedStopIdx === idx) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          if (dragOverStopIdx !== idx) setDragOverStopIdx(idx);
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverStopIdx === idx) setDragOverStopIdx(null);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const fromIdx = draggedStopIdx;
+                          setDraggedStopIdx(null);
+                          setDragOverStopIdx(null);
+                          if (fromIdx !== null && fromIdx !== idx) {
+                            void handleReorderStop(fromIdx, idx);
+                          }
+                        }}
+                        onDragEnd={() => {
+                          setDraggedStopIdx(null);
+                          setDragOverStopIdx(null);
+                        }}
                         onClick={() => ridersCount > 0 && toggleStopExpand(stop.stopId)}
                         className={`hover:bg-slate-800/40 transition text-xs ${
                           ridersCount > 0 ? 'cursor-pointer' : ''
-                        }`}
+                        } ${isDragging ? 'opacity-45 bg-amber-500/10' : ''} ${dropRowHighlight}`}
                       >
-                        {/* Expand Icon & Seq */}
+                        {/* Drag Handle, Expand Icon & Seq */}
                         <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-400">
                           <div className="flex items-center justify-center space-x-1">
+                            <span
+                              title="Drag to reorder stop"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-slate-500 hover:text-amber-400 cursor-grab active:cursor-grabbing shrink-0"
+                            >
+                              <GripVertical className="w-3.5 h-3.5" />
+                            </span>
                             {ridersCount > 0 ? (
                               <button
                                 type="button"
@@ -1034,8 +1387,8 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
                           <div className="flex items-center justify-center space-x-1" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
-                              onClick={() => handleManualMoveStop(idx, -1)}
-                              disabled={idx === 0 || (isSchool && idx === 0)}
+                              onClick={() => handleReorderStop(idx, idx - 1)}
+                              disabled={isReorderingStops || idx === 0}
                               title={t.stops?.moveUp || 'Move Up (Recalculate times)'}
                               className="p-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition cursor-pointer"
                             >
@@ -1043,8 +1396,8 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleManualMoveStop(idx, 1)}
-                              disabled={idx === activeShift.stops.length - 1 || (isSchool && idx === activeShift.stops.length - 1)}
+                              onClick={() => handleReorderStop(idx, idx + 1)}
+                              disabled={isReorderingStops || idx === activeShift.stops.length - 1}
                               title={t.stops?.moveDown || 'Move Down (Recalculate times)'}
                               className="p-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition cursor-pointer"
                             >
@@ -1180,43 +1533,116 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
             )}
 
             <div className="space-y-3.5 text-xs">
-              {/* Target Assignment Scope */}
+              {/* Stop Assignment Mode */}
               <div>
                 <label className="block font-semibold text-slate-300 mb-1.5">
-                  Assignment Target
+                  Stop Destination
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setTargetScope('shift')}
-                    className={`p-2.5 rounded-xl border text-left transition ${
-                      targetScope === 'shift'
+                    onClick={() => setAssignmentMode('new_stop')}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      assignmentMode === 'new_stop'
                         ? 'bg-sky-500/10 border-sky-500/40 text-sky-300'
                         : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
                     }`}
                   >
-                    <div className="font-bold text-xs">Current Shift Only</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 font-mono">
-                      {activeShift ? `${activeShift.shiftType} (${formatOpDays(activeShift.runDays)})` : 'Selected Shift'}
+                    <div className="font-bold text-xs">Auto Create / Match</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">
+                      From student home address
                     </div>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setTargetScope('route')}
-                    className={`p-2.5 rounded-xl border text-left transition ${
-                      targetScope === 'route'
+                    onClick={() => {
+                      setAssignmentMode('existing_stop');
+                      setTargetScope('shift');
+                      if (!selectedExistingStopId && activeShift?.stops && activeShift.stops.length > 0) {
+                        const nonSchool = activeShift.stops.find((s) => !s.stopType?.toLowerCase().includes('school'));
+                        setSelectedExistingStopId(nonSchool ? nonSchool.stopId : activeShift.stops[0].stopId);
+                      }
+                    }}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      assignmentMode === 'existing_stop'
                         ? 'bg-sky-500/10 border-sky-500/40 text-sky-300'
                         : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
                     }`}
                   >
-                    <div className="font-bold text-xs">{t.stops?.allShifts || 'All Shifts'}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 font-mono">
-                      Route {route.routeNo} ({shifts.length} shifts)
+                    <div className="font-bold text-xs">Assign to Existing Stop</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">
+                      Share stop with nearby riders
                     </div>
                   </button>
                 </div>
               </div>
+
+              {assignmentMode === 'existing_stop' && activeShift && (
+                <div className="space-y-1.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <label className="block font-semibold text-slate-300 text-xs">
+                    Select Existing Stop on {activeShift.shiftType} <span className="text-rose-400">*</span>
+                  </label>
+                  {!activeShift.stops || activeShift.stops.length === 0 ? (
+                    <div className="text-xs text-amber-400">
+                      No stops available on this shift. Please add a stop first.
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedExistingStopId}
+                      onChange={(e) => setSelectedExistingStopId(e.target.value ? Number(e.target.value) : '')}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-sky-500 cursor-pointer"
+                    >
+                      <option value="">-- Choose an existing stop --</option>
+                      {activeShift.stops.map((st) => (
+                        <option key={st.stopId} value={st.stopId}>
+                          Stop #{st.sequence} • {st.stopLocation} [{st.pullawayTime}] ({st.stopType}) — {st.assignedStudents?.length || 0} rider(s)
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+
+              {/* Target Assignment Scope (shown when auto creating) */}
+              {assignmentMode === 'new_stop' && (
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1.5">
+                    Assignment Target Scope
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTargetScope('shift')}
+                      className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                        targetScope === 'shift'
+                          ? 'bg-sky-500/10 border-sky-500/40 text-sky-300'
+                          : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="font-bold text-xs">Current Shift Only</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 font-mono">
+                        {activeShift ? `${activeShift.shiftType} (${formatOpDays(activeShift.runDays)})` : 'Selected Shift'}
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTargetScope('route')}
+                      className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                        targetScope === 'route'
+                          ? 'bg-sky-500/10 border-sky-500/40 text-sky-300'
+                          : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="font-bold text-xs">{t.stops?.allShifts || 'All Shifts'}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 font-mono">
+                        Route {route.routeNo} ({shifts.length} shifts)
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Student Picker */}
               <div className="space-y-1.5">
@@ -1325,12 +1751,16 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
         onSave={handleSaveShift}
       />
 
-      {/* Edit Stop Modal */}
+      {/* Stop Edit / Add Modal */}
       <StopEditModal
-        isOpen={!!editingStop}
+        isOpen={isAddStopModalOpen || !!editingStop}
         shift={activeShift}
         stop={editingStop}
-        onClose={() => setEditingStop(null)}
+        studentsMap={studentsMap}
+        onClose={() => {
+          setEditingStop(null);
+          setIsAddStopModalOpen(false);
+        }}
         onSave={handleSaveStop}
       />
 

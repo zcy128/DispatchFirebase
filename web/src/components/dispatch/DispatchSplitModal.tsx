@@ -17,11 +17,32 @@ import {
   Clock
 } from 'lucide-react';
 import { DispatchShift, SplitShiftPart } from '../../types/dispatch';
+import { CharterTrip } from '../../types/charter';
 import { DispatchService } from '../../services/dispatchService';
 import { Employee } from '../../types/employee';
 import { Vehicle } from '../../types/vehicle';
 import { useAuth } from '../../contexts/AuthContext';
 import { logDispatchAction } from '../../utils/dispatchLogger';
+import {
+  UnavailableVehicleInfo,
+  EmployeeTimeOffInfo,
+  getVehicleUnavailabilityReason,
+  getEmployeeTimeOffReason,
+} from '../../utils/vehicleAvailabilityUtils';
+import {
+  classifyEmployeeForRole,
+  compareCrewPriority,
+  groupCrewCandidates,
+  getOptGroupLabels,
+} from '../../utils/crewEligibilityUtils';
+import {
+  buildEmployeeTaskIndex,
+  formatEmployeeTasksOptionSuffix,
+  getEmployeeDayTasks,
+} from '../../utils/employeeTaskUtils';
+
+const EMPTY_SHIFTS: DispatchShift[] = [];
+const EMPTY_CHARTER_TRIPS: CharterTrip[] = [];
 
 interface DispatchSplitModalProps {
   isOpen: boolean;
@@ -29,6 +50,10 @@ interface DispatchSplitModalProps {
   shift: DispatchShift | null;
   employees: Employee[];
   vehicles: Vehicle[];
+  allDayShifts?: DispatchShift[];
+  charterTrips?: CharterTrip[];
+  unavailableVehiclesMap?: Map<string, UnavailableVehicleInfo>;
+  employeeTimeOffMap?: Map<string, EmployeeTimeOffInfo>;
   onSplitComplete: (newShifts: DispatchShift[]) => void;
 }
 
@@ -74,6 +99,10 @@ const DispatchSplitModalContent: React.FC<DispatchSplitModalProps & { shift: Dis
   shift,
   employees,
   vehicles,
+  allDayShifts = EMPTY_SHIFTS,
+  charterTrips = EMPTY_CHARTER_TRIPS,
+  unavailableVehiclesMap,
+  employeeTimeOffMap,
   onSplitComplete,
 }) => {
   const { currentUser } = useAuth();
@@ -242,7 +271,30 @@ const DispatchSplitModalContent: React.FC<DispatchSplitModalProps & { shift: Dis
   const [draggedStudentId, setDraggedStudentId] = useState<number | null>(null);
   const [dragOverPartId, setDragOverPartId] = useState<string | null>(null);
 
-  const activeDrivers = useMemo(() => employees.filter((e) => e.isActive !== false), [employees]);
+  const activeDrivers = useMemo(
+    () =>
+      employees
+        .filter((e) => e.isActive !== false)
+        .sort((a, b) => compareCrewPriority(a, b, 'driver')),
+    [employees]
+  );
+  const groupedDrivers = useMemo(
+    () => groupCrewCandidates(activeDrivers.map((employee) => ({ employee })), 'driver'),
+    [activeDrivers]
+  );
+  const driverGroupLabels = useMemo(() => getOptGroupLabels('driver', false), []);
+  const employeeTaskIndex = useMemo(
+    () =>
+      buildEmployeeTaskIndex({
+        targetDate: shift.dispatchDate,
+        dispatchShifts: allDayShifts,
+        charterTrips,
+        excludeDispatchShiftId: shift.id,
+        windowStartTime: shift.firstStopTime || '07:00',
+        windowEndTime: shift.lastStopTime || '09:00',
+      }),
+    [shift.dispatchDate, shift.id, shift.firstStopTime, shift.lastStopTime, allDayShifts, charterTrips]
+  );
   const activeVehicles = useMemo(() => vehicles.filter((v) => v.active !== false), [vehicles]);
 
   // Add another split partition (e.g. Shift C, Shift D...)
@@ -506,11 +558,42 @@ const DispatchSplitModalContent: React.FC<DispatchSplitModalProps & { shift: Dis
                           className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none"
                         >
                           <option value="">{isOriginal ? '-- Keep Original Driver --' : '-- Assign Driver --'}</option>
-                          {activeDrivers.map((d) => (
-                            <option key={d.id} value={d.id}>
-                              {d.firstName} {d.lastName}
-                            </option>
-                          ))}
+                          {(() => {
+                            const renderSplitDriverOpt = ({ employee: d }: { employee: Employee }) => {
+                              const timeOff = getEmployeeTimeOffReason(d, employeeTimeOffMap);
+                              const eligibility = classifyEmployeeForRole(d, 'driver');
+                              const otherTasks = getEmployeeDayTasks(d, employeeTaskIndex);
+                              return (
+                                <option key={d.id} value={d.id}>
+                                  {d.firstName} {d.lastName}
+                                  {eligibility.optionTagEn ? ` — ${eligibility.optionTagEn}` : ''}
+                                  {timeOff ? ` — 🏖️ ${timeOff.badgeTextEn}` : ''}
+                                  {otherTasks.length > 0
+                                    ? ` — 📋 ${formatEmployeeTasksOptionSuffix(otherTasks, false)}`
+                                    : ''}
+                                </option>
+                              );
+                            };
+                            return (
+                              <>
+                                {groupedDrivers.primary.length > 0 && (
+                                  <optgroup label={driverGroupLabels.primary}>
+                                    {groupedDrivers.primary.map(renderSplitDriverOpt)}
+                                  </optgroup>
+                                )}
+                                {groupedDrivers.relief.length > 0 && (
+                                  <optgroup label={driverGroupLabels.relief}>
+                                    {groupedDrivers.relief.map(renderSplitDriverOpt)}
+                                  </optgroup>
+                                )}
+                                {groupedDrivers.other.length > 0 && (
+                                  <optgroup label={driverGroupLabels.other}>
+                                    {groupedDrivers.other.map(renderSplitDriverOpt)}
+                                  </optgroup>
+                                )}
+                              </>
+                            );
+                          })()}
                         </select>
                       </div>
 
@@ -523,11 +606,19 @@ const DispatchSplitModalContent: React.FC<DispatchSplitModalProps & { shift: Dis
                           className="w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-1 focus:ring-amber-500 focus:outline-none"
                         >
                           <option value="">{isOriginal ? '-- Keep Original Vehicle --' : '-- Assign Vehicle --'}</option>
-                          {activeVehicles.map((v) => (
-                            <option key={v.vehicleId} value={v.vehicleId}>
-                              Unit {v.unitNumber} ({v.plateNumber})
-                            </option>
-                          ))}
+                          {activeVehicles.map((v) => {
+                            const unavail = getVehicleUnavailabilityReason(
+                              v.unitNumber,
+                              v.vehicleId || v.id,
+                              unavailableVehiclesMap
+                            );
+                            return (
+                              <option key={v.vehicleId} value={v.vehicleId}>
+                                Unit {v.unitNumber} ({v.plateNumber})
+                                {unavail ? ` — 🔧 ${unavail.badgeTextEn}` : ''}
+                              </option>
+                            );
+                          })}
                         </select>
                       </div>
                     </div>

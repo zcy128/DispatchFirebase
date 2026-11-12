@@ -13,7 +13,8 @@ import {
   Edit,
   Trash2,
   RefreshCw,
-  ChevronRight
+  ChevronRight,
+  MapPin
 } from 'lucide-react';
 
 function useIsMdUp() {
@@ -132,11 +133,27 @@ const EmployeeDesktopTable = memo(function EmployeeDesktopTable({
 
                         {/* Job & Yard */}
                         <td className="py-2.5 px-4 align-middle h-16">
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                             <span className="text-slate-200 font-medium">{emp.jobPosition}</span>
                             <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase">
                               {emp.role || 'driver'}
                             </span>
+                            {emp.hasCoveredAsDriver && (
+                              <span
+                                title="Prior relief/cover driving experience (prioritized in Dispatch)"
+                                className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30"
+                              >
+                                Cover Driver
+                              </span>
+                            )}
+                            {emp.hasCoveredAsAttendant && (
+                              <span
+                                title="Prior relief/cover attendant experience (prioritized in Dispatch)"
+                                className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                              >
+                                Cover Attendant
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center space-x-2 text-[11px] text-slate-400 mt-0.5">
                             <div className="flex items-center space-x-1">
@@ -233,8 +250,19 @@ const EmployeeDesktopTable = memo(function EmployeeDesktopTable({
                           >
                             <button
                               onClick={() => onSelectEmployee(emp)}
+                              title={emp.personalAddress ? `View home map: ${emp.personalAddress}` : 'View home address map'}
+                              className={`p-1.5 rounded-lg transition cursor-pointer ${
+                                emp.personalAddress || (emp.lat && emp.lng)
+                                  ? 'text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10'
+                                  : 'text-slate-600 hover:text-slate-400 hover:bg-slate-800'
+                              }`}
+                            >
+                              <MapPin className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => onSelectEmployee(emp)}
                               title="View details"
-                              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
                             >
                               <Eye className="w-3.5 h-3.5" />
                             </button>
@@ -366,6 +394,17 @@ const EmployeeMobileCards = memo(function EmployeeMobileCards({
                         <span>{emp.yardId || 'HQ-Central'}</span>
                       </div>
 
+                      {emp.hasCoveredAsDriver && (
+                        <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                          Cover Driver Exp.
+                        </span>
+                      )}
+                      {emp.hasCoveredAsAttendant && (
+                        <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                          Cover Attendant Exp.
+                        </span>
+                      )}
+
                       {emp.driverLicense && (
                         <div
                           className={`inline-flex items-center space-x-1 text-[11px] font-semibold px-2 py-1 rounded-lg border ${
@@ -420,6 +459,17 @@ const EmployeeMobileCards = memo(function EmployeeMobileCards({
                       </div>
 
                       <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => onSelectEmployee(emp)}
+                          title={emp.personalAddress ? `View home map: ${emp.personalAddress}` : 'View home address map'}
+                          className={`p-1.5 rounded-lg transition ${
+                            emp.personalAddress || (emp.lat && emp.lng)
+                              ? 'text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10'
+                              : 'text-slate-600 hover:text-slate-400 hover:bg-slate-800'
+                          }`}
+                        >
+                          <MapPin className="w-3.5 h-3.5" />
+                        </button>
                         <button
                           onClick={() => onEditEmployee(emp)}
                           title="Edit"

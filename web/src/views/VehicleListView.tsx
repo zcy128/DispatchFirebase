@@ -1,6 +1,16 @@
-import React, { useState, useRef, useMemo, useDeferredValue } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Vehicle, VehicleStats } from '../types/vehicle';
+import { VehicleDefectReport } from '../types/defect';
+import { VehicleInspectionRecord, PreventiveMaintenanceRecord } from '../types/vehicleInspection';
+import { DefectService } from '../services/defectService';
+import { VehicleInspectionService } from '../services/vehicleInspectionService';
+import { getLocalTodayString } from '../utils/dateUtils';
+import {
+  getUnavailableVehiclesForDate,
+  getVehicleUnavailabilityReason,
+  getUniqueUnavailableVehicleList
+} from '../utils/vehicleAvailabilityUtils';
 import { useI18n } from '../contexts/I18nContext';
 import type { VehicleExportFieldDef } from '../utils/vehicleExcelExporter';
 import {
@@ -27,7 +37,9 @@ import {
   CheckSquare,
   Square,
   X,
-  AlertCircle
+  AlertCircle,
+  Wrench,
+  AlertTriangle
 } from 'lucide-react';
 
 // Hoisted static set for table grid columns to eliminate repeated instantiation (Vercel advanced-init-once)
@@ -81,6 +93,49 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
   const [yardFilter, setYardFilter] = useState('ALL');
   const [refreshing, setRefreshing] = useState(false);
 
+  // Real-time Vehicle Defect, Periodic Inspection & PM records to identify units excluded from dispatch shifts
+  const [defectReports, setDefectReports] = useState<VehicleDefectReport[]>([]);
+  const [inspectionRecords, setInspectionRecords] = useState<VehicleInspectionRecord[]>([]);
+  const [pmRecords, setPmRecords] = useState<PreventiveMaintenanceRecord[]>([]);
+  const todayDateStr = useMemo(() => getLocalTodayString(), []);
+
+  useEffect(() => {
+    const unsubDefects = DefectService.subscribeToDefects((data) => {
+      setDefectReports(Array.isArray(data) ? data : []);
+    });
+    const unsubInsp = VehicleInspectionService.subscribe((updated) => {
+      setInspectionRecords(Array.isArray(updated) ? updated : []);
+    });
+    const unsubPM = VehicleInspectionService.subscribePM((updated) => {
+      setPmRecords(Array.isArray(updated) ? updated : []);
+    });
+
+    return () => {
+      setTimeout(() => {
+        try { unsubDefects(); } catch { /* listener closed */ }
+        try { unsubInsp(); } catch { /* listener closed */ }
+        try { unsubPM(); } catch { /* listener closed */ }
+      }, 150);
+    };
+  }, []);
+
+  const unavailableVehiclesMap = useMemo(
+    () =>
+      getUnavailableVehiclesForDate(
+        todayDateStr,
+        defectReports,
+        inspectionRecords,
+        pmRecords,
+        vehicles
+      ),
+    [todayDateStr, defectReports, inspectionRecords, pmRecords, vehicles]
+  );
+
+  const unavailableVehiclesList = useMemo(
+    () => getUniqueUnavailableVehicleList(unavailableVehiclesMap),
+    [unavailableVehiclesMap]
+  );
+
   // Excel Export Modal State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportFields, setExportFields] = useState<VehicleExportFieldDef[]>([]);
@@ -113,6 +168,11 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
       if (statusFilter !== 'ALL') {
         if (statusFilter === 'ASSIGNED' && !v.assignedRouteId) return false;
         if (statusFilter === 'SPARE' && v.assignedRouteId) return false;
+        if (statusFilter === 'EXCLUDED') {
+          const vid = v.vehicleId || (typeof v.id === 'number' ? v.id : Number(v.id) || undefined);
+          const isExcluded = !!getVehicleUnavailabilityReason(v.unitNumber, vid, unavailableVehiclesMap);
+          if (!isExcluded) return false;
+        }
       }
       if (yardFilter !== 'ALL' && v.yardName !== yardFilter) {
         return false;
@@ -134,7 +194,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 
       return true;
     });
-  }, [vehicles, typeFilter, fuelFilter, statusFilter, yardFilter, deferredSearchTerm]);
+  }, [vehicles, typeFilter, fuelFilter, statusFilter, yardFilter, deferredSearchTerm, unavailableVehiclesMap]);
 
   // Virtual scrolling for 1,000+ fleet vehicles
   const vehicleTableContainerRef = useRef<HTMLDivElement>(null);
@@ -324,8 +384,13 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
             className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
           >
             <option value="ALL">All Statuses</option>
-            <option value="ASSIGNED">In Service / On Route (50)</option>
-            <option value="SPARE">Spare / Standby (30)</option>
+            <option value="ASSIGNED">In Service / On Route</option>
+            <option value="SPARE">Spare / Standby</option>
+            <option value="EXCLUDED">
+              {isFrench
+                ? `Exclus des quarts de répartition (${unavailableVehiclesList.length})`
+                : `Excluded from Dispatch Shifts (${unavailableVehiclesList.length})`}
+            </option>
           </select>
 
           {/* Yard Filter */}
@@ -360,7 +425,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
       </div>
 
       {/* KPI Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center space-x-3.5">
           <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold">
             <Bus className="w-5 h-5" />
@@ -400,6 +465,45 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
             <div className="text-[11px] text-slate-400 font-medium">Wheelchair Equipped</div>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'EXCLUDED' ? 'ALL' : 'EXCLUDED')}
+          title={
+            isFrench
+              ? 'Filtrer les véhicules exclus des quarts de répartition'
+              : 'Filter vehicles excluded from dispatch shifts'
+          }
+          className={`rounded-2xl p-4 flex items-center space-x-3.5 text-left transition border ${
+            statusFilter === 'EXCLUDED'
+              ? 'bg-rose-950/50 border-rose-500/60 ring-1 ring-rose-500/40'
+              : unavailableVehiclesList.length > 0
+              ? 'bg-slate-900 border-rose-500/30 hover:bg-slate-800/80'
+              : 'bg-slate-900 border-slate-800 hover:bg-slate-800/60'
+          }`}
+        >
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold shrink-0 ${
+              unavailableVehiclesList.length > 0
+                ? 'bg-rose-500/15 border border-rose-500/30 text-rose-400'
+                : 'bg-slate-800 border border-slate-700 text-slate-400'
+            }`}
+          >
+            <Wrench className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <div
+              className={`text-xl font-bold tracking-tight ${
+                unavailableVehiclesList.length > 0 ? 'text-rose-400' : 'text-white'
+              }`}
+            >
+              {unavailableVehiclesList.length}
+            </div>
+            <div className="text-[11px] text-slate-400 font-medium truncate">
+              {isFrench ? 'Exclus répartition' : 'Excluded from Dispatch'}
+            </div>
+          </div>
+        </button>
       </div>
 
       {/* Vehicle Fleet Table */}
@@ -425,14 +529,14 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
           <div ref={vehicleTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
             <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1240px]">
               <colgroup>
-                <col style={{ width: '190px' }} />
-                <col style={{ width: '180px' }} />
-                <col style={{ width: '150px' }} />
-                <col style={{ width: '130px' }} />
+                <col style={{ width: '230px' }} />
                 <col style={{ width: '170px' }} />
-                <col style={{ width: '170px' }} />
+                <col style={{ width: '140px' }} />
                 <col style={{ width: '120px' }} />
-                <col style={{ width: '130px' }} />
+                <col style={{ width: '160px' }} />
+                <col style={{ width: '160px' }} />
+                <col style={{ width: '160px' }} />
+                <col style={{ width: '120px' }} />
               </colgroup>
               <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider text-[11px] shadow-xs">
                 <tr>
@@ -458,27 +562,64 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                   const isBus = v.unitType.toLowerCase().includes('bus');
                   const isVan = v.unitType.toLowerCase().includes('van');
                   const isAssigned = !!v.assignedRouteId;
+                  const vid = v.vehicleId || (typeof v.id === 'number' ? v.id : Number(v.id) || undefined);
+                  const exclusionReason = getVehicleUnavailabilityReason(
+                    v.unitNumber,
+                    vid,
+                    unavailableVehiclesMap
+                  );
 
                   return (
                     <tr
                       key={v.id}
                       onClick={() => onSelectVehicle(v)}
-                      className="h-16 hover:bg-slate-800/40 transition cursor-pointer group"
+                      className={`h-16 transition cursor-pointer group ${
+                        exclusionReason
+                          ? 'bg-rose-950/15 hover:bg-rose-950/25'
+                          : 'hover:bg-slate-800/40'
+                      }`}
                     >
                       {/* Unit # & Type */}
                       <td className="py-2.5 px-4 align-middle h-16">
                         <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-bold text-amber-400 text-xs">
+                          <div
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                              exclusionReason
+                                ? 'bg-rose-500/15 border border-rose-500/30 text-rose-400'
+                                : 'bg-amber-500/10 border border-amber-500/20 text-amber-400'
+                            }`}
+                          >
                             {isBus ? <Bus className="w-5 h-5" /> : isVan ? <Truck className="w-5 h-5" /> : <Car className="w-5 h-5" />}
                           </div>
-                          <div>
-                            <div className="font-bold text-white group-hover:text-amber-400 transition flex items-center space-x-1.5">
+                          <div className="min-w-0">
+                            <div className="font-bold text-white group-hover:text-amber-400 transition flex items-center space-x-1.5 flex-wrap">
                               <span>Unit #{v.unitNumber}</span>
+                              {exclusionReason && (
+                                <span
+                                  title={isFrench ? exclusionReason.detailFr : exclusionReason.detailEn}
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                                    exclusionReason.reason === 'defect'
+                                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                      : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  }`}
+                                >
+                                  <Wrench className="w-2.5 h-2.5 shrink-0" />
+                                  <span>{isFrench ? 'Exclu répartition' : 'Excluded from Dispatch'}</span>
+                                </span>
+                              )}
                             </div>
-                            <div className="text-[11px] text-slate-400 font-mono">
+                            <div className="text-[11px] text-slate-400 font-mono truncate">
                               {v.plateNumber || 'No Plate'}
                               {v.gpsSerial ? ` · GPS ${v.gpsSerial}` : ''}
                             </div>
+                            {exclusionReason && (
+                              <div
+                                className="text-[10px] font-semibold text-rose-300/90 truncate mt-0.5"
+                                title={isFrench ? exclusionReason.detailFr : exclusionReason.detailEn}
+                              >
+                                {isFrench ? exclusionReason.badgeTextFr : exclusionReason.badgeTextEn}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -573,15 +714,38 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 
                       {/* Status Badge */}
                       <td className="py-2.5 px-4 text-center align-middle h-16">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${
-                            isAssigned
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                          }`}
-                        >
-                          {v.status || (isAssigned ? 'In Service' : 'Spare')}
-                        </span>
+                        {exclusionReason ? (
+                          <div
+                            className="flex flex-col items-center gap-0.5"
+                            title={isFrench ? exclusionReason.detailFr : exclusionReason.detailEn}
+                          >
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                exclusionReason.reason === 'defect'
+                                  ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                                  : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+                              }`}
+                            >
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <span className="truncate max-w-[125px]">
+                                {isFrench ? exclusionReason.badgeTextFr : exclusionReason.badgeTextEn}
+                              </span>
+                            </span>
+                            <span className="text-[10px] text-rose-400/90 font-semibold">
+                              {isFrench ? 'Exclu des quarts' : 'Excluded from Shifts'}
+                            </span>
+                          </div>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+                              isAssigned
+                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                            }`}
+                          >
+                            {v.status || (isAssigned ? 'In Service' : 'Spare')}
+                          </span>
+                        )}
                       </td>
 
                       {/* Action */}

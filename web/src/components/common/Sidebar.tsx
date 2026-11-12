@@ -32,10 +32,20 @@ import {
   BadgeDollarSign,
   UserX,
   RefreshCw,
-  Compass
+  Compass,
+  GitBranch,
+  FileCheck2,
+  FileBadge,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { hasPageAccess } from '../../utils/permissions';
+import {
+  NavDomainId,
+  NAV_DOMAINS,
+  getDomainForTab
+} from '../../utils/navigationConfig';
 
 export type NavTab =
   | 'dashboard'
@@ -85,6 +95,7 @@ interface NavItemConfig {
 }
 
 interface NavGroupConfig {
+  domain: NavDomainId;
   title: string;
   items: NavItemConfig[];
 }
@@ -107,8 +118,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { t, isFrench } = useI18n();
   const { currentUser } = useAuth();
 
+  const activeDomainId = getDomainForTab(currentTab);
+  const activeDomainDef =
+    NAV_DOMAINS.find((d) => d.id === activeDomainId) || NAV_DOMAINS[0];
+
   const groups: NavGroupConfig[] = [
     {
+      domain: 'dispatch_ops',
       title: t.nav.overview || (isFrench ? 'Aperçu' : 'Overview'),
       items: [
         {
@@ -120,6 +136,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ]
     },
     {
+      domain: 'dispatch_ops',
       title: t.nav.dispatchGroup || (isFrench ? 'Répartition' : 'Dispatch'),
       items: [
         {
@@ -143,7 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {
           id: 'staging_routes',
           label: isFrench ? 'Circuits staging' : 'Staging Routes',
-          icon: RouteIcon,
+          icon: GitBranch,
           badge: null
         },
         {
@@ -155,46 +172,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ]
     },
     {
-      title: t.nav.hrGroup || (isFrench ? 'Ressources humaines (RH)' : 'Human Resources (HR)'),
-      items: [
-        {
-          id: 'employees',
-          label: t.nav.employees,
-          icon: Users,
-          badge: null
-        },
-        {
-          id: 'time_off',
-          label: t.nav.timeOff || (isFrench ? 'Demandes de congé' : 'Time Off Requests'),
-          icon: CalendarOff,
-          badge: null
-        }
-      ]
-    },
-    {
-      title: t.nav.payrollGroup || (isFrench ? 'Paie et finances' : 'Payroll & Finance'),
-      items: [
-        {
-          id: 'payroll',
-          label: t.nav.payroll,
-          icon: DollarSign,
-          badge: null
-        },
-        {
-          id: 'biweekly_payroll',
-          label: (t.nav as any).biweeklyPayroll || (isFrench ? 'Paie aux deux semaines' : 'Bi-Weekly Payroll'),
-          icon: FileSpreadsheet,
-          badge: null
-        },
-        {
-          id: 'payroll_dept_log',
-          label: (t.nav as any).payrollDeptLog || (isFrench ? 'Journal du service de paie' : 'Payroll Department Log'),
-          icon: Receipt,
-          badge: null
-        }
-      ]
-    },
-    {
+      domain: 'dispatch_ops',
       title: t.nav.trackingGroup || (isFrench ? 'Suivi des opérations' : 'Operations Tracking'),
       items: [
         {
@@ -218,6 +196,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ]
     },
     {
+      domain: 'hr_payroll',
+      title: t.nav.hrGroup || (isFrench ? 'Ressources humaines (RH)' : 'Human Resources (HR)'),
+      items: [
+        {
+          id: 'employees',
+          label: t.nav.employees,
+          icon: Users,
+          badge: null
+        },
+        {
+          id: 'time_off',
+          label: t.nav.timeOff || (isFrench ? 'Demandes de congé' : 'Time Off Requests'),
+          icon: CalendarOff,
+          badge: null
+        }
+      ]
+    },
+    {
+      domain: 'hr_payroll',
+      title: t.nav.payrollGroup || (isFrench ? 'Paie et finances' : 'Payroll & Finance'),
+      items: [
+        {
+          id: 'payroll',
+          label: t.nav.payroll,
+          icon: DollarSign,
+          badge: null
+        },
+        {
+          id: 'biweekly_payroll',
+          label: (t.nav as any).biweeklyPayroll || (isFrench ? 'Paie aux deux semaines' : 'Bi-Weekly Payroll'),
+          icon: FileSpreadsheet,
+          badge: null
+        },
+        {
+          id: 'payroll_dept_log',
+          label: (t.nav as any).payrollDeptLog || (isFrench ? 'Journal du service de paie' : 'Payroll Department Log'),
+          icon: FileCheck2,
+          badge: null
+        },
+        {
+          id: 'expenses',
+          label: isFrench ? 'Notes de frais' : 'Expense Claims',
+          icon: Receipt,
+          badge: null
+        }
+      ]
+    },
+    {
+      domain: 'fleet',
       title: t.nav.fleetGroup || (isFrench ? 'Flotte et dépôt' : 'Fleet & Depot'),
       items: [
         {
@@ -259,12 +286,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ]
     },
     {
+      domain: 'students_safety',
       title: t.nav.safetyGroup || (isFrench ? 'Sécurité et élèves' : 'Safety & Students'),
       items: [
         {
           id: 'compliance',
           label: t.nav.compliance,
-          icon: AlertTriangle,
+          icon: FileBadge,
           badge: expiringLicenseCount > 0 ? expiringLicenseCount : null,
           badgeColor: 'bg-amber-500 text-slate-950'
         },
@@ -288,7 +316,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'student_incidents',
-          label: isFrench ? 'Incidents d\'élèves' : 'Student Incidents',
+          label: isFrench ? "Incidents d'élèves" : 'Student Incidents',
           icon: ShieldAlert,
           badge: null
         },
@@ -307,6 +335,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ]
     },
     {
+      domain: 'students_safety',
       title: t.nav.schoolsGroup || (isFrench ? 'Écoles et calendrier' : 'Schools & Calendar'),
       items: [
         {
@@ -324,17 +353,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ]
     },
     {
+      domain: 'system',
       title: t.nav.system,
       items: [
         {
-          id: 'expenses',
-          label: isFrench ? 'Notes de frais' : 'Expense Claims',
-          icon: Receipt,
-          badge: null
-        },
-        {
           id: 'company_contacts',
-          label: isFrench ? 'Contacts de l\'entreprise' : 'Company Contacts',
+          label: isFrench ? "Contacts de l'entreprise" : 'Company Contacts',
           icon: PhoneCall,
           badge: null
         },
@@ -352,13 +376,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'audit_logs',
-          label: isFrench ? 'Journaux d\'audit système' : 'System Audit Logs',
+          label: isFrench ? "Journaux d'audit système" : 'System Audit Logs',
           icon: FileText,
           badge: null
         },
         {
           id: 'error_logs',
-          label: isFrench ? 'Journaux d\'erreurs client' : 'Client Error Logs',
+          label: isFrench ? "Journaux d'erreurs client" : 'Client Error Logs',
           icon: AlertTriangle,
           badge: null
         },
@@ -378,74 +402,134 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   ];
 
+  const domainGroups = groups.filter((g) => g.domain === activeDomainId);
+
   return (
     <aside
+      aria-label={isFrench ? 'Menu secondaire du domaine' : 'Domain secondary navigation'}
       className={`hidden md:flex flex-col flex-shrink-0 h-full overflow-hidden bg-slate-900 border-r border-slate-800 transition-all duration-300 z-20 ${
-        isCollapsed ? 'w-18' : 'w-64'
+        isCollapsed ? 'w-16' : 'w-64'
       }`}
     >
-      <div className="flex-1 min-h-0 overflow-y-auto py-4 px-2 space-y-5">
-        {groups.map((group, groupIdx) => {
+      {/* Active Domain Header & Quick Collapse Toggle */}
+      <div
+        className={`shrink-0 h-12 border-b border-slate-800/80 flex items-center ${
+          isCollapsed ? 'justify-center px-1' : 'justify-between px-3.5'
+        }`}
+      >
+        {!isCollapsed && (
+          <div className="flex items-center space-x-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
+            <span className="text-xs font-extrabold uppercase tracking-wider text-slate-200 truncate">
+              {isFrench ? activeDomainDef.labelFr : activeDomainDef.labelEn}
+            </span>
+          </div>
+        )}
+
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            title={
+              isCollapsed
+                ? isFrench
+                  ? 'Développer le menu (Ctrl+B)'
+                  : 'Expand menu (Ctrl+B)'
+                : isFrench
+                  ? 'Réduire en barre d’icônes (Ctrl+B)'
+                  : 'Collapse to icon bar (Ctrl+B)'
+            }
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors flex-shrink-0"
+          >
+            {isCollapsed ? (
+              <PanelLeftOpen className="w-4 h-4" />
+            ) : (
+              <PanelLeftClose className="w-4 h-4" />
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Domain Filtered Menu Items */}
+      <div className="flex-1 min-h-0 overflow-y-auto py-3 px-2 space-y-4">
+        {domainGroups.map((group, groupIdx) => {
           const visibleItems = group.items.filter((item) => hasPageAccess(currentUser, item.id));
           if (visibleItems.length === 0) return null;
 
           return (
             <div key={groupIdx} className="space-y-1">
               {!isCollapsed ? (
-                <div className="px-3 pb-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
-                  <span>{group.title}</span>
-                  <span className="w-8 h-px bg-slate-800" />
+                <div className="px-3 pb-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                  <span className="truncate">{group.title}</span>
+                  <span className="w-6 h-px bg-slate-800 flex-shrink-0 ml-2" />
                 </div>
               ) : (
-                <div className="h-2" />
+                groupIdx > 0 && <div className="w-6 h-px bg-slate-800 mx-auto my-2" />
               )}
 
               {visibleItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = currentTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => onSelectTab(item.id)}
-                  title={isCollapsed ? `${item.label}${item.badge ? ` (${item.badge})` : ''}` : undefined}
-                  className={`w-full flex items-center rounded-xl text-xs font-semibold transition-all relative group ${
-                    isCollapsed ? 'justify-center p-3' : 'justify-between px-3 py-2.5'
-                  } ${
-                    isActive
-                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30 shadow-sm shadow-amber-500/10'
-                      : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
-                  }`}
-                >
-                  <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'space-x-3'}`}>
-                    <Icon
-                      className={`w-4 h-4 transition-transform group-hover:scale-110 ${
-                        isActive ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-200'
-                      }`}
-                    />
-                    {!isCollapsed && <span className="truncate">{item.label}</span>}
-                  </div>
+                const Icon = item.icon;
+                const isActive = currentTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onSelectTab(item.id)}
+                    title={
+                      isCollapsed
+                        ? `${item.label}${item.badge ? ` (${item.badge})` : ''}`
+                        : undefined
+                    }
+                    aria-label={item.label}
+                    className={`w-full flex items-center rounded-xl text-xs font-semibold transition-all relative group ${
+                      isCollapsed
+                        ? 'justify-center h-10 w-10 mx-auto'
+                        : 'justify-between px-3 py-2.5'
+                    } ${
+                      isActive
+                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30 shadow-sm shadow-amber-500/10'
+                        : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                    }`}
+                  >
+                    {isCollapsed && isActive && (
+                      <span className="absolute -left-2 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full bg-amber-400" />
+                    )}
 
-                  {!isCollapsed && item.badge !== null && (
-                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${item.badgeColor || 'bg-amber-500 text-slate-950'}`}>
-                      {item.badge}
-                    </span>
-                  )}
+                    <div className={`flex items-center min-w-0 ${isCollapsed ? 'justify-center' : 'space-x-3'}`}>
+                      <Icon
+                        className={`w-4 h-4 flex-shrink-0 transition-transform group-hover:scale-110 ${
+                          isActive ? 'text-amber-400' : 'text-slate-400 group-hover:text-slate-200'
+                        }`}
+                      />
+                      {!isCollapsed && <span className="truncate">{item.label}</span>}
+                    </div>
 
-                  {isCollapsed && item.badge !== null && (
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-400 ring-2 ring-slate-900" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
+                    {!isCollapsed && item.badge !== null && (
+                      <span
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                          item.badgeColor || 'bg-amber-500 text-slate-950'
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+
+                    {isCollapsed && item.badge !== null && (
+                      <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-400 ring-2 ring-slate-900" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
 
       {/* Bottom Depot & Collapse Controls */}
-      <div className="shrink-0 p-3 border-t border-slate-800 space-y-2">
+      <div className="shrink-0 p-2.5 border-t border-slate-800 space-y-2">
         {!isCollapsed && (
-          <div className="px-2 py-2 rounded-lg bg-slate-800/40 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+          <div className="px-2.5 py-2 rounded-lg bg-slate-800/40 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
             <span className="flex items-center space-x-1.5 truncate">
               <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 animate-pulse" />
               <span className="truncate">HQ-Central (Active)</span>
@@ -456,8 +540,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {onToggleCollapse && (
           <button
+            type="button"
             onClick={onToggleCollapse}
-            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={
+              isCollapsed
+                ? isFrench
+                  ? 'Développer le menu (Ctrl+B)'
+                  : 'Expand sidebar (Ctrl+B)'
+                : isFrench
+                  ? 'Réduire en icônes (Ctrl+B)'
+                  : 'Collapse to icon bar (Ctrl+B)'
+            }
             className="w-full flex items-center justify-center p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition text-xs font-semibold space-x-2"
           >
             {isCollapsed ? (
@@ -465,7 +558,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ) : (
               <>
                 <ChevronLeft className="w-4 h-4" />
-                <span className="text-[11px]">Collapse Menu</span>
+                <span className="text-[11px]">
+                  {isFrench ? 'Réduire en icônes' : 'Collapse Menu'}
+                </span>
               </>
             )}
           </button>

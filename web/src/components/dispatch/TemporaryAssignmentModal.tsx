@@ -19,6 +19,12 @@ import {
   calculateDriverDeadhead,
   calculateAttendantDeadhead
 } from '../../utils/deadheadCalculator';
+import {
+  classifyEmployeeForRole,
+  compareCrewPriority,
+  groupCrewCandidates,
+  getOptGroupLabels,
+} from '../../utils/crewEligibilityUtils';
 
 interface TemporaryAssignmentModalProps {
   isOpen: boolean;
@@ -88,7 +94,7 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
     setError(null);
   }, [assignment, isOpen, routes, todayStr]);
 
-  const { t } = useI18n();
+  const { t, isFrench } = useI18n();
   const [sortByDeadhead, setSortByDeadhead] = useState(true);
 
   const [defects, setDefects] = useState<VehicleDefectReport[]>([]);
@@ -161,20 +167,24 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
 
   const rankedDrivers = React.useMemo(() => {
     if (routeReferenceStops.length === 0 || !sortByDeadhead) {
-      return activeEmployees.map((d) => ({
-        employee: d,
-        deadhead: calculateDriverDeadhead(d, routeReferenceStops)
-      }));
+      return [...activeEmployees]
+        .sort((a, b) => compareCrewPriority(a, b, 'driver'))
+        .map((d) => ({
+          employee: d,
+          deadhead: calculateDriverDeadhead(d, routeReferenceStops)
+        }));
     }
     return sortDriversByDeadhead(activeEmployees, routeReferenceStops);
   }, [activeEmployees, routeReferenceStops, sortByDeadhead]);
 
   const rankedAttendants = React.useMemo(() => {
     if (routeReferenceStops.length === 0 || !sortByDeadhead) {
-      return activeEmployees.map((a) => ({
-        employee: a,
-        deadhead: calculateAttendantDeadhead(a, selectedDriverObj, routeReferenceStops)
-      }));
+      return [...activeEmployees]
+        .sort((a, b) => compareCrewPriority(a, b, 'attendant'))
+        .map((a) => ({
+          employee: a,
+          deadhead: calculateAttendantDeadhead(a, selectedDriverObj, routeReferenceStops)
+        }));
     }
     return sortAttendantsByDeadhead(activeEmployees, selectedDriverObj, routeReferenceStops);
   }, [activeEmployees, selectedDriverObj, routeReferenceStops, sortByDeadhead]);
@@ -201,9 +211,11 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
     return rankedDrivers.filter(({ employee: e }) => {
       const name = `${e.firstName || ''} ${e.lastName || ''}`.toLowerCase();
       const role = (e.role || '').toLowerCase();
+      const pos = (e.jobPosition || '').toLowerCase();
+      const badge = classifyEmployeeForRole(e, 'driver').badgeTextEn.toLowerCase();
       const num = (e.employeeNumber || e.id || '').toLowerCase();
       const phone = (e.mobilePhone || e.preferredPhone || e.homePhone || '').toLowerCase();
-      return name.includes(q) || role.includes(q) || num.includes(q) || phone.includes(q) || e.id === temporaryDriverId;
+      return name.includes(q) || role.includes(q) || pos.includes(q) || badge.includes(q) || num.includes(q) || phone.includes(q) || e.id === temporaryDriverId;
     });
   }, [rankedDrivers, driverSearch, temporaryDriverId]);
 
@@ -214,9 +226,11 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
     return rankedAttendants.filter(({ employee: e }) => {
       const name = `${e.firstName || ''} ${e.lastName || ''}`.toLowerCase();
       const role = (e.role || '').toLowerCase();
+      const pos = (e.jobPosition || '').toLowerCase();
+      const badge = classifyEmployeeForRole(e, 'attendant').badgeTextEn.toLowerCase();
       const num = (e.employeeNumber || e.id || '').toLowerCase();
       const phone = (e.mobilePhone || e.preferredPhone || e.homePhone || '').toLowerCase();
-      return name.includes(q) || role.includes(q) || num.includes(q) || phone.includes(q) || e.id === temporaryAttendantId;
+      return name.includes(q) || role.includes(q) || pos.includes(q) || badge.includes(q) || num.includes(q) || phone.includes(q) || e.id === temporaryAttendantId;
     });
   }, [rankedAttendants, attendantSearch, temporaryAttendantId]);
 
@@ -568,16 +582,36 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
                   {filteredDrivers.length === 0 ? (
                     <option disabled value="__empty">No drivers match &quot;{driverSearch}&quot;</option>
                   ) : (
-                    filteredDrivers.map(({ employee: e, deadhead }) => {
-                      const deadheadText = deadhead.hasCoordinates
-                        ? ` [~${deadhead.totalDeadheadKm} km (${deadhead.pullOutKm} km to start)]`
-                        : ` [${t.deadhead.noGpsCoordinates}]`;
+                    (() => {
+                      const groups = groupCrewCandidates(filteredDrivers, 'driver');
+                      const labels = getOptGroupLabels('driver', isFrench);
+                      const renderDriverOpt = ({ employee: e, deadhead }: (typeof filteredDrivers)[number]) => {
+                        const eligibility = classifyEmployeeForRole(e, 'driver');
+                        const rawTag = isFrench ? eligibility.optionTagFr : eligibility.optionTagEn;
+                        const tagText = rawTag ? ` — ${rawTag}` : '';
+                        const deadheadText = deadhead.hasCoordinates
+                          ? ` [~${deadhead.totalDeadheadKm} km (${deadhead.pullOutKm} km to start)]`
+                          : ` [${t.deadhead.noGpsCoordinates}]`;
+                        return (
+                          <option key={e.id} value={e.id}>
+                            {e.firstName} {e.lastName} ({e.jobPosition || e.role || 'Staff'}){tagText}{deadheadText}
+                          </option>
+                        );
+                      };
                       return (
-                        <option key={e.id} value={e.id}>
-                          {e.firstName} {e.lastName} ({e.role || 'Driver'}){deadheadText}
-                        </option>
+                        <>
+                          {groups.primary.length > 0 && (
+                            <optgroup label={labels.primary}>{groups.primary.map(renderDriverOpt)}</optgroup>
+                          )}
+                          {groups.relief.length > 0 && (
+                            <optgroup label={labels.relief}>{groups.relief.map(renderDriverOpt)}</optgroup>
+                          )}
+                          {groups.other.length > 0 && (
+                            <optgroup label={labels.other}>{groups.other.map(renderDriverOpt)}</optgroup>
+                          )}
+                        </>
                       );
-                    })
+                    })()
                   )}
                 </select>
 
@@ -638,23 +672,43 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
                   {filteredAttendants.length === 0 ? (
                     <option disabled value="__empty">No attendants match &quot;{attendantSearch}&quot;</option>
                   ) : (
-                    filteredAttendants.map(({ employee: e, deadhead }) => {
-                      let deadheadText = '';
-                      if (deadhead.hasCoordinates) {
-                        if (deadhead.distanceToDriverKm !== undefined) {
-                          deadheadText = ` [${deadhead.distanceToDriverKm} km ${t.deadhead.toDriverHome}]`;
+                    (() => {
+                      const groups = groupCrewCandidates(filteredAttendants, 'attendant');
+                      const labels = getOptGroupLabels('attendant', isFrench);
+                      const renderAttOpt = ({ employee: e, deadhead }: (typeof filteredAttendants)[number]) => {
+                        const eligibility = classifyEmployeeForRole(e, 'attendant');
+                        const rawTag = isFrench ? eligibility.optionTagFr : eligibility.optionTagEn;
+                        const tagText = rawTag ? ` — ${rawTag}` : '';
+                        let deadheadText = '';
+                        if (deadhead.hasCoordinates) {
+                          if (deadhead.distanceToDriverKm !== undefined) {
+                            deadheadText = ` [${deadhead.distanceToDriverKm} km ${t.deadhead.toDriverHome}]`;
+                          } else {
+                            deadheadText = ` [${deadhead.distanceToFirstStopKm} km ${t.deadhead.toFirstStop}]`;
+                          }
                         } else {
-                          deadheadText = ` [${deadhead.distanceToFirstStopKm} km ${t.deadhead.toFirstStop}]`;
+                          deadheadText = ` [${t.deadhead.noGpsCoordinates}]`;
                         }
-                      } else {
-                        deadheadText = ` [${t.deadhead.noGpsCoordinates}]`;
-                      }
+                        return (
+                          <option key={e.id} value={e.id}>
+                            {e.firstName} {e.lastName} ({e.jobPosition || e.role || 'Staff'}){tagText}{deadheadText}
+                          </option>
+                        );
+                      };
                       return (
-                        <option key={e.id} value={e.id}>
-                          {e.firstName} {e.lastName}{deadheadText}
-                        </option>
+                        <>
+                          {groups.primary.length > 0 && (
+                            <optgroup label={labels.primary}>{groups.primary.map(renderAttOpt)}</optgroup>
+                          )}
+                          {groups.relief.length > 0 && (
+                            <optgroup label={labels.relief}>{groups.relief.map(renderAttOpt)}</optgroup>
+                          )}
+                          {groups.other.length > 0 && (
+                            <optgroup label={labels.other}>{groups.other.map(renderAttOpt)}</optgroup>
+                          )}
+                        </>
                       );
-                    })
+                    })()
                   )}
                 </select>
 

@@ -7,7 +7,7 @@ import { EmployeeService } from '../../services/employeeService';
 import { Employee } from '../../types/employee';
 import {
   optimizeStopSequence,
-  recalculateStopTimes,
+  reorderStopsAndUpdateSequence,
   calculateTotalRouteDistance,
   OptimizationResult
 } from '../../utils/routeOptimizer';
@@ -24,7 +24,8 @@ import {
   ChevronUp,
   ChevronDown,
   Lock,
-  RotateCcw
+  RotateCcw,
+  GripVertical
 } from 'lucide-react';
 
 interface OptimizeRouteModalProps {
@@ -57,8 +58,10 @@ export const OptimizeRouteModal: React.FC<OptimizeRouteModalProps> = ({
   const [includeDriverHome, setIncludeDriverHome] = useState(false);
   const [recalculateTimes, setRecalculateTimes] = useState(true);
 
-  // Editable working copy of optimized stops to allow manual up/down overrides
+  // Editable working copy of optimized stops to allow manual drag/up/down overrides
   const [workingStops, setWorkingStops] = useState<RouteStop[]>([]);
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -159,48 +162,26 @@ export const OptimizeRouteModal: React.FC<OptimizeRouteModalProps> = ({
     };
   }, [workingStops, initialOptimizationResult, settings, route]);
 
-  // Manual Move Up: swap stop at index with index - 1
-  const handleMoveUp = (index: number) => {
-    if (index <= 0) return;
-    const nextStops = [...workingStops];
-    const temp = nextStops[index - 1];
-    nextStops[index - 1] = nextStops[index];
-    nextStops[index] = temp;
-
-    if (recalculateTimes) {
-      const recalculated = recalculateStopTimes(
-        nextStops,
-        settings.defaultStopDwellMinutes,
-        settings.averageSpeedKmH,
-        route?.schoolBoardCode || route?.routeName,
-        shift?.shiftType
-      );
-      setWorkingStops(recalculated);
-    } else {
-      setWorkingStops(nextStops.map((s, idx) => ({ ...s, sequence: idx + 1 })));
+  // Reorder working stop by drag-and-drop or up/down override buttons
+  const handleReorderWorkingStop = (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= workingStops.length ||
+      toIndex >= workingStops.length
+    ) {
+      return;
     }
-  };
 
-  // Manual Move Down: swap stop at index with index + 1
-  const handleMoveDown = (index: number) => {
-    if (index >= workingStops.length - 1) return;
-    const nextStops = [...workingStops];
-    const temp = nextStops[index + 1];
-    nextStops[index + 1] = nextStops[index];
-    nextStops[index] = temp;
-
-    if (recalculateTimes) {
-      const recalculated = recalculateStopTimes(
-        nextStops,
-        settings.defaultStopDwellMinutes,
-        settings.averageSpeedKmH,
-        route?.schoolBoardCode || route?.routeName,
-        shift?.shiftType
-      );
-      setWorkingStops(recalculated);
-    } else {
-      setWorkingStops(nextStops.map((s, idx) => ({ ...s, sequence: idx + 1 })));
-    }
+    const updated = reorderStopsAndUpdateSequence(workingStops, fromIndex, toIndex, {
+      recalculateTimes,
+      dwellMinutes: settings.defaultStopDwellMinutes,
+      speedKmH: settings.averageSpeedKmH,
+      schoolBoardOrRouteName: route?.schoolBoardCode || route?.routeName,
+      shiftType: shift?.shiftType
+    });
+    setWorkingStops(updated);
   };
 
   // Reset to initial 2-Opt result
@@ -426,17 +407,62 @@ export const OptimizeRouteModal: React.FC<OptimizeRouteModalProps> = ({
                   const studentName = stop.assignedStudents?.[0]?.studentName;
                   const isFirst = idx === 0;
                   const isLast = idx === workingStops.length - 1;
+                  const isDragging = draggedIdx === idx;
+                  const isDragOver = dragOverIdx === idx && draggedIdx !== null && draggedIdx !== idx;
+                  const dropLineClass = isDragOver
+                    ? draggedIdx! > idx
+                      ? 'border-t-2 border-t-amber-400 ring-1 ring-amber-400/60 bg-amber-500/10'
+                      : 'border-b-2 border-b-amber-400 ring-1 ring-amber-400/60 bg-amber-500/10'
+                    : '';
 
                   return (
                     <div
                       key={stop.stopId || idx}
+                      draggable={!isApplying}
+                      onDragStart={(e) => {
+                        setDraggedIdx(idx);
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', String(idx));
+                      }}
+                      onDragOver={(e) => {
+                        if (draggedIdx === null || draggedIdx === idx) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (dragOverIdx !== idx) setDragOverIdx(idx);
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverIdx === idx) setDragOverIdx(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const fromIdx = draggedIdx;
+                        setDraggedIdx(null);
+                        setDragOverIdx(null);
+                        if (fromIdx !== null && fromIdx !== idx) {
+                          handleReorderWorkingStop(fromIdx, idx);
+                        }
+                      }}
+                      onDragEnd={() => {
+                        setDraggedIdx(null);
+                        setDragOverIdx(null);
+                      }}
                       className={`p-3 rounded-xl border flex items-center justify-between space-x-3 text-xs transition ${
-                        isSchool
-                          ? 'bg-amber-500/5 border-amber-500/30'
-                          : 'bg-emerald-950/20 border-emerald-500/30'
+                        isDragging
+                          ? 'opacity-45 bg-amber-500/10 border-amber-500/40'
+                          : isDragOver
+                            ? dropLineClass
+                            : isSchool
+                              ? 'bg-amber-500/5 border-amber-500/30'
+                              : 'bg-emerald-950/20 border-emerald-500/30'
                       }`}
                     >
-                      <div className="flex items-center space-x-3 min-w-0">
+                      <div className="flex items-center space-x-2.5 min-w-0">
+                        <span
+                          title="Drag to reorder stop"
+                          className="text-slate-500 hover:text-amber-400 cursor-grab active:cursor-grabbing shrink-0"
+                        >
+                          <GripVertical className="w-4 h-4" />
+                        </span>
                         <span className="w-6 h-6 rounded-full bg-emerald-500 text-slate-950 font-mono text-[11px] font-bold flex items-center justify-center shrink-0">
                           {idx + 1}
                         </span>
@@ -467,8 +493,8 @@ export const OptimizeRouteModal: React.FC<OptimizeRouteModalProps> = ({
                           <button
                             type="button"
                             title={t.stops.moveUp}
-                            disabled={isFirst || (isSchool && isFirst)}
-                            onClick={() => handleMoveUp(idx)}
+                            disabled={isFirst}
+                            onClick={() => handleReorderWorkingStop(idx, idx - 1)}
                             className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer"
                           >
                             <ChevronUp className="w-3 h-3" />
@@ -476,8 +502,8 @@ export const OptimizeRouteModal: React.FC<OptimizeRouteModalProps> = ({
                           <button
                             type="button"
                             title={t.stops.moveDown}
-                            disabled={isLast || (isSchool && isLast)}
-                            onClick={() => handleMoveDown(idx)}
+                            disabled={isLast}
+                            onClick={() => handleReorderWorkingStop(idx, idx + 1)}
                             className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer"
                           >
                             <ChevronDown className="w-3 h-3" />
@@ -502,7 +528,7 @@ export const OptimizeRouteModal: React.FC<OptimizeRouteModalProps> = ({
         {/* Modal Footer */}
         <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
           <div className="text-xs text-slate-400">
-            Click ▲ / ▼ on any stop to manually adjust order for special requests.
+            Drag stops or click ▲ / ▼ to manually adjust order for special requests.
           </div>
 
           <div className="flex items-center space-x-3">

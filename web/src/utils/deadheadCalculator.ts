@@ -3,6 +3,7 @@ import { RouteStop } from '../types/route';
 import { DispatchShiftStop } from '../types/dispatch';
 import { LatLngPoint, resolveStopCoordinates } from './geoUtils';
 import { calculateHaversineDistance } from './routeOptimizer';
+import { sortCrewCandidatesWithPriority } from './crewEligibilityUtils';
 
 /**
  * Standard urban/suburban road network circuity factor.
@@ -268,18 +269,14 @@ export function sortDriversByDeadhead(
     deadhead: calculateDriverDeadhead(driver, stops, speedKmH)
   }));
 
-  return mapped.sort((a, b) => {
-    if (a.deadhead.hasCoordinates && b.deadhead.hasCoordinates) {
-      return a.deadhead.totalDeadheadKm - b.deadhead.totalDeadheadKm;
-    }
-    if (a.deadhead.hasCoordinates && !b.deadhead.hasCoordinates) return -1;
-    if (!a.deadhead.hasCoordinates && b.deadhead.hasCoordinates) return 1;
-    return a.employee.fullName.localeCompare(b.employee.fullName);
-  });
+  return sortCrewCandidatesWithPriority(mapped, 'driver', (item) =>
+    item.deadhead.hasCoordinates ? item.deadhead.totalDeadheadKm : null
+  );
 }
 
 /**
- * Sorts attendants by proximity to assigned driver or first stop.
+ * Sorts attendants by eligibility tier (regular attendants first, then supervisors & experienced cover staff, then others)
+ * and proximity to assigned driver or first stop.
  */
 export function sortAttendantsByDeadhead(
   attendants: Employee[],
@@ -292,20 +289,9 @@ export function sortAttendantsByDeadhead(
     deadhead: calculateAttendantDeadhead(attendant, driver, stops, speedKmH)
   }));
 
-  return mapped.sort((a, b) => {
-    // Primary preference: actual 'attendant' job position
-    const aIsAtt = (a.employee.jobPosition || '').toLowerCase().includes('attendant');
-    const bIsAtt = (b.employee.jobPosition || '').toLowerCase().includes('attendant');
-    if (aIsAtt && !bIsAtt) return -1;
-    if (!aIsAtt && bIsAtt) return 1;
-
-    if (a.deadhead.hasCoordinates && b.deadhead.hasCoordinates) {
-      const aMetric = a.deadhead.distanceToDriverKm ?? a.deadhead.distanceToFirstStopKm;
-      const bMetric = b.deadhead.distanceToDriverKm ?? b.deadhead.distanceToFirstStopKm;
-      return aMetric - bMetric;
-    }
-    if (a.deadhead.hasCoordinates && !b.deadhead.hasCoordinates) return -1;
-    if (!a.deadhead.hasCoordinates && b.deadhead.hasCoordinates) return 1;
-    return a.employee.fullName.localeCompare(b.employee.fullName);
-  });
+  return sortCrewCandidatesWithPriority(mapped, 'attendant', (item) =>
+    item.deadhead.hasCoordinates
+      ? (item.deadhead.distanceToDriverKm ?? item.deadhead.distanceToFirstStopKm)
+      : null
+  );
 }

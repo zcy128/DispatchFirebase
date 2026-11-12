@@ -2108,6 +2108,13 @@ func (r *FirestoreDispatchRepository) UpdateShift(ctx context.Context, id string
 		return nil, err
 	}
 
+	if req.DriverID != nil && strings.TrimSpace(*req.DriverID) != "" && *req.DriverID != oldDriverID {
+		r.markEmployeeCoverExperience(ctx, *req.DriverID, true, false)
+	}
+	if req.AttendantID != nil && strings.TrimSpace(*req.AttendantID) != "" && *req.AttendantID != oldAttendantID {
+		r.markEmployeeCoverExperience(ctx, *req.AttendantID, false, true)
+	}
+
 	// Check-in status changes or override updates for Driver
 	if req.IsDriverCheckedIn != nil {
 		if *req.IsDriverCheckedIn {
@@ -5141,6 +5148,12 @@ func (r *FirestoreDispatchRepository) CreateTemporaryAssignment(ctx context.Cont
 	if _, err := r.client.Collection(r.temporaryAssignmentColl).Doc(id).Set(ctx, rec); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(rec.TemporaryDriverID) != "" {
+		r.markEmployeeCoverExperience(ctx, rec.TemporaryDriverID, true, false)
+	}
+	if strings.TrimSpace(rec.TemporaryAttendantID) != "" {
+		r.markEmployeeCoverExperience(ctx, rec.TemporaryAttendantID, false, true)
+	}
 	return &rec, nil
 }
 
@@ -5209,7 +5222,59 @@ func (r *FirestoreDispatchRepository) UpdateTemporaryAssignment(ctx context.Cont
 	if _, err := docRef.Set(ctx, rec); err != nil {
 		return nil, err
 	}
+	if req.TemporaryDriverID != nil && strings.TrimSpace(*req.TemporaryDriverID) != "" {
+		r.markEmployeeCoverExperience(ctx, *req.TemporaryDriverID, true, false)
+	}
+	if req.TemporaryAttendantID != nil && strings.TrimSpace(*req.TemporaryAttendantID) != "" {
+		r.markEmployeeCoverExperience(ctx, *req.TemporaryAttendantID, false, true)
+	}
 	return &rec, nil
+}
+
+// markEmployeeCoverExperience marks an employee's Firestore record with relief driving or
+// attendant cover experience when a non-regular staff member fills that role.
+func (r *FirestoreDispatchRepository) markEmployeeCoverExperience(
+	ctx context.Context,
+	employeeKey string,
+	asDriver bool,
+	asAttendant bool,
+) {
+	key := strings.TrimSpace(employeeKey)
+	if key == "" || r.client == nil || (!asDriver && !asAttendant) {
+		return
+	}
+
+	empColl := r.client.Collection("employees")
+	docRef := empColl.Doc(key)
+	snap, err := docRef.Get(ctx)
+	if err != nil {
+		iter := empColl.Where("employeeNumber", "==", key).Limit(1).Documents(ctx)
+		defer iter.Stop()
+		fallbackSnap, iterErr := iter.Next()
+		if iterErr != nil {
+			return
+		}
+		snap = fallbackSnap
+		docRef = fallbackSnap.Ref
+	}
+
+	var emp models.Employee
+	if err := snap.DataTo(&emp); err != nil {
+		return
+	}
+
+	var updates []firestore.Update
+	if asDriver && !emp.IsRegularDriver() && !emp.HasCoveredAsDriver {
+		updates = append(updates, firestore.Update{Path: "hasCoveredAsDriver", Value: true})
+	}
+	if asAttendant && !emp.IsRegularAttendant() && !emp.HasCoveredAsAttendant {
+		updates = append(updates, firestore.Update{Path: "hasCoveredAsAttendant", Value: true})
+	}
+	if len(updates) == 0 {
+		return
+	}
+	updates = append(updates, firestore.Update{Path: "updatedAt", Value: time.Now().UTC()})
+	_, _ = docRef.Update(ctx, updates)
 }
 
 func (r *FirestoreDispatchRepository) DeleteTemporaryAssignment(ctx context.Context, id string) error {
