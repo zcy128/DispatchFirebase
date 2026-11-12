@@ -39,13 +39,17 @@ import { DispatchService } from '../services/dispatchService';
 import { apiRequest } from '../services/api';
 import { DefectService } from '../services/defectService';
 import { VehicleInspectionService } from '../services/vehicleInspectionService';
+import { TimeOffService } from '../services/timeOffService';
+import { CharterService } from '../services/charterService';
+import { CharterTrip } from '../types/charter';
 import { VehicleDefectReport } from '../types/defect';
 import { VehicleInspectionRecord, PreventiveMaintenanceRecord } from '../types/vehicleInspection';
+import { TimeOffRequest } from '../types/timeOff';
 import {
   getUnavailableVehiclesForDate,
   getVehicleUnavailabilityReason,
-  filterAvailableVehicles,
-  getUniqueUnavailableVehicleList
+  getUniqueUnavailableVehicleList,
+  getEmployeeTimeOffMapForDate,
 } from '../utils/vehicleAvailabilityUtils';
 import { Employee } from '../types/employee';
 import { Vehicle } from '../types/vehicle';
@@ -190,10 +194,12 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
   const [generating, setGenerating] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // Vehicle Defect & Periodic Inspection state for automatic dispatch exclusion
+  // Vehicle Defect, Periodic Inspection & Employee Time Off state for dispatch visibility
   const [defectReports, setDefectReports] = useState<VehicleDefectReport[]>([]);
   const [inspectionRecords, setInspectionRecords] = useState<VehicleInspectionRecord[]>([]);
   const [pmRecords, setPmRecords] = useState<PreventiveMaintenanceRecord[]>([]);
+  const [timeOffRequests, setTimeOffRequests] = useState<TimeOffRequest[]>([]);
+  const [dayCharterTrips, setDayCharterTrips] = useState<CharterTrip[]>([]);
   const scrubbedShiftKeysRef = React.useRef<Set<string>>(new Set());
 
   const authUid = currentUser?.uid;
@@ -210,31 +216,64 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
     const unsubPM = VehicleInspectionService.subscribePM((updated) => {
       setPmRecords(Array.isArray(updated) ? updated : []);
     });
+    const unsubTimeOff = TimeOffService.subscribeToTimeOffRequests((data) => {
+      setTimeOffRequests(Array.isArray(data) ? data : []);
+    });
 
     return () => {
       setTimeout(() => {
         try { unsubDefects(); } catch { /* listener already closed */ }
         try { unsubInsp(); } catch { /* listener already closed */ }
         try { unsubPM(); } catch { /* listener already closed */ }
+        try { unsubTimeOff(); } catch { /* listener already closed */ }
       }, 150);
     };
   }, [authUid]);
 
+  // Subscribe to charter trips for the selected dispatch date so driver/attendant lists show charter tasks
+  useEffect(() => {
+    if (!authUid || !selectedDate) {
+      setDayCharterTrips([]);
+      return;
+    }
+    let active = true;
+    const unsubCharters = CharterService.subscribeToTrips(
+      (list) => {
+        if (active) setDayCharterTrips(Array.isArray(list) ? list : []);
+      },
+      () => {
+        if (active) setDayCharterTrips([]);
+      },
+      selectedDate
+    );
+    return () => {
+      active = false;
+      setTimeout(() => {
+        try { unsubCharters(); } catch { /* listener already closed */ }
+      }, 150);
+    };
+  }, [authUid, selectedDate]);
+
+  // Only show maintenance/defect status and time-off info for today, tomorrow, or future dates (not yesterday/past)
+  const isTodayOrFuture = selectedDate >= getLocalTodayString();
+
   const unavailableVehiclesMap = useMemo(
     () =>
-      getUnavailableVehiclesForDate(
-        selectedDate,
-        defectReports,
-        inspectionRecords,
-        pmRecords,
-        vehicles
-      ),
-    [selectedDate, defectReports, inspectionRecords, pmRecords, vehicles]
+      isTodayOrFuture
+        ? getUnavailableVehiclesForDate(
+            selectedDate,
+            defectReports,
+            inspectionRecords,
+            pmRecords,
+            vehicles
+          )
+        : new Map(),
+    [isTodayOrFuture, selectedDate, defectReports, inspectionRecords, pmRecords, vehicles]
   );
 
-  const availableVehiclesForDate = useMemo(
-    () => filterAvailableVehicles(vehicles, unavailableVehiclesMap),
-    [vehicles, unavailableVehiclesMap]
+  const employeeTimeOffMap = useMemo(
+    () => (isTodayOrFuture ? getEmployeeTimeOffMapForDate(selectedDate, timeOffRequests) : new Map()),
+    [isTodayOrFuture, selectedDate, timeOffRequests]
   );
 
   const unavailableVehiclesList = useMemo(
@@ -1833,9 +1872,12 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
         <DispatchWorkbenchModePanel
           shifts={filteredShifts}
           allDayShifts={effectiveShifts}
+          charterTrips={dayCharterTrips}
           latenessByShiftId={latenessByShiftId}
           employees={employees}
-          availableVehicles={availableVehiclesForDate}
+          availableVehicles={vehicles}
+          unavailableVehiclesMap={unavailableVehiclesMap}
+          employeeTimeOffMap={employeeTimeOffMap}
           studentsMap={studentsMap}
           selectedDate={selectedDate}
           currentTimeStr={currentTimeStr}
@@ -2312,7 +2354,11 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
             onClose={() => setSelectedShiftForCrew(null)}
             shift={selectedShiftForCrew}
             employees={employees}
-            vehicles={availableVehiclesForDate}
+            vehicles={vehicles}
+            allDayShifts={effectiveShifts}
+            charterTrips={dayCharterTrips}
+            unavailableVehiclesMap={unavailableVehiclesMap}
+            employeeTimeOffMap={employeeTimeOffMap}
             onShiftUpdated={(updated) => {
               setSelectedShiftForCrew(updated);
               setShifts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
@@ -2328,7 +2374,11 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
             onClose={() => setSelectedShiftForSplit(null)}
             shift={selectedShiftForSplit}
             employees={employees}
-            vehicles={availableVehiclesForDate}
+            vehicles={vehicles}
+            allDayShifts={effectiveShifts}
+            charterTrips={dayCharterTrips}
+            unavailableVehiclesMap={unavailableVehiclesMap}
+            employeeTimeOffMap={employeeTimeOffMap}
             onSplitComplete={(newShifts) => {
               setSelectedShiftForSplit(null);
               setShifts((prev) => {

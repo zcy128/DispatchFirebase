@@ -521,3 +521,54 @@ export function optimizeStopSequence(
     optimizedDurationMinutes
   };
 }
+
+/**
+ * Moves a stop from `fromIndex` to `toIndex`, optionally recalculates scheduled
+ * arrival/pullaway times, re-indexes `sequence` (1..N), and strips `undefined` values
+ * for safe Firestore persistence.
+ */
+export function reorderStopsAndUpdateSequence(
+  stops: RouteStop[],
+  fromIndex: number,
+  toIndex: number,
+  options?: {
+    recalculateTimes?: boolean;
+    dwellMinutes?: number;
+    speedKmH?: number;
+    schoolBoardOrRouteName?: string;
+    shiftType?: string;
+  }
+): RouteStop[] {
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= stops.length ||
+    toIndex >= stops.length
+  ) {
+    return stops;
+  }
+
+  const next = [...stops];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+
+  const shouldRecalc = options?.recalculateTimes !== false;
+  const result = shouldRecalc
+    ? recalculateStopTimes(
+        next,
+        options?.dwellMinutes ?? 3,
+        options?.speedKmH ?? 30,
+        options?.schoolBoardOrRouteName,
+        options?.shiftType
+      )
+    : next.map((s, idx) => ({ ...s, sequence: idx + 1 }));
+
+  return result.map((s) => {
+    const clean: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(s)) {
+      if (v !== undefined) clean[k] = v;
+    }
+    return clean as unknown as RouteStop;
+  });
+}

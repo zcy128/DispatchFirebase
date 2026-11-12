@@ -1,5 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Vehicle } from '../../types/vehicle';
+import { VehicleDefectReport } from '../../types/defect';
+import { VehicleInspectionRecord, PreventiveMaintenanceRecord } from '../../types/vehicleInspection';
+import { DefectService } from '../../services/defectService';
+import { VehicleInspectionService } from '../../services/vehicleInspectionService';
+import { getLocalTodayString } from '../../utils/dateUtils';
+import {
+  getUnavailableVehiclesForDate,
+  getVehicleUnavailabilityReason
+} from '../../utils/vehicleAvailabilityUtils';
 import {
   X,
   Bus,
@@ -18,7 +27,8 @@ import {
   AlertTriangle,
   FileCheck,
   Clock,
-  FileText
+  FileText,
+  Wrench
 } from 'lucide-react';
 import { AssignmentHistoryService } from '../../services/assignmentHistoryService';
 import { AssignmentHistoryRecord } from '../../types/assignmentHistory';
@@ -45,6 +55,43 @@ export const VehicleDetailDrawer: React.FC<VehicleDetailDrawerProps> = ({
   const { config: complianceConfig, isOntario } = useCompliance();
   const { isFrench } = useI18n();
   const [vehicleAssignments, setVehicleAssignments] = useState<AssignmentHistoryRecord[]>([]);
+  const [defectReports, setDefectReports] = useState<VehicleDefectReport[]>([]);
+  const [inspectionRecords, setInspectionRecords] = useState<VehicleInspectionRecord[]>([]);
+  const [pmRecords, setPmRecords] = useState<PreventiveMaintenanceRecord[]>([]);
+  const todayDateStr = useMemo(() => getLocalTodayString(), []);
+
+  useEffect(() => {
+    if (!vehicle) return;
+    const unsubDefects = DefectService.subscribeToDefects((data) => {
+      setDefectReports(Array.isArray(data) ? data : []);
+    });
+    const unsubInsp = VehicleInspectionService.subscribe((updated) => {
+      setInspectionRecords(Array.isArray(updated) ? updated : []);
+    });
+    const unsubPM = VehicleInspectionService.subscribePM((updated) => {
+      setPmRecords(Array.isArray(updated) ? updated : []);
+    });
+    return () => {
+      setTimeout(() => {
+        try { unsubDefects(); } catch { /* closed */ }
+        try { unsubInsp(); } catch { /* closed */ }
+        try { unsubPM(); } catch { /* closed */ }
+      }, 150);
+    };
+  }, [vehicle]);
+
+  const exclusionReason = useMemo(() => {
+    if (!vehicle) return undefined;
+    const map = getUnavailableVehiclesForDate(
+      todayDateStr,
+      defectReports,
+      inspectionRecords,
+      pmRecords,
+      [vehicle]
+    );
+    const vid = vehicle.vehicleId || (typeof vehicle.id === 'number' ? vehicle.id : Number(vehicle.id) || undefined);
+    return getVehicleUnavailabilityReason(vehicle.unitNumber, vid, map);
+  }, [vehicle, todayDateStr, defectReports, inspectionRecords, pmRecords]);
 
   useEffect(() => {
     if (!vehicle) {
@@ -107,6 +154,12 @@ export const VehicleDetailDrawer: React.FC<VehicleDetailDrawerProps> = ({
                   <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/20">
                     {vehicle.unitType}
                   </span>
+                  {exclusionReason && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                      <Wrench className="w-3 h-3" />
+                      <span>{isFrench ? 'Exclu des quarts' : 'Excluded from Dispatch'}</span>
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-slate-400 mt-1 font-medium font-mono">
                   {isFrench ? 'Plaque' : 'Plate'}: {vehicle.plateNumber || (isFrench ? 'Sans plaque' : 'No Plate')}
@@ -253,6 +306,29 @@ export const VehicleDetailDrawer: React.FC<VehicleDetailDrawerProps> = ({
 
           {activeTab === 'specs' && (
             <div className="p-6 space-y-6">
+              {exclusionReason && (
+                <div className="rounded-2xl border border-rose-500/40 bg-rose-950/30 p-4 flex items-start space-x-3">
+                  <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0 mt-0.5">
+                    <Wrench className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    <div className="font-bold text-rose-200 flex items-center gap-2 flex-wrap">
+                      <span>
+                        {isFrench
+                          ? 'Exclu des quarts de répartition'
+                          : 'Excluded from Dispatch Shifts'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                        {isFrench ? exclusionReason.badgeTextFr : exclusionReason.badgeTextEn}
+                      </span>
+                    </div>
+                    <p className="text-rose-300/90 leading-relaxed">
+                      {isFrench ? exclusionReason.detailFr : exclusionReason.detailEn}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Operational Assignment (Driver & Route) */}
               <div className="space-y-3">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">

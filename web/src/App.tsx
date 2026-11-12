@@ -92,7 +92,23 @@ export const AppContent: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const mainRef = useRef<HTMLElement>(null);
   const [dispatchLogDate, setDispatchLogDate] = useState<string>(() => getLocalTodayString());
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.localStorage.getItem('pcy_sidebar_collapsed') === '1';
+    }
+    return false;
+  });
+  const toggleSidebarCollapse = useCallback(() => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem('pcy_sidebar_collapsed', next ? '1' : '0');
+      } catch {
+        // Ignore localStorage quota or private browsing errors
+      }
+      return next;
+    });
+  }, []);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
   const [isAICopilotOpen, setIsAICopilotOpen] = useState<boolean>(() => {
@@ -121,18 +137,21 @@ export const AppContent: React.FC = () => {
     });
   }, [currentTab]);
 
-  // Global shortcut (Ctrl+J / Cmd+J) to toggle AI Copilot
+  // Global shortcuts: Ctrl+J / Cmd+J to toggle AI Copilot, Ctrl+B / Cmd+B to toggle sidebar icon rail
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
         e.preventDefault();
         setAiCopilotMounted(true);
         setIsAICopilotOpen((prev) => !prev);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleSidebarCollapse();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [toggleSidebarCollapse]);
 
   const currentUserId = currentUser?.employeeId || currentUser?.uid || '';
   const { unreadCount, activeAlert, clearUnread, dismissAlert } = useChatNotifications(
@@ -1340,6 +1359,9 @@ export const AppContent: React.FC = () => {
   return (
     <div className="h-screen overflow-hidden bg-slate-950 flex flex-col text-slate-100 font-sans">
       <Header
+        currentTab={currentTab}
+        onSelectTab={setCurrentTab}
+        expiringLicenseCount={stats.licenseExpiringSoon}
         onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
         onOpenChat={() => {
           setIsChatOpen(true);
@@ -1358,7 +1380,7 @@ export const AppContent: React.FC = () => {
           onSelectTab={setCurrentTab}
           expiringLicenseCount={stats.licenseExpiringSoon}
           isCollapsed={isSidebarCollapsed}
-          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          onToggleCollapse={toggleSidebarCollapse}
         />
 
         <main ref={mainRef} className="flex-1 min-h-0 overflow-y-auto bg-slate-950/80 pb-20 md:pb-6">

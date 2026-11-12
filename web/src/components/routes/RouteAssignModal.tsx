@@ -27,6 +27,13 @@ import {
   calculateDriverDeadhead,
   calculateAttendantDeadhead
 } from '../../utils/deadheadCalculator';
+import {
+  classifyEmployeeForRole,
+  compareCrewPriority,
+  groupCrewCandidates,
+  getOptGroupLabels,
+} from '../../utils/crewEligibilityUtils';
+import { SearchableSelect, SearchableSelectOption } from '../common/SearchableSelect';
 
 const EMPTY_ROUTES: BusRoute[] = [];
 
@@ -50,7 +57,7 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
   onSave
 }) => {
   const { currentUser } = useAuth();
-  const { t } = useI18n();
+  const { t, isFrench } = useI18n();
   const [loading, setLoading] = useState(false);
 
   // Route-level standing crew
@@ -70,21 +77,18 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
     attendantId: string;
   }>>({});
 
-  // Filter and sort employees
+  // Filter and sort employees with crew eligibility priority
   const driversList = React.useMemo(() => {
-    return employees.filter((e) => e.isActive);
+    return employees
+      .filter((e) => e.isActive)
+      .sort((a, b) => compareCrewPriority(a, b, 'driver'));
   }, [employees]);
 
-  // Attendants prioritized: jobPosition includes 'attendant' at top
+  // Attendants prioritized: Attendants -> Supervisors / Experienced Cover Staff -> Others
   const attendantsList = React.useMemo(() => {
-    const list = [...employees.filter((e) => e.isActive)];
-    return list.sort((a, b) => {
-      const aIs = (a.jobPosition || '').toLowerCase().includes('attendant');
-      const bIs = (b.jobPosition || '').toLowerCase().includes('attendant');
-      if (aIs && !bIs) return -1;
-      if (!aIs && bIs) return 1;
-      return a.fullName.localeCompare(b.fullName);
-    });
+    return employees
+      .filter((e) => e.isActive)
+      .sort((a, b) => compareCrewPriority(a, b, 'attendant'));
   }, [employees]);
 
   // Load full shifts with stops for deadhead calculation
@@ -383,6 +387,142 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
     return calculateAttendantDeadhead(selectedAttendantEmp, selectedDriverEmp || null, routeReferenceStops);
   }, [selectedAttendantEmp, selectedDriverEmp, routeReferenceStops]);
 
+  const driverSelectOptions = React.useMemo<SearchableSelectOption[]>(() => {
+    const groups = groupCrewCandidates(rankedDrivers, 'driver');
+    const labels = getOptGroupLabels('driver', isFrench);
+    const buildOpt = (groupLabel: string) => ({ employee: d, deadhead }: (typeof rankedDrivers)[number]): SearchableSelectOption => {
+      const eligibility = classifyEmployeeForRole(d, 'driver');
+      const roleTag = isFrench ? eligibility.optionTagFr : eligibility.optionTagEn;
+      const routeTag = getEmployeeOptionTag(d);
+      const deadheadText = deadhead.hasCoordinates
+        ? `~${deadhead.totalDeadheadKm} km deadhead (${deadhead.pullOutKm} km to start • ${deadhead.totalMinutes}m)`
+        : t.deadhead.noGpsCoordinates;
+      return {
+        value: d.id,
+        label: `${d.fullName} (${d.employeeNumber || d.id})`,
+        groupLabel,
+        badgeText: roleTag || undefined,
+        secondaryBadgeText: routeTag !== '[Available]' ? routeTag : undefined,
+        secondaryBadgeClassName: routeTag.includes('Assigned')
+          ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+          : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+        subtext: [d.jobPosition || '', deadheadText, d.mobilePhone || d.preferredPhone || '']
+          .filter(Boolean)
+          .join(' • '),
+        isHighlighted: routeTag.includes('Assigned'),
+        searchText: [
+          d.fullName,
+          d.firstName,
+          d.lastName,
+          d.id,
+          d.employeeNumber,
+          d.jobPosition,
+          d.role,
+          roleTag,
+          routeTag,
+          d.mobilePhone,
+          d.preferredPhone,
+          d.personalAddress,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      };
+    };
+    return [
+      ...groups.primary.map(buildOpt(labels.primary)),
+      ...groups.relief.map(buildOpt(labels.relief)),
+      ...groups.other.map(buildOpt(labels.other)),
+    ];
+  }, [rankedDrivers, isFrench, getEmployeeOptionTag, t.deadhead.noGpsCoordinates]);
+
+  const attendantSelectOptions = React.useMemo<SearchableSelectOption[]>(() => {
+    const groups = groupCrewCandidates(rankedAttendants, 'attendant');
+    const labels = getOptGroupLabels('attendant', isFrench);
+    const buildOpt = (groupLabel: string) => ({ employee: a, deadhead }: (typeof rankedAttendants)[number]): SearchableSelectOption => {
+      const eligibility = classifyEmployeeForRole(a, 'attendant');
+      const roleTag = isFrench ? eligibility.optionTagFr : eligibility.optionTagEn;
+      const routeTag = getEmployeeOptionTag(a);
+      let deadheadText = '';
+      if (deadhead.hasCoordinates) {
+        if (deadhead.distanceToDriverKm !== undefined) {
+          deadheadText = `${deadhead.distanceToDriverKm} km ${t.deadhead.toDriverHome}${deadhead.detourKm ? ` • +${deadhead.detourKm}km detour` : ''}`;
+        } else {
+          deadheadText = `${deadhead.distanceToFirstStopKm} km ${t.deadhead.toFirstStop}`;
+        }
+      } else {
+        deadheadText = t.deadhead.noGpsCoordinates;
+      }
+      return {
+        value: a.id,
+        label: `${a.fullName} (${a.employeeNumber || a.id})`,
+        groupLabel,
+        badgeText: roleTag || undefined,
+        secondaryBadgeText: routeTag !== '[Available]' ? routeTag : undefined,
+        secondaryBadgeClassName: routeTag.includes('Assigned')
+          ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+          : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+        subtext: [a.jobPosition || '', deadheadText, a.mobilePhone || a.preferredPhone || '']
+          .filter(Boolean)
+          .join(' • '),
+        isHighlighted: routeTag.includes('Assigned'),
+        searchText: [
+          a.fullName,
+          a.firstName,
+          a.lastName,
+          a.id,
+          a.employeeNumber,
+          a.jobPosition,
+          a.role,
+          roleTag,
+          routeTag,
+          a.mobilePhone,
+          a.preferredPhone,
+          a.personalAddress,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      };
+    };
+    return [
+      ...groups.primary.map(buildOpt(labels.primary)),
+      ...groups.relief.map(buildOpt(labels.relief)),
+      ...groups.other.map(buildOpt(labels.other)),
+    ];
+  }, [
+    rankedAttendants,
+    isFrench,
+    getEmployeeOptionTag,
+    t.deadhead.noGpsCoordinates,
+    t.deadhead.toDriverHome,
+    t.deadhead.toFirstStop,
+  ]);
+
+  const vehicleSelectOptions = React.useMemo<SearchableSelectOption[]>(() => {
+    return activeVehicles.map((v) => ({
+      value: v.unitNumber,
+      label: `Unit #${v.unitNumber} - ${v.manufacturer} ${v.model} (${v.seatCap} Seats, ${v.fuelType})`,
+      subtext: [
+        v.plateNumber ? `Plate: ${v.plateNumber}` : '',
+        v.yardName || '',
+        v.driverName ? `Driver: ${v.driverName}` : '',
+      ]
+        .filter(Boolean)
+        .join(' • '),
+      searchText: [
+        v.unitNumber,
+        v.plateNumber,
+        v.manufacturer,
+        v.model,
+        v.fuelType,
+        v.yardName,
+        v.driverName,
+        String(v.seatCap || ''),
+      ]
+        .filter(Boolean)
+        .join(' '),
+    }));
+  }, [activeVehicles]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!route) return;
@@ -608,25 +748,20 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
                   <User className="w-3.5 h-3.5 text-amber-400" />
                   <span>Select Assigned Driver *</span>
                 </label>
-                <select
-                  required
+                <SearchableSelect
+                  testId="route-assign-driver-select"
+                  variant="dark"
                   value={selectedDriverId}
-                  onChange={(e) => handleDriverChange(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 transition"
-                >
-                  <option value="">-- Choose Driver --</option>
-                  {rankedDrivers.map(({ employee: d, deadhead }) => {
-                    const tag = getEmployeeOptionTag(d);
-                    const deadheadText = deadhead.hasCoordinates
-                      ? ` [~${deadhead.totalDeadheadKm} km deadhead (${deadhead.pullOutKm} km to start) • ${deadhead.totalMinutes}m]`
-                      : ` [${t.deadhead.noGpsCoordinates}]`;
-                    return (
-                      <option key={d.id} value={d.id}>
-                        {d.fullName} ({d.id}){deadheadText} {tag} {d.jobPosition ? `• ${d.jobPosition}` : ''}
-                      </option>
-                    );
-                  })}
-                </select>
+                  onChange={handleDriverChange}
+                  options={driverSelectOptions}
+                  emptyOptionLabel="-- Choose Driver --"
+                  searchPlaceholder={
+                    isFrench ? 'Rechercher chauffeur (nom, #, route)...' : 'Search driver (name, #, role, route)...'
+                  }
+                  noResultsText={isFrench ? 'Aucun chauffeur trouvé' : 'No matching drivers found'}
+                  icon={<User className="w-3.5 h-3.5 text-amber-400" />}
+                  accentColor="amber"
+                />
 
                 {/* Deadhead Proximity Card for Selected Driver */}
                 {selectedDriverDeadhead && selectedDriverDeadhead.hasCoordinates && (
@@ -710,19 +845,22 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
                   <Bus className="w-3.5 h-3.5 text-amber-400" />
                   <span>Assigned Vehicle *</span>
                 </label>
-                <select
-                  required
+                <SearchableSelect
+                  testId="route-assign-vehicle-select"
+                  variant="dark"
                   value={selectedUnitNumber}
-                  onChange={(e) => setSelectedUnitNumber(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono transition"
-                >
-                  <option value="">-- Choose Unit --</option>
-                  {activeVehicles.map((v) => (
-                    <option key={v.id} value={v.unitNumber}>
-                      Unit #{v.unitNumber} - {v.manufacturer} {v.model} ({v.seatCap} Seats, {v.fuelType})
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSelectedUnitNumber}
+                  options={vehicleSelectOptions}
+                  emptyOptionLabel="-- Choose Unit --"
+                  searchPlaceholder={
+                    isFrench
+                      ? 'Rechercher véhicule (unité, plaque, modèle)...'
+                      : 'Search vehicle (unit #, plate, model, driver)...'
+                  }
+                  noResultsText={isFrench ? 'Aucun véhicule trouvé' : 'No matching vehicles found'}
+                  icon={<Bus className="w-3.5 h-3.5 text-amber-400" />}
+                  accentColor="amber"
+                />
               </div>
             </div>
 
@@ -740,32 +878,22 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
                 <Shield className="w-3.5 h-3.5 text-indigo-400" />
                 <span>Bus Attendant / Monitor (Optional)</span>
               </label>
-              <select
+              <SearchableSelect
+                testId="route-assign-attendant-select"
+                variant="dark"
                 value={selectedAttendantId}
-                onChange={(e) => setSelectedAttendantId(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 transition"
-              >
-                <option value="">-- No Attendant Assigned --</option>
-                {rankedAttendants.map(({ employee: a, deadhead }) => {
-                  const isAtt = (a.jobPosition || '').toLowerCase().includes('attendant');
-                  const tag = getEmployeeOptionTag(a);
-                  let deadheadText = '';
-                  if (deadhead.hasCoordinates) {
-                    if (deadhead.distanceToDriverKm !== undefined) {
-                      deadheadText = ` [${deadhead.distanceToDriverKm} km ${t.deadhead.toDriverHome}${deadhead.detourKm ? ` • +${deadhead.detourKm}km detour` : ''}]`;
-                    } else {
-                      deadheadText = ` [${deadhead.distanceToFirstStopKm} km ${t.deadhead.toFirstStop}]`;
-                    }
-                  } else {
-                    deadheadText = ` [${t.deadhead.noGpsCoordinates}]`;
-                  }
-                  return (
-                    <option key={a.id} value={a.id}>
-                      {isAtt ? '★ [Attendant] ' : ''}{a.fullName} ({a.id}){deadheadText} {tag} - {a.jobPosition}
-                    </option>
-                  );
-                })}
-              </select>
+                onChange={setSelectedAttendantId}
+                options={attendantSelectOptions}
+                emptyOptionLabel="-- No Attendant Assigned --"
+                searchPlaceholder={
+                  isFrench
+                    ? 'Rechercher accompagnateur (nom, #, route)...'
+                    : 'Search attendant (name, #, role, route)...'
+                }
+                noResultsText={isFrench ? 'Aucun accompagnateur trouvé' : 'No matching attendants found'}
+                icon={<Shield className="w-3.5 h-3.5 text-indigo-400" />}
+                accentColor="indigo"
+              />
 
               {/* Deadhead Proximity Card for Selected Attendant */}
               {selectedAttendantDeadhead && selectedAttendantDeadhead.hasCoordinates && (
@@ -895,18 +1023,17 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
                           <label className="block text-[11px] font-medium text-slate-400 mb-1">
                             Shift Driver
                           </label>
-                          <select
+                          <SearchableSelect
+                            variant="dark"
+                            compact
                             value={shiftOv.driverId}
-                            onChange={(e) => handleShiftDriverChange(String(shift.shiftId), e.target.value)}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
-                          >
-                            <option value="">-- Same as Route --</option>
-                            {driversList.map((d) => (
-                              <option key={d.id} value={d.id}>
-                                {d.fullName} ({d.id}) {getEmployeeOptionTag(d)}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(val) => handleShiftDriverChange(String(shift.shiftId), val)}
+                            options={driverSelectOptions}
+                            emptyOptionLabel="-- Same as Route --"
+                            searchPlaceholder="Search driver..."
+                            noResultsText="No matching drivers found"
+                            accentColor="amber"
+                          />
                         </div>
 
                         {/* Shift Vehicle */}
@@ -914,18 +1041,17 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
                           <label className="block text-[11px] font-medium text-slate-400 mb-1">
                             Shift Vehicle
                           </label>
-                          <select
+                          <SearchableSelect
+                            variant="dark"
+                            compact
                             value={shiftOv.unitNumber}
-                            onChange={(e) => handleShiftFieldChange(String(shift.shiftId), 'unitNumber', e.target.value)}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
-                          >
-                            <option value="">-- Same as Route --</option>
-                            {activeVehicles.map((v) => (
-                              <option key={v.id} value={v.unitNumber}>
-                                Unit #{v.unitNumber} ({v.seatCap} seats)
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(val) => handleShiftFieldChange(String(shift.shiftId), 'unitNumber', val)}
+                            options={vehicleSelectOptions}
+                            emptyOptionLabel="-- Same as Route --"
+                            searchPlaceholder="Search unit #..."
+                            noResultsText="No matching vehicles found"
+                            accentColor="amber"
+                          />
                         </div>
 
                         {/* Shift Attendant */}
@@ -933,18 +1059,17 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
                           <label className="block text-[11px] font-medium text-slate-400 mb-1">
                             Shift Attendant
                           </label>
-                          <select
+                          <SearchableSelect
+                            variant="dark"
+                            compact
                             value={shiftOv.attendantId}
-                            onChange={(e) => handleShiftFieldChange(String(shift.shiftId), 'attendantId', e.target.value)}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
-                          >
-                            <option value="">-- None / Default --</option>
-                            {attendantsList.map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.fullName} ({a.id}) {getEmployeeOptionTag(a)}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(val) => handleShiftFieldChange(String(shift.shiftId), 'attendantId', val)}
+                            options={attendantSelectOptions}
+                            emptyOptionLabel="-- None / Default --"
+                            searchPlaceholder="Search attendant..."
+                            noResultsText="No matching attendants found"
+                            accentColor="indigo"
+                          />
                         </div>
                       </div>
                     </div>

@@ -49,11 +49,20 @@ const RouteOpeningApplicantsDrawer = React.lazy(() =>
 import { Employee } from '../types/employee';
 import { Vehicle } from '../types/vehicle';
 import { School } from '../types/school';
+import { DispatchShift } from '../types/dispatch';
 import { CharterService } from '../services/charterService';
+import { DispatchService } from '../services/dispatchService';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { getLocalTodayString, addDaysToDateString } from '../utils/dateUtils';
 import { logDispatchAction } from '../utils/dispatchLogger';
+import { filterAndSortVehicles, findRegularVehicleForDriver } from '../utils/vehicleMatchingUtils';
+import {
+  buildEmployeeTaskIndex,
+  extractCharterTimeWindow,
+  formatEmployeeTaskShortLabel,
+  getEmployeeDayTasks,
+} from '../utils/employeeTaskUtils';
 
 import { normalizeCharterTripStops, resolveDefaultStopTime } from './charterStopHelpers';
 import { CharterTripTableRow } from './CharterTripTableRow';
@@ -140,12 +149,17 @@ export const CharterManagementView = memo(function CharterManagementView({
   const [asgAttendantPayRate, setAsgAttendantPayRate] = useState<number>(100);
   const [asgAttendantEiHours, setAsgAttendantEiHours] = useState<number>(5);
   const [asgNotes, setAsgNotes] = useState<string>('');
+  const [asgVehicleDropdownOpen, setAsgVehicleDropdownOpen] = useState<boolean>(false);
+  const [asgVehicleSearchQuery, setAsgVehicleSearchQuery] = useState<string>('');
+  const asgVehicleDropdownRef = useRef<HTMLDivElement>(null);
+  const [asgAutoMatchedVehicleNote, setAsgAutoMatchedVehicleNote] = useState<string | null>(null);
   const [asgDriverDropdownOpen, setAsgDriverDropdownOpen] = useState<boolean>(false);
   const [asgDriverSearchQuery, setAsgDriverSearchQuery] = useState<string>('');
   const asgDriverDropdownRef = useRef<HTMLDivElement>(null);
   const [asgAttendantDropdownOpen, setAsgAttendantDropdownOpen] = useState<boolean>(false);
   const [asgAttendantSearchQuery, setAsgAttendantSearchQuery] = useState<string>('');
   const asgAttendantDropdownRef = useRef<HTMLDivElement>(null);
+  const [asgDayDispatchShifts, setAsgDayDispatchShifts] = useState<DispatchShift[]>([]);
 
   // Client Modal
   const [isClientModalOpen, setIsClientModalOpen] = useState<boolean>(false);
@@ -451,6 +465,9 @@ export const CharterManagementView = memo(function CharterManagementView({
       if (schoolDropdownRef.current && !schoolDropdownRef.current.contains(target)) {
         setSchoolDropdownOpen(false);
       }
+      if (asgVehicleDropdownRef.current && !asgVehicleDropdownRef.current.contains(target)) {
+        setAsgVehicleDropdownOpen(false);
+      }
       if (asgDriverDropdownRef.current && !asgDriverDropdownRef.current.contains(target)) {
         setAsgDriverDropdownOpen(false);
       }
@@ -458,13 +475,110 @@ export const CharterManagementView = memo(function CharterManagementView({
         setAsgAttendantDropdownOpen(false);
       }
     };
-    if (schoolDropdownOpen || asgDriverDropdownOpen || asgAttendantDropdownOpen) {
+    if (schoolDropdownOpen || asgVehicleDropdownOpen || asgDriverDropdownOpen || asgAttendantDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [schoolDropdownOpen, asgDriverDropdownOpen, asgAttendantDropdownOpen]);
+  }, [schoolDropdownOpen, asgVehicleDropdownOpen, asgDriverDropdownOpen, asgAttendantDropdownOpen]);
+
+  // Filtered and sorted vehicles for assignment
+  const filteredVehicles = useMemo(() => {
+    if (!isAssignmentModalOpen) return EMPTY_VEHICLES;
+    return filterAndSortVehicles(vehicles, asgVehicleSearchQuery);
+  }, [isAssignmentModalOpen, vehicles, asgVehicleSearchQuery]);
+
+  const selectedAsgVehicle = useMemo(() => {
+    if (!asgVehicleId) return null;
+    return vehicles.find((v) => v.vehicleId === asgVehicleId) || null;
+  }, [vehicles, asgVehicleId]);
+
+  const matchedDriverRegularVehicle = useMemo(() => {
+    if (!isAssignmentModalOpen || !asgDriverId) return undefined;
+    return findRegularVehicleForDriver(asgDriverId, vehicles, employees);
+  }, [isAssignmentModalOpen, asgDriverId, vehicles, employees]);
+
+  const asgTargetDate = useMemo(() => {
+    if (!selectedTrip) return '';
+    return (selectedTrip.dispatchDate || selectedTrip.departsAt || '').slice(0, 10);
+  }, [selectedTrip]);
+
+  useEffect(() => {
+    if (!isAssignmentModalOpen || !asgTargetDate) {
+      setAsgDayDispatchShifts([]);
+      return;
+    }
+    let active = true;
+    const unsub = DispatchService.subscribeToDayShifts(
+      asgTargetDate,
+      (dayShifts) => {
+        if (active) setAsgDayDispatchShifts(Array.isArray(dayShifts) ? dayShifts : []);
+      },
+      () => {
+        if (active) setAsgDayDispatchShifts([]);
+      }
+    );
+    return () => {
+      active = false;
+      setTimeout(() => {
+        try {
+          unsub();
+        } catch {
+          /* listener already closed */
+        }
+      }, 150);
+    };
+  }, [isAssignmentModalOpen, asgTargetDate]);
+
+  const charterAssignmentTaskIndex = useMemo(() => {
+    if (!isAssignmentModalOpen || !selectedTrip || !asgTargetDate) return null;
+    const { startTime, endTime } = extractCharterTimeWindow(selectedTrip, asgTargetDate);
+    return buildEmployeeTaskIndex({
+      targetDate: asgTargetDate,
+      dispatchShifts: asgDayDispatchShifts,
+      charterTrips: trips,
+      excludeCharterAssignmentId: editingAssignment?.id,
+      windowStartTime: startTime,
+      windowEndTime: endTime,
+    });
+  }, [isAssignmentModalOpen, selectedTrip, asgTargetDate, asgDayDispatchShifts, trips, editingAssignment]);
+
+  const selectedAsgDriverObj = useMemo(() => {
+    if (!asgDriverId) return null;
+    const norm = asgDriverId.trim().toLowerCase();
+    return (
+      employees.find(
+        (e) =>
+          (e.id || '').trim().toLowerCase() === norm ||
+          (e.employeeId !== undefined && String(e.employeeId).toLowerCase() === norm) ||
+          (e.employeeNumber || '').trim().toLowerCase() === norm
+      ) || null
+    );
+  }, [asgDriverId, employees]);
+
+  const selectedAsgAttendantObj = useMemo(() => {
+    if (!asgAttendantId) return null;
+    const norm = asgAttendantId.trim().toLowerCase();
+    return (
+      employees.find(
+        (e) =>
+          (e.id || '').trim().toLowerCase() === norm ||
+          (e.employeeId !== undefined && String(e.employeeId).toLowerCase() === norm) ||
+          (e.employeeNumber || '').trim().toLowerCase() === norm
+      ) || null
+    );
+  }, [asgAttendantId, employees]);
+
+  const selectedDriverDayTasks = useMemo(
+    () => getEmployeeDayTasks(selectedAsgDriverObj, charterAssignmentTaskIndex),
+    [selectedAsgDriverObj, charterAssignmentTaskIndex]
+  );
+
+  const selectedAttendantDayTasks = useMemo(
+    () => getEmployeeDayTasks(selectedAsgAttendantObj, charterAssignmentTaskIndex),
+    [selectedAsgAttendantObj, charterAssignmentTaskIndex]
+  );
 
   // Filtered and sorted drivers for assignment
   const filteredDrivers = useMemo(() => {
@@ -916,6 +1030,9 @@ export const CharterManagementView = memo(function CharterManagementView({
 
   // Open Assignment Modal
   const handleOpenAssignmentModal = (assignment?: CharterAssignment) => {
+    setAsgVehicleDropdownOpen(false);
+    setAsgVehicleSearchQuery('');
+    setAsgAutoMatchedVehicleNote(null);
     setAsgDriverDropdownOpen(false);
     setAsgDriverSearchQuery('');
     setAsgAttendantDropdownOpen(false);
@@ -939,11 +1056,19 @@ export const CharterManagementView = memo(function CharterManagementView({
       setAsgNotes(assignment.notes || '');
     } else {
       setEditingAssignment(null);
-      const defaultVeh = vehicles[0];
-      setAsgVehicleId(defaultVeh?.vehicleId || 101);
-      setAsgUnitNumber(defaultVeh?.unitNumber || 'BUS-101');
-      setAsgPlateNumber(defaultVeh?.plateNumber || '');
       const defaultDrv = driverOptions[0];
+      const matchedDefaultVeh = findRegularVehicleForDriver(defaultDrv, vehicles, employees);
+      const defaultVeh = matchedDefaultVeh || vehicles[0];
+      setAsgVehicleId(defaultVeh?.vehicleId || 0);
+      setAsgUnitNumber(defaultVeh?.unitNumber || 'TBD');
+      setAsgPlateNumber(defaultVeh?.plateNumber || '');
+      if (matchedDefaultVeh) {
+        setAsgAutoMatchedVehicleNote(
+          isFrench
+            ? `Véhicule habituel du chauffeur lié : Unité #${matchedDefaultVeh.unitNumber} (${matchedDefaultVeh.manufacturer} ${matchedDefaultVeh.model})`
+            : `Auto-matched driver's regular vehicle: Unit #${matchedDefaultVeh.unitNumber} (${matchedDefaultVeh.manufacturer} ${matchedDefaultVeh.model})`
+        );
+      }
       setAsgDriverId(defaultDrv?.employeeNumber || defaultDrv?.id || '');
       setAsgDriverName(defaultDrv ? `${defaultDrv.firstName} ${defaultDrv.lastName}` : '');
       setAsgDriverPhone(defaultDrv?.mobilePhone || defaultDrv?.workPhonePhone || defaultDrv?.homePhone || '');
@@ -959,6 +1084,26 @@ export const CharterManagementView = memo(function CharterManagementView({
     setIsAssignmentModalOpen(true);
   };
 
+  const handleSelectVehicle = (veh: Vehicle | null) => {
+    if (!veh) {
+      setAsgVehicleId(0);
+      setAsgUnitNumber('TBD');
+      setAsgPlateNumber('');
+    } else {
+      setAsgVehicleId(veh.vehicleId);
+      setAsgUnitNumber(veh.unitNumber || `UNIT-${veh.vehicleId}`);
+      setAsgPlateNumber(veh.plateNumber || '');
+    }
+    setAsgAutoMatchedVehicleNote(null);
+    setAsgVehicleDropdownOpen(false);
+    setAsgVehicleSearchQuery('');
+  };
+
+  const handleClearVehicle = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    handleSelectVehicle(null);
+  };
+
   const handleSelectDriver = (d: Employee) => {
     const dVal = String(d.employeeId || d.id || d.employeeNumber);
     setAsgDriverId(dVal);
@@ -966,6 +1111,20 @@ export const CharterManagementView = memo(function CharterManagementView({
     setAsgDriverPhone(d.mobilePhone || d.workPhonePhone || d.homePhone || '');
     setAsgDriverDropdownOpen(false);
     setAsgDriverSearchQuery('');
+
+    const matchedVeh = findRegularVehicleForDriver(d, vehicles, employees);
+    if (matchedVeh) {
+      setAsgVehicleId(matchedVeh.vehicleId);
+      setAsgUnitNumber(matchedVeh.unitNumber || `UNIT-${matchedVeh.vehicleId}`);
+      setAsgPlateNumber(matchedVeh.plateNumber || '');
+      setAsgAutoMatchedVehicleNote(
+        isFrench
+          ? `Véhicule habituel du chauffeur lié : Unité #${matchedVeh.unitNumber} (${matchedVeh.manufacturer} ${matchedVeh.model})`
+          : `Auto-matched driver's regular vehicle: Unit #${matchedVeh.unitNumber} (${matchedVeh.manufacturer} ${matchedVeh.model})`
+      );
+    } else {
+      setAsgAutoMatchedVehicleNote(null);
+    }
   };
 
   const handleClearDriver = (e?: React.MouseEvent) => {
@@ -974,6 +1133,7 @@ export const CharterManagementView = memo(function CharterManagementView({
     setAsgDriverName('');
     setAsgDriverPhone('');
     setAsgDriverSearchQuery('');
+    setAsgAutoMatchedVehicleNote(null);
   };
 
   const handleSelectAttendant = (a: Employee | null) => {
@@ -2986,38 +3146,6 @@ export const CharterManagementView = memo(function CharterManagementView({
             </div>
 
             <form onSubmit={handleSaveAssignment} className="p-5 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  {isFrench ? 'Sélectionner le véhicule' : 'Select Vehicle'}
-                </label>
-                <select
-                  value={asgVehicleId}
-                  onChange={(e) => {
-                    const vId = Number(e.target.value);
-                    if (!vId) {
-                      setAsgVehicleId(0);
-                      setAsgUnitNumber('TBD');
-                      setAsgPlateNumber('');
-                    } else {
-                      const veh = vehicles.find((v) => v.vehicleId === vId);
-                      setAsgVehicleId(vId);
-                      setAsgUnitNumber(veh?.unitNumber || `UNIT-${vId}`);
-                      setAsgPlateNumber(veh?.plateNumber || '');
-                    }
-                  }}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
-                >
-                  <option value={0}>
-                    {isFrench ? '-- À assigner (TBD) --' : '-- TBD / Unassigned Vehicle --'}
-                  </option>
-                  {vehicles.map((v) => (
-                    <option key={v.vehicleId} value={v.vehicleId}>
-                      Unit {v.unitNumber} - {v.manufacturer} {v.model} ({v.seatCap} pass.)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               {/* Driver Section */}
               <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
                 <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase">
@@ -3120,26 +3248,68 @@ export const CharterManagementView = memo(function CharterManagementView({
                             const dVal = String(d.employeeId || d.id || d.employeeNumber);
                             const isSelected = asgDriverId === dVal;
                             const phone = d.mobilePhone || d.workPhonePhone || d.homePhone;
+                            const dayTasks = getEmployeeDayTasks(d, charterAssignmentTaskIndex);
+                            const hasOverlapTask = dayTasks.some((task) => task.isOverlap);
                             return (
                               <div
                                 key={dVal}
+                                data-testid={`charter-driver-option-${dVal}`}
                                 onClick={() => handleSelectDriver(d)}
                                 className={`px-3 py-2 text-xs cursor-pointer flex items-center justify-between gap-2 transition-colors ${
                                   isSelected
                                     ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-900 dark:text-blue-200 font-medium'
-                                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                                    : hasOverlapTask
+                                      ? 'bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/35 text-slate-700 dark:text-slate-300'
+                                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
                                 }`}
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
-                                    {d.firstName} {d.lastName}
-                                    <span className="ml-1.5 text-[11px] text-slate-400 font-mono">
-                                      ({d.employeeNumber || dVal})
+                                  <div className="font-medium text-slate-900 dark:text-slate-100 truncate flex items-center gap-1.5 flex-wrap">
+                                    <span>
+                                      {d.firstName} {d.lastName}
+                                      <span className="ml-1.5 text-[11px] text-slate-400 font-mono">
+                                        ({d.employeeNumber || dVal})
+                                      </span>
                                     </span>
+                                    {dayTasks.length > 0 && (
+                                      <span
+                                        className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                                          hasOverlapTask
+                                            ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                            : 'bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+                                        }`}
+                                      >
+                                        {hasOverlapTask
+                                          ? (isFrench ? `Conflit (${dayTasks.length})` : `Overlap (${dayTasks.length})`)
+                                          : (isFrench ? `${dayTasks.length} tâche(s)` : `${dayTasks.length} task(s) today`)}
+                                      </span>
+                                    )}
                                   </div>
                                   {phone && (
                                     <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
                                       {phone}
+                                    </div>
+                                  )}
+                                  {dayTasks.length > 0 && (
+                                    <div
+                                      data-testid={`charter-driver-tasks-${dVal}`}
+                                      className="flex flex-wrap gap-1 mt-1"
+                                    >
+                                      {dayTasks.map((task) => (
+                                        <span
+                                          key={`${task.source}:${task.id}:${task.role}`}
+                                          className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                                            task.isOverlap
+                                              ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                              : task.source === 'charter'
+                                                ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                                                : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                          }`}
+                                        >
+                                          <Clock className="w-2.5 h-2.5 shrink-0" />
+                                          <span>{formatEmployeeTaskShortLabel(task, isFrench)}</span>
+                                        </span>
+                                      ))}
                                     </div>
                                   )}
                                 </div>
@@ -3152,6 +3322,40 @@ export const CharterManagementView = memo(function CharterManagementView({
                     </div>
                   )}
                 </div>
+
+                {selectedDriverDayTasks.length > 0 && (
+                  <div
+                    data-testid="charter-selected-driver-tasks"
+                    className={`p-2 rounded-lg border text-[11px] space-y-1 ${
+                      selectedDriverDayTasks.some((task) => task.isOverlap)
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/70 text-rose-800 dark:text-rose-200'
+                        : 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800/70 text-sky-800 dark:text-sky-200'
+                    }`}
+                  >
+                    <div className="font-semibold flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {isFrench
+                          ? `Autres tâches le ${asgTargetDate} :`
+                          : `Other tasks on ${asgTargetDate}:`}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedDriverDayTasks.map((task) => (
+                        <span
+                          key={`${task.source}:${task.id}:${task.role}`}
+                          className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                            task.isOverlap
+                              ? 'bg-rose-100/80 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-700'
+                              : 'bg-white/80 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200 border-sky-200 dark:border-sky-800'
+                          }`}
+                        >
+                          {formatEmployeeTaskShortLabel(task, isFrench)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -3181,6 +3385,177 @@ export const CharterManagementView = memo(function CharterManagementView({
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Vehicle Searchable Combobox */}
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase">
+                    {isFrench ? 'Véhicule' : 'Vehicle Assignment'}
+                  </span>
+                  {asgVehicleId > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearVehicle}
+                      className="text-[11px] text-slate-400 hover:text-rose-500 flex items-center gap-1 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>{isFrench ? 'Effacer' : 'Clear'}</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative" ref={asgVehicleDropdownRef}>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    {isFrench ? 'Sélectionner le véhicule' : 'Select Vehicle'}
+                  </label>
+
+                  <button
+                    type="button"
+                    data-testid="charter-vehicle-combobox-trigger"
+                    onClick={() => setAsgVehicleDropdownOpen((prev) => !prev)}
+                    className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border rounded-xl text-xs flex items-center justify-between cursor-pointer transition-colors text-left ${
+                      asgVehicleDropdownOpen
+                        ? 'border-indigo-500 ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
+                      <Truck className={`w-4 h-4 shrink-0 ${asgVehicleId > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
+                      <span className={`truncate font-mono ${asgVehicleId > 0 ? 'font-medium text-slate-900 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                        {asgVehicleId > 0
+                          ? selectedAsgVehicle
+                            ? `Unit ${selectedAsgVehicle.unitNumber} - ${selectedAsgVehicle.manufacturer} ${selectedAsgVehicle.model} (${selectedAsgVehicle.seatCap} pass.)`
+                            : `Unit ${asgUnitNumber}${asgPlateNumber ? ` (${asgPlateNumber})` : ''}`
+                          : (isFrench ? '-- À assigner (TBD) --' : '-- TBD / Unassigned Vehicle --')}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0 text-slate-400">
+                      {asgVehicleId > 0 && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={handleClearVehicle}
+                          className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"
+                          title={isFrench ? 'Effacer' : 'Clear'}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-150 ${asgVehicleDropdownOpen ? 'rotate-180' : ''}`} />
+                    </div>
+                  </button>
+
+                  {asgVehicleDropdownOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                      <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50">
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            autoFocus
+                            data-testid="charter-vehicle-search-input"
+                            value={asgVehicleSearchQuery}
+                            onChange={(e) => setAsgVehicleSearchQuery(e.target.value)}
+                            placeholder={isFrench ? 'Rechercher véhicule (unité, plaque, modèle, chauffeur)...' : 'Search vehicle (unit #, plate, model, driver)...'}
+                            className="w-full pl-8 pr-7 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') {
+                                e.stopPropagation();
+                                setAsgVehicleDropdownOpen(false);
+                              }
+                            }}
+                          />
+                          {asgVehicleSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAsgVehicleSearchQuery('');
+                              }}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+                        <div
+                          onClick={() => handleSelectVehicle(null)}
+                          className={`px-3 py-2 text-xs cursor-pointer flex items-center justify-between gap-2 transition-colors ${
+                            asgVehicleId === 0
+                              ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 font-medium'
+                              : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-500 dark:text-slate-400 italic'
+                          }`}
+                        >
+                          <span>{isFrench ? '-- À assigner (TBD) --' : '-- TBD / Unassigned Vehicle --'}</span>
+                          {asgVehicleId === 0 && <Check className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />}
+                        </div>
+
+                        {filteredVehicles.length === 0 ? (
+                          <div className="py-6 px-4 text-center text-xs text-slate-400">
+                            {isFrench ? 'Aucun véhicule trouvé' : 'No vehicles found'}
+                          </div>
+                        ) : (
+                          filteredVehicles.map((v) => {
+                            const isSelected = asgVehicleId === v.vehicleId;
+                            const isDriverRegular = matchedDriverRegularVehicle?.vehicleId === v.vehicleId;
+                            return (
+                              <div
+                                key={v.vehicleId}
+                                data-testid={`charter-vehicle-option-${v.vehicleId}`}
+                                onClick={() => handleSelectVehicle(v)}
+                                className={`px-3 py-2 text-xs cursor-pointer flex items-center justify-between gap-2 transition-colors ${
+                                  isSelected
+                                    ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 font-medium'
+                                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap font-mono text-slate-900 dark:text-slate-100">
+                                    <span className="font-semibold">Unit {v.unitNumber}</span>
+                                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-sans">
+                                      - {v.manufacturer} {v.model} ({v.seatCap} pass.)
+                                    </span>
+                                    {isDriverRegular && (
+                                      <span className="text-[10px] font-sans font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                        {isFrench ? 'Véhicule du chauffeur' : "Driver's Regular"}
+                                      </span>
+                                    )}
+                                    {v.active === false && (
+                                      <span className="text-[10px] font-sans font-semibold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                        {isFrench ? 'Inactif' : 'Inactive'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5 flex items-center gap-2">
+                                    {v.plateNumber && <span>Plate: {v.plateNumber}</span>}
+                                    {v.yardName && <span>• {v.yardName}</span>}
+                                    {v.driverName && <span>• Driver: {v.driverName}</span>}
+                                  </div>
+                                </div>
+                                {isSelected && <Check className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {asgAutoMatchedVehicleNote && (
+                  <div
+                    data-testid="charter-vehicle-automatched-note"
+                    className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <span>{asgAutoMatchedVehicleNote}</span>
+                  </div>
+                )}
               </div>
 
               {/* Attendant Section (Optional) */}
@@ -3298,26 +3673,68 @@ export const CharterManagementView = memo(function CharterManagementView({
                             const aVal = String(a.employeeId || a.id || a.employeeNumber);
                             const isSelected = asgAttendantId === aVal;
                             const phone = a.mobilePhone || a.workPhonePhone || a.homePhone;
+                            const dayTasks = getEmployeeDayTasks(a, charterAssignmentTaskIndex);
+                            const hasOverlapTask = dayTasks.some((task) => task.isOverlap);
                             return (
                               <div
                                 key={aVal}
+                                data-testid={`charter-attendant-option-${aVal}`}
                                 onClick={() => handleSelectAttendant(a)}
                                 className={`px-3 py-2 text-xs cursor-pointer flex items-center justify-between gap-2 transition-colors ${
                                   isSelected
                                     ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-900 dark:text-emerald-200 font-medium'
-                                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                                    : hasOverlapTask
+                                      ? 'bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/35 text-slate-700 dark:text-slate-300'
+                                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
                                 }`}
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
-                                    {a.firstName} {a.lastName}
-                                    <span className="ml-1.5 text-[11px] text-slate-400 font-mono">
-                                      ({a.employeeNumber || aVal})
+                                  <div className="font-medium text-slate-900 dark:text-slate-100 truncate flex items-center gap-1.5 flex-wrap">
+                                    <span>
+                                      {a.firstName} {a.lastName}
+                                      <span className="ml-1.5 text-[11px] text-slate-400 font-mono">
+                                        ({a.employeeNumber || aVal})
+                                      </span>
                                     </span>
+                                    {dayTasks.length > 0 && (
+                                      <span
+                                        className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                                          hasOverlapTask
+                                            ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                            : 'bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+                                        }`}
+                                      >
+                                        {hasOverlapTask
+                                          ? (isFrench ? `Conflit (${dayTasks.length})` : `Overlap (${dayTasks.length})`)
+                                          : (isFrench ? `${dayTasks.length} tâche(s)` : `${dayTasks.length} task(s) today`)}
+                                      </span>
+                                    )}
                                   </div>
                                   {phone && (
                                     <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
                                       {phone}
+                                    </div>
+                                  )}
+                                  {dayTasks.length > 0 && (
+                                    <div
+                                      data-testid={`charter-attendant-tasks-${aVal}`}
+                                      className="flex flex-wrap gap-1 mt-1"
+                                    >
+                                      {dayTasks.map((task) => (
+                                        <span
+                                          key={`${task.source}:${task.id}:${task.role}`}
+                                          className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                                            task.isOverlap
+                                              ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                              : task.source === 'charter'
+                                                ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                                                : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                          }`}
+                                        >
+                                          <Clock className="w-2.5 h-2.5 shrink-0" />
+                                          <span>{formatEmployeeTaskShortLabel(task, isFrench)}</span>
+                                        </span>
+                                      ))}
                                     </div>
                                   )}
                                 </div>
@@ -3330,6 +3747,40 @@ export const CharterManagementView = memo(function CharterManagementView({
                     </div>
                   )}
                 </div>
+
+                {selectedAttendantDayTasks.length > 0 && (
+                  <div
+                    data-testid="charter-selected-attendant-tasks"
+                    className={`p-2 rounded-lg border text-[11px] space-y-1 ${
+                      selectedAttendantDayTasks.some((task) => task.isOverlap)
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/70 text-rose-800 dark:text-rose-200'
+                        : 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800/70 text-sky-800 dark:text-sky-200'
+                    }`}
+                  >
+                    <div className="font-semibold flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {isFrench
+                          ? `Autres tâches le ${asgTargetDate} :`
+                          : `Other tasks on ${asgTargetDate}:`}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedAttendantDayTasks.map((task) => (
+                        <span
+                          key={`${task.source}:${task.id}:${task.role}`}
+                          className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                            task.isOverlap
+                              ? 'bg-rose-100/80 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-700'
+                              : 'bg-white/80 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200 border-sky-200 dark:border-sky-800'
+                          }`}
+                        >
+                          {formatEmployeeTaskShortLabel(task, isFrench)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {asgAttendantId && (
                   <div className="grid grid-cols-2 gap-3">

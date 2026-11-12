@@ -2,25 +2,79 @@ import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../contexts/I18nContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { ShieldCheck, LogOut, Radio, Menu, Globe, Sun, Moon, MessageSquare, Sparkles } from 'lucide-react';
-
+import {
+  ShieldCheck,
+  LogOut,
+  Radio,
+  Menu,
+  Globe,
+  Sun,
+  Moon,
+  MessageSquare,
+  Sparkles,
+  DollarSign,
+  Truck,
+  GraduationCap,
+  Settings
+} from 'lucide-react';
+import { NavTab } from './Sidebar';
+import {
+  NavDomainId,
+  getAccessibleDomains,
+  getDefaultTabForDomain,
+  getDomainForTab
+} from '../../utils/navigationConfig';
+import { hasPageAccess } from '../../utils/permissions';
 import { PWAInstallHeaderButton } from './PWAInstallBanner';
 
 interface HeaderProps {
+  currentTab?: NavTab;
+  onSelectTab?: (tab: NavTab) => void;
+  expiringLicenseCount?: number;
   onOpenMobileMenu?: () => void;
   onOpenChat?: () => void;
   chatUnreadCount?: number;
   onOpenAICopilot?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, onOpenChat, chatUnreadCount, onOpenAICopilot }) => {
+const DOMAIN_ICONS: Record<NavDomainId, React.ComponentType<{ className?: string }>> = {
+  dispatch_ops: Radio,
+  hr_payroll: DollarSign,
+  fleet: Truck,
+  students_safety: GraduationCap,
+  system: Settings
+};
+
+export const Header: React.FC<HeaderProps> = ({
+  currentTab = 'dashboard',
+  onSelectTab,
+  expiringLicenseCount = 0,
+  onOpenMobileMenu,
+  onOpenChat,
+  chatUnreadCount,
+  onOpenAICopilot
+}) => {
   const { currentUser, isMockMode, logout } = useAuth();
   const { lang, setLang, t, isFrench } = useI18n();
   const { theme, toggleTheme } = useTheme();
 
+  const activeDomainId = getDomainForTab(currentTab);
+  const accessibleDomains = React.useMemo(
+    () => getAccessibleDomains(currentUser),
+    [currentUser]
+  );
+
+  const handleDomainClick = (domainId: NavDomainId) => {
+    if (!onSelectTab) return;
+    const targetTab = getDefaultTabForDomain(domainId, currentUser);
+    if (targetTab) {
+      onSelectTab(targetTab);
+    }
+  };
+
   return (
-    <header className="h-16 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between px-3 sm:px-6 sticky top-0 z-30 shadow-sm">
-      <div className="flex items-center space-x-2.5 sm:space-x-3">
+    <header className="h-16 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between px-3 sm:px-5 sticky top-0 z-30 shadow-sm gap-2">
+      <div className="flex items-center space-x-2.5 sm:space-x-3 flex-shrink-0">
         {onOpenMobileMenu && (
           <button
             onClick={onOpenMobileMenu}
@@ -48,7 +102,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, onOpenChat, ch
               Dispatch Cloud
             </span>
           </div>
-          <p className="text-xs text-slate-400 hidden sm:block">
+          <p className="text-[11px] text-slate-400 hidden 2xl:block">
             {isFrench
               ? "Centre d'opérations intelligent de flotte d'autobus scolaires"
               : 'Intelligent School Bus Fleet Operations Center'}
@@ -56,16 +110,70 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, onOpenChat, ch
         </div>
       </div>
 
-      {/* Center Operational Live Status */}
-      <div className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700/60 text-xs">
-        <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-        <span className="text-slate-300 font-medium">{t.header.cloudRunActive}</span>
-        <span className="text-slate-500">|</span>
-        <span className="text-slate-400">{t.header.firestoreLinked}</span>
-      </div>
+      {/* Top-Level Domain Navigation Tabs (Hybrid Navigation Level 1) */}
+      {onSelectTab ? (
+        <nav
+          aria-label={isFrench ? 'Domaines principaux' : 'Primary business domains'}
+          className="hidden md:flex items-center space-x-1 bg-slate-950/70 border border-slate-800/90 p-1 rounded-xl overflow-x-auto max-w-full"
+        >
+          {accessibleDomains.map((domain) => {
+            const Icon = DOMAIN_ICONS[domain.id];
+            const isActive = activeDomainId === domain.id;
+            const showComplianceBadge =
+              domain.id === 'students_safety' &&
+              expiringLicenseCount > 0 &&
+              hasPageAccess(currentUser, 'compliance');
+
+            return (
+              <button
+                key={domain.id}
+                type="button"
+                onClick={() => handleDomainClick(domain.id)}
+                title={isFrench ? domain.labelFr : domain.labelEn}
+                className={`relative flex items-center space-x-1.5 px-2.5 lg:px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                  isActive
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-sm shadow-amber-500/20'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                }`}
+              >
+                <Icon
+                  className={`w-3.5 h-3.5 flex-shrink-0 ${
+                    isActive ? 'text-slate-950' : 'text-amber-400/80'
+                  }`}
+                />
+                <span className="hidden xl:inline">
+                  {isFrench ? domain.labelFr : domain.labelEn}
+                </span>
+                <span className="xl:hidden">
+                  {isFrench ? domain.shortLabelFr : domain.shortLabelEn}
+                </span>
+
+                {showComplianceBadge && (
+                  <span
+                    className={`ml-1 px-1.5 py-0.2 text-[10px] font-extrabold rounded-full ${
+                      isActive
+                        ? 'bg-slate-950 text-amber-400'
+                        : 'bg-amber-500 text-slate-950'
+                    }`}
+                  >
+                    {expiringLicenseCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      ) : (
+        <div className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700/60 text-xs">
+          <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+          <span className="text-slate-300 font-medium">{t.header.cloudRunActive}</span>
+          <span className="text-slate-500">|</span>
+          <span className="text-slate-400">{t.header.firestoreLinked}</span>
+        </div>
+      )}
 
       {/* Right User & Actions */}
-      <div className="flex items-center space-x-3 sm:space-x-4">
+      <div className="flex items-center space-x-2.5 sm:space-x-3 flex-shrink-0">
         {/* Language Selector */}
         <div className="flex items-center bg-slate-800/90 border border-slate-700/80 rounded-lg p-0.5 text-xs">
           <Globe className="w-3.5 h-3.5 text-slate-400 mx-1.5 hidden sm:inline" />
@@ -142,7 +250,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, onOpenChat, ch
 
         <PWAInstallHeaderButton />
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2.5">
           <div className="flex flex-col text-right">
             <span className="text-xs font-semibold text-slate-200">
               {currentUser?.displayName || currentUser?.email || t.header.dispatcher}

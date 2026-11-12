@@ -15,17 +15,25 @@ import {
   School as SchoolIcon,
   AlertTriangle,
   CheckCircle2,
-  ChevronDown
+  ChevronDown,
+  Navigation,
+  Zap,
+  Plus
 } from 'lucide-react';
 
 interface RouteStudentItineraryViewProps {
   route: BusRoute;
   shifts: BusRouteShift[];
+  activeShift?: BusRouteShift | null;
   studentsMap: Record<number, Student>;
   schools: School[];
   onSelectStudent?: (student: Student) => void;
   onSelectStudentId?: (studentId: number) => void;
   onRefreshShifts: () => Promise<void>;
+  onViewMap?: () => void;
+  onOptimizeOrder?: () => void;
+  onAddStop?: () => void;
+  onAddStudent?: () => void;
 }
 
 interface StudentRowEdits {
@@ -47,11 +55,16 @@ interface RouteStudentInfo {
 export const RouteStudentItineraryView: React.FC<RouteStudentItineraryViewProps> = ({
   route,
   shifts,
+  activeShift,
   studentsMap,
   schools,
   onSelectStudent,
   onSelectStudentId,
-  onRefreshShifts
+  onRefreshShifts,
+  onViewMap,
+  onOptimizeOrder,
+  onAddStop,
+  onAddStudent
 }) => {
   const { t } = useI18n();
   const { currentUser } = useAuth();
@@ -688,19 +701,78 @@ export const RouteStudentItineraryView: React.FC<RouteStudentItineraryViewProps>
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={handleReset}
-          disabled={dirtyFieldsCount === 0}
-          className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition flex items-center space-x-1.5 border ${
-            dirtyFieldsCount > 0
-              ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-              : 'bg-slate-900/40 text-slate-600 border-slate-800/60 cursor-not-allowed'
-          }`}
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span>{t.stops?.resetChanges || 'Reset'}</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          {onViewMap && (
+            <button
+              type="button"
+              onClick={onViewMap}
+              title="View on Google Map"
+              className="px-3 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs flex items-center space-x-1.5 font-medium transition cursor-pointer"
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              <span>View Map</span>
+            </button>
+          )}
+
+          {onOptimizeOrder && (
+            <button
+              type="button"
+              onClick={onOptimizeOrder}
+              disabled={activeShift?.stops ? activeShift.stops.length <= 2 : false}
+              title={
+                activeShift?.stops && activeShift.stops.length <= 2
+                  ? 'At least 3 stops are required to optimize'
+                  : t.stops?.optimizeOrder || 'Optimize Order'
+              }
+              className={`px-3 py-2 rounded-xl text-xs flex items-center space-x-1.5 font-medium transition ${
+                activeShift?.stops && activeShift.stops.length <= 2
+                  ? 'bg-slate-800/40 border border-slate-800 text-slate-500 cursor-not-allowed opacity-60'
+                  : 'bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 cursor-pointer'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 fill-emerald-400" />
+              <span>{t.stops?.optimizeOrder || 'Optimize Order'}</span>
+            </button>
+          )}
+
+          {onAddStop && (
+            <button
+              type="button"
+              onClick={onAddStop}
+              title={t.stops?.addStop || 'Add Stop to Shift'}
+              className="px-3 py-2 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 text-xs flex items-center space-x-1.5 font-medium transition cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{t.stops?.addStop || 'Add Stop'}</span>
+            </button>
+          )}
+
+          {onAddStudent && (
+            <button
+              type="button"
+              onClick={onAddStudent}
+              title={t.stops?.addStudentToRoute || 'Add Student to Route'}
+              className="px-3 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-400 text-xs flex items-center space-x-1.5 font-medium transition cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{t.stops?.addStudentToRoute || 'Add Student'}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={dirtyFieldsCount === 0}
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition flex items-center space-x-1.5 border ${
+              dirtyFieldsCount > 0
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                : 'bg-slate-900/40 text-slate-600 border-slate-800/60 cursor-not-allowed'
+            }`}
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>{t.stops?.resetChanges || 'Reset'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Feedback Banner */}

@@ -18,12 +18,15 @@ import {
   Shield,
   Edit3,
   Pencil,
-  History
+  History,
+  GripVertical
 } from 'lucide-react';
 import { ShiftEditModal } from './ShiftEditModal';
 import { StopEditModal } from './StopEditModal';
 import { LazyShiftGoogleMapView } from './LazyShiftGoogleMapView';
 import { sortRouteSheetShifts } from '../../utils/routeSheetPdf';
+import { RouteSettingsService } from '../../services/routeSettingsService';
+import { reorderStopsAndUpdateSequence } from '../../utils/routeOptimizer';
 
 interface RouteDetailDrawerProps {
   route: BusRoute | null;
@@ -54,6 +57,9 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
   const [editingStop, setEditingStop] = useState<RouteStop | null>(null);
   const [loadingShifts, setLoadingShifts] = useState<boolean>(false);
   const [drawerMode, setDrawerMode] = useState<'stops' | 'map'>('stops');
+  const [draggedStopIdx, setDraggedStopIdx] = useState<number | null>(null);
+  const [dragOverStopIdx, setDragOverStopIdx] = useState<number | null>(null);
+  const [isReorderingStops, setIsReorderingStops] = useState<boolean>(false);
 
   const handleSaveShift = async (shiftId: string, updates: Partial<BusRouteShift>) => {
     const targetShift = shifts.find((r) => r.id === shiftId);
@@ -127,9 +133,11 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
 
     const oldStop = targetShift.stops?.find((s) => s.stopId === updatedStop.stopId);
 
-    const updatedStops = (targetShift.stops || []).map((s) =>
-      s.stopId === updatedStop.stopId ? updatedStop : s
-    );
+    const updatedStops = oldStop
+      ? (targetShift.stops || []).map((s) =>
+          s.stopId === updatedStop.stopId ? updatedStop : s
+        )
+      : [...(targetShift.stops || []), updatedStop];
 
     await RouteService.updateShift(shiftId, {
       stops: updatedStops,
@@ -217,6 +225,70 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
 
   const orderedShifts = useMemo(() => sortRouteSheetShifts(shifts), [shifts]);
   const currentShift = orderedShifts.find((s) => s.id === activeShiftId) || orderedShifts[0];
+
+  const handleReorderDrawerStop = async (fromIndex: number, toIndex: number) => {
+    if (!route || !currentShift || !currentShift.stops || isReorderingStops) return;
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= currentShift.stops.length ||
+      toIndex >= currentShift.stops.length
+    ) {
+      return;
+    }
+
+    const movedStop = currentShift.stops[fromIndex];
+    setIsReorderingStops(true);
+    try {
+      const optSettings = await RouteSettingsService.getSettings();
+      const cleanStops = reorderStopsAndUpdateSequence(
+        currentShift.stops,
+        fromIndex,
+        toIndex,
+        {
+          recalculateTimes: true,
+          dwellMinutes: optSettings.defaultStopDwellMinutes,
+          speedKmH: optSettings.averageSpeedKmH,
+          schoolBoardOrRouteName: route.schoolBoardCode || route.routeName,
+          shiftType: currentShift.shiftType
+        }
+      );
+
+      setShifts((prev) =>
+        prev.map((s) =>
+          s.id === currentShift.id
+            ? { ...s, stops: cleanStops, updatedAt: new Date().toISOString() }
+            : s
+        )
+      );
+
+      await RouteService.updateShift(currentShift.id, { stops: cleanStops });
+
+      const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
+      RouteAuditService.logRouteChange({
+        routeId: route.id,
+        routeNo: route.routeNo,
+        routeName: route.routeName,
+        category: 'stop',
+        action: 'update',
+        shiftId: currentShift.id,
+        shiftType: currentShift.shiftType,
+        summary: `Manually reordered Stop #${movedStop.sequence} (${movedStop.stopLocation}) to position #${toIndex + 1} and recalculated arrival times`,
+        userId: currentUser?.employeeId || currentUser?.uid || 'usr-dispatcher',
+        userName: actorName,
+        userEmail: currentUser?.email || undefined,
+        userRole: currentUser?.role || 'dispatcher'
+      }).catch((err) => console.warn('[RouteDetailDrawer] Stop reorder audit warning:', err));
+
+      const refreshed = await RouteService.getShiftsForRoute(route.id);
+      setShifts(refreshed);
+    } catch (err) {
+      console.error('Failed to reorder stop in drawer:', err);
+    } finally {
+      setIsReorderingStops(false);
+    }
+  };
 
   if (!route) return null;
 
@@ -546,12 +618,55 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
                 </div>
               ) : currentShift && currentShift.stops && currentShift.stops.length > 0 ? (
                 <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-800">
-                  {currentShift.stops.map((stop: RouteStop) => {
+                  {currentShift.stops.map((stop: RouteStop, idx: number) => {
                     const isSchool =
                       stop.stopType === 'SchoolDropoff' || stop.stopType === 'SchoolPickup';
+                    const isDragging = draggedStopIdx === idx;
+                    const isDragOver =
+                      dragOverStopIdx === idx && draggedStopIdx !== null && draggedStopIdx !== idx;
+                    const dropHighlight = isDragOver
+                      ? draggedStopIdx! > idx
+                        ? 'border-t-2 border-t-amber-400 ring-1 ring-amber-400/60 bg-amber-500/10'
+                        : 'border-b-2 border-b-amber-400 ring-1 ring-amber-400/60 bg-amber-500/10'
+                      : '';
 
                     return (
-                      <div key={stop.stopId} className="relative group">
+                      <div
+                        key={stop.stopId}
+                        draggable={!isReorderingStops}
+                        onDragStart={(e) => {
+                          if (isReorderingStops) {
+                            e.preventDefault();
+                            return;
+                          }
+                          setDraggedStopIdx(idx);
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.dataTransfer.setData('text/plain', String(idx));
+                        }}
+                        onDragOver={(e) => {
+                          if (draggedStopIdx === null || draggedStopIdx === idx) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          if (dragOverStopIdx !== idx) setDragOverStopIdx(idx);
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverStopIdx === idx) setDragOverStopIdx(null);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const fromIdx = draggedStopIdx;
+                          setDraggedStopIdx(null);
+                          setDragOverStopIdx(null);
+                          if (fromIdx !== null && fromIdx !== idx) {
+                            void handleReorderDrawerStop(fromIdx, idx);
+                          }
+                        }}
+                        onDragEnd={() => {
+                          setDraggedStopIdx(null);
+                          setDragOverStopIdx(null);
+                        }}
+                        className={`relative group ${isDragging ? 'opacity-45' : ''}`}
+                      >
                         {/* Timeline Node Icon */}
                         <div
                           className={`absolute -left-6 top-1 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold ${
@@ -564,23 +679,33 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
                         </div>
 
                         {/* Stop Card */}
-                        <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-4 space-y-2 hover:border-slate-700 transition">
+                        <div
+                          className={`bg-slate-950/70 border border-slate-800/80 rounded-2xl p-4 space-y-2 hover:border-slate-700 transition ${dropHighlight}`}
+                        >
                           <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <div className="font-bold text-white text-xs sm:text-sm flex items-center space-x-2">
-                                <span>{stop.stopLocation}</span>
-                                {isSchool && (
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center space-x-1">
-                                    <SchoolIcon className="w-3 h-3" />
-                                    <span>School</span>
-                                  </span>
+                            <div className="flex items-start gap-2 min-w-0">
+                              <span
+                                title="Drag to reorder stop"
+                                className="mt-0.5 text-slate-500 hover:text-amber-400 cursor-grab active:cursor-grabbing shrink-0"
+                              >
+                                <GripVertical className="w-4 h-4" />
+                              </span>
+                              <div className="min-w-0">
+                                <div className="font-bold text-white text-xs sm:text-sm flex items-center space-x-2">
+                                  <span>{stop.stopLocation}</span>
+                                  {isSchool && (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center space-x-1">
+                                      <SchoolIcon className="w-3 h-3" />
+                                      <span>School</span>
+                                    </span>
+                                  )}
+                                </div>
+                                {stop.schoolName && !isSchool && (
+                                  <div className="text-[11px] text-slate-400 mt-0.5">
+                                    Destined for: {stop.schoolName}
+                                  </div>
                                 )}
                               </div>
-                              {stop.schoolName && !isSchool && (
-                                <div className="text-[11px] text-slate-400 mt-0.5">
-                                  Destined for: {stop.schoolName}
-                                </div>
-                              )}
                             </div>
 
                             <div className="flex items-center space-x-2">
@@ -728,6 +853,7 @@ export const RouteDetailDrawer: React.FC<RouteDetailDrawerProps> = ({
         isOpen={!!editingStop}
         shift={currentShift}
         stop={editingStop}
+        studentsMap={studentsMap}
         onClose={() => setEditingStop(null)}
         onSave={handleSaveStop}
       />

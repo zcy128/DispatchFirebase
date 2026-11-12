@@ -3,10 +3,13 @@ import {
   filterAvailableVehicles,
   getUnavailableVehiclesForDate,
   getVehicleUnavailabilityReason,
+  getEmployeeTimeOffMapForDate,
+  getEmployeeTimeOffReason,
 } from './vehicleAvailabilityUtils';
 import type { Vehicle } from '../types/vehicle';
 import type { VehicleDefectReport } from '../types/defect';
 import type { PreventiveMaintenanceRecord } from '../types/vehicleInspection';
+import type { TimeOffRequest } from '../types/timeOff';
 
 describe('vehicleAvailabilityUtils', () => {
   const activeVehicle: Vehicle = {
@@ -105,6 +108,68 @@ describe('vehicleAvailabilityUtils', () => {
     expect(result).toBeDefined();
     expect(result?.reason).toBe('preventive_maintenance');
     expect(result?.detailEn).toContain('Schedule B Service');
+  });
+
+  it('flags vehicles with future scheduled preventive maintenance when viewing today or tomorrow', () => {
+    const futurePm: PreventiveMaintenanceRecord = {
+      id: 'pm-200',
+      unitNumber: '101',
+      vehicleId: 1,
+      serviceTier: 'Schedule C Service',
+      serviceDate: '2099-12-15',
+      scheduledServiceDate: '2099-12-15',
+      maintenanceStatus: 'in_progress',
+    } as unknown as PreventiveMaintenanceRecord;
+
+    const unavailable = getUnavailableVehiclesForDate(
+      '2099-12-10',
+      [],
+      [],
+      [futurePm],
+      [activeVehicle]
+    );
+
+    const result = getVehicleUnavailabilityReason('101', 1, unavailable);
+    expect(result).toBeDefined();
+    expect(result?.reason).toBe('preventive_maintenance');
+    expect(result?.badgeTextEn).toContain('2099-12-15');
+  });
+
+  it('resolves employee time-off info for today/tomorrow but suppresses it for yesterday', () => {
+    const timeOffReq: TimeOffRequest = {
+      id: 'to-1',
+      employeeId: 'emp-doc-42',
+      employeeNumber: '42',
+      employeeName: 'Marie Curie',
+      leaveType: 'vacation',
+      startDate: '2026-11-10',
+      endDate: '2026-11-15',
+      shiftType: 'AM',
+      status: 'approved',
+      comments: 'Family trip',
+      createdAt: '2026-11-01T00:00:00Z',
+      updatedAt: '2026-11-01T00:00:00Z',
+    };
+
+    // Today / tomorrow (>= todayOverride '2026-11-11') -> returns Time Off info
+    const todayMap = getEmployeeTimeOffMapForDate('2026-11-11', [timeOffReq], '2026-11-11');
+    const infoToday = getEmployeeTimeOffReason(
+      { id: 'emp-doc-42', employeeId: 42, firstName: 'Marie', lastName: 'Curie' },
+      todayMap
+    );
+    expect(infoToday).toBeDefined();
+    expect(infoToday?.badgeTextEn).toContain('Time Off: Vacation');
+    expect(infoToday?.badgeTextEn).toContain('AM');
+    expect(infoToday?.detailEn).toContain('Family trip');
+
+    // Yesterday (< todayOverride '2026-11-11') -> returns empty map (no time-off shown)
+    const yesterdayMap = getEmployeeTimeOffMapForDate('2026-11-10', [timeOffReq], '2026-11-11');
+    expect(yesterdayMap.size).toBe(0);
+    const infoYesterday = getEmployeeTimeOffReason(
+      { id: 'emp-doc-42', employeeId: 42, firstName: 'Marie', lastName: 'Curie' },
+      yesterdayMap
+    );
+    expect(infoYesterday).toBeUndefined();
   });
 
   it('returns empty map when date is empty or invalid', () => {

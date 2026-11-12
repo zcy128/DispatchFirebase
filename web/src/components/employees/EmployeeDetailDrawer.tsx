@@ -18,8 +18,10 @@ import {
   History
 } from 'lucide-react';
 import { ROLE_LABELS, normalizeRole } from '../../utils/permissions';
+import { isSupervisorEmployee } from '../../utils/crewEligibilityUtils';
 import { AssignmentHistoryService } from '../../services/assignmentHistoryService';
 import { AssignmentHistoryRecord } from '../../types/assignmentHistory';
+import { EmployeeHomeMap } from './EmployeeHomeMap';
 
 interface EmployeeDetailDrawerProps {
   employee: Employee | null;
@@ -214,6 +216,31 @@ export const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
               )}
             </div>
 
+            {/* Home Address & Location Map */}
+            <div className="rounded-xl bg-slate-800/40 border border-slate-700/60 p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-200 flex items-center space-x-2">
+                  <MapPin className="w-4 h-4 text-rose-400" />
+                  <span>Home Address Map</span>
+                </h3>
+                {employee.personalAddress && (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(employee)}
+                    className="text-[11px] font-semibold text-amber-400 hover:text-amber-300 transition cursor-pointer"
+                  >
+                    Edit Address
+                  </button>
+                )}
+              </div>
+
+              <EmployeeHomeMap
+                employee={employee}
+                height="220px"
+                onEditAddress={() => onEdit(employee)}
+              />
+            </div>
+
             {/* CDL Driver License Section (Critical for School Bus Dispatch) */}
             <div className="rounded-xl bg-slate-800/40 border border-slate-700/60 p-5 space-y-4">
               <div className="flex items-center justify-between">
@@ -356,6 +383,32 @@ export const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                     <span>{employee.personalAddress || 'Not recorded'}</span>
                   </div>
                 </div>
+                {(employee.hasCoveredAsDriver ||
+                  employee.hasCoveredAsAttendant ||
+                  isSupervisorEmployee(employee)) && (
+                  <div className="col-span-2 pt-2 border-t border-slate-800/80">
+                    <span className="text-slate-400 block mb-1.5">
+                      Relief &amp; Cover Qualifications (Dispatch Priority):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {isSupervisorEmployee(employee) && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                          Supervisor • Eligible for Driver &amp; Attendant Relief
+                        </span>
+                      )}
+                      {employee.hasCoveredAsDriver && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                          ✓ Experienced Cover Driver
+                        </span>
+                      )}
+                      {employee.hasCoveredAsAttendant && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          ✓ Experienced Cover Attendant
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

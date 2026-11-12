@@ -58,6 +58,8 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const [isActive, setIsActive] = useState(true);
   const [dateHired, setDateHired] = useState('');
   const [role, setRole] = useState<UserRole>('driver');
+  const [hasCoveredAsDriver, setHasCoveredAsDriver] = useState(false);
+  const [hasCoveredAsAttendant, setHasCoveredAsAttendant] = useState(false);
   const [pagePermissions, setPagePermissions] = useState<Record<string, PermissionLevel>>({});
 
   // Auto-generate username: e.g. "driver1 Doe" -> "driver1d"
@@ -99,6 +101,8 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       setIsActive(initialData.isActive ?? true);
       setDateHired(formatDateForInput(initialData.dateHired));
       setRole(normalizeRole(initialData.role || 'driver'));
+      setHasCoveredAsDriver(Boolean(initialData.hasCoveredAsDriver));
+      setHasCoveredAsAttendant(Boolean(initialData.hasCoveredAsAttendant));
       setPagePermissions(initialData.pagePermissions || {});
 
       setMobilePhone(initialData.mobilePhone || '');
@@ -136,6 +140,8 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
       setIsActive(true);
       setDateHired(new Date().toISOString().substring(0, 10));
       setRole('driver');
+      setHasCoveredAsDriver(false);
+      setHasCoveredAsAttendant(false);
       setPagePermissions({});
 
       setMobilePhone('');
@@ -200,6 +206,8 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         yardId,
         isActive,
         role,
+        hasCoveredAsDriver,
+        hasCoveredAsAttendant,
         pagePermissions,
         dateHired: dateHired ? new Date(dateHired).toISOString() : undefined,
         mobilePhone: mobilePhone.trim(),
@@ -408,11 +416,27 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                   >
                     <option value="School Bus Driver">School Bus Driver</option>
                     <option value="Senior School Bus Driver">Senior School Bus Driver</option>
+                    <option value="Relief Driver">Relief Driver</option>
+                    <option value="Bus Attendant / Monitor">Bus Attendant / Monitor</option>
+                    <option value="Office Staff">Office Staff</option>
                     <option value="Head Dispatcher">Head Dispatcher</option>
                     <option value="Dispatcher">Dispatcher</option>
                     <option value="Yard Supervisor">Yard Supervisor</option>
                     <option value="Fleet Mechanic & Relief Driver">Fleet Mechanic & Relief Driver</option>
                     <option value="Operations Director & System Admin">Operations Director & System Admin</option>
+                    {![
+                      'School Bus Driver',
+                      'Senior School Bus Driver',
+                      'Relief Driver',
+                      'Bus Attendant / Monitor',
+                      'Office Staff',
+                      'Head Dispatcher',
+                      'Dispatcher',
+                      'Yard Supervisor',
+                      'Fleet Mechanic & Relief Driver',
+                      'Operations Director & System Admin',
+                    ].includes(jobPosition) &&
+                      jobPosition && <option value={jobPosition}>{jobPosition}</option>}
                   </select>
                 </div>
               </div>
@@ -454,6 +478,53 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
                     <CheckCircle2 className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
                     <span>{ROLE_DESCRIPTIONS[role]}</span>
                   </div>
+                </div>
+              </div>
+
+              {/* Relief Coverage Qualifications (Dispatch Priority Flags) */}
+              <div className="bg-slate-800/60 p-4 rounded-xl border border-slate-700/80 space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-slate-200">
+                    Relief & Cover Experience (Dispatch Priority)
+                  </span>
+                  {role === 'supervisor' && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      Supervisor: Eligible for Driver & Attendant Relief
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Office staff and support personnel marked below are prioritized in Dispatch & Coverage queries. Automatically enabled after covering a shift.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <label className="flex items-start space-x-2.5 p-2.5 rounded-lg bg-slate-900/70 border border-slate-700/70 cursor-pointer hover:border-amber-500/50 transition">
+                    <input
+                      type="checkbox"
+                      checked={hasCoveredAsDriver}
+                      onChange={(e) => setHasCoveredAsDriver(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 rounded text-amber-500 focus:ring-amber-400 bg-slate-800 border-slate-700"
+                    />
+                    <div className="text-xs">
+                      <div className="font-semibold text-white">Experienced Cover Driver</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        Previously covered routes as a temporary/relief driver
+                      </div>
+                    </div>
+                  </label>
+                  <label className="flex items-start space-x-2.5 p-2.5 rounded-lg bg-slate-900/70 border border-slate-700/70 cursor-pointer hover:border-emerald-500/50 transition">
+                    <input
+                      type="checkbox"
+                      checked={hasCoveredAsAttendant}
+                      onChange={(e) => setHasCoveredAsAttendant(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 rounded text-emerald-500 focus:ring-emerald-400 bg-slate-800 border-slate-700"
+                    />
+                    <div className="text-xs">
+                      <div className="font-semibold text-white">Experienced Cover Attendant</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        Previously covered routes as a temporary/relief attendant
+                      </div>
+                    </div>
+                  </label>
                 </div>
               </div>
 

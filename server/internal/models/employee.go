@@ -71,11 +71,43 @@ type Employee struct {
 	Username        string            `json:"username,omitempty" firestore:"username,omitempty"`
 	FirebaseUID     string            `json:"firebaseUid,omitempty" firestore:"firebaseUid,omitempty"`
 	// Role: driver, helper, office staff, dispatcher, studentcare, fleet, supervisor, payroll, HR, training, manager, admin
-	Role            string            `json:"role,omitempty" firestore:"role,omitempty"`
-	PagePermissions map[string]string `json:"pagePermissions,omitempty" firestore:"pagePermissions,omitempty"` // pageId -> "none" | "readonly" | "readwrite"
-	Devices         []DeviceToken     `json:"devices,omitempty" firestore:"devices,omitempty"`
-	CreatedAt       time.Time         `json:"createdAt" firestore:"createdAt"`
-	UpdatedAt       time.Time         `json:"updatedAt" firestore:"updatedAt"`
+	Role                  string            `json:"role,omitempty" firestore:"role,omitempty"`
+	HasCoveredAsDriver    bool              `json:"hasCoveredAsDriver,omitempty" firestore:"hasCoveredAsDriver,omitempty"`
+	HasCoveredAsAttendant bool              `json:"hasCoveredAsAttendant,omitempty" firestore:"hasCoveredAsAttendant,omitempty"`
+	PagePermissions       map[string]string `json:"pagePermissions,omitempty" firestore:"pagePermissions,omitempty"` // pageId -> "none" | "readonly" | "readwrite"
+	Devices               []DeviceToken     `json:"devices,omitempty" firestore:"devices,omitempty"`
+	CreatedAt             time.Time         `json:"createdAt" firestore:"createdAt"`
+	UpdatedAt             time.Time         `json:"updatedAt" firestore:"updatedAt"`
+}
+
+// IsRegularDriver returns true when the employee's primary role or title is a bus driver.
+func (e *Employee) IsRegularDriver() bool {
+	if e == nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(e.Role), "driver") {
+		return true
+	}
+	pos := strings.ToLower(strings.TrimSpace(e.JobPosition))
+	return strings.Contains(pos, "driver") &&
+		!strings.Contains(pos, "office") &&
+		!strings.Contains(pos, "supervisor") &&
+		!strings.Contains(pos, "admin")
+}
+
+// IsRegularAttendant returns true when the employee's primary role or title is an attendant/helper.
+func (e *Employee) IsRegularAttendant() bool {
+	if e == nil {
+		return false
+	}
+	r := strings.ToLower(strings.TrimSpace(e.Role))
+	if r == "helper" || r == "attendant" || r == "monitor" {
+		return true
+	}
+	pos := strings.ToLower(strings.TrimSpace(e.JobPosition))
+	return strings.Contains(pos, "attendant") ||
+		strings.Contains(pos, "helper") ||
+		strings.Contains(pos, "monitor")
 }
 
 // DeviceToken stores FCM device registration info for multi-device push notifications

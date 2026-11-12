@@ -58,6 +58,8 @@ export interface Employee {
   employeePhoto?: EmployeePhoto;
   firebaseUid?: string;
   role?: UserRole | string;
+  hasCoveredAsDriver?: boolean;
+  hasCoveredAsAttendant?: boolean;
   pagePermissions?: Record<string, PermissionLevel>;
   createdAt?: string;
   updatedAt?: string;

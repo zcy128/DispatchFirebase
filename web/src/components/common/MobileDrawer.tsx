@@ -38,7 +38,10 @@ import {
   FileSpreadsheet,
   BadgeDollarSign,
   UserX,
-  RefreshCw
+  RefreshCw,
+  GitBranch,
+  FileCheck2,
+  FileBadge
 } from 'lucide-react';
 
 interface MobileDrawerProps {
@@ -86,7 +89,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
       items: [
         { id: 'dispatch' as NavTab, label: (t.nav as any).dispatch || (isFrench ? 'Console de répartition' : 'Dispatch Workbench'), icon: Radio },
         { id: 'routes' as NavTab, label: t.nav.routeNetwork, icon: RouteIcon },
-        { id: 'staging_routes' as NavTab, label: isFrench ? 'Circuits staging' : 'Staging Routes', icon: RouteIcon },
+        { id: 'staging_routes' as NavTab, label: isFrench ? 'Circuits staging' : 'Staging Routes', icon: GitBranch },
         { id: 'dispatch_payroll' as NavTab, label: (t.nav as any).dispatchPayroll || (isFrench ? 'Paie de répartition' : 'Dispatch Payroll'), icon: BadgeDollarSign }
       ]
     },
@@ -102,7 +105,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
       items: [
         { id: 'payroll' as NavTab, label: t.nav.payroll, icon: DollarSign },
         { id: 'biweekly_payroll' as NavTab, label: (t.nav as any).biweeklyPayroll || (isFrench ? 'Paie aux deux semaines' : 'Bi-Weekly Payroll'), icon: FileSpreadsheet },
-        { id: 'payroll_dept_log' as NavTab, label: (t.nav as any).payrollDeptLog || (isFrench ? 'Journal du service de paie' : 'Payroll Department Log'), icon: Receipt }
+        { id: 'payroll_dept_log' as NavTab, label: (t.nav as any).payrollDeptLog || (isFrench ? 'Journal du service de paie' : 'Payroll Department Log'), icon: FileCheck2 }
       ]
     },
     {
@@ -130,7 +133,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
         {
           id: 'compliance' as NavTab,
           label: t.nav.compliance,
-          icon: AlertTriangle,
+          icon: FileBadge,
           badge: expiringLicenseCount > 0 ? expiringLicenseCount : null
         },
         { id: 'training' as NavTab, label: t.nav.training || (isFrench ? 'Formations et cours' : 'Training & Courses'), icon: Award },
