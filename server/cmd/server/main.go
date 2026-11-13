@@ -524,6 +524,8 @@ func main() {
 		protected.Post("/api/dispatch/time-off-requests/{id}/reject", dispatchHandler.RejectTimeOffRequest)
 		protected.Post("/api/dispatch/time-off-requests/{id}/cancel", dispatchHandler.CancelTimeOffRequest)
 		protected.Delete("/api/dispatch/time-off-requests/{id}", dispatchHandler.DeleteTimeOffRequest)
+		protected.Get("/api/dispatch/user-preferences/dashboard", dispatchHandler.GetDashboardPreferences)
+		protected.Put("/api/dispatch/user-preferences/dashboard", dispatchHandler.SaveDashboardPreferences)
 
 		// Training Courses & Types
 		protected.Get("/api/dispatch/training/courses", dispatchHandler.ListTrainingCourses)
@@ -737,6 +739,8 @@ func main() {
 		publicDev.Post("/api/public/dispatch/time-off-requests/{id}/reject", dispatchHandler.RejectTimeOffRequest)
 		publicDev.Post("/api/public/dispatch/time-off-requests/{id}/cancel", dispatchHandler.CancelTimeOffRequest)
 		publicDev.Delete("/api/public/dispatch/time-off-requests/{id}", dispatchHandler.DeleteTimeOffRequest)
+		publicDev.Get("/api/public/dispatch/user-preferences/dashboard", dispatchHandler.GetDashboardPreferences)
+		publicDev.Put("/api/public/dispatch/user-preferences/dashboard", dispatchHandler.SaveDashboardPreferences)
 
 		// Training Courses & Types (Public dev preview)
 		publicDev.Get("/api/public/dispatch/training/courses", dispatchHandler.ListTrainingCourses)

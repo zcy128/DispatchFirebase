@@ -37,6 +37,10 @@ The platform consists of a deeply integrated ecosystem of specialized applicatio
 ### 1. Dispatch Office Management Console (`web`)
 *Desktop & tablet operations console built with React, TypeScript, and Tailwind CSS for fleet dispatchers, supervisors, safety managers, and payroll accountants.*
 
+- **Fleet Pulse Real-Time Operational Action Center & Customizable Layout**:
+  - **Live Multi-User Sync**: Subscribes in real time via Firestore (`onSnapshot`) to today's dispatch gaps (Missing Driver, Missing Vehicle, Not Checked In), route crew/bus gaps, pending Time-Off approvals & cover gaps, open Student Incidents, Vehicle Defects, Hazard Reports, Expense Claims, and a tiered **Driver CDL Expiration Summary Watchlist** (`Expired`, `<= 7 Days`, `8–15 Days`, `16–30 Days`).
+  - **Per-User Card Customization (Cross-Device DB Sync)**: Each user can enter **Customize Cards** mode to hide unneeded cards, reorder cards via drag-and-drop or step arrows, restore hidden cards, or reset to default; preferences are saved per user in Firestore (`user_preferences`) via `/api/dispatch/user-preferences/dashboard` for consistent layout across devices.
+  - **Pinned Navigation**: **Fleet Pulse** is pinned at the top of the left sidebar across all operational domains, with a dedicated **Back to Fleet Pulse** action in Compliance Radar.
 - **Interactive Shift Dispatch Board & Triage Workbench Mode**:
   - **3-Mode Dispatch Console (`Workbench` / `Card` / `Sheet`)**: Switch seamlessly between the split-pane **Workbench Mode** (default), virtualized **Card View**, and tabular **Sheet View** across morning (AM), midday (MD), and afternoon (PM) shifts.
   - **Top Category Cards & Status Filters**: Real-time health and issue categorization across `Total Shifts`, `On Track`, `Attention`, `Unassigned`, `Check-In Overdue`, `Stop Delayed`, and **`Alert Message`**.

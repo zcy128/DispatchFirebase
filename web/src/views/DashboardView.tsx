@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { DashboardStats, Employee } from '../types/employee';
 import { BusRoute } from '../types/route';
 import { DispatchShift } from '../types/dispatch';
@@ -13,9 +13,23 @@ import { StudentIncidentService } from '../services/studentIncidentService';
 import { DefectService } from '../services/defectService';
 import { HazardReportService } from '../services/hazardReportService';
 import { ExpenseReimbursementService } from '../services/expenseReimbursementService';
+import { userPreferencesService } from '../services/userPreferencesService';
+import { useAuth } from '../contexts/AuthContext';
 import { getLocalTodayString } from '../utils/dateUtils';
 import { getCurrentHHmm } from '../utils/dispatchDelayUtils';
 import { computeFleetPulseSummary } from '../utils/fleetPulseUtils';
+import {
+  DASHBOARD_CARDS_META,
+  DashboardActionCardId,
+  DashboardCardId,
+  DashboardPreferences,
+  DashboardSummaryPanelId,
+  createDefaultDashboardPreferences,
+  hideDashboardCard,
+  moveDashboardCardStep,
+  reorderDashboardCards,
+  restoreDashboardCard,
+} from '../utils/dashboardPreferencesUtils';
 import {
   AlertTriangle,
   Building2,
@@ -32,6 +46,14 @@ import {
   FileWarning,
   Receipt,
   Radio,
+  SlidersHorizontal,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
+  Plus,
+  GripVertical,
+  Check,
 } from 'lucide-react';
 import { NavTab } from '../components/common/Sidebar';
 
@@ -157,6 +179,78 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateTab,
   onSelectEmployee: _onSelectEmployee,
 }) => {
+  const { currentUser } = useAuth();
+  const prefUserId = currentUser?.uid || currentUser?.employeeId || '';
+
+  const [prefs, setPrefs] = useState<DashboardPreferences>(() => createDefaultDashboardPreferences());
+  const [isCustomizing, setIsCustomizing] = useState(false);
+  const [isSavingPrefs, setIsSavingPrefs] = useState(false);
+  const [draggedCardId, setDraggedCardId] = useState<DashboardCardId | null>(null);
+
+  useEffect(() => {
+    if (!prefUserId) return;
+    let cancelled = false;
+    userPreferencesService
+      .getDashboardPreferences(prefUserId)
+      .then((loaded) => {
+        if (!cancelled) {
+          setPrefs({ ...loaded, userId: prefUserId });
+        }
+      })
+      .catch((err) => {
+        console.warn('[DashboardView] Failed to load dashboard preferences:', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [prefUserId]);
+
+  const persistPrefs = useCallback(
+    (nextPrefs: DashboardPreferences) => {
+      const payload: DashboardPreferences = {
+        ...nextPrefs,
+        userId: prefUserId || nextPrefs.userId,
+      };
+      setPrefs(payload);
+      if (!payload.userId) return;
+      setIsSavingPrefs(true);
+      userPreferencesService
+        .saveDashboardPreferences(payload)
+        .catch((err) => {
+          console.warn('[DashboardView] Failed to save dashboard preferences:', err);
+        })
+        .finally(() => {
+          setIsSavingPrefs(false);
+        });
+    },
+    [prefUserId]
+  );
+
+  const hiddenSet = useMemo(() => new Set(prefs.hiddenCards), [prefs.hiddenCards]);
+
+  const visibleActionCardIds = useMemo(() => {
+    const actionIdSet = new Set(
+      DASHBOARD_CARDS_META.filter((c) => c.category === 'action').map((c) => c.id)
+    );
+    return prefs.cardOrder.filter(
+      (id): id is DashboardActionCardId => actionIdSet.has(id) && !hiddenSet.has(id)
+    );
+  }, [prefs.cardOrder, hiddenSet]);
+
+  const visibleSummaryPanelIds = useMemo(() => {
+    const summaryIdSet = new Set(
+      DASHBOARD_CARDS_META.filter((c) => c.category === 'summary').map((c) => c.id)
+    );
+    return prefs.cardOrder.filter(
+      (id): id is DashboardSummaryPanelId => summaryIdSet.has(id) && !hiddenSet.has(id)
+    );
+  }, [prefs.cardOrder, hiddenSet]);
+
+  const hiddenCardMetas = useMemo(
+    () => DASHBOARD_CARDS_META.filter((c) => hiddenSet.has(c.id)),
+    [hiddenSet]
+  );
+
   const todayStr = getLocalTodayString();
   const [currentHHmm, setCurrentHHmm] = useState<string>(() => getCurrentHHmm());
 
@@ -295,7 +389,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
             <div
               className={`px-4 py-2.5 rounded-xl border text-center ${
                 pulse.totalActionItems > 0
@@ -308,6 +402,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {pulse.totalActionItems > 0 ? 'Pending Tasks' : 'All Clear'}
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setIsCustomizing((prev) => !prev)}
+              className={`px-3.5 py-2.5 font-bold text-xs rounded-xl transition flex items-center space-x-2 cursor-pointer border ${
+                isCustomizing
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+              }`}
+            >
+              {isCustomizing ? <Check className="w-4 h-4" /> : <SlidersHorizontal className="w-4 h-4" />}
+              <span>{isCustomizing ? 'Done' : 'Customize Cards'}</span>
+              {!isCustomizing && hiddenCardMetas.length > 0 && (
+                <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  {hiddenCardMetas.length} hidden
+                </span>
+              )}
+            </button>
+
             <button
               onClick={() => onNavigateTab('dispatch')}
               className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition shadow-md shadow-amber-500/20 flex items-center space-x-2 cursor-pointer"
@@ -321,250 +434,446 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
       </div>
 
-      {/* Section 1: Dispatch & Route Readiness */}
+      {/* Customization & Hidden Cards Toolbar */}
+      {isCustomizing && (
+        <div className="bg-slate-900/90 border border-amber-500/30 rounded-xl p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center space-x-2 text-xs text-slate-300">
+              <SlidersHorizontal className="w-4 h-4 text-amber-400" />
+              <span className="font-bold text-white">Customize Fleet Pulse Layout</span>
+              <span className="text-slate-400">
+                Drag cards or use arrows to reorder, click &times; to hide. Changes sync to your account across devices.
+              </span>
+              {isSavingPrefs && <span className="text-amber-400 font-semibold">Saving...</span>}
+            </div>
+            <button
+              type="button"
+              onClick={() => persistPrefs(createDefaultDashboardPreferences())}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center space-x-1.5 cursor-pointer transition"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Default Layout</span>
+            </button>
+          </div>
+
+          {hiddenCardMetas.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1">
+                Hidden Cards (click to restore):
+              </span>
+              {hiddenCardMetas.map((meta) => (
+                <button
+                  key={meta.id}
+                  type="button"
+                  onClick={() => persistPrefs(restoreDashboardCard(prefs, meta.id))}
+                  className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-amber-500/20 text-slate-200 hover:text-amber-300 border border-slate-700 hover:border-amber-500/40 text-xs font-semibold transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{meta.label}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500 pt-1 border-t border-slate-800">
+              All cards are currently visible.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Action Cards Grid */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            Today&apos;s Dispatch &amp; Route Readiness ({todayStr})
+            Operational Action Cards ({todayStr})
           </h2>
           <span className="text-xs text-slate-500">
             {pulse.dispatchTotalShifts} active shifts today • {routes.length} total routes
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <PulseActionCard
-            title="Dispatch: Missing Driver"
-            count={pulse.dispatchMissingDriver}
-            subtitle={
-              pulse.dispatchMissingDriver > 0
-                ? 'Today shifts without an assigned driver'
-                : 'All today shifts have drivers'
-            }
-            icon={<UserX className="w-4 h-4" />}
-            accent="rose"
-            onClick={() => onNavigateTab('dispatch')}
-          />
+        {visibleActionCardIds.length === 0 ? (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center text-xs text-slate-400 space-y-2">
+            <div>All action cards are hidden.</div>
+            <button
+              type="button"
+              onClick={() => setIsCustomizing(true)}
+              className="text-amber-400 hover:underline font-semibold cursor-pointer"
+            >
+              Restore Hidden Cards
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            {visibleActionCardIds.map((cardId, idx) => {
+              const cardPropsMap: Record<DashboardActionCardId, Omit<PulseActionCardProps, 'onClick'> & { targetTab: NavTab }> = {
+                dispatch_missing_driver: {
+                  title: 'Dispatch: Missing Driver',
+                  count: pulse.dispatchMissingDriver,
+                  subtitle:
+                    pulse.dispatchMissingDriver > 0
+                      ? 'Today shifts without an assigned driver'
+                      : 'All today shifts have drivers',
+                  icon: <UserX className="w-4 h-4" />,
+                  accent: 'rose',
+                  targetTab: 'dispatch',
+                },
+                dispatch_missing_vehicle: {
+                  title: 'Dispatch: Missing Vehicle',
+                  count: pulse.dispatchMissingVehicle,
+                  subtitle:
+                    pulse.dispatchMissingVehicle > 0
+                      ? 'Today shifts without an assigned bus'
+                      : 'All today shifts have vehicles',
+                  icon: <Bus className="w-4 h-4" />,
+                  accent: 'orange',
+                  targetTab: 'dispatch',
+                },
+                driver_not_checked_in: {
+                  title: 'Driver Not Checked In',
+                  count: pulse.dispatchNotCheckedIn,
+                  subtitle:
+                    pulse.dispatchCheckInOverdue > 0
+                      ? `${pulse.dispatchCheckInOverdue} overdue past check-in window`
+                      : 'Assigned drivers awaiting check-in',
+                  icon: <Clock className="w-4 h-4" />,
+                  accent: pulse.dispatchCheckInOverdue > 0 ? 'rose' : 'amber',
+                  targetTab: 'dispatch',
+                },
+                routes_missing_crew: {
+                  title: 'Routes Missing Crew / Bus',
+                  count: pulse.routeNeedsFix,
+                  subtitle: `Driver missing: ${pulse.routeMissingDriver} • Vehicle missing: ${pulse.routeMissingVehicle}`,
+                  icon: <Route className="w-4 h-4" />,
+                  accent: 'amber',
+                  targetTab: 'routes',
+                },
+                time_off_requests: {
+                  title: 'Time Off Requests',
+                  count: pulse.pendingTimeOff + pulse.timeOffNeedsCover,
+                  subtitle: `Pending: ${pulse.pendingTimeOff} • Needs Cover: ${pulse.timeOffNeedsCover}`,
+                  icon: <CalendarOff className="w-4 h-4" />,
+                  accent: 'blue',
+                  targetTab: 'time_off',
+                },
+                student_incidents: {
+                  title: 'Student Incidents',
+                  count: pulse.openStudentIncidents,
+                  subtitle:
+                    pulse.openStudentIncidents > 0
+                      ? 'Open incidents awaiting follow-up'
+                      : 'No open student incidents',
+                  icon: <AlertCircle className="w-4 h-4" />,
+                  accent: 'rose',
+                  targetTab: 'student_incidents',
+                },
+                vehicle_defects: {
+                  title: 'Vehicle Defects',
+                  count: pulse.openVehicleDefects,
+                  subtitle:
+                    pulse.openVehicleDefects > 0
+                      ? 'Unresolved mechanical defects'
+                      : 'All defects resolved',
+                  icon: <Wrench className="w-4 h-4" />,
+                  accent: 'orange',
+                  targetTab: 'defects',
+                },
+                hazard_reports: {
+                  title: 'Hazard Reports',
+                  count: pulse.openHazardReports,
+                  subtitle:
+                    pulse.openHazardReports > 0
+                      ? 'Open / investigating safety hazards'
+                      : 'No open hazard reports',
+                  icon: <FileWarning className="w-4 h-4" />,
+                  accent: 'amber',
+                  targetTab: 'hazards',
+                },
+                expense_claims: {
+                  title: 'Expense Claims',
+                  count: pulse.pendingExpenses,
+                  subtitle:
+                    pulse.pendingExpenses > 0
+                      ? 'Reimbursement claims awaiting review'
+                      : 'No pending expense claims',
+                  icon: <Receipt className="w-4 h-4" />,
+                  accent: 'purple',
+                  targetTab: 'expenses',
+                },
+                license_expirations: {
+                  title: 'License Expirations',
+                  count: stats.licenseExpiringSoon,
+                  subtitle: 'Expiring within 30 days',
+                  icon: <AlertTriangle className="w-4 h-4" />,
+                  accent: 'amber',
+                  targetTab: 'compliance',
+                },
+              };
 
-          <PulseActionCard
-            title="Dispatch: Missing Vehicle"
-            count={pulse.dispatchMissingVehicle}
-            subtitle={
-              pulse.dispatchMissingVehicle > 0
-                ? 'Today shifts without an assigned bus'
-                : 'All today shifts have vehicles'
-            }
-            icon={<Bus className="w-4 h-4" />}
-            accent="orange"
-            onClick={() => onNavigateTab('dispatch')}
-          />
-
-          <PulseActionCard
-            title="Driver Not Checked In"
-            count={pulse.dispatchNotCheckedIn}
-            subtitle={
-              pulse.dispatchCheckInOverdue > 0
-                ? `${pulse.dispatchCheckInOverdue} overdue past check-in window`
-                : 'Assigned drivers awaiting check-in'
-            }
-            icon={<Clock className="w-4 h-4" />}
-            accent={pulse.dispatchCheckInOverdue > 0 ? 'rose' : 'amber'}
-            onClick={() => onNavigateTab('dispatch')}
-          />
-
-          <PulseActionCard
-            title="Routes Missing Crew / Bus"
-            count={pulse.routeNeedsFix}
-            subtitle={`Driver missing: ${pulse.routeMissingDriver} • Vehicle missing: ${pulse.routeMissingVehicle}`}
-            icon={<Route className="w-4 h-4" />}
-            accent="amber"
-            onClick={() => onNavigateTab('routes')}
-          />
-        </div>
-      </div>
-
-      {/* Section 2: Pending Approvals, Safety & Claims */}
-      <div className="space-y-3">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-          Pending Approvals, Safety Reports &amp; Claims
-        </h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          <PulseActionCard
-            title="Time Off Requests"
-            count={pulse.pendingTimeOff + pulse.timeOffNeedsCover}
-            subtitle={`Pending: ${pulse.pendingTimeOff} • Needs Cover: ${pulse.timeOffNeedsCover}`}
-            icon={<CalendarOff className="w-4 h-4" />}
-            accent="blue"
-            onClick={() => onNavigateTab('time_off')}
-          />
-
-          <PulseActionCard
-            title="Student Incidents"
-            count={pulse.openStudentIncidents}
-            subtitle={
-              pulse.openStudentIncidents > 0
-                ? 'Open incidents awaiting follow-up'
-                : 'No open student incidents'
-            }
-            icon={<AlertCircle className="w-4 h-4" />}
-            accent="rose"
-            onClick={() => onNavigateTab('student_incidents')}
-          />
-
-          <PulseActionCard
-            title="Vehicle Defects"
-            count={pulse.openVehicleDefects}
-            subtitle={
-              pulse.openVehicleDefects > 0
-                ? 'Unresolved mechanical defects'
-                : 'All defects resolved'
-            }
-            icon={<Wrench className="w-4 h-4" />}
-            accent="orange"
-            onClick={() => onNavigateTab('defects')}
-          />
-
-          <PulseActionCard
-            title="Hazard Reports"
-            count={pulse.openHazardReports}
-            subtitle={
-              pulse.openHazardReports > 0
-                ? 'Open / investigating safety hazards'
-                : 'No open hazard reports'
-            }
-            icon={<FileWarning className="w-4 h-4" />}
-            accent="amber"
-            onClick={() => onNavigateTab('hazards')}
-          />
-
-          <PulseActionCard
-            title="Expense Claims"
-            count={pulse.pendingExpenses}
-            subtitle={
-              pulse.pendingExpenses > 0
-                ? 'Reimbursement claims awaiting review'
-                : 'No pending expense claims'
-            }
-            icon={<Receipt className="w-4 h-4" />}
-            accent="purple"
-            onClick={() => onNavigateTab('expenses')}
-          />
-
-          <PulseActionCard
-            title="License Expirations"
-            count={stats.licenseExpiringSoon}
-            subtitle="Expiring within 30 days"
-            icon={<AlertTriangle className="w-4 h-4" />}
-            accent="amber"
-            onClick={() => onNavigateTab('compliance')}
-          />
-        </div>
+              const cfg = cardPropsMap[cardId];
+              return (
+                <div
+                  key={cardId}
+                  draggable={isCustomizing}
+                  onDragStart={() => setDraggedCardId(cardId)}
+                  onDragOver={(e) => {
+                    if (isCustomizing) e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (isCustomizing && draggedCardId && draggedCardId !== cardId) {
+                      persistPrefs(reorderDashboardCards(prefs, draggedCardId, cardId));
+                    }
+                    setDraggedCardId(null);
+                  }}
+                  onDragEnd={() => setDraggedCardId(null)}
+                  className={`relative ${isCustomizing ? 'ring-1 ring-amber-500/30 rounded-xl' : ''}`}
+                >
+                  {isCustomizing && (
+                    <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-800/95 border-b border-slate-700 rounded-t-xl text-[11px] text-slate-300">
+                      <span className="inline-flex items-center space-x-1 text-slate-400 cursor-grab">
+                        <GripVertical className="w-3.5 h-3.5" />
+                        <span>Drag</span>
+                      </span>
+                      <div className="flex items-center space-x-1">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() =>
+                            persistPrefs(moveDashboardCardStep(prefs, cardId, -1, 'action'))
+                          }
+                          className="p-1 rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer"
+                          title="Move earlier"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === visibleActionCardIds.length - 1}
+                          onClick={() =>
+                            persistPrefs(moveDashboardCardStep(prefs, cardId, 1, 'action'))
+                          }
+                          className="p-1 rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer"
+                          title="Move later"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => persistPrefs(hideDashboardCard(prefs, cardId))}
+                          className="p-1 rounded hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                          title="Hide card"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <PulseActionCard
+                    title={cfg.title}
+                    count={cfg.count}
+                    subtitle={cfg.subtitle}
+                    icon={cfg.icon}
+                    accent={cfg.accent}
+                    onClick={() => {
+                      if (!isCustomizing) {
+                        onNavigateTab(cfg.targetTab);
+                      }
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Main Grid: Expiration Alerts & Yard Breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: CDL Expiration Summary */}
-        <div
-          onClick={() => onNavigateTab('compliance')}
-          className="lg:col-span-2 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-xl p-5 space-y-4 cursor-pointer transition"
-        >
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="w-4 h-4 text-amber-400" />
-              <h2 className="text-sm font-bold text-white">Driver CDL Expiration Watchlist</h2>
-            </div>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onNavigateTab('compliance');
-              }}
-              className="text-xs text-amber-400 hover:underline font-semibold cursor-pointer"
-            >
-              View Full Compliance Radar &rarr;
-            </button>
-          </div>
+      {visibleSummaryPanelIds.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {visibleSummaryPanelIds.map((panelId, idx) => {
+            const isCdl = panelId === 'cdl_watchlist';
+            const colSpanClass =
+              isCdl && visibleSummaryPanelIds.length > 1
+                ? 'lg:col-span-2'
+                : !isCdl && visibleSummaryPanelIds.length === 1
+                  ? 'lg:col-span-3'
+                  : isCdl
+                    ? 'lg:col-span-3'
+                    : '';
 
-          {cdlSummary.totalAttention === 0 ? (
-            <div className="py-8 text-center text-slate-400 text-xs">
-              <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-80" />
-              All active driver licenses are currently compliant.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3.5 rounded-lg bg-rose-500/10 border border-rose-500/30">
-                  <div className="text-xs text-rose-300 font-medium">Expired</div>
-                  <div className="text-2xl font-bold text-rose-400 mt-1">{cdlSummary.expired}</div>
-                  <div className="text-[11px] text-rose-300/70 mt-0.5">Immediate lock</div>
-                </div>
-                <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                  <div className="text-xs text-amber-300 font-medium">&le; 7 Days</div>
-                  <div className="text-2xl font-bold text-amber-400 mt-1">{cdlSummary.critical7}</div>
-                  <div className="text-[11px] text-amber-300/70 mt-0.5">Urgent renewal</div>
-                </div>
-                <div className="p-3.5 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-                  <div className="text-xs text-yellow-300 font-medium">8&ndash;15 Days</div>
-                  <div className="text-2xl font-bold text-yellow-400 mt-1">{cdlSummary.warning15}</div>
-                  <div className="text-[11px] text-yellow-300/70 mt-0.5">Schedule renewal</div>
-                </div>
-                <div className="p-3.5 rounded-lg bg-slate-800/60 border border-slate-700/70">
-                  <div className="text-xs text-slate-300 font-medium">16&ndash;30 Days</div>
-                  <div className="text-2xl font-bold text-white mt-1">{cdlSummary.upcoming30}</div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">Upcoming</div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
-                <span>
-                  {cdlSummary.totalAttention} driver{cdlSummary.totalAttention === 1 ? '' : 's'} requiring license attention
-                </span>
-                <span className="inline-flex items-center space-x-1 text-amber-400 font-semibold">
-                  <span>Open Compliance Radar</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Col: Yard Distribution */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-          <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
-            <Building2 className="w-4 h-4 text-blue-400" />
-            <h2 className="text-sm font-bold text-white">Staff Depot Distribution</h2>
-          </div>
-
-          <div className="space-y-3">
-            {Object.entries(stats.yardDistribution || { 'HQ-Central': 3, 'Yard-East': 2, 'Yard-West': 2 }).map(
-              ([yard, count]) => {
-                const percentage = Math.round((count / (stats.totalEmployees || 1)) * 100);
-                return (
-                  <div key={yard} className="space-y-1">
-                    <div className="flex justify-between text-xs font-semibold text-slate-300">
-                      <span>{yard}</span>
-                      <span className="text-slate-400 font-mono">{count} staff ({percentage}%)</span>
-                    </div>
-                    <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-amber-500 rounded-full"
-                        style={{ width: `${percentage}%` }}
-                      />
+            return (
+              <div
+                key={panelId}
+                draggable={isCustomizing}
+                onDragStart={() => setDraggedCardId(panelId)}
+                onDragOver={(e) => {
+                  if (isCustomizing) e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (isCustomizing && draggedCardId && draggedCardId !== panelId) {
+                    persistPrefs(reorderDashboardCards(prefs, draggedCardId, panelId));
+                  }
+                  setDraggedCardId(null);
+                }}
+                onDragEnd={() => setDraggedCardId(null)}
+                className={`${colSpanClass} ${isCustomizing ? 'ring-1 ring-amber-500/30 rounded-xl overflow-hidden' : ''}`}
+              >
+                {isCustomizing && (
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-slate-800/95 border-b border-slate-700 text-[11px] text-slate-300">
+                    <span className="inline-flex items-center space-x-1 text-slate-400 cursor-grab">
+                      <GripVertical className="w-3.5 h-3.5" />
+                      <span>Drag Panel</span>
+                    </span>
+                    <div className="flex items-center space-x-1">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() =>
+                          persistPrefs(moveDashboardCardStep(prefs, panelId, -1, 'summary'))
+                        }
+                        className="p-1 rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer"
+                        title="Move earlier"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={idx === visibleSummaryPanelIds.length - 1}
+                        onClick={() =>
+                          persistPrefs(moveDashboardCardStep(prefs, panelId, 1, 'summary'))
+                        }
+                        className="p-1 rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer"
+                        title="Move later"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => persistPrefs(hideDashboardCard(prefs, panelId))}
+                        className="p-1 rounded hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                        title="Hide panel"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
-                );
-              }
-            )}
-          </div>
+                )}
 
-          <div className="p-3 bg-slate-800/40 rounded-lg border border-slate-700 text-xs text-slate-400 space-y-1 mt-4">
-            <span className="font-semibold text-slate-300 block">Fleet Summary:</span>
-            <span>
-              {stats.totalEmployees} total staff ({stats.activeEmployees} active) • {stats.totalDrivers} licensed drivers.
-            </span>
-          </div>
+                {isCdl ? (
+                  <div
+                    onClick={() => {
+                      if (!isCustomizing) onNavigateTab('compliance');
+                    }}
+                    className={`bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-xl p-5 space-y-4 transition h-full ${
+                      isCustomizing ? 'rounded-t-none border-t-0' : 'cursor-pointer'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                      <div className="flex items-center space-x-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        <h2 className="text-sm font-bold text-white">Driver CDL Expiration Watchlist</h2>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isCustomizing) onNavigateTab('compliance');
+                        }}
+                        className="text-xs text-amber-400 hover:underline font-semibold cursor-pointer"
+                      >
+                        View Full Compliance Radar &rarr;
+                      </button>
+                    </div>
+
+                    {cdlSummary.totalAttention === 0 ? (
+                      <div className="py-8 text-center text-slate-400 text-xs">
+                        <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-80" />
+                        All active driver licenses are currently compliant.
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div className="p-3.5 rounded-lg bg-rose-500/10 border border-rose-500/30">
+                            <div className="text-xs text-rose-300 font-medium">Expired</div>
+                            <div className="text-2xl font-bold text-rose-400 mt-1">{cdlSummary.expired}</div>
+                            <div className="text-[11px] text-rose-300/70 mt-0.5">Immediate lock</div>
+                          </div>
+                          <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                            <div className="text-xs text-amber-300 font-medium">&le; 7 Days</div>
+                            <div className="text-2xl font-bold text-amber-400 mt-1">{cdlSummary.critical7}</div>
+                            <div className="text-[11px] text-amber-300/70 mt-0.5">Urgent renewal</div>
+                          </div>
+                          <div className="p-3.5 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+                            <div className="text-xs text-yellow-300 font-medium">8&ndash;15 Days</div>
+                            <div className="text-2xl font-bold text-yellow-400 mt-1">{cdlSummary.warning15}</div>
+                            <div className="text-[11px] text-yellow-300/70 mt-0.5">Schedule renewal</div>
+                          </div>
+                          <div className="p-3.5 rounded-lg bg-slate-800/60 border border-slate-700/70">
+                            <div className="text-xs text-slate-300 font-medium">16&ndash;30 Days</div>
+                            <div className="text-2xl font-bold text-white mt-1">{cdlSummary.upcoming30}</div>
+                            <div className="text-[11px] text-slate-400 mt-0.5">Upcoming</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                          <span>
+                            {cdlSummary.totalAttention} driver{cdlSummary.totalAttention === 1 ? '' : 's'} requiring license attention
+                          </span>
+                          <span className="inline-flex items-center space-x-1 text-amber-400 font-semibold">
+                            <span>Open Compliance Radar</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div
+                    className={`bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 h-full ${
+                      isCustomizing ? 'rounded-t-none border-t-0' : ''
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
+                      <Building2 className="w-4 h-4 text-blue-400" />
+                      <h2 className="text-sm font-bold text-white">Staff Depot Distribution</h2>
+                    </div>
+
+                    <div className="space-y-3">
+                      {Object.entries(stats.yardDistribution || { 'HQ-Central': 3, 'Yard-East': 2, 'Yard-West': 2 }).map(
+                        ([yard, count]) => {
+                          const percentage = Math.round((count / (stats.totalEmployees || 1)) * 100);
+                          return (
+                            <div key={yard} className="space-y-1">
+                              <div className="flex justify-between text-xs font-semibold text-slate-300">
+                                <span>{yard}</span>
+                                <span className="text-slate-400 font-mono">{count} staff ({percentage}%)</span>
+                              </div>
+                              <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-amber-500 rounded-full"
+                                  style={{ width: `${percentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        }
+                      )}
+                    </div>
+
+                    <div className="p-3 bg-slate-800/40 rounded-lg border border-slate-700 text-xs text-slate-400 space-y-1 mt-4">
+                      <span className="font-semibold text-slate-300 block">Fleet Summary:</span>
+                      <span>
+                        {stats.totalEmployees} total staff ({stats.activeEmployees} active) • {stats.totalDrivers} licensed drivers.
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-      </div>
+      )}
     </div>
   );
 };

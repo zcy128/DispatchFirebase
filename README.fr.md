@@ -37,6 +37,10 @@ La plateforme est structurée autour d'un écosystème d'applications dédiées,
 ### 1. Console de Régulation & Gestion d'Exploitation (`web`)
 *Console d'exploitation sur ordinateur et tablette conçue avec React, TypeScript et Tailwind CSS pour les répartiteurs, chefs de dépôt, responsables sécurité et comptables.*
 
+- **Centre d'Action Opérationnel Fleet Pulse & Disposition Personnalisable** :
+  - **Synchronisation Temps Réel Multi-Utilisateurs** : Cartes d'action en direct via Firestore (`onSnapshot`) couvrant les manques de chauffeurs/véhicules, retards de pointage, circuits incomplets, demandes de congé et remplacements, incidents élèves, défectuosités, dangers, notes de frais et synthèse des expirations CDL (`Expiré`, `<= 7 j`, `8–15 j`, `16–30 j`).
+  - **Personnalisation par Utilisateur (Synchronisée en Base de Données)** : Mode **Customize Cards** permettant à chaque utilisateur de masquer des cartes, réorganiser l'ordre par glisser-déposer ou flèches, restaurer les cartes masquées ou réinitialiser la vue ; les préférences sont enregistrées par utilisateur dans Firestore (`user_preferences`) sur tous ses appareils.
+  - **Navigation Épinglée** : Raccourci **Fleet Pulse** épinglé en haut du menu latéral gauche quel que soit le domaine actif, avec bouton de retour direct depuis le Radar de conformité.
 - **Tableau de Répartition Interactif des Services** : Visualisation en colonnes des services du matin (AM), du midi (MD) et du soir (PM) avec indicateurs en direct (Non assigné, Planifié, Pointé, En cours, Terminé).
 - **Planification Dynamique des Remplacements (Cover Drivers)** : Assignation en un clic de chauffeurs ou d'accompagnateurs remplaçants en cas de congés validés ou d'absences imprévues, éliminant les pénuries de dernière minute.
 - **Gestion Complète du Parc de Véhicules** : Fiches d'inventaire détaillées (marque, modèle, capacité en passagers, accès fauteuil roulant, numéro de châssis VIN, odomètre, type de carburant).
