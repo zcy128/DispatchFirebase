@@ -125,18 +125,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const groups: NavGroupConfig[] = [
     {
       domain: 'dispatch_ops',
-      title: t.nav.overview || (isFrench ? 'Aperçu' : 'Overview'),
-      items: [
-        {
-          id: 'dashboard',
-          label: t.nav.fleetPulse,
-          icon: LayoutDashboard,
-          badge: null
-        }
-      ]
-    },
-    {
-      domain: 'dispatch_ops',
       title: t.nav.dispatchGroup || (isFrench ? 'Répartition' : 'Dispatch'),
       items: [
         {
@@ -450,6 +438,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         )}
       </div>
+
+      {/* Pinned Fleet Pulse Home Shortcut */}
+      {hasPageAccess(currentUser, 'dashboard') && (
+        <div className="shrink-0 px-2 pt-2.5 pb-2 border-b border-slate-800/80">
+          <button
+            type="button"
+            onClick={() => onSelectTab('dashboard')}
+            title={isCollapsed ? t.nav.fleetPulse : undefined}
+            aria-label={t.nav.fleetPulse}
+            className={`w-full flex items-center rounded-xl text-xs font-semibold transition-all relative group cursor-pointer ${
+              isCollapsed
+                ? 'justify-center h-10 w-10 mx-auto'
+                : 'justify-between px-3 py-2.5'
+            } ${
+              currentTab === 'dashboard'
+                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30 shadow-sm shadow-amber-500/10'
+                : 'text-slate-200 bg-slate-800/40 hover:bg-slate-800 hover:text-white border border-slate-800'
+            }`}
+          >
+            {isCollapsed && currentTab === 'dashboard' && (
+              <span className="absolute -left-2 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full bg-amber-400" />
+            )}
+            <div className={`flex items-center min-w-0 ${isCollapsed ? 'justify-center' : 'space-x-3'}`}>
+              <LayoutDashboard
+                className={`w-4 h-4 flex-shrink-0 transition-transform group-hover:scale-110 ${
+                  currentTab === 'dashboard' ? 'text-amber-400' : 'text-amber-400/80 group-hover:text-amber-400'
+                }`}
+              />
+              {!isCollapsed && <span className="truncate">{t.nav.fleetPulse}</span>}
+            </div>
+          </button>
+        </div>
+      )}
 
       {/* Domain Filtered Menu Items */}
       <div className="flex-1 min-h-0 overflow-y-auto py-3 px-2 space-y-4">

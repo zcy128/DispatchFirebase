@@ -580,6 +580,13 @@ service cloud.firestore {
       allow read, write: if isAuthenticated() && request.auth.uid == parentId;
     }
 
+    match /user_preferences/{docId} {
+      allow read, write: if isAuthenticated() && (
+        docId == 'dashboard_' + request.auth.uid ||
+        (request.auth.token.employeeId != null && docId == 'dashboard_' + request.auth.token.employeeId)
+      );
+    }
+
     // 敏感集成凭据与临时暂存区：客户端绝对不可访问，完全由 Go Server Admin SDK 操作
     match /bamboohr_secrets/{doc} { allow read, write: if false; }
     match /zonar_secrets/{doc} { allow read, write: if false; }

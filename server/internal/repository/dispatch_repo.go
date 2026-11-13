@@ -266,6 +266,10 @@ type DispatchRepository interface {
 
 	// Assignment History
 	ListAssignmentHistoryFiltered(ctx context.Context, filter AssignmentHistoryFilter) ([]*models.AssignmentHistoryRecord, error)
+
+	// User Dashboard Preferences
+	GetUserDashboardPreferences(ctx context.Context, userID string) (*models.DashboardPreferences, error)
+	SaveUserDashboardPreferences(ctx context.Context, prefs *models.DashboardPreferences) (*models.DashboardPreferences, error)
 }
 
 type FirestoreDispatchRepository struct {
@@ -6252,6 +6256,7 @@ type MemoryDispatchRepository struct {
 	clientOperationErrors   []*models.ClientOperationError
 	simulationSettings      *models.SimulationSettings
 	absences                map[string]*models.StudentAbsenceRecord
+	dashboardPreferences    map[string]*models.DashboardPreferences
 }
 
 func NewMemoryDispatchRepository() *MemoryDispatchRepository {
