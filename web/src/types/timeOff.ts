@@ -30,6 +30,9 @@ export interface TimeOffRequest {
   notifiedAt?: string;
   coverageAssigned?: boolean;
   coverageAssignedAt?: string;
+  coverageDriverName?: string;
+  coverageDriverId?: string;
+  temporaryAssignmentId?: string;
   createdAt: string;
   updatedAt: string;
   isArchivedToBigQuery?: boolean;
@@ -59,6 +62,9 @@ export interface UpdateTimeOffRequestPayload {
   comments?: string;
   coverageAssigned?: boolean;
   coverageAssignedAt?: string;
+  coverageDriverName?: string;
+  coverageDriverId?: string;
+  temporaryAssignmentId?: string;
 }
 
 export interface ReviewTimeOffRequestPayload {

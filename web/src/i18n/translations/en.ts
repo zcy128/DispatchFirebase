@@ -278,6 +278,7 @@ export const en: TranslationDictionary = {
     appliedBadge: 'Applied',
     withdrawBtn: 'Withdraw Application',
     reviewApplicantsBtn: 'Review Candidates',
+    showExpired: 'Show Expired',
     applicantsCount: 'Applicants',
     confirmAndAward: 'Confirm & Award Position',
     awardDialogTitle: 'Award Route Position',

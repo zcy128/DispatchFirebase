@@ -5566,7 +5566,12 @@ func (r *FirestoreDispatchRepository) UpdateTimeOffRequest(ctx context.Context, 
 	rec.ID = docRef.ID
 
 	if rec.Status != models.TimeOffStatusPending {
-		return nil, fmt.Errorf("cannot modify a request that has already been %s", rec.Status)
+		// Allow updating coverage assignment status on approved requests
+		isCoverageOnlyUpdate := (req.CoverageAssigned != nil || req.CoverageAssignedAt != "" || req.CoverageDriverName != "" || req.TemporaryAssignmentId != "") &&
+			req.LeaveType == "" && req.StartDate == "" && req.EndDate == "" && req.ShiftType == "" && req.Comments == ""
+		if !isCoverageOnlyUpdate {
+			return nil, fmt.Errorf("cannot modify a request that has already been %s", rec.Status)
+		}
 	}
 
 	if req.LeaveType != "" {
@@ -5583,6 +5588,27 @@ func (r *FirestoreDispatchRepository) UpdateTimeOffRequest(ctx context.Context, 
 	}
 	if req.Comments != "" {
 		rec.Comments = req.Comments
+	}
+	if req.CoverageAssigned != nil {
+		rec.CoverageAssigned = *req.CoverageAssigned
+		if !*req.CoverageAssigned {
+			rec.CoverageAssignedAt = ""
+			rec.CoverageDriverName = ""
+			rec.CoverageDriverId = ""
+			rec.TemporaryAssignmentId = ""
+		}
+	}
+	if req.CoverageAssignedAt != "" {
+		rec.CoverageAssignedAt = req.CoverageAssignedAt
+	}
+	if req.CoverageDriverName != "" {
+		rec.CoverageDriverName = req.CoverageDriverName
+	}
+	if req.CoverageDriverId != "" {
+		rec.CoverageDriverId = req.CoverageDriverId
+	}
+	if req.TemporaryAssignmentId != "" {
+		rec.TemporaryAssignmentId = req.TemporaryAssignmentId
 	}
 	rec.UpdatedAt = time.Now().UTC()
 
@@ -7936,7 +7962,12 @@ func (m *MemoryDispatchRepository) UpdateTimeOffRequest(ctx context.Context, id 
 	}
 
 	if rec.Status != models.TimeOffStatusPending {
-		return nil, fmt.Errorf("cannot modify a request that has already been %s", rec.Status)
+		// Allow updating coverage assignment status on approved requests
+		isCoverageOnlyUpdate := (req.CoverageAssigned != nil || req.CoverageAssignedAt != "" || req.CoverageDriverName != "" || req.TemporaryAssignmentId != "") &&
+			req.LeaveType == "" && req.StartDate == "" && req.EndDate == "" && req.ShiftType == "" && req.Comments == ""
+		if !isCoverageOnlyUpdate {
+			return nil, fmt.Errorf("cannot modify a request that has already been %s", rec.Status)
+		}
 	}
 
 	if req.LeaveType != "" {
@@ -7953,6 +7984,27 @@ func (m *MemoryDispatchRepository) UpdateTimeOffRequest(ctx context.Context, id 
 	}
 	if req.Comments != "" {
 		rec.Comments = req.Comments
+	}
+	if req.CoverageAssigned != nil {
+		rec.CoverageAssigned = *req.CoverageAssigned
+		if !*req.CoverageAssigned {
+			rec.CoverageAssignedAt = ""
+			rec.CoverageDriverName = ""
+			rec.CoverageDriverId = ""
+			rec.TemporaryAssignmentId = ""
+		}
+	}
+	if req.CoverageAssignedAt != "" {
+		rec.CoverageAssignedAt = req.CoverageAssignedAt
+	}
+	if req.CoverageDriverName != "" {
+		rec.CoverageDriverName = req.CoverageDriverName
+	}
+	if req.CoverageDriverId != "" {
+		rec.CoverageDriverId = req.CoverageDriverId
+	}
+	if req.TemporaryAssignmentId != "" {
+		rec.TemporaryAssignmentId = req.TemporaryAssignmentId
 	}
 	rec.UpdatedAt = time.Now().UTC()
 

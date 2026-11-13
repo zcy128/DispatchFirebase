@@ -60,6 +60,9 @@ export interface RouteOpening {
   awardedAttendantId?: string;
   awardedAttendantName?: string;
   awardedAttendantPhone?: string;
+  awardedVehicleId?: number;
+  awardedUnitNumber?: string;
+  awardedPlateNumber?: string;
   awardedAt?: string;
   awardedBy?: string;
   awardedNotes?: string;

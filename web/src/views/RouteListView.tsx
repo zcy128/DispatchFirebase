@@ -11,6 +11,11 @@ import { RouteEditModal } from '../components/routes/RouteEditModal';
 import { useAuth } from '../contexts/AuthContext';
 import { RouteAuditService } from '../services/routeAuditService';
 import {
+  RouteFixFilter,
+  countRouteFixIssues,
+  matchesRouteFixFilter,
+} from '../utils/routeFixFilterUtils';
+import {
   Search,
   Filter,
   Bus,
@@ -28,7 +33,8 @@ import {
   Shield,
   UserCheck,
   SlidersHorizontal,
-  History
+  History,
+  AlertTriangle
 } from 'lucide-react';
 
 interface RouteListViewProps {
@@ -71,6 +77,7 @@ export const RouteListView = memo(function RouteListView({
   const [yardFilter, setYardFilter] = useState('ALL');
   const [opDaysFilter, setOpDaysFilter] = useState('ALL'); // ALL, MTWRF, ----F, MTWR-
   const [marryupFilter, setMarryupFilter] = useState<'ALL' | 'ENABLED' | 'DISABLED'>('ALL');
+  const [fixFilter, setFixFilter] = useState<RouteFixFilter>('ALL');
   const [refreshing, setRefreshing] = useState(false);
   const [expandedRouteIds, setExpandedRouteIds] = useState<Record<string, boolean>>({});
   const [editingRoute, setEditingRoute] = useState<BusRoute | null>(null);
@@ -168,6 +175,8 @@ export const RouteListView = memo(function RouteListView({
     };
   }, [routes]);
 
+  const fixCounts = useMemo(() => countRouteFixIssues(routes), [routes]);
+
   const filteredRoutes = useMemo(() => {
     const term = deferredSearch.trim().toLowerCase();
     return routes.filter((r) => {
@@ -181,6 +190,9 @@ export const RouteListView = memo(function RouteListView({
         return false;
       }
       if (marryupFilter === 'DISABLED' && isAutoMarryupEnabled(r)) {
+        return false;
+      }
+      if (!matchesRouteFixFilter(r, fixFilter)) {
         return false;
       }
 
@@ -222,7 +234,7 @@ export const RouteListView = memo(function RouteListView({
 
       return true;
     });
-  }, [routes, boardFilter, yardFilter, marryupFilter, opDaysFilter, deferredSearch]);
+  }, [routes, boardFilter, yardFilter, marryupFilter, fixFilter, opDaysFilter, deferredSearch]);
   const totalExpanded = Object.values(expandedRouteIds).filter(Boolean).length;
 
   // Virtual scrolling containers for 1,000+ routes
@@ -305,18 +317,19 @@ export const RouteListView = memo(function RouteListView({
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
             <span>Search & Filters</span>
-            {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || opDaysFilter !== 'ALL') && (
+            {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || fixFilter !== 'ALL' || opDaysFilter !== 'ALL') && (
               <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-amber-400/30" />
             )}
             <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMobileFilters ? 'rotate-180' : ''}`} />
           </button>
 
-          {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || opDaysFilter !== 'ALL' || searchTerm) && (
+          {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || fixFilter !== 'ALL' || opDaysFilter !== 'ALL' || searchTerm) && (
             <button
               onClick={() => {
                 setBoardFilter('ALL');
                 setYardFilter('ALL');
                 setMarryupFilter('ALL');
+                setFixFilter('ALL');
                 setOpDaysFilter('ALL');
                 setSearchTerm('');
               }}
@@ -367,11 +380,29 @@ export const RouteListView = memo(function RouteListView({
             <select
               value={marryupFilter}
               onChange={(e) => setMarryupFilter(e.target.value as any)}
-              className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 col-span-2 sm:col-span-1 w-full sm:w-auto"
+              className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 w-full sm:w-auto"
             >
               <option value="ALL">All Marryup</option>
               <option value="ENABLED">Auto Marryup</option>
               <option value="DISABLED">No Auto Marryup</option>
+            </select>
+
+            {/* Needs Fix Filter */}
+            <select
+              value={fixFilter}
+              onChange={(e) => setFixFilter(e.target.value as RouteFixFilter)}
+              className={`border rounded-xl px-2.5 py-1.5 text-xs focus:outline-none w-full sm:w-auto ${
+                fixFilter !== 'ALL' && fixFilter !== 'COMPLETE'
+                  ? 'bg-rose-950/60 border-rose-500/60 text-rose-200 focus:border-rose-400'
+                  : 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500'
+              }`}
+            >
+              <option value="ALL">All Crew & Vehicle</option>
+              <option value="NEEDS_FIX">Needs Fix ({fixCounts.needsFix})</option>
+              <option value="MISSING_DRIVER">Missing Driver ({fixCounts.missingDriver})</option>
+              <option value="MISSING_VEHICLE">Missing Vehicle ({fixCounts.missingVehicle})</option>
+              <option value="MISSING_BOTH">Missing Both ({fixCounts.missingBoth})</option>
+              <option value="COMPLETE">Fully Assigned ({fixCounts.complete})</option>
             </select>
           </div>
 
@@ -420,12 +451,28 @@ export const RouteListView = memo(function RouteListView({
             </button>
           </div>
 
-          {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || opDaysFilter !== 'ALL' || searchTerm) && (
+          <button
+            type="button"
+            onClick={() => setFixFilter((prev) => (prev === 'NEEDS_FIX' ? 'ALL' : 'NEEDS_FIX'))}
+            className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center space-x-1 border ${
+              fixFilter === 'NEEDS_FIX'
+                ? 'bg-rose-500 text-white border-rose-400 shadow-sm'
+                : fixCounts.needsFix > 0
+                ? 'bg-rose-500/10 text-rose-300 border-rose-500/30 hover:bg-rose-500/20'
+                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+            }`}
+          >
+            <AlertTriangle className="w-3 h-3" />
+            <span>Needs Fix ({fixCounts.needsFix})</span>
+          </button>
+
+          {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || fixFilter !== 'ALL' || opDaysFilter !== 'ALL' || searchTerm) && (
             <button
               onClick={() => {
                 setBoardFilter('ALL');
                 setYardFilter('ALL');
                 setMarryupFilter('ALL');
+                setFixFilter('ALL');
                 setOpDaysFilter('ALL');
                 setSearchTerm('');
               }}
@@ -636,7 +683,7 @@ export const RouteListView = memo(function RouteListView({
                                   <span>Monitor: {r.attendantName}</span>
                                 </button>
                               )}
-                              {r.unitNumber && (
+                              {r.unitNumber ? (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -649,6 +696,11 @@ export const RouteListView = memo(function RouteListView({
                                   <Bus className="w-3 h-3 text-slate-400" />
                                   <span>Unit {r.unitNumber}</span>
                                 </button>
+                              ) : (
+                                <span className="text-[10px] text-rose-400 font-semibold flex items-center space-x-1">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  <span>Missing Vehicle</span>
+                                </span>
                               )}
                               {r.driverPhone && (
                                 <a
