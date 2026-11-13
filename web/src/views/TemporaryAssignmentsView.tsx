@@ -34,6 +34,7 @@ import {
   resolveOpeningDisplayStops,
   isOpeningUnderReview,
   computeOpeningsKpi,
+  isOpeningExpired,
 } from '../utils/routeOpeningDisplay';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
@@ -78,6 +79,7 @@ interface OpeningsKpi {
 }
 
 interface CoversKpis {
+  activeTotal: number;
   activeToday: number;
   upcoming: number;
   totalDriverCovers: number;
@@ -101,6 +103,8 @@ interface OpeningsBoardPanelProps {
   onOpeningTypeFilterChange: (value: OpeningTypeFilter) => void;
   openingStatusFilter: OpeningStatusFilter;
   onOpeningStatusFilterChange: React.Dispatch<React.SetStateAction<OpeningStatusFilter>>;
+  showExpired: boolean;
+  onShowExpiredChange: (value: boolean) => void;
   canManage: boolean;
   currentEmployeeId: string | null;
   todayStr: string;
@@ -123,6 +127,8 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
   onOpeningTypeFilterChange,
   openingStatusFilter,
   onOpeningStatusFilterChange,
+  showExpired,
+  onShowExpiredChange,
   canManage,
   currentEmployeeId,
   todayStr,
@@ -155,9 +161,14 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
     return map;
   }, [openings, charterTripsById]);
 
+  const expiredCount = useMemo(() => {
+    return openings.filter((op) => isOpeningExpired(op, todayStr)).length;
+  }, [openings, todayStr]);
+
   const filteredOpenings = useMemo(() => {
     const q = deferredOpeningSearch.trim() ? deferredOpeningSearch.toLowerCase() : '';
     return openings.filter((op) => {
+      if (!showExpired && isOpeningExpired(op, todayStr)) return false;
       if (openingTypeFilter !== 'all' && op.postingType !== openingTypeFilter) return false;
       if (openingStatusFilter !== 'all') {
         if (openingStatusFilter === 'reviewing') {
@@ -168,15 +179,45 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
       }
 
       if (q) {
+        const typeLabel =
+          op.postingType === 'charter'
+            ? 'charter trip'
+            : op.postingType === 'permanent'
+              ? 'permanent run'
+              : 'temporary cover';
+        const roleLabel =
+          op.roleNeeded === 'driver'
+            ? 'driver needed'
+            : op.roleNeeded === 'attendant'
+              ? 'attendant needed'
+              : 'driver & attendant';
+
         const matchRoute = op.routeNo.toLowerCase().includes(q);
         const matchName = (op.routeName || '').toLowerCase().includes(q);
         const matchTitle = op.title.toLowerCase().includes(q);
         const matchBoard = (op.schoolBoardCode || '').toLowerCase().includes(q);
-        if (!matchRoute && !matchName && !matchTitle && !matchBoard) return false;
+        const matchType = op.postingType.toLowerCase().includes(q) || typeLabel.includes(q);
+        const matchRole = (op.roleNeeded || '').toLowerCase().includes(q) || roleLabel.includes(q);
+        const matchAwarded =
+          (op.awardedDriverName || '').toLowerCase().includes(q) ||
+          (op.awardedAttendantName || '').toLowerCase().includes(q);
+        const matchDesc = (op.description || '').toLowerCase().includes(q);
+        if (
+          !matchRoute &&
+          !matchName &&
+          !matchTitle &&
+          !matchBoard &&
+          !matchType &&
+          !matchRole &&
+          !matchAwarded &&
+          !matchDesc
+        ) {
+          return false;
+        }
       }
       return true;
     });
-  }, [openings, openingTypeFilter, openingStatusFilter, deferredOpeningSearch]);
+  }, [openings, showExpired, todayStr, openingTypeFilter, openingStatusFilter, deferredOpeningSearch]);
 
   return (
     <div className="space-y-6">
@@ -312,6 +353,35 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
             <option value="reviewing">Under Review</option>
             <option value="awarded">Awarded</option>
           </select>
+
+          {/* Show Expired Toggle */}
+          <label
+            className={`flex items-center gap-1.5 text-xs rounded-xl px-3 py-2 border cursor-pointer select-none transition shrink-0 ${
+              showExpired
+                ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
+                : 'bg-slate-800/90 border-slate-700/80 text-slate-300 hover:bg-slate-800'
+            }`}
+            title="Toggle display of expired postings"
+          >
+            <input
+              type="checkbox"
+              checked={showExpired}
+              onChange={(e) => onShowExpiredChange(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500/40 cursor-pointer"
+            />
+            <span>{t.routeOpenings?.showExpired || 'Show Expired'}</span>
+            {expiredCount > 0 && (
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                  showExpired
+                    ? 'bg-amber-500/20 text-amber-300'
+                    : 'bg-slate-700 text-slate-400'
+                }`}
+              >
+                {expiredCount}
+              </span>
+            )}
+          </label>
         </div>
 
         {/* Post Opening Button (Dispatcher / Manager / Admin) */}
@@ -840,6 +910,7 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
 
   // Primary Tab: 'openings' (Openings & Bidding Board) vs 'covers' (Active Shift Covers)
   const [activeTab, setActiveTab] = useState<'openings' | 'covers'>('openings');
+  const todayStr = getLocalTodayString();
 
   // ==========================================
   // 1. Route Openings & Bidding State
@@ -850,6 +921,7 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
   const [openingSearch, setOpeningSearch] = useState<string>('');
   const [openingTypeFilter, setOpeningTypeFilter] = useState<OpeningTypeFilter>('all');
   const [openingStatusFilter, setOpeningStatusFilter] = useState<OpeningStatusFilter>('all');
+  const [showExpiredOpenings, setShowExpiredOpenings] = useState<boolean>(false);
 
   // Openings Modals
   const [isCreateOpeningModalOpen, setIsCreateOpeningModalOpen] = useState<boolean>(false);
@@ -917,8 +989,13 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
     return map;
   }, [charterTrips]);
 
-  // Openings KPIs
-  const openingsKpi = useMemo(() => computeOpeningsKpi(openings), [openings]);
+  // Openings KPIs (computed on active postings unless showExpired is enabled)
+  const openingsKpi = useMemo(() => {
+    const scope = showExpiredOpenings
+      ? openings
+      : openings.filter((op) => !isOpeningExpired(op, todayStr));
+    return computeOpeningsKpi(scope);
+  }, [openings, showExpiredOpenings, todayStr]);
 
   // Handle application withdrawal
   const handleWithdraw = useCallback(
@@ -969,8 +1046,6 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
   // Modal for covers
   const [isCoverModalOpen, setIsCoverModalOpen] = useState<boolean>(false);
   const [editingAssignment, setEditingAssignment] = useState<TemporaryAssignment | null>(null);
-
-  const todayStr = getLocalTodayString();
 
   // Manual refresh: only show the loading spinner when there is nothing to display yet
   const loadCoversData = useCallback(async () => {
@@ -1053,11 +1128,12 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
 
   const coversKpis = useMemo(() => {
     const list = assignments || [];
+    const activeTotal = list.filter((a) => a.status === 'active').length;
     const activeToday = list.filter((a) => a.status === 'active' && a.startDate <= todayStr && a.endDate >= todayStr).length;
     const upcoming = list.filter((a) => a.status === 'active' && a.startDate > todayStr).length;
     const totalDriverCovers = list.filter((a) => a.temporaryDriverId).length;
     const totalAttendantCovers = list.filter((a) => a.temporaryAttendantId).length;
-    return { activeToday, upcoming, totalDriverCovers, totalAttendantCovers };
+    return { activeTotal, activeToday, upcoming, totalDriverCovers, totalAttendantCovers };
   }, [assignments, todayStr]);
 
   return (
@@ -1098,7 +1174,7 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
                 activeTab === 'openings' ? 'bg-slate-950/30 text-slate-950' : 'bg-slate-800 text-slate-400'
               }`}
             >
-              {openingsKpi.openForBidding}
+              {openingsKpi.total}
             </span>
           </button>
 
@@ -1117,7 +1193,7 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
                 activeTab === 'covers' ? 'bg-slate-950/30 text-slate-950' : 'bg-slate-800 text-slate-400'
               }`}
             >
-              {coversKpis.activeToday}
+              {coversKpis.activeTotal}
             </span>
           </button>
         </div>
@@ -1135,6 +1211,8 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
           onOpeningTypeFilterChange={setOpeningTypeFilter}
           openingStatusFilter={openingStatusFilter}
           onOpeningStatusFilterChange={setOpeningStatusFilter}
+          showExpired={showExpiredOpenings}
+          onShowExpiredChange={setShowExpiredOpenings}
           canManage={canManage}
           currentEmployeeId={currentEmployeeId}
           todayStr={todayStr}
@@ -1240,6 +1318,7 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
             routes={routes}
             employees={employees}
             vehicles={vehicles}
+            existingAssignments={assignments}
             onSaved={() => {
               void loadCoversData();
             }}

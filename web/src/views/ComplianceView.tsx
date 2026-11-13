@@ -5,6 +5,7 @@ import { useCompliance } from '../contexts/ComplianceContext';
 import { useI18n } from '../contexts/I18nContext';
 import {
   AlertTriangle,
+  ArrowLeft,
   Phone,
   ShieldCheck,
   Bus,
@@ -16,13 +17,15 @@ interface ComplianceViewProps {
   vehicles?: Vehicle[];
   onSelectEmployee: (emp: Employee) => void;
   onSelectVehicle?: (vehicle: Vehicle) => void;
+  onBack?: () => void;
 }
 
 export const ComplianceView: React.FC<ComplianceViewProps> = ({
   employees,
   vehicles = [],
   onSelectEmployee,
-  onSelectVehicle
+  onSelectVehicle,
+  onBack
 }) => {
   const [activeTab, setActiveTab] = useState<'vehicles' | 'drivers'>('vehicles');
   const { config: complianceConfig, isOntario } = useCompliance();
@@ -166,6 +169,16 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-center">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>{isFrench ? 'Retour à Fleet Pulse' : 'Back to Fleet Pulse'}</span>
+            </button>
+          )}
           <span className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 border ${
             isOntario
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'

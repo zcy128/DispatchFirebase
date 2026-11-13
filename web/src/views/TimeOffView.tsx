@@ -30,6 +30,7 @@ import { BusRoute } from '../types/route';
 import { Employee } from '../types/employee';
 import { Vehicle } from '../types/vehicle';
 import { TimeOffService } from '../services/timeOffService';
+import { DispatchService } from '../services/dispatchService';
 import { ExportLoadingOverlay } from '../components/common/ExportLoadingOverlay';
 import { RouteOpeningRole } from '../types/routeOpening';
 import { TemporaryAssignment } from '../types/dispatch';
@@ -88,7 +89,7 @@ export const TimeOffView = memo(function TimeOffView({
   employees = EMPTY_EMPLOYEES,
   routes = EMPTY_ROUTES,
   vehicles = EMPTY_VEHICLES,
-  onNavigateToTemporaryAssignments,
+  onNavigateToTemporaryAssignments: _onNavigateToTemporaryAssignments,
   onSelectEmployee
 }: TimeOffViewProps) {
   const { currentUser } = useAuth();
@@ -98,6 +99,8 @@ export const TimeOffView = memo(function TimeOffView({
   const isDispatcher = currentUser?.role === 'dispatcher' || isHR;
 
   const [requests, setRequests] = useState<TimeOffRequest[]>([]);
+  const [temporaryAssignments, setTemporaryAssignments] = useState<TemporaryAssignment[]>([]);
+  const [deletingCoverageId, setDeletingCoverageId] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -232,8 +235,16 @@ export const TimeOffView = memo(function TimeOffView({
       }
     );
 
+    const unsubAssignments = DispatchService.subscribeToTemporaryAssignments(
+      (list) => {
+        setTemporaryAssignments(Array.isArray(list) ? list : []);
+      },
+      (err) => console.warn('Failed to subscribe to temporary assignments in TimeOffView:', err)
+    );
+
     return () => {
       if (unsubscribe) unsubscribe();
+      if (unsubAssignments) unsubAssignments();
     };
   }, []);
 
@@ -280,6 +291,67 @@ export const TimeOffView = memo(function TimeOffView({
     }
   };
 
+  // Match active temporary assignment for a time-off request
+  const getCoverForRequest = (req: TimeOffRequest) => {
+    if (req.temporaryAssignmentId) {
+      const match = temporaryAssignments.find(
+        (ta) => ta.id === req.temporaryAssignmentId && ta.status !== 'cancelled'
+      );
+      if (match) return match;
+    }
+    const empId = req.employeeId;
+    const empNum = req.employeeNumber;
+    const empName = req.employeeName?.trim().toLowerCase();
+
+    return (
+      temporaryAssignments.find((ta) => {
+        if (ta.status === 'cancelled') return false;
+        const isDriverMatch =
+          (empId && (ta.originalDriverId === empId || ta.originalDriverId === empNum)) ||
+          (empName && ta.originalDriverName?.trim().toLowerCase() === empName);
+        const isAttendantMatch =
+          (empId && (ta.originalAttendantId === empId || ta.originalAttendantId === empNum)) ||
+          (empName && ta.originalAttendantName?.trim().toLowerCase() === empName);
+        if (!isDriverMatch && !isAttendantMatch) return false;
+        return ta.startDate <= req.endDate && ta.endDate >= req.startDate;
+      }) || null
+    );
+  };
+
+  // Remove substitute driver and revert time-off coverage state
+  const handleDeleteCoverage = async (req: TimeOffRequest, coverAssignment: TemporaryAssignment | null) => {
+    const taToDelete = coverAssignment || getCoverForRequest(req);
+    const driverName =
+      taToDelete?.temporaryDriverName ||
+      taToDelete?.temporaryAttendantName ||
+      req.coverageDriverName ||
+      'the assigned replacement';
+
+    const confirmed = window.confirm(
+      `Remove assigned substitute (${driverName}) for ${req.employeeName}?\n\nThis will remove the temporary assignment so you can assign a replacement again.`
+    );
+    if (!confirmed) return;
+
+    setDeletingCoverageId(req.id);
+    try {
+      if (taToDelete?.id) {
+        await DispatchService.deleteTemporaryAssignment(taToDelete.id);
+      }
+      await TimeOffService.updateTimeOffRequest(req.id, {
+        coverageAssigned: false,
+        coverageAssignedAt: '',
+        coverageDriverName: '',
+        coverageDriverId: '',
+        temporaryAssignmentId: ''
+      });
+    } catch (err: any) {
+      console.error('Failed to delete coverage assignment:', err);
+      alert(err?.message || 'Failed to remove substitute. Please try again.');
+    } finally {
+      setDeletingCoverageId(null);
+    }
+  };
+
   // Launch temporary assignment coverage for an approved request
   const handleAssignCoverage = (req: TimeOffRequest) => {
     setActiveTimeOffForCoverage(req);
@@ -305,16 +377,15 @@ export const TimeOffView = memo(function TimeOffView({
     else reasonVal = 'other';
 
     const tempCoverObj: any = {
-      id: '',
       routeId: assignedRoute?.id || (routes.length > 0 ? routes[0].id : ''),
       routeName: assignedRoute?.routeName || assignedRoute?.routeNo || '',
       shiftType: shiftTypeVal,
       startDate: req.startDate,
       endDate: req.endDate,
-      originalDriverId: assignedRoute?.driverId === req.employeeId ? req.employeeId : (assignedRoute?.driverId || ''),
-      originalDriverName: assignedRoute?.driverId === req.employeeId ? req.employeeName : (assignedRoute?.driverName || ''),
-      originalAttendantId: assignedRoute?.attendantId === req.employeeId ? req.employeeId : (assignedRoute?.attendantId || ''),
-      originalAttendantName: assignedRoute?.attendantId === req.employeeId ? req.employeeName : (assignedRoute?.attendantName || ''),
+      originalDriverId: assignedRoute?.driverId || req.employeeId || '',
+      originalDriverName: assignedRoute?.driverName || req.employeeName || '',
+      originalAttendantId: assignedRoute?.attendantId || (assignedRoute?.driverId === req.employeeId ? '' : req.employeeId) || '',
+      originalAttendantName: assignedRoute?.attendantName || (assignedRoute?.driverId === req.employeeId ? '' : req.employeeName) || '',
       reason: reasonVal,
       notes: `Temporary replacement for ${req.employeeName} (${LEAVE_TYPE_LABELS[req.leaveType] || req.leaveType}).`,
       status: 'active'
@@ -415,7 +486,7 @@ export const TimeOffView = memo(function TimeOffView({
       if (categoryFilter === 'pending') {
         if (r.status !== 'pending' || r.endDate < todayStr) return false;
       } else if (categoryFilter === 'needs_coverage') {
-        if (r.status !== 'approved' || r.endDate < todayStr || r.coverageAssigned) return false;
+        if (r.status !== 'approved' || r.endDate < todayStr) return false;
         if (!includeAdvanceInCoverage && r.startDate > horizonLimitDateStr) return false;
       } else if (categoryFilter === 'active_today') {
         if (r.status !== 'approved' || !(r.startDate <= todayStr && todayStr <= r.endDate)) return false;
@@ -1035,6 +1106,13 @@ export const TimeOffView = memo(function TimeOffView({
                   const isArchived = r.isArchivedToBigQuery || r.endDate < thirtyDaysAgoStr;
                   const isAdvanceBooking = r.status === 'approved' && !isPast && r.startDate > horizonLimitDateStr;
 
+                  const coverAssignment = getCoverForRequest(r);
+                  const coverPersonnelName =
+                    coverAssignment?.temporaryDriverName ||
+                    coverAssignment?.temporaryAttendantName ||
+                    r.coverageDriverName;
+                  const hasCover = Boolean(coverAssignment || (r.coverageAssigned && coverPersonnelName));
+
                   const canCancel =
                     !isArchived &&
                     r.status === 'pending' &&
@@ -1178,10 +1256,10 @@ export const TimeOffView = memo(function TimeOffView({
                                 <Calendar className="w-2.5 h-2.5 mr-1" />
                                 Advance Booking
                               </span>
-                            ) : r.coverageAssigned ? (
+                            ) : hasCover || r.coverageAssigned ? (
                               <span
                                 className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20"
-                                title="Replacement coverage has been assigned"
+                                title={coverPersonnelName ? `Covered by ${coverPersonnelName}` : 'Replacement coverage has been assigned'}
                               >
                                 <UserCheck className="w-2.5 h-2.5 mr-1" />
                                 Covered
@@ -1272,41 +1350,48 @@ export const TimeOffView = memo(function TimeOffView({
                               <span className="text-[11px] text-slate-500 italic px-2 py-0.5 bg-slate-800/60 rounded-md border border-slate-700/40">
                                 Past Absence
                               </span>
-                            ) : isAdvanceBooking ? (
-                              <div className="flex items-center space-x-1.5">
-                                <span
-                                  className="text-[11px] text-slate-400 italic px-2 py-0.5 bg-slate-800/60 rounded-md border border-slate-700/40"
-                                  title={`Coverage scheduling window opens on ${addDaysToDateString(r.startDate, -30)} (30 days prior)`}
-                                >
-                                  Opens {addDaysToDateString(r.startDate, -30)}
-                                </span>
-                                <button
-                                  onClick={() => handleAssignCoverage(r)}
-                                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition border border-slate-700"
-                                  title="Pre-assign early if replacement driver is already determined"
-                                >
-                                  Pre-assign
-                                </button>
-                              </div>
                             ) : (
-                              <>
-                                <button
-                                  onClick={() => handleAssignCoverage(r)}
-                                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs rounded-lg flex items-center space-x-1 transition shadow-sm"
-                                  title="Manually assign replacement driver / attendant / vehicle"
-                                >
-                                  <UserCheck className="w-3.5 h-3.5" />
-                                  <span>Assign Cover</span>
-                                </button>
-                                <button
-                                  onClick={() => handlePostRouteOpening(r)}
-                                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs rounded-lg flex items-center space-x-1 transition shadow-sm"
-                                  title="Publish Route Opening & Coverage Bulletin to Bidding Board"
-                                >
-                                  <Radio className="w-3.5 h-3.5" />
-                                  <span>Post Opening</span>
-                                </button>
-                              </>
+                              <div className="flex items-center space-x-1.5 justify-end">
+                                {hasCover ? (
+                                  <div className="flex items-center space-x-1.5 bg-blue-500/10 border border-blue-500/25 px-2.5 py-1 rounded-lg text-xs">
+                                    <UserCheck className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                                    <span
+                                      className="font-medium text-blue-200 max-w-[130px] truncate"
+                                      title={`Assigned Cover: ${coverPersonnelName}`}
+                                    >
+                                      {coverPersonnelName}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteCoverage(r, coverAssignment)}
+                                      disabled={deletingCoverageId === r.id}
+                                      className="p-0.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 rounded transition ml-1 cursor-pointer disabled:opacity-50"
+                                      title="Remove substitute driver (allows re-assigning)"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => handleAssignCoverage(r)}
+                                      className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs rounded-lg flex items-center space-x-1 transition shadow-sm cursor-pointer"
+                                      title="Manually assign replacement driver / attendant / vehicle"
+                                    >
+                                      <UserCheck className="w-3.5 h-3.5" />
+                                      <span>Assign Cover</span>
+                                    </button>
+                                    <button
+                                      onClick={() => handlePostRouteOpening(r)}
+                                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs rounded-lg flex items-center space-x-1 transition shadow-sm cursor-pointer"
+                                      title="Publish Route Opening & Coverage Bulletin to Bidding Board"
+                                    >
+                                      <Radio className="w-3.5 h-3.5" />
+                                      <span>Post Opening</span>
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             )
                           )}
 
@@ -1428,19 +1513,27 @@ export const TimeOffView = memo(function TimeOffView({
                 handlePostRouteOpening(activeTimeOffForCoverage);
               }
             }}
-            onSaved={async () => {
+            onSaved={async (created?: TemporaryAssignment) => {
               if (activeTimeOffForCoverage?.id) {
                 try {
+                  const driverName =
+                    created?.temporaryDriverName ||
+                    created?.temporaryAttendantName ||
+                    '';
+                  const driverId =
+                    created?.temporaryDriverId ||
+                    created?.temporaryAttendantId ||
+                    '';
                   await TimeOffService.updateTimeOffRequest(activeTimeOffForCoverage.id, {
                     coverageAssigned: true,
-                    coverageAssignedAt: new Date().toISOString()
+                    coverageAssignedAt: new Date().toISOString(),
+                    coverageDriverName: driverName,
+                    coverageDriverId: driverId,
+                    temporaryAssignmentId: created?.id || ''
                   });
                 } catch (e) {
                   console.error('Failed to mark time off as coverage assigned', e);
                 }
-              }
-              if (onNavigateToTemporaryAssignments) {
-                onNavigateToTemporaryAssignments();
               }
             }}
           />
@@ -1469,9 +1562,6 @@ export const TimeOffView = memo(function TimeOffView({
                 } catch (e) {
                   console.error('Failed to mark time off as coverage assigned', e);
                 }
-              }
-              if (onNavigateToTemporaryAssignments) {
-                onNavigateToTemporaryAssignments();
               }
             }}
           />

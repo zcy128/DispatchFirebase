@@ -15,9 +15,25 @@ import {
   Sparkles,
   Home,
   Navigation,
-  Zap
+  Zap,
+  CalendarClock,
+  History,
+  ArrowRight,
+  Megaphone,
+  Loader2,
+  Plus
 } from 'lucide-react';
 import { AssignmentHistoryService } from '../../services/assignmentHistoryService';
+import { DispatchService } from '../../services/dispatchService';
+import { RouteOpeningService, getTodayLocalDateStr } from '../../services/routeOpeningService';
+import { TemporaryAssignment } from '../../types/dispatch';
+import { RouteOpening } from '../../types/routeOpening';
+import { AssignmentHistoryRecord } from '../../types/assignmentHistory';
+import { buildRouteScheduleSummary } from '../../utils/routeAssignmentScheduleUtils';
+import {
+  sortVehiclesByAssignmentPriority,
+  sortCandidatesByAssignmentPriority,
+} from '../../utils/assignmentPriorityUtils';
 import { RouteAuditService } from '../../services/routeAuditService';
 import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../contexts/I18nContext';
@@ -59,6 +75,40 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
   const { currentUser } = useAuth();
   const { t, isFrench } = useI18n();
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'assign' | 'scheduled'>('assign');
+
+  // Schedule & active/upcoming assignments state
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [temporaryAssignments, setTemporaryAssignments] = useState<TemporaryAssignment[]>([]);
+  const [routeOpenings, setRouteOpenings] = useState<RouteOpening[]>([]);
+  const [recentHistory, setRecentHistory] = useState<AssignmentHistoryRecord[]>([]);
+
+  // Inline schedule / publish position state inside Scheduled tab
+  const [scheduledActionMode, setScheduledActionMode] = useState<'none' | 'schedule_assign' | 'publish_opening'>('none');
+  const [actionSubmitting, setActionSubmitting] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Schedule future assignment form state
+  const [planKind, setPlanKind] = useState<'permanent' | 'temporary'>('permanent');
+  const [planStartDate, setPlanStartDate] = useState('');
+  const [planEndDate, setPlanEndDate] = useState('');
+  const [planShiftType, setPlanShiftType] = useState('ALL');
+  const [planDriverId, setPlanDriverId] = useState('');
+  const [planAttendantId, setPlanAttendantId] = useState('');
+  const [planUnitNumber, setPlanUnitNumber] = useState('');
+  const [planAutoFilledNote, setPlanAutoFilledNote] = useState<string | null>(null);
+  const [planReason, setPlanReason] = useState('Scheduled Replacement');
+  const [planNotes, setPlanNotes] = useState('');
+
+  // Publish open position form state
+  const [publishPostingType, setPublishPostingType] = useState<'permanent' | 'temporary'>('permanent');
+  const [publishRoleNeeded, setPublishRoleNeeded] = useState<'driver' | 'attendant' | 'driver_and_attendant'>('driver');
+  const [publishShiftType, setPublishShiftType] = useState('ALL');
+  const [publishStartDate, setPublishStartDate] = useState('');
+  const [publishEndDate, setPublishEndDate] = useState('');
+  const [publishDeadline, setPublishDeadline] = useState('');
+  const [publishDescription, setPublishDescription] = useState('');
+  const [publishPostToChat, setPublishPostToChat] = useState(true);
 
   // Route-level standing crew
   const [selectedDriverId, setSelectedDriverId] = useState('');
@@ -94,12 +144,78 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
   // Load full shifts with stops for deadhead calculation
   const [loadedShifts, setLoadedShifts] = useState<BusRouteShift[]>([]);
 
+  const loadScheduleData = React.useCallback(async () => {
+    if (!route?.id) return;
+    setScheduleLoading(true);
+    try {
+      const [taRes, roRes, histRes] = await Promise.allSettled([
+        DispatchService.listTemporaryAssignments(),
+        RouteOpeningService.listOpenings(),
+        AssignmentHistoryService.listHistory({
+          routeNo: route.routeNo,
+          timeRange: '1year',
+        }),
+      ]);
+      setTemporaryAssignments(
+        taRes.status === 'fulfilled' && Array.isArray(taRes.value) ? taRes.value : []
+      );
+      setRouteOpenings(
+        roRes.status === 'fulfilled' && Array.isArray(roRes.value) ? roRes.value : []
+      );
+      const rawHist =
+        histRes.status === 'fulfilled' && Array.isArray(histRes.value) ? histRes.value : [];
+      const filteredHist = rawHist
+        .filter(
+          (h) =>
+            (h.routeId && h.routeId === route.id) ||
+            (h.routeNo && h.routeNo.toLowerCase() === (route.routeNo || '').toLowerCase())
+        )
+        .slice(0, 6);
+      setRecentHistory(filteredHist);
+    } finally {
+      setScheduleLoading(false);
+    }
+  }, [route?.id, route?.routeNo]);
+
   useEffect(() => {
     if (!isOpen || !route?.id) {
       setLoadedShifts([]);
+      setTemporaryAssignments([]);
+      setRouteOpenings([]);
+      setRecentHistory([]);
       return;
     }
+    setActiveTab('assign');
+    setScheduledActionMode('none');
+    setActionFeedback(null);
+
+    const todayStr = getTodayLocalDateStr();
+    const nextWeekDate = new Date();
+    nextWeekDate.setDate(nextWeekDate.getDate() + 7);
+    const nextWeekStr = `${nextWeekDate.getFullYear()}-${String(nextWeekDate.getMonth() + 1).padStart(2, '0')}-${String(nextWeekDate.getDate()).padStart(2, '0')}`;
+    setPlanKind('permanent');
+    setPlanStartDate(todayStr);
+    setPlanEndDate(todayStr);
+    setPlanShiftType('ALL');
+    setPlanDriverId('');
+    setPlanAttendantId('');
+    setPlanUnitNumber('');
+    setPlanAutoFilledNote(null);
+    setPlanReason('Scheduled Replacement');
+    setPlanNotes('');
+
+    setPublishPostingType('permanent');
+    setPublishRoleNeeded('driver');
+    setPublishShiftType('ALL');
+    setPublishStartDate(todayStr);
+    setPublishEndDate(todayStr);
+    setPublishDeadline(`${nextWeekStr}T17:00`);
+    setPublishDescription('');
+    setPublishPostToChat(true);
+
     let isCancelled = false;
+    setScheduleLoading(true);
+
     RouteService.getShiftsForRoute(route.id)
       .then((shifts) => {
         if (!isCancelled) {
@@ -109,10 +225,61 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
       .catch((err) => {
         console.warn('Failed to load shifts for deadhead calculation:', err);
       });
+
+    Promise.allSettled([
+      DispatchService.listTemporaryAssignments(),
+      RouteOpeningService.listOpenings(),
+      AssignmentHistoryService.listHistory({
+        routeNo: route.routeNo,
+        timeRange: '1year',
+      }),
+    ])
+      .then(([taRes, roRes, histRes]) => {
+        if (isCancelled) return;
+        setTemporaryAssignments(
+          taRes.status === 'fulfilled' && Array.isArray(taRes.value) ? taRes.value : []
+        );
+        setRouteOpenings(
+          roRes.status === 'fulfilled' && Array.isArray(roRes.value) ? roRes.value : []
+        );
+        const rawHist =
+          histRes.status === 'fulfilled' && Array.isArray(histRes.value) ? histRes.value : [];
+        const filteredHist = rawHist
+          .filter(
+            (h) =>
+              (h.routeId && h.routeId === route.id) ||
+              (h.routeNo && h.routeNo.toLowerCase() === (route.routeNo || '').toLowerCase())
+          )
+          .slice(0, 6);
+        setRecentHistory(filteredHist);
+      })
+      .finally(() => {
+        if (!isCancelled) setScheduleLoading(false);
+      });
+
     return () => {
       isCancelled = true;
     };
-  }, [isOpen, route?.id]);
+  }, [isOpen, route?.id, route?.routeNo]);
+
+  const scheduleSummary = React.useMemo(() => {
+    if (!route) {
+      return {
+        temporaryCovers: [],
+        scheduledOpenings: [],
+        shiftOverrides: [],
+        upcomingAndActiveCount: 0,
+      };
+    }
+    return buildRouteScheduleSummary({
+      route,
+      shifts: loadedShifts,
+      temporaryAssignments,
+      routeOpenings,
+      todayStr: getTodayLocalDateStr(),
+      isFrench,
+    });
+  }, [route, loadedShifts, temporaryAssignments, routeOpenings, isFrench]);
 
   // Extract reference stops for deadhead calculation (prefer AM shift as morning pull-out)
   const routeReferenceStops = React.useMemo(() => {
@@ -124,24 +291,6 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
     const anyShiftWithStops = loadedShifts.find((s) => s.stops && s.stops.length > 0);
     return anyShiftWithStops && anyShiftWithStops.stops ? anyShiftWithStops.stops : [];
   }, [loadedShifts]);
-
-  // Ranked drivers sorted by deadhead distance
-  const rankedDrivers = React.useMemo(() => {
-    if (!isOpen) return [];
-    if (routeReferenceStops.length === 0 || !sortByDeadhead) {
-      return driversList.map((d) => ({
-        employee: d,
-        deadhead: calculateDriverDeadhead(d, routeReferenceStops)
-      }));
-    }
-    return sortDriversByDeadhead(driversList, routeReferenceStops);
-  }, [isOpen, driversList, routeReferenceStops, sortByDeadhead]);
-
-  // Active vehicles sorted by unit number
-  const activeVehicles = React.useMemo(() => {
-    const list = Array.isArray(vehicles) ? vehicles : [];
-    return [...list].sort((a, b) => a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true }));
-  }, [vehicles]);
 
   // Helper to determine route assignments for any employee across all routes
   const getEmployeeAssignments = React.useCallback(
@@ -235,6 +384,27 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
     },
     [getEmployeeAssignments]
   );
+
+  // Ranked drivers prioritizing: Current Route -> Available (Unassigned) -> Other Routes, then by deadhead/name
+  const rankedDrivers = React.useMemo(() => {
+    if (!isOpen) return [];
+    let list: { employee: Employee; deadhead: any }[];
+    if (routeReferenceStops.length === 0 || !sortByDeadhead) {
+      list = driversList.map((d) => ({
+        employee: d,
+        deadhead: calculateDriverDeadhead(d, routeReferenceStops)
+      }));
+    } else {
+      list = sortDriversByDeadhead(driversList, routeReferenceStops);
+    }
+    return sortCandidatesByAssignmentPriority(list, getEmployeeAssignments);
+  }, [isOpen, driversList, routeReferenceStops, sortByDeadhead, getEmployeeAssignments]);
+
+  // Vehicles prioritized: Current Route -> Available (Unassigned) -> Other Routes
+  const prioritizedVehicles = React.useMemo(() => {
+    const list = Array.isArray(vehicles) ? vehicles : [];
+    return sortVehiclesByAssignmentPriority(list, allRoutes, route);
+  }, [vehicles, allRoutes, route]);
 
   // Helper to find regular vehicle for a driver
   const findRegularVehicleForDriver = (driverIdStr: string): Vehicle | undefined => {
@@ -368,14 +538,17 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
   }, [selectedAttendantEmp, getEmployeeAssignments]);
 
   const rankedAttendants = React.useMemo(() => {
+    let list: { employee: Employee; deadhead: any }[];
     if (routeReferenceStops.length === 0 || !sortByDeadhead) {
-      return attendantsList.map((a) => ({
+      list = attendantsList.map((a) => ({
         employee: a,
         deadhead: calculateAttendantDeadhead(a, selectedDriverEmp || null, routeReferenceStops)
       }));
+    } else {
+      list = sortAttendantsByDeadhead(attendantsList, selectedDriverEmp || null, routeReferenceStops);
     }
-    return sortAttendantsByDeadhead(attendantsList, selectedDriverEmp || null, routeReferenceStops);
-  }, [attendantsList, selectedDriverEmp, routeReferenceStops, sortByDeadhead]);
+    return sortCandidatesByAssignmentPriority(list, getEmployeeAssignments);
+  }, [attendantsList, selectedDriverEmp, routeReferenceStops, sortByDeadhead, getEmployeeAssignments]);
 
   const selectedDriverDeadhead = React.useMemo(() => {
     if (!selectedDriverEmp || routeReferenceStops.length === 0) return null;
@@ -498,30 +671,50 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
   ]);
 
   const vehicleSelectOptions = React.useMemo<SearchableSelectOption[]>(() => {
-    return activeVehicles.map((v) => ({
-      value: v.unitNumber,
-      label: `Unit #${v.unitNumber} - ${v.manufacturer} ${v.model} (${v.seatCap} Seats, ${v.fuelType})`,
-      subtext: [
-        v.plateNumber ? `Plate: ${v.plateNumber}` : '',
-        v.yardName || '',
-        v.driverName ? `Driver: ${v.driverName}` : '',
-      ]
-        .filter(Boolean)
-        .join(' • '),
-      searchText: [
-        v.unitNumber,
-        v.plateNumber,
-        v.manufacturer,
-        v.model,
-        v.fuelType,
-        v.yardName,
-        v.driverName,
-        String(v.seatCap || ''),
-      ]
-        .filter(Boolean)
-        .join(' '),
-    }));
-  }, [activeVehicles]);
+    return prioritizedVehicles.map(({ vehicle: v, info }) => {
+      const isAvailable = !info.isAssigned;
+      const isCurrent = info.isCurrentRoute;
+      const assignmentNote = isCurrent
+        ? (isFrench ? '★ Affecté à cette route' : '★ Assigned to this route')
+        : isAvailable
+        ? (isFrench ? 'Disponible — Non affecté' : 'Available — Unassigned')
+        : (isFrench ? `Occupé — ${info.statusTag}` : `In Use — ${info.statusTag}`);
+
+      return {
+        value: v.unitNumber,
+        label: `Unit #${v.unitNumber} - ${v.manufacturer} ${v.model} (${v.seatCap} Seats, ${v.fuelType})`,
+        badgeText: info.statusTag !== '[Available]' ? info.statusTag : (isFrench ? '[Disponible]' : '[Available]'),
+        badgeClassName: isCurrent
+          ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+          : isAvailable
+          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+          : 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+        subtext: [
+          assignmentNote,
+          v.plateNumber ? `Plate: ${v.plateNumber}` : '',
+          v.yardName || '',
+          v.driverName ? `Driver: ${v.driverName}` : '',
+        ]
+          .filter(Boolean)
+          .join(' • '),
+        isHighlighted: isAvailable || isCurrent,
+        searchText: [
+          v.unitNumber,
+          v.plateNumber,
+          v.manufacturer,
+          v.model,
+          v.fuelType,
+          v.yardName,
+          v.driverName,
+          info.statusTag,
+          assignmentNote,
+          String(v.seatCap || ''),
+        ]
+          .filter(Boolean)
+          .join(' '),
+      };
+    });
+  }, [prioritizedVehicles, isFrench]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -687,6 +880,230 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
     }
   };
 
+  const resolveEmployeeBySelection = (idStr: string): Employee | undefined => {
+    if (!idStr) return undefined;
+    const clean = idStr.replace(/^EMP-/, '');
+    return employees.find(
+      (e) => e.id === idStr || e.employeeNumber === idStr || e.employeeNumber === clean
+    );
+  };
+
+  const handlePlanDriverChange = (driverIdStr: string) => {
+    setPlanDriverId(driverIdStr);
+    if (!driverIdStr) {
+      setPlanAutoFilledNote(null);
+      return;
+    }
+    const regVeh = findRegularVehicleForDriver(driverIdStr);
+    if (regVeh) {
+      setPlanUnitNumber(regVeh.unitNumber);
+      setPlanAutoFilledNote(
+        isFrench
+          ? `Autobus régulier du chauffeur : Unit #${regVeh.unitNumber}`
+          : `Auto-filled Driver's Regular Bus: Unit #${regVeh.unitNumber}`
+      );
+    } else {
+      setPlanAutoFilledNote(null);
+    }
+  };
+
+  const handleCreateScheduledAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!route) return;
+    if (!planStartDate) {
+      setActionFeedback({
+        type: 'error',
+        text: isFrench ? 'Veuillez sélectionner une date de début.' : 'Please select an effective start date.',
+      });
+      return;
+    }
+    if (!planDriverId && !planAttendantId && !planUnitNumber) {
+      setActionFeedback({
+        type: 'error',
+        text: isFrench
+          ? 'Veuillez sélectionner au moins un chauffeur, accompagnateur ou véhicule.'
+          : 'Please select at least a driver, attendant, or vehicle.',
+      });
+      return;
+    }
+
+    setActionSubmitting(true);
+    setActionFeedback(null);
+    const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
+
+    try {
+      const driverEmp = resolveEmployeeBySelection(planDriverId);
+      const attendantEmp = resolveEmployeeBySelection(planAttendantId);
+      const vehObj = planUnitNumber ? vehicles.find((v) => v.unitNumber === planUnitNumber) : undefined;
+
+      if (planKind === 'temporary') {
+        const endDate = planEndDate && planEndDate >= planStartDate ? planEndDate : planStartDate;
+        await DispatchService.createTemporaryAssignment({
+          routeId: route.id,
+          routeNo: route.routeNo,
+          routeName: route.routeName,
+          shiftType: planShiftType || 'ALL',
+          startDate: planStartDate,
+          endDate,
+          originalDriverId: driverEmp ? route.driverId : undefined,
+          originalDriverName: driverEmp ? route.driverName : undefined,
+          temporaryDriverId: driverEmp ? driverEmp.id : planDriverId || undefined,
+          temporaryDriverName: driverEmp ? driverEmp.fullName : undefined,
+          temporaryDriverPhone: driverEmp ? (driverEmp.mobilePhone || driverEmp.workPhonePhone) : undefined,
+          originalAttendantId: attendantEmp ? route.attendantId : undefined,
+          originalAttendantName: attendantEmp ? route.attendantName : undefined,
+          temporaryAttendantId: attendantEmp ? attendantEmp.id : planAttendantId || undefined,
+          temporaryAttendantName: attendantEmp ? attendantEmp.fullName : undefined,
+          temporaryAttendantPhone: attendantEmp ? (attendantEmp.mobilePhone || attendantEmp.workPhonePhone) : undefined,
+          temporaryVehicleId: vehObj ? vehObj.vehicleId : undefined,
+          temporaryUnitNumber: vehObj ? vehObj.unitNumber : planUnitNumber || undefined,
+          temporaryPlateNumber: vehObj ? vehObj.plateNumber : undefined,
+          reason: planReason.trim() || 'Scheduled Replacement',
+          notes: planNotes.trim() || undefined,
+          createdBy: actorName,
+        });
+      } else {
+        const roleNeeded =
+          driverEmp && attendantEmp
+            ? 'driver_and_attendant'
+            : attendantEmp
+            ? 'attendant'
+            : 'driver';
+        const created = await RouteOpeningService.createOpening({
+          routeId: route.id,
+          routeNo: route.routeNo,
+          routeName: route.routeName,
+          yardId: route.yardId,
+          yardName: route.yardName,
+          schoolBoardCode: route.schoolBoardCode,
+          postingType: 'permanent',
+          roleNeeded,
+          effectiveStartDate: planStartDate,
+          shiftType: planShiftType || 'ALL',
+          deadline: `${planStartDate}T17:00`,
+          description: planNotes.trim() || `Scheduled permanent assignment effective ${planStartDate}`,
+          createdBy: actorName,
+          postToChat: false,
+        });
+
+        const awardedOpening: RouteOpening = {
+          ...created,
+          status: 'awarded',
+          awardedDriverId: driverEmp ? driverEmp.id : undefined,
+          awardedDriverName: driverEmp ? driverEmp.fullName : undefined,
+          awardedDriverPhone: driverEmp ? (driverEmp.mobilePhone || driverEmp.workPhonePhone) : undefined,
+          awardedAttendantId: attendantEmp ? attendantEmp.id : undefined,
+          awardedAttendantName: attendantEmp ? attendantEmp.fullName : undefined,
+          awardedAttendantPhone: attendantEmp ? (attendantEmp.mobilePhone || attendantEmp.workPhonePhone) : undefined,
+          awardedVehicleId: vehObj ? vehObj.vehicleId : undefined,
+          awardedUnitNumber: vehObj ? vehObj.unitNumber : planUnitNumber || undefined,
+          awardedPlateNumber: vehObj ? vehObj.plateNumber : undefined,
+          awardedAt: new Date().toISOString(),
+          awardedBy: actorName,
+          awardedNotes: planNotes.trim() || undefined,
+          crewAppliedToRoute: false,
+        };
+
+        await RouteOpeningService.updateOpening(created.id, {
+          status: 'awarded',
+          awardedDriverId: awardedOpening.awardedDriverId,
+          awardedDriverName: awardedOpening.awardedDriverName,
+          awardedDriverPhone: awardedOpening.awardedDriverPhone,
+          awardedAttendantId: awardedOpening.awardedAttendantId,
+          awardedAttendantName: awardedOpening.awardedAttendantName,
+          awardedAttendantPhone: awardedOpening.awardedAttendantPhone,
+          awardedVehicleId: awardedOpening.awardedVehicleId,
+          awardedUnitNumber: awardedOpening.awardedUnitNumber,
+          awardedPlateNumber: awardedOpening.awardedPlateNumber,
+          awardedAt: awardedOpening.awardedAt,
+          awardedBy: actorName,
+          awardedNotes: awardedOpening.awardedNotes,
+          crewAppliedToRoute: false,
+        });
+
+        const todayStr = getTodayLocalDateStr();
+        if (planStartDate <= todayStr) {
+          await RouteOpeningService.applyPermanentOpeningCrewToRoute(awardedOpening);
+        } else {
+          await RouteOpeningService.applyPermanentOpeningToFutureDispatches(awardedOpening);
+        }
+      }
+
+      await loadScheduleData();
+      setScheduledActionMode('none');
+      setPlanDriverId('');
+      setPlanAttendantId('');
+      setPlanUnitNumber('');
+      setPlanAutoFilledNote(null);
+      setPlanNotes('');
+      setActionFeedback({
+        type: 'success',
+        text: isFrench ? 'Affectation planifiée enregistrée.' : 'Scheduled assignment saved.',
+      });
+    } catch (err: any) {
+      setActionFeedback({
+        type: 'error',
+        text: err?.message || 'Failed to save scheduled assignment',
+      });
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
+  const handlePublishPosition = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!route) return;
+    if (!publishStartDate || !publishDeadline) {
+      setActionFeedback({
+        type: 'error',
+        text: isFrench
+          ? 'Veuillez saisir la date de début et la date limite.'
+          : 'Please enter the effective start date and application deadline.',
+      });
+      return;
+    }
+
+    setActionSubmitting(true);
+    setActionFeedback(null);
+    const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
+
+    try {
+      await RouteOpeningService.createOpening({
+        routeId: route.id,
+        routeNo: route.routeNo,
+        routeName: route.routeName,
+        yardId: route.yardId,
+        yardName: route.yardName,
+        schoolBoardCode: route.schoolBoardCode,
+        postingType: publishPostingType,
+        roleNeeded: publishRoleNeeded,
+        effectiveStartDate: publishStartDate,
+        effectiveEndDate:
+          publishPostingType === 'temporary' && publishEndDate ? publishEndDate : undefined,
+        shiftType: publishShiftType || 'ALL',
+        deadline: publishDeadline,
+        description: publishDescription.trim() || undefined,
+        createdBy: actorName,
+        postToChat: publishPostToChat,
+      });
+
+      await loadScheduleData();
+      setScheduledActionMode('none');
+      setPublishDescription('');
+      setActionFeedback({
+        type: 'success',
+        text: isFrench ? 'Poste publié avec succès.' : 'Position published successfully.',
+      });
+    } catch (err: any) {
+      setActionFeedback({
+        type: 'error',
+        text: err?.message || 'Failed to publish position',
+      });
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
   if (!isOpen || !route) return null;
 
   return (
@@ -717,7 +1134,827 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
           </button>
         </div>
 
-        {/* Form Body */}
+        {/* Tabs */}
+        <div className="px-4 sm:px-6 border-b border-slate-800 bg-slate-900/95 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('assign')}
+            className={`px-3.5 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-1.5 ${
+              activeTab === 'assign'
+                ? 'border-amber-400 text-amber-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>{isFrench ? 'Affecter équipage & véhicule' : 'Assign Crew & Vehicle'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('scheduled')}
+            className={`px-3.5 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-1.5 ${
+              activeTab === 'scheduled'
+                ? 'border-amber-400 text-amber-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <CalendarClock className="w-3.5 h-3.5" />
+            <span>{isFrench ? 'Affectations actives & planifiées' : 'Active & Scheduled'}</span>
+            {scheduleSummary.upcomingAndActiveCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                {scheduleSummary.upcomingAndActiveCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === 'scheduled' ? (
+          <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            {/* Quick Action Bar: Schedule Future Assignment or Publish Position */}
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/60 border border-slate-800/80 rounded-2xl px-4 py-3">
+              <div className="text-xs text-slate-300">
+                {isFrench
+                  ? 'Planifier un changement futur ou publier un poste ouvert pour cette route'
+                  : 'Plan a future crew change or publish an open position for this route'}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionFeedback(null);
+                    setScheduledActionMode((prev) =>
+                      prev === 'schedule_assign' ? 'none' : 'schedule_assign'
+                    );
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition border ${
+                    scheduledActionMode === 'schedule_assign'
+                      ? 'bg-amber-500 text-slate-950 border-amber-400'
+                      : 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isFrench ? 'Planifier une affectation' : 'Schedule Assignment'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionFeedback(null);
+                    setScheduledActionMode((prev) =>
+                      prev === 'publish_opening' ? 'none' : 'publish_opening'
+                    );
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition border ${
+                    scheduledActionMode === 'publish_opening'
+                      ? 'bg-indigo-500 text-white border-indigo-400'
+                      : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/25'
+                  }`}
+                >
+                  <Megaphone className="w-3.5 h-3.5" />
+                  <span>{isFrench ? 'Publier le poste' : 'Publish Position'}</span>
+                </button>
+              </div>
+            </div>
+
+            {actionFeedback && (
+              <div
+                className={`px-4 py-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                  actionFeedback.type === 'success'
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                    : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
+                }`}
+              >
+                <span>{actionFeedback.text}</span>
+                <button
+                  type="button"
+                  onClick={() => setActionFeedback(null)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Inline Form 1: Schedule Future Assignment */}
+            {scheduledActionMode === 'schedule_assign' && (
+              <form
+                onSubmit={handleCreateScheduledAssignment}
+                className="bg-slate-950/80 border border-amber-500/40 rounded-2xl p-5 space-y-4"
+              >
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                  <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <CalendarClock className="w-4 h-4" />
+                    <span>{isFrench ? 'Nouvelle affectation planifiée' : 'New Scheduled Assignment'}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setScheduledActionMode('none')}
+                    className="text-slate-400 hover:text-white text-xs"
+                  >
+                    {isFrench ? 'Annuler' : 'Cancel'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      {isFrench ? 'Type' : 'Assignment Type'}
+                    </label>
+                    <select
+                      value={planKind}
+                      onChange={(e) => setPlanKind(e.target.value as 'permanent' | 'temporary')}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      <option value="permanent">
+                        {isFrench ? 'Permanent (À partir du...)' : 'Permanent (Effective Date)'}
+                      </option>
+                      <option value="temporary">
+                        {isFrench ? 'Remplacement temporaire' : 'Temporary Coverage'}
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      {planKind === 'permanent'
+                        ? isFrench ? 'Date d\'entrée en vigueur *' : 'Effective Start Date *'
+                        : isFrench ? 'Date de début *' : 'Start Date *'}
+                    </label>
+                    <input
+                      type="date"
+                      value={planStartDate}
+                      onChange={(e) => setPlanStartDate(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+
+                  {planKind === 'temporary' ? (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        {isFrench ? 'Date de fin' : 'End Date'}
+                      </label>
+                      <input
+                        type="date"
+                        value={planEndDate}
+                        min={planStartDate}
+                        onChange={(e) => setPlanEndDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        {isFrench ? 'Quart' : 'Shift'}
+                      </label>
+                      <select
+                        value={planShiftType}
+                        onChange={(e) => setPlanShiftType(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      >
+                        <option value="ALL">ALL</option>
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                        <option value="Midday">Midday</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      {isFrench ? 'Chauffeur' : 'Driver'}
+                    </label>
+                    <SearchableSelect
+                      variant="dark"
+                      compact
+                      value={planDriverId}
+                      onChange={handlePlanDriverChange}
+                      options={driverSelectOptions}
+                      emptyOptionLabel={isFrench ? '-- Aucun changement --' : '-- No Driver Change --'}
+                      searchPlaceholder={isFrench ? 'Rechercher chauffeur...' : 'Search driver...'}
+                      noResultsText={isFrench ? 'Aucun chauffeur trouvé' : 'No matching drivers'}
+                      accentColor="amber"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      {isFrench ? 'Véhicule' : 'Vehicle'}
+                    </label>
+                    <SearchableSelect
+                      variant="dark"
+                      compact
+                      value={planUnitNumber}
+                      onChange={(val) => {
+                        setPlanUnitNumber(val);
+                        setPlanAutoFilledNote(null);
+                      }}
+                      options={vehicleSelectOptions}
+                      emptyOptionLabel={isFrench ? '-- Aucun changement --' : '-- No Vehicle Change --'}
+                      searchPlaceholder={isFrench ? 'Rechercher unité #...' : 'Search unit #...'}
+                      noResultsText={isFrench ? 'Aucun véhicule trouvé' : 'No matching vehicles'}
+                      accentColor="amber"
+                    />
+                    {planAutoFilledNote && (
+                      <p className="text-[10px] text-emerald-400 mt-1 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 shrink-0" />
+                        <span>{planAutoFilledNote}</span>
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      {isFrench ? 'Accompagnateur' : 'Attendant'}
+                    </label>
+                    <SearchableSelect
+                      variant="dark"
+                      compact
+                      value={planAttendantId}
+                      onChange={setPlanAttendantId}
+                      options={attendantSelectOptions}
+                      emptyOptionLabel={isFrench ? '-- Aucun changement --' : '-- No Attendant Change --'}
+                      searchPlaceholder={isFrench ? 'Rechercher accompagnateur...' : 'Search attendant...'}
+                      noResultsText={isFrench ? 'Aucun accompagnateur trouvé' : 'No matching attendants'}
+                      accentColor="indigo"
+                    />
+                  </div>
+                </div>
+
+                {planKind === 'temporary' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        {isFrench ? 'Quart' : 'Shift'}
+                      </label>
+                      <select
+                        value={planShiftType}
+                        onChange={(e) => setPlanShiftType(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      >
+                        <option value="ALL">ALL</option>
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                        <option value="Midday">Midday</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        {isFrench ? 'Motif' : 'Reason'}
+                      </label>
+                      <input
+                        type="text"
+                        value={planReason}
+                        onChange={(e) => setPlanReason(e.target.value)}
+                        placeholder="Vacation / Medical / Training..."
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    {isFrench ? 'Notes (optionnel)' : 'Notes (Optional)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={planNotes}
+                    onChange={(e) => setPlanNotes(e.target.value)}
+                    placeholder={isFrench ? 'Détails supplémentaires...' : 'Additional schedule notes...'}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setScheduledActionMode('none')}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800"
+                  >
+                    {isFrench ? 'Annuler' : 'Cancel'}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionSubmitting}
+                    className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold disabled:opacity-50"
+                  >
+                    {actionSubmitting
+                      ? isFrench ? 'Enregistrement...' : 'Saving...'
+                      : isFrench ? 'Enregistrer la planification' : 'Save Scheduled Assignment'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Inline Form 2: Publish Position (Route Opening) */}
+            {scheduledActionMode === 'publish_opening' && (
+              <form
+                onSubmit={handlePublishPosition}
+                className="bg-slate-950/80 border border-indigo-500/40 rounded-2xl p-5 space-y-4"
+              >
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                  <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Megaphone className="w-4 h-4" />
+                    <span>{isFrench ? 'Publier un poste pour cette route' : 'Publish Position (Route Opening)'}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setScheduledActionMode('none')}
+                    className="text-slate-400 hover:text-white text-xs"
+                  >
+                    {isFrench ? 'Annuler' : 'Cancel'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      {isFrench ? 'Type de poste' : 'Posting Type'}
+                    </label>
+                    <select
+                      value={publishPostingType}
+                      onChange={(e) => setPublishPostingType(e.target.value as 'permanent' | 'temporary')}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    >
+                      <option value="permanent">{isFrench ? 'Permanent' : 'Permanent'}</option>
+                      <option value="temporary">{isFrench ? 'Temporaire' : 'Temporary Coverage'}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      {isFrench ? 'Rôle requis' : 'Role Needed'}
+                    </label>
+                    <select
+                      value={publishRoleNeeded}
+                      onChange={(e) =>
+                        setPublishRoleNeeded(e.target.value as 'driver' | 'attendant' | 'driver_and_attendant')
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    >
+                      <option value="driver">{isFrench ? 'Chauffeur' : 'Driver'}</option>
+                      <option value="attendant">{isFrench ? 'Accompagnateur' : 'Attendant'}</option>
+                      <option value="driver_and_attendant">
+                        {isFrench ? 'Chauffeur & Accompagnateur' : 'Driver & Attendant'}
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      {isFrench ? 'Quart' : 'Shift'}
+                    </label>
+                    <select
+                      value={publishShiftType}
+                      onChange={(e) => setPublishShiftType(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    >
+                      <option value="ALL">ALL</option>
+                      <option value="AM">AM</option>
+                      <option value="PM">PM</option>
+                      <option value="Midday">Midday</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      {isFrench ? 'Date de début *' : 'Effective Start Date *'}
+                    </label>
+                    <input
+                      type="date"
+                      value={publishStartDate}
+                      onChange={(e) => setPublishStartDate(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    />
+                  </div>
+                  {publishPostingType === 'temporary' && (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        {isFrench ? 'Date de fin' : 'Effective End Date'}
+                      </label>
+                      <input
+                        type="date"
+                        value={publishEndDate}
+                        min={publishStartDate}
+                        onChange={(e) => setPublishEndDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      {isFrench ? 'Date limite *' : 'Application Deadline *'}
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={publishDeadline}
+                      onChange={(e) => setPublishDeadline(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    {isFrench ? 'Description / Exigences (optionnel)' : 'Description / Notes (Optional)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={publishDescription}
+                    onChange={(e) => setPublishDescription(e.target.value)}
+                    placeholder={isFrench ? 'Détails du poste...' : 'Route details or requirements...'}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={publishPostToChat}
+                    onChange={(e) => setPublishPostToChat(e.target.checked)}
+                    className="w-4 h-4 rounded text-indigo-500 bg-slate-900 border-slate-700"
+                  />
+                  <span>
+                    {isFrench
+                      ? 'Diffuser l\'annonce dans Fleet Chat'
+                      : 'Broadcast announcement to Fleet Chat'}
+                  </span>
+                </label>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setScheduledActionMode('none')}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800"
+                  >
+                    {isFrench ? 'Annuler' : 'Cancel'}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionSubmitting}
+                    className="px-4 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold disabled:opacity-50"
+                  >
+                    {actionSubmitting
+                      ? isFrench ? 'Publication...' : 'Publishing...'
+                      : isFrench ? 'Publier le poste' : 'Publish Position'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {scheduleLoading && (
+              <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-3">
+                <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                <span>{isFrench ? 'Chargement des affectations planifiées...' : 'Loading active and scheduled assignments...'}</span>
+              </div>
+            )}
+
+            {/* 1. Current Standing Assignment */}
+            <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isFrench ? 'Équipage principal actuel (Fixe)' : 'Current Standing Assignment'}</span>
+                </span>
+                <span className="text-[11px] font-mono text-slate-400">{route.routeNo}</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
+                  <div className="text-[11px] text-slate-400 mb-1 flex items-center gap-1">
+                    <User className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{isFrench ? 'Chauffeur' : 'Driver'}</span>
+                  </div>
+                  <div className="font-semibold text-white">
+                    {route.driverName || <span className="text-slate-500 italic">{isFrench ? 'Non assigné' : 'Unassigned'}</span>}
+                  </div>
+                  {route.driverPhone && <div className="text-[11px] text-slate-400 mt-0.5">{route.driverPhone}</div>}
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
+                  <div className="text-[11px] text-slate-400 mb-1 flex items-center gap-1">
+                    <Bus className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{isFrench ? 'Véhicule' : 'Vehicle'}</span>
+                  </div>
+                  <div className="font-semibold text-white">
+                    {route.unitNumber ? `Unit #${route.unitNumber}` : <span className="text-slate-500 italic">{isFrench ? 'Non assigné' : 'Unassigned'}</span>}
+                  </div>
+                  {route.plateNumber && <div className="text-[11px] text-slate-400 mt-0.5">{route.plateNumber}</div>}
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
+                  <div className="text-[11px] text-slate-400 mb-1 flex items-center gap-1">
+                    <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>{isFrench ? 'Accompagnateur' : 'Attendant'}</span>
+                  </div>
+                  <div className="font-semibold text-white">
+                    {route.attendantName || <span className="text-slate-500 italic">{isFrench ? 'Aucun' : 'None'}</span>}
+                  </div>
+                  {route.attendantPhone && <div className="text-[11px] text-slate-400 mt-0.5">{route.attendantPhone}</div>}
+                </div>
+              </div>
+
+              {scheduleSummary.shiftOverrides.length > 0 && (
+                <div className="pt-2 space-y-2">
+                  <div className="text-[11px] font-semibold text-amber-300 uppercase tracking-wider">
+                    {isFrench ? 'Exceptions par quart (AM / PM)' : 'Shift-Specific Crew Overrides'}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {scheduleSummary.shiftOverrides.map(({ shift }) => (
+                      <div key={shift.shiftId} className="p-2.5 rounded-xl bg-slate-900/70 border border-amber-500/20 text-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 font-mono font-bold text-[10px]">
+                            {shift.shiftType}
+                          </span>
+                          <span className="text-[11px] text-slate-400">{shift.firstStopTime} - {shift.lastStopTime}</span>
+                        </div>
+                        <div className="text-slate-200">
+                          {shift.driverName ? `Driver: ${shift.driverName}` : ''}
+                          {shift.unitNumber ? ` • Unit #${shift.unitNumber}` : ''}
+                          {shift.attendantName ? ` • Att: ${shift.attendantName}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Active & Upcoming Temporary Substitutions */}
+            <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock className="w-4 h-4" />
+                  <span>{isFrench ? 'Remplacements temporaires actifs et à venir' : 'Active & Upcoming Temporary Coverage'}</span>
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {scheduleSummary.temporaryCovers.length}
+                </span>
+              </div>
+
+              {scheduleSummary.temporaryCovers.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">
+                  {isFrench
+                    ? 'Aucun remplacement temporaire actif ou planifié pour cette route.'
+                    : 'No active or upcoming temporary substitutions scheduled for this route.'}
+                </p>
+              ) : (
+                <div className="space-y-2.5">
+                  {scheduleSummary.temporaryCovers.map(({ assignment: ta, phase, dateSummary }) => (
+                    <div
+                      key={ta.id}
+                      className={`p-3.5 rounded-xl border text-xs space-y-2 ${
+                        phase === 'active_now'
+                          ? 'bg-emerald-950/25 border-emerald-500/35'
+                          : 'bg-amber-950/20 border-amber-500/30'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              phase === 'active_now'
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            }`}
+                          >
+                            {phase === 'active_now'
+                              ? (isFrench ? 'En cours' : 'Active Now')
+                              : (isFrench ? 'Planifié' : 'Upcoming')}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 font-mono text-[10px] font-bold">
+                            {ta.shiftType || 'ALL'}
+                          </span>
+                          <span className="text-slate-200 font-semibold">{dateSummary}</span>
+                        </div>
+                        {ta.reason && (
+                          <span className="text-[11px] text-slate-400">{ta.reason}</span>
+                        )}
+                      </div>
+
+                      <div className="space-y-1 text-slate-200">
+                        {(ta.temporaryDriverName || ta.temporaryDriverId) && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <span className="font-semibold text-white">{ta.temporaryDriverName || ta.temporaryDriverId}</span>
+                            {ta.originalDriverName && (
+                              <span className="text-slate-400 flex items-center gap-1">
+                                <ArrowRight className="w-3 h-3" />
+                                <span>{isFrench ? `Remplace ${ta.originalDriverName}` : `Covering for ${ta.originalDriverName}`}</span>
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {(ta.temporaryAttendantName || ta.temporaryAttendantId) && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Shield className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                            <span className="font-semibold text-white">{ta.temporaryAttendantName || ta.temporaryAttendantId}</span>
+                            {ta.originalAttendantName && (
+                              <span className="text-slate-400 flex items-center gap-1">
+                                <ArrowRight className="w-3 h-3" />
+                                <span>{isFrench ? `Remplace ${ta.originalAttendantName}` : `Covering for ${ta.originalAttendantName}`}</span>
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {ta.temporaryUnitNumber && (
+                          <div className="flex items-center gap-1.5 text-slate-300">
+                            <Bus className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                            <span>
+                              {isFrench ? 'Véhicule de remplacement :' : 'Relief Vehicle:'} Unit #{ta.temporaryUnitNumber}
+                              {ta.temporaryPlateNumber ? ` (${ta.temporaryPlateNumber})` : ''}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {ta.notes && (
+                        <div className="text-[11px] text-slate-400 bg-slate-900/70 rounded-lg px-2.5 py-1.5">
+                          {ta.notes}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 3. Scheduled Future Permanent Changes & Open Postings */}
+            <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Megaphone className="w-4 h-4" />
+                  <span>{isFrench ? 'Changements futurs & offres en cours' : 'Scheduled Future Assignments & Open Postings'}</span>
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {scheduleSummary.scheduledOpenings.length}
+                </span>
+              </div>
+
+              {scheduleSummary.scheduledOpenings.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">
+                  {isFrench
+                    ? 'Aucun changement futur planifié ni offre ouverte pour cette route.'
+                    : 'No future permanent assignments or open postings for this route.'}
+                </p>
+              ) : (
+                <div className="space-y-2.5">
+                  {scheduleSummary.scheduledOpenings.map(({ opening, kind }) => (
+                    <div
+                      key={opening.id}
+                      className={`p-3.5 rounded-xl border text-xs space-y-2 ${
+                        kind === 'scheduled_permanent'
+                          ? 'bg-indigo-950/25 border-indigo-500/35'
+                          : kind === 'scheduled_temporary'
+                          ? 'bg-sky-950/25 border-sky-500/35'
+                          : 'bg-slate-900/80 border-slate-700'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              kind === 'scheduled_permanent'
+                                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                                : kind === 'scheduled_temporary'
+                                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            }`}
+                          >
+                            {kind === 'scheduled_permanent'
+                              ? (isFrench ? 'Permanent planifié' : 'Scheduled Permanent')
+                              : kind === 'scheduled_temporary'
+                              ? (isFrench ? 'Temporaire attribué' : 'Awarded Temporary')
+                              : (isFrench ? (opening.status === 'reviewing' ? 'En révision' : 'Offre ouverte') : (opening.status === 'reviewing' ? 'Reviewing' : 'Open Posting'))}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 font-mono text-[10px] font-bold">
+                            {opening.shiftType || 'ALL'}
+                          </span>
+                          <span className="font-semibold text-white">
+                            {isFrench ? 'À compter du' : 'Effective:'} {opening.effectiveStartDate}
+                            {opening.effectiveEndDate ? ` -> ${opening.effectiveEndDate}` : ''}
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-slate-400 uppercase">{opening.roleNeeded.replace(/_/g, ' ')}</span>
+                      </div>
+
+                      {kind !== 'open_posting' ? (
+                        <div className="space-y-1 text-slate-200">
+                          {opening.awardedDriverName && (
+                            <div className="flex items-center gap-1.5">
+                              <User className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                              <span>
+                                {isFrench ? 'Nouveau chauffeur :' : 'Assigned Driver:'}{' '}
+                                <strong className="text-white">{opening.awardedDriverName}</strong>
+                              </span>
+                            </div>
+                          )}
+                          {opening.awardedUnitNumber && (
+                            <div className="flex items-center gap-1.5">
+                              <Bus className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                              <span>
+                                {isFrench ? 'Véhicule :' : 'Assigned Vehicle:'}{' '}
+                                <strong className="text-white">Unit #{opening.awardedUnitNumber}</strong>
+                                {opening.awardedPlateNumber ? ` (${opening.awardedPlateNumber})` : ''}
+                              </span>
+                            </div>
+                          )}
+                          {opening.awardedAttendantName && (
+                            <div className="flex items-center gap-1.5">
+                              <Shield className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                              <span>
+                                {isFrench ? 'Nouvel accompagnateur :' : 'Assigned Attendant:'}{' '}
+                                <strong className="text-white">{opening.awardedAttendantName}</strong>
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-slate-300">
+                          <span>{opening.title}</span>
+                          <span className="text-[11px] text-amber-300 font-semibold">
+                            {opening.applicants.length} {isFrench ? 'candidat(s)' : 'applicant(s)'}
+                          </span>
+                        </div>
+                      )}
+
+                      {opening.awardedNotes && (
+                        <div className="text-[11px] text-slate-400 bg-slate-900/70 rounded-lg px-2.5 py-1.5">
+                          {opening.awardedNotes}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 4. Recent Route Assignment History */}
+            <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <History className="w-4 h-4 text-slate-400" />
+                  <span>{isFrench ? 'Historique récent de la route' : 'Recent Route Assignment History'}</span>
+                </span>
+                <span className="text-[11px] text-slate-500">{recentHistory.length}</span>
+              </div>
+
+              {recentHistory.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">
+                  {isFrench ? 'Aucun historique récent enregistré.' : 'No recent assignment changes recorded.'}
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {recentHistory.map((h) => (
+                    <div key={h.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900/70 border border-slate-800/80 text-xs">
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
+                        <span className="font-mono text-[11px] text-slate-400">{h.effectiveDate || (h.timestamp || '').slice(0, 10)}</span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            h.action === 'assign'
+                              ? 'bg-emerald-500/15 text-emerald-300'
+                              : 'bg-rose-500/15 text-rose-300'
+                          }`}
+                        >
+                          {h.action}
+                        </span>
+                        <span className="text-slate-200 font-medium truncate">
+                          {h.driverName || h.driverId}
+                          {h.unitNumber ? ` • Unit #${h.unitNumber}` : ''}
+                        </span>
+                      </div>
+                      {h.assignedBy && (
+                        <span className="text-[11px] text-slate-500 truncate">{h.assignedBy}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-4 border-t border-slate-800 flex items-center justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setActiveTab('assign')}
+                className="px-4 py-2 text-xs font-semibold text-amber-300 hover:bg-slate-800 rounded-lg transition"
+              >
+                {isFrench ? 'Retour à l\'affectation' : 'Back to Assign Crew'}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 rounded-lg transition"
+              >
+                {isFrench ? 'Fermer' : 'Close'}
+              </button>
+            </div>
+          </div>
+        ) : (
+        /* Form Body */
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Main Standing Assignment */}
           <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 space-y-4">
@@ -1097,6 +2334,7 @@ export const RouteAssignModal: React.FC<RouteAssignModalProps> = ({
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );

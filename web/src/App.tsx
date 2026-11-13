@@ -1389,6 +1389,7 @@ export const AppContent: React.FC = () => {
             <DashboardView
               stats={stats}
               employees={employees}
+              routes={routes}
               onNavigateTab={setCurrentTab}
               onSelectEmployee={setSelectedEmployee}
             />
@@ -1640,6 +1641,7 @@ export const AppContent: React.FC = () => {
               vehicles={vehicles}
               onSelectEmployee={setSelectedEmployee}
               onSelectVehicle={setSelectedVehicle}
+              onBack={() => setCurrentTab('dashboard')}
             />
           )}
 

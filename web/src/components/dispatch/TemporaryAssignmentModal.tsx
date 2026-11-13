@@ -25,6 +25,11 @@ import {
   groupCrewCandidates,
   getOptGroupLabels,
 } from '../../utils/crewEligibilityUtils';
+import {
+  calculateAdjustedEndDate,
+  matchVehicleForDriver,
+  hasDateRangeOverlap,
+} from '../../utils/temporaryAssignmentUtils';
 
 interface TemporaryAssignmentModalProps {
   isOpen: boolean;
@@ -33,7 +38,8 @@ interface TemporaryAssignmentModalProps {
   routes: BusRoute[];
   employees: Employee[];
   vehicles: Vehicle[];
-  onSaved: () => void;
+  existingAssignments?: TemporaryAssignment[];
+  onSaved: (created?: TemporaryAssignment) => void;
   onSwitchToRouteOpening?: () => void;
 }
 
@@ -44,6 +50,7 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
   routes,
   employees,
   vehicles,
+  existingAssignments,
   onSaved,
   onSwitchToRouteOpening
 }) => {
@@ -51,6 +58,7 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
 
   const todayStr = new Date().toISOString().split('T')[0];
+  const isEdit = Boolean(assignment && assignment.id && assignment.id.trim() !== '');
 
   const [routeId, setRouteId] = useState('');
   const [shiftType, setShiftType] = useState<string>('ALL');
@@ -247,6 +255,137 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
     });
   }, [activeVehicles, vehicleSearch, temporaryVehicleId]);
 
+  // Subscribe to all temporary assignments for detecting existing assignments & conflicts
+  const [allAssignments, setAllAssignments] = useState<TemporaryAssignment[]>(existingAssignments || []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (existingAssignments && existingAssignments.length > 0) {
+      setAllAssignments(existingAssignments);
+      return;
+    }
+    const unsub = DispatchService.subscribeToTemporaryAssignments((list) => {
+      setAllAssignments(Array.isArray(list) ? list : []);
+    });
+    return () => {
+      unsub();
+    };
+  }, [isOpen, existingAssignments]);
+
+  // Requirement 1: When start date changes, end date adjusts automatically
+  const handleStartDateChange = (newStartDate: string) => {
+    setStartDate(newStartDate);
+    const adjustedEnd = calculateAdjustedEndDate(startDate, endDate, newStartDate);
+    if (adjustedEnd) {
+      setEndDate(adjustedEnd);
+    }
+  };
+
+  // Requirement 2: Match driver in vehicles table and auto-load vehicle
+  const handleDriverChange = (driverId: string) => {
+    setTemporaryDriverId(driverId);
+    if (!driverId) return;
+
+    const matchedVehicle = matchVehicleForDriver(driverId, employees, vehicles);
+    if (matchedVehicle) {
+      setTemporaryVehicleId(String(matchedVehicle.id));
+    }
+  };
+
+  // Requirement 3: Display existing assignments for crew and vehicle
+  const driverRegularRoute = useMemo(() => {
+    if (!selectedDriverObj) return null;
+    return (
+      routes.find(
+        (r) =>
+          r.driverId === selectedDriverObj.id ||
+          r.driverId === selectedDriverObj.employeeNumber ||
+          (r.driverName &&
+            selectedDriverObj.fullName &&
+            r.driverName.trim().toLowerCase() === selectedDriverObj.fullName.trim().toLowerCase())
+      ) || null
+    );
+  }, [routes, selectedDriverObj]);
+
+  const driverActiveCovers = useMemo(() => {
+    if (!temporaryDriverId) return [];
+    return allAssignments.filter(
+      (a) =>
+        a.id !== assignment?.id &&
+        a.status !== 'cancelled' &&
+        (a.temporaryDriverId === temporaryDriverId ||
+          (selectedDriverObj &&
+            a.temporaryDriverName &&
+            a.temporaryDriverName.trim().toLowerCase() === selectedDriverObj.fullName.trim().toLowerCase()))
+    );
+  }, [allAssignments, temporaryDriverId, selectedDriverObj, assignment]);
+
+  const attendantRegularRoute = useMemo(() => {
+    if (!selectedAttendantObj) return null;
+    return (
+      routes.find(
+        (r) =>
+          r.attendantId === selectedAttendantObj.id ||
+          r.attendantId === selectedAttendantObj.employeeNumber ||
+          (r.attendantName &&
+            selectedAttendantObj.fullName &&
+            r.attendantName.trim().toLowerCase() === selectedAttendantObj.fullName.trim().toLowerCase())
+      ) || null
+    );
+  }, [routes, selectedAttendantObj]);
+
+  const attendantActiveCovers = useMemo(() => {
+    if (!temporaryAttendantId) return [];
+    return allAssignments.filter(
+      (a) =>
+        a.id !== assignment?.id &&
+        a.status !== 'cancelled' &&
+        (a.temporaryAttendantId === temporaryAttendantId ||
+          (selectedAttendantObj &&
+            a.temporaryAttendantName &&
+            a.temporaryAttendantName.trim().toLowerCase() === selectedAttendantObj.fullName.trim().toLowerCase()))
+    );
+  }, [allAssignments, temporaryAttendantId, selectedAttendantObj, assignment]);
+
+  const selectedVehicleObj = useMemo(() => {
+    if (!temporaryVehicleId) return null;
+    return vehicles.find((v) => String(v.id) === temporaryVehicleId) || null;
+  }, [vehicles, temporaryVehicleId]);
+
+  const vehicleRegularRoute = useMemo(() => {
+    if (!selectedVehicleObj) return null;
+    if (selectedVehicleObj.assignedRouteNo) {
+      return {
+        routeNo: selectedVehicleObj.assignedRouteNo,
+        routeName: selectedVehicleObj.assignedRouteName || '',
+      };
+    }
+    const matchedRoute = routes.find(
+      (r) =>
+        (selectedVehicleObj.unitNumber && r.unitNumber === selectedVehicleObj.unitNumber) ||
+        (selectedVehicleObj.id && String(r.vehicleId) === String(selectedVehicleObj.id))
+    );
+    if (matchedRoute) {
+      return {
+        routeNo: matchedRoute.routeNo,
+        routeName: matchedRoute.routeName || '',
+      };
+    }
+    return null;
+  }, [selectedVehicleObj, routes]);
+
+  const vehicleActiveCovers = useMemo(() => {
+    if (!temporaryVehicleId) return [];
+    const targetUnit = selectedVehicleObj?.unitNumber;
+    return allAssignments.filter(
+      (a) =>
+        a.id !== assignment?.id &&
+        a.status !== 'cancelled' &&
+        (String(a.temporaryVehicleId) === temporaryVehicleId ||
+          (targetUnit && a.temporaryUnitNumber && a.temporaryUnitNumber === targetUnit))
+    );
+  }, [allAssignments, temporaryVehicleId, selectedVehicleObj, assignment]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -285,7 +424,8 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
     const replacementVehicleNumId = replacementVehicle ? Number(replacementVehicle.id) : undefined;
 
     try {
-      if (assignment) {
+      let savedAssignment: TemporaryAssignment | undefined;
+      if (isEdit && assignment?.id) {
         const payload: UpdateTemporaryAssignmentPayload = {
           shiftType,
           startDate,
@@ -303,36 +443,36 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
           notes,
           status
         };
-        await DispatchService.updateTemporaryAssignment(assignment.id, payload);
+        savedAssignment = await DispatchService.updateTemporaryAssignment(assignment.id, payload);
       } else {
-        const payload: CreateTemporaryAssignmentPayload = {
-          routeId,
-          routeNo: selectedRoute?.routeNo || routeId,
-          routeName: selectedRoute?.routeName || selectedRoute?.routeNo || routeId,
-          shiftType,
-          startDate,
-          endDate,
-          originalDriverId: selectedRoute?.driverId || '',
-          originalDriverName: selectedRoute?.driverName || '',
-          temporaryDriverId: temporaryDriverId || undefined,
-          temporaryDriverName: replacementDriverName || undefined,
-          temporaryDriverPhone: replacementDriverPhone || undefined,
-          originalAttendantId: selectedRoute?.attendantId || '',
-          originalAttendantName: selectedRoute?.attendantName || '',
-          temporaryAttendantId: temporaryAttendantId || undefined,
-          temporaryAttendantName: replacementAttendantName || undefined,
-          temporaryAttendantPhone: replacementAttendantPhone || undefined,
-          temporaryVehicleId: replacementVehicleNumId,
-          temporaryUnitNumber: replacementUnitNumber || undefined,
-          temporaryPlateNumber: replacementPlateNumber || undefined,
-          reason,
-          notes,
-          createdBy: actorName
-        };
-        await DispatchService.createTemporaryAssignment(payload);
-      }
-      onSaved();
-      onClose();
+          const payload: CreateTemporaryAssignmentPayload = {
+            routeId,
+            routeNo: selectedRoute?.routeNo || routeId,
+            routeName: selectedRoute?.routeName || selectedRoute?.routeNo || routeId,
+            shiftType,
+            startDate,
+            endDate,
+            originalDriverId: selectedRoute?.driverId || '',
+            originalDriverName: selectedRoute?.driverName || '',
+            temporaryDriverId: temporaryDriverId || undefined,
+            temporaryDriverName: replacementDriverName || undefined,
+            temporaryDriverPhone: replacementDriverPhone || undefined,
+            originalAttendantId: selectedRoute?.attendantId || '',
+            originalAttendantName: selectedRoute?.attendantName || '',
+            temporaryAttendantId: temporaryAttendantId || undefined,
+            temporaryAttendantName: replacementAttendantName || undefined,
+            temporaryAttendantPhone: replacementAttendantPhone || undefined,
+            temporaryVehicleId: replacementVehicleNumId,
+            temporaryUnitNumber: replacementUnitNumber || undefined,
+            temporaryPlateNumber: replacementPlateNumber || undefined,
+            reason,
+            notes,
+            createdBy: actorName
+          };
+          savedAssignment = await DispatchService.createTemporaryAssignment(payload);
+        }
+        onSaved(savedAssignment);
+        onClose();
     } catch (err: any) {
       console.error('Failed to save temporary assignment:', err);
       setError(err?.message || 'Failed to save temporary assignment. Please try again.');
@@ -352,7 +492,7 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
             </div>
             <div>
               <h2 className="text-lg font-semibold text-white">
-                {assignment ? 'Edit Temporary Assignment' : 'New Temporary Assignment'}
+                {isEdit ? 'Edit Temporary Assignment' : 'New Temporary Assignment'}
               </h2>
               <p className="text-xs text-slate-400">
                 Schedule temporary crew or vehicle replacement for route absences
@@ -402,7 +542,7 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
               <select
                 value={routeId}
                 onChange={(e) => setRouteId(e.target.value)}
-                disabled={!!assignment}
+                disabled={isEdit}
                 className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-500 disabled:opacity-50"
               >
                 {routes.map((r) => (
@@ -462,7 +602,7 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => handleStartDateChange(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -575,7 +715,7 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
 
                 <select
                   value={temporaryDriverId}
-                  onChange={(e) => setTemporaryDriverId(e.target.value)}
+                  onChange={(e) => handleDriverChange(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
                 >
                   <option value="">-- No Replacement Driver --</option>
@@ -622,6 +762,68 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
                       <span>~{selectedDriverDeadhead.totalDeadheadKm} km {t.deadhead.totalDeadhead}</span>
                     </div>
                     <div>{selectedDriverDeadhead.pullOutKm} km to 1st stop • {selectedDriverDeadhead.pullInKm} km return</div>
+                  </div>
+                )}
+
+                {selectedDriverObj && (
+                  <div className="mt-2 p-2 rounded-lg bg-slate-900/90 border border-slate-700/80 text-[11px] space-y-1.5">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                      <span>Driver Assignment</span>
+                      {driverRegularRoute ? (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                          Regular Assigned
+                        </span>
+                      ) : (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-slate-800 text-slate-400">
+                          Spare / On-Call
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-slate-300">
+                      <span className="text-slate-500">Regular: </span>
+                      {driverRegularRoute ? (
+                        <span className="font-semibold text-slate-200">
+                          Route {driverRegularRoute.routeNo}
+                          {driverRegularRoute.routeName ? ` (${driverRegularRoute.routeName})` : ''}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 italic">None</span>
+                      )}
+                    </div>
+
+                    {driverActiveCovers.length > 0 ? (
+                      <div className="pt-1 border-t border-slate-800 space-y-1">
+                        <div className="text-[10px] font-semibold text-slate-400">Active Covers:</div>
+                        {driverActiveCovers.map((cov) => {
+                          const isConflict = hasDateRangeOverlap(startDate, endDate, cov.startDate, cov.endDate);
+                          return (
+                            <div
+                              key={cov.id}
+                              className={`p-1.5 rounded text-[10px] flex items-center justify-between gap-1 border ${
+                                isConflict
+                                  ? 'bg-rose-950/40 border-rose-500/50 text-rose-200'
+                                  : 'bg-slate-800/80 border-slate-700/60 text-slate-300'
+                              }`}
+                            >
+                              <div className="truncate">
+                                <span className="font-semibold text-slate-100">Route {cov.routeNo}</span>
+                                <span className="text-slate-400 ml-1">({cov.startDate} ~ {cov.endDate})</span>
+                              </div>
+                              {isConflict && (
+                                <span className="text-[9px] font-bold px-1 rounded bg-rose-500/30 text-rose-300 shrink-0">
+                                  Overlap
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-500 pt-0.5 border-t border-slate-800">
+                        No other active covers
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -719,6 +921,68 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
                       : `${selectedAttendantDeadhead.distanceToFirstStopKm} km to 1st stop`}
                   </div>
                 )}
+
+                {selectedAttendantObj && (
+                  <div className="mt-2 p-2 rounded-lg bg-slate-900/90 border border-slate-700/80 text-[11px] space-y-1.5">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                      <span>Attendant Assignment</span>
+                      {attendantRegularRoute ? (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                          Regular Assigned
+                        </span>
+                      ) : (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-slate-800 text-slate-400">
+                          Spare Attendant
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-slate-300">
+                      <span className="text-slate-500">Regular: </span>
+                      {attendantRegularRoute ? (
+                        <span className="font-semibold text-slate-200">
+                          Route {attendantRegularRoute.routeNo}
+                          {attendantRegularRoute.routeName ? ` (${attendantRegularRoute.routeName})` : ''}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 italic">None</span>
+                      )}
+                    </div>
+
+                    {attendantActiveCovers.length > 0 ? (
+                      <div className="pt-1 border-t border-slate-800 space-y-1">
+                        <div className="text-[10px] font-semibold text-slate-400">Active Covers:</div>
+                        {attendantActiveCovers.map((cov) => {
+                          const isConflict = hasDateRangeOverlap(startDate, endDate, cov.startDate, cov.endDate);
+                          return (
+                            <div
+                              key={cov.id}
+                              className={`p-1.5 rounded text-[10px] flex items-center justify-between gap-1 border ${
+                                isConflict
+                                  ? 'bg-rose-950/40 border-rose-500/50 text-rose-200'
+                                  : 'bg-slate-800/80 border-slate-700/60 text-slate-300'
+                              }`}
+                            >
+                              <div className="truncate">
+                                <span className="font-semibold text-slate-100">Route {cov.routeNo}</span>
+                                <span className="text-slate-400 ml-1">({cov.startDate} ~ {cov.endDate})</span>
+                              </div>
+                              {isConflict && (
+                                <span className="text-[9px] font-bold px-1 rounded bg-rose-500/30 text-rose-300 shrink-0">
+                                  Overlap
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-500 pt-0.5 border-t border-slate-800">
+                        No other active covers
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Vehicle */}
@@ -774,6 +1038,75 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
                     ))
                   )}
                 </select>
+
+                {selectedVehicleObj && (
+                  <div className="mt-2 p-2 rounded-lg bg-slate-900/90 border border-slate-700/80 text-[11px] space-y-1.5">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                      <span>Vehicle Assignment</span>
+                      {vehicleRegularRoute ? (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                          Regular Assigned
+                        </span>
+                      ) : (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-slate-800 text-slate-400">
+                          Spare Fleet
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-slate-300">
+                      <span className="text-slate-500">Regular: </span>
+                      {vehicleRegularRoute ? (
+                        <span className="font-semibold text-slate-200">
+                          Route {vehicleRegularRoute.routeNo}
+                          {vehicleRegularRoute.routeName ? ` (${vehicleRegularRoute.routeName})` : ''}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 italic">None (Spare)</span>
+                      )}
+                    </div>
+
+                    {selectedVehicleObj.driverName && (
+                      <div className="text-slate-300">
+                        <span className="text-slate-500">Default Driver: </span>
+                        <span className="text-slate-200">{selectedVehicleObj.driverName}</span>
+                      </div>
+                    )}
+
+                    {vehicleActiveCovers.length > 0 ? (
+                      <div className="pt-1 border-t border-slate-800 space-y-1">
+                        <div className="text-[10px] font-semibold text-slate-400">Active Covers:</div>
+                        {vehicleActiveCovers.map((cov) => {
+                          const isConflict = hasDateRangeOverlap(startDate, endDate, cov.startDate, cov.endDate);
+                          return (
+                            <div
+                              key={cov.id}
+                              className={`p-1.5 rounded text-[10px] flex items-center justify-between gap-1 border ${
+                                isConflict
+                                  ? 'bg-rose-950/40 border-rose-500/50 text-rose-200'
+                                  : 'bg-slate-800/80 border-slate-700/60 text-slate-300'
+                              }`}
+                            >
+                              <div className="truncate">
+                                <span className="font-semibold text-slate-100">Route {cov.routeNo}</span>
+                                <span className="text-slate-400 ml-1">({cov.startDate} ~ {cov.endDate})</span>
+                              </div>
+                              {isConflict && (
+                                <span className="text-[9px] font-bold px-1 rounded bg-rose-500/30 text-rose-300 shrink-0">
+                                  Overlap
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-500 pt-0.5 border-t border-slate-800">
+                        No other active covers
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -807,7 +1140,7 @@ export const TemporaryAssignmentModal: React.FC<TemporaryAssignmentModalProps> =
               className="px-5 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm rounded-lg flex items-center space-x-2 transition shadow-lg shadow-amber-500/20"
             >
               <Save className="w-4 h-4" />
-              <span>{saving ? 'Saving...' : assignment ? 'Update Assignment' : 'Create Assignment'}</span>
+              <span>{saving ? 'Saving...' : isEdit ? 'Update Assignment' : 'Create Assignment'}</span>
             </button>
           </div>
         </form>

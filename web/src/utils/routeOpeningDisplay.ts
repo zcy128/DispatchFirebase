@@ -164,3 +164,33 @@ export const computeOpeningsKpi = (openings: RouteOpening[]) => {
   }
   return { total: openings.length, openForBidding, reviewing, awarded };
 };
+
+export const isOpeningExpired = (
+  op: RouteOpening,
+  todayStr: string,
+  nowMs: number = Date.now()
+): boolean => {
+  if (op.status === 'cancelled') return true;
+
+  if (op.effectiveEndDate && op.effectiveEndDate < todayStr) {
+    return true;
+  }
+
+  if (
+    (op.postingType === 'charter' || (!op.effectiveEndDate && op.postingType === 'temporary')) &&
+    op.effectiveStartDate &&
+    op.effectiveStartDate < todayStr
+  ) {
+    return true;
+  }
+
+  if (op.deadline) {
+    const deadlineTime = new Date(op.deadline).getTime();
+    if (!isNaN(deadlineTime) && deadlineTime <= nowMs) {
+      return true;
+    }
+  }
+
+  return false;
+};
+

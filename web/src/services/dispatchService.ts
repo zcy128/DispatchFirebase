@@ -1016,6 +1016,9 @@ export const DispatchService = {
   },
 
   updateTemporaryAssignment: async (id: string, payload: UpdateTemporaryAssignmentPayload): Promise<TemporaryAssignment> => {
+    if (!id || !id.trim()) {
+      throw new Error('Assignment ID is required for update.');
+    }
     const cleanObj = (obj: Record<string, any>) => {
       const out: Record<string, any> = {};
       for (const [k, v] of Object.entries(obj)) {

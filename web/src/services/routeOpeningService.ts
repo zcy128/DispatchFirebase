@@ -366,7 +366,8 @@ export const RouteOpeningService = {
 
     const hasAwardedDriver = Boolean(opening.awardedDriverId || opening.awardedDriverName);
     const hasAwardedAttendant = Boolean(opening.awardedAttendantId || opening.awardedAttendantName);
-    if (!hasAwardedDriver && !hasAwardedAttendant) return;
+    const hasAwardedVehicle = Boolean(opening.awardedUnitNumber || opening.awardedVehicleId);
+    if (!hasAwardedDriver && !hasAwardedAttendant && !hasAwardedVehicle) return;
 
     const nowIso = new Date().toISOString();
 
@@ -409,6 +410,15 @@ export const RouteOpeningService = {
         crewPatch.attendantPhone = opening.awardedAttendantPhone;
       }
     }
+    if (hasAwardedVehicle) {
+      if (opening.awardedVehicleId !== undefined) {
+        crewPatch.vehicleId = opening.awardedVehicleId;
+      }
+      crewPatch.unitNumber = opening.awardedUnitNumber || '';
+      if (opening.awardedPlateNumber !== undefined) {
+        crewPatch.plateNumber = opening.awardedPlateNumber;
+      }
+    }
 
     const targetShift = (opening.shiftType || 'ALL').toUpperCase().trim();
     const isAllShifts = !targetShift || targetShift === 'ALL';
@@ -438,9 +448,9 @@ export const RouteOpeningService = {
             attendantPhone: hasAwardedAttendant
               ? (crewPatch.attendantPhone ?? routeData.attendantPhone ?? '')
               : (routeData.attendantPhone || ''),
-            vehicleId: routeData.vehicleId || 0,
-            unitNumber: routeData.unitNumber || '',
-            plateNumber: routeData.plateNumber || ''
+            vehicleId: hasAwardedVehicle ? (opening.awardedVehicleId || 0) : (routeData.vehicleId || 0),
+            unitNumber: hasAwardedVehicle ? (opening.awardedUnitNumber || '') : (routeData.unitNumber || ''),
+            plateNumber: hasAwardedVehicle ? (opening.awardedPlateNumber || '') : (routeData.plateNumber || '')
           };
           await RouteService.assignCrew(routeDocId, fullCrewPayload).catch(() => {});
         } else {
@@ -455,6 +465,11 @@ export const RouteOpeningService = {
             routeFallbackPatch.attendantId = crewPatch.attendantId;
             routeFallbackPatch.attendantName = crewPatch.attendantName;
             if (crewPatch.attendantPhone !== undefined) routeFallbackPatch.attendantPhone = crewPatch.attendantPhone;
+          }
+          if (hasAwardedVehicle && !routeData.unitNumber) {
+            if (crewPatch.vehicleId !== undefined) routeFallbackPatch.vehicleId = crewPatch.vehicleId;
+            routeFallbackPatch.unitNumber = crewPatch.unitNumber;
+            if (crewPatch.plateNumber !== undefined) routeFallbackPatch.plateNumber = crewPatch.plateNumber;
           }
           if (Object.keys(routeFallbackPatch).length > 0) {
             await setDoc(
@@ -529,7 +544,8 @@ export const RouteOpeningService = {
     if (!db || opening.postingType !== 'permanent' || !opening.effectiveStartDate) return;
     const hasAwardedDriver = Boolean(opening.awardedDriverId || opening.awardedDriverName);
     const hasAwardedAttendant = Boolean(opening.awardedAttendantId || opening.awardedAttendantName);
-    if (!hasAwardedDriver && !hasAwardedAttendant) return;
+    const hasAwardedVehicle = Boolean(opening.awardedUnitNumber || opening.awardedVehicleId);
+    if (!hasAwardedDriver && !hasAwardedAttendant && !hasAwardedVehicle) return;
 
     const targetShift = (opening.shiftType || 'ALL').toUpperCase().trim();
     const isAllShifts = !targetShift || targetShift === 'ALL';
@@ -562,6 +578,15 @@ export const RouteOpeningService = {
           patch.attendantName = opening.awardedAttendantName || '';
           if (opening.awardedAttendantPhone !== undefined) {
             patch.attendantPhone = opening.awardedAttendantPhone;
+          }
+        }
+        if (hasAwardedVehicle && !dData.isTemporaryVehicle) {
+          if (opening.awardedVehicleId !== undefined) {
+            patch.vehicleId = opening.awardedVehicleId;
+          }
+          patch.unitNumber = opening.awardedUnitNumber || '';
+          if (opening.awardedPlateNumber !== undefined) {
+            patch.plateNumber = opening.awardedPlateNumber;
           }
         }
         if (Object.keys(patch).length > 0) {

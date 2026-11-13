@@ -278,6 +278,7 @@ export const fr: TranslationDictionary = {
     appliedBadge: 'Candidature envoyée',
     withdrawBtn: 'Retirer sa candidature',
     reviewApplicantsBtn: 'Examiner les candidats',
+    showExpired: 'Afficher les expirés',
     applicantsCount: 'Candidats',
     confirmAndAward: 'Confirmer et attribuer le poste',
     awardDialogTitle: 'Attribuer le circuit',

@@ -295,6 +295,7 @@ export interface TranslationDictionary {
     appliedBadge: string;
     withdrawBtn: string;
     reviewApplicantsBtn: string;
+    showExpired?: string;
     applicantsCount: string;
     confirmAndAward: string;
     awardDialogTitle: string;

@@ -45,7 +45,12 @@ type TimeOffRequest struct {
 	ApprovalNotes     string        `json:"approvalNotes,omitempty" firestore:"approvalNotes,omitempty"`
 	NotifiedChannels  []string      `json:"notifiedChannels,omitempty" firestore:"notifiedChannels,omitempty"`
 	NotifiedAt        *time.Time    `json:"notifiedAt,omitempty" firestore:"notifiedAt,omitempty"`
-	CreatedAt            time.Time     `json:"createdAt" firestore:"createdAt"`
+	CoverageAssigned     bool       `json:"coverageAssigned,omitempty" firestore:"coverageAssigned,omitempty"`
+	CoverageAssignedAt   string     `json:"coverageAssignedAt,omitempty" firestore:"coverageAssignedAt,omitempty"`
+	CoverageDriverName   string     `json:"coverageDriverName,omitempty" firestore:"coverageDriverName,omitempty"`
+	CoverageDriverId     string     `json:"coverageDriverId,omitempty" firestore:"coverageDriverId,omitempty"`
+	TemporaryAssignmentId string    `json:"temporaryAssignmentId,omitempty" firestore:"temporaryAssignmentId,omitempty"`
+	CreatedAt            time.Time  `json:"createdAt" firestore:"createdAt"`
 	UpdatedAt            time.Time     `json:"updatedAt" firestore:"updatedAt"`
 	IsArchivedToBigQuery bool          `json:"isArchivedToBigQuery,omitempty" firestore:"isArchivedToBigQuery,omitempty"`
 	BigQueryDataset      string        `json:"bigQueryDataset,omitempty" firestore:"bigQueryDataset,omitempty"`
@@ -68,11 +73,16 @@ type CreateTimeOffRequestPayload struct {
 
 // UpdateTimeOffRequestPayload contains parameters for updating a pending time-off request
 type UpdateTimeOffRequestPayload struct {
-	LeaveType LeaveType `json:"leaveType,omitempty"`
-	StartDate string    `json:"startDate,omitempty"`
-	EndDate   string    `json:"endDate,omitempty"`
-	ShiftType string    `json:"shiftType,omitempty"`
-	Comments  string    `json:"comments,omitempty"`
+	LeaveType          LeaveType `json:"leaveType,omitempty"`
+	StartDate          string    `json:"startDate,omitempty"`
+	EndDate            string    `json:"endDate,omitempty"`
+	ShiftType          string    `json:"shiftType,omitempty"`
+	Comments           string    `json:"comments,omitempty"`
+	CoverageAssigned      *bool     `json:"coverageAssigned,omitempty"`
+	CoverageAssignedAt    string    `json:"coverageAssignedAt,omitempty"`
+	CoverageDriverName    string    `json:"coverageDriverName,omitempty"`
+	CoverageDriverId      string    `json:"coverageDriverId,omitempty"`
+	TemporaryAssignmentId string    `json:"temporaryAssignmentId,omitempty"`
 }
 
 // ReviewTimeOffRequestPayload contains parameters for approving or rejecting a time-off request (HR/Admin only)
