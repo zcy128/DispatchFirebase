@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue, useId } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useI18n } from '../contexts/I18nContext';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   ShieldAlert,
   Search,
@@ -45,6 +47,56 @@ const StudentIncidentPdfModal = React.lazy(() =>
   }))
 );
 
+interface IncidentModalDialogProps {
+  open: boolean;
+  onClose: () => void;
+  ariaLabelledBy: string;
+  children: React.ReactNode;
+}
+
+const IncidentModalDialog: React.FC<IncidentModalDialogProps> = ({
+  open,
+  onClose,
+  ariaLabelledBy,
+  children,
+}) => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open) {
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={ariaLabelledBy}
+      onClose={onClose}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === dialogRef.current) {
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 m-auto max-w-2xl w-[calc(100%-2rem)] bg-transparent p-0 border-0 backdrop:bg-slate-900/60 backdrop:backdrop-blur-xs [&:modal]:overscroll-contain [&::backdrop]:overflow-hidden [&::backdrop]:overscroll-contain"
+    >
+      {children}
+    </dialog>
+  );
+};
+
 interface StudentIncidentsViewProps {
   onSelectStudent?: (ref: { id?: string; name?: string }) => void;
   onSelectSchool?: (schoolId?: number, schoolName?: string) => void;
@@ -56,6 +108,14 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const { isFrench } = useI18n();
+  const baseId = useId();
+  const statusSelectId = `${baseId}-status`;
+  const reviewedDateId = `${baseId}-reviewed-date`;
+  const adminNameId = `${baseId}-admin-name`;
+  const otherDisciplineId = `${baseId}-other-discipline`;
+  const officeNotesId = `${baseId}-office-notes`;
+  const lockRecordId = `${baseId}-lock-record`;
+  const reviewErrorId = `${baseId}-review-error`;
   const [incidents, setIncidents] = useState<StudentIncident[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -302,7 +362,7 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
       setSelectedIncident(null);
     } catch (err) {
       console.error('Failed to save office review:', err);
-      alert('Error saving office follow-up review. Please try again.');
+      setReviewError('Error saving office follow-up review. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -407,197 +467,211 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <PageShell>
       {/* ─── Page Header ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <ShieldAlert className="h-6 w-6 text-amber-500" />
-            {isFrench ? 'Gestion des incidents des élèves' : 'Student Incident Management'}
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            {isFrench
-              ? 'Examinez les signalements d\'incidents comportementaux, traitez les mesures disciplinaires et suivez les résolutions.'
-              : 'Review driver behavior incident reports, conduct office disciplinary actions, and track resolutions.'}
-          </p>
-        </div>
+      <PageHeader
+        title={isFrench ? 'Gestion des incidents des élèves' : 'Student Incident Management'}
+        subtitle={
+          isFrench
+            ? 'Examinez les signalements d\'incidents comportementaux, traitez les mesures disciplinaires et suivez les résolutions.'
+            : 'Review driver behavior incident reports, conduct office disciplinary actions, and track resolutions.'
+        }
+        icon={<ShieldAlert className="h-5 w-5 text-amber-400" aria-hidden="true" />}
+        actions={
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={filteredIncidents.length === 0}
+              className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] text-xs font-semibold rounded-xl border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 transition cursor-pointer shadow-xs disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+              title={isFrench ? 'Exporter en CSV Excel' : 'Export incidents data to CSV Excel'}
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
+              <span>{isFrench ? 'Exporter CSV' : 'Export CSV'}</span>
+            </button>
 
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            disabled={filteredIncidents.length === 0}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer shadow-xs disabled:opacity-40"
-            title={isFrench ? 'Exporter en CSV Excel' : 'Export incidents data to CSV Excel'}
-          >
-            <FileSpreadsheet className="h-4 w-4 text-emerald-500" />
-            <span>{isFrench ? 'Exporter CSV' : 'Export CSV'}</span>
-          </button>
-
-          <button
-            onClick={() => void refreshData()}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            <span>{isFrench ? 'Actualiser' : 'Refresh'}</span>
-          </button>
-        </div>
-      </div>
+            <button
+              type="button"
+              onClick={() => void refreshData()}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-2 min-h-[36px] text-xs font-semibold rounded-xl border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+              <span>{isFrench ? 'Actualiser' : 'Refresh'}</span>
+            </button>
+          </div>
+        }
+      />
 
       {/* ─── KPI Metrics ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
-          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700/60 shadow-xs">
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
             {isFrench ? 'Incidents totaux' : 'Total Incidents'}
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">
+          <div className="text-2xl font-bold text-slate-100 mt-1">
             {stats.total}
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
-          <div className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700/60 shadow-xs">
+          <div className="text-xs font-semibold uppercase tracking-wider">
             {isFrench ? 'En attente bureau' : 'Pending Office'}
           </div>
-          <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">
+          <div className="text-2xl font-bold mt-1">
             {stats.pendingReview}
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
-          <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700/60 shadow-xs">
+          <div className="text-xs font-semibold uppercase tracking-wider">
             {isFrench ? 'Enquête en cours' : 'Under Investigation'}
           </div>
-          <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+          <div className="text-2xl font-bold mt-1">
             {stats.underInvestigation}
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
-          <div className="text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700/60 shadow-xs">
+          <div className="text-xs font-semibold uppercase tracking-wider">
             {isFrench ? 'Parents/École notifiés' : 'Parent / School Notified'}
           </div>
-          <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">
+          <div className="text-2xl font-bold mt-1">
             {stats.parentContacted}
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
-          <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700/60 shadow-xs">
+          <div className="text-xs font-semibold uppercase tracking-wider">
             {isFrench ? 'Clos / Résolus' : 'Closed / Resolved'}
           </div>
-          <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+          <div className="text-2xl font-bold mt-1">
             {stats.closed}
           </div>
         </div>
       </div>
 
       {/* ─── Search & Filters Bar ────────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-        <div className="flex items-center gap-2 flex-1">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder={
-                timeRange === 'all'
-                  ? (isFrench ? 'Nom de l\'élève, matricule ou n° de route...' : 'Student name, #, or route #...')
-                  : (isFrench ? 'Rechercher par élève, école, route, conducteur ou notes...' : 'Search by student name, #, school, route, driver, or notes...')
-              }
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && timeRange === 'all') {
-                  void loadIncidents(searchQuery.trim());
+      <search
+        aria-label={isFrench ? 'Filtrer et rechercher les incidents' : 'Search and filter student incidents'}
+        className="block bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-xs"
+      >
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+          <div className="flex items-center gap-2 flex-1">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" aria-hidden="true" />
+              <input
+                type="search"
+                aria-label={
+                  timeRange === 'all'
+                    ? (isFrench ? 'Rechercher par élève, matricule ou numéro de route' : 'Search by student name, number, or route number')
+                    : (isFrench ? 'Rechercher par élève, école, route, conducteur ou notes' : 'Search by student name, school, route, driver, or notes')
                 }
-              }}
-              className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
-            />
+                placeholder={
+                  timeRange === 'all'
+                    ? (isFrench ? 'Nom de l\'élève, matricule ou n° de route...' : 'Student name, #, or route #...')
+                    : (isFrench ? 'Rechercher par élève, école, route, conducteur ou notes...' : 'Search by student name, #, school, route, driver, or notes...')
+                }
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && timeRange === 'all') {
+                    void loadIncidents(searchQuery.trim());
+                  }
+                }}
+                className="w-full pl-9 pr-4 py-2 text-base sm:text-sm rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500 transition"
+              />
+            </div>
+            {timeRange === 'all' && (
+              <button
+                type="button"
+                onClick={() => void loadIncidents(searchQuery.trim())}
+                disabled={loading || !searchQuery.trim()}
+                className="px-3.5 py-2 min-h-[36px] text-xs font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-200 rounded-lg transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+              >
+                <Search className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{isFrench ? 'Rechercher dans l\'archive' : 'Search Archive'}</span>
+              </button>
+            )}
           </div>
-          {timeRange === 'all' && (
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Time Range Selector */}
+            <div
+              role="group"
+              aria-label={isFrench ? 'Plage temporelle' : 'Time range'}
+              className="flex items-center bg-slate-800 p-1 rounded-lg border border-slate-700"
+            >
+              <span className="text-[11px] font-semibold text-slate-400 px-2 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-blue-500" aria-hidden="true" />
+                {isFrench ? 'Période :' : 'Range:'}
+              </span>
+              {[
+                { id: '6months', label: isFrench ? '6 mois (Direct)' : '6 Months (Hot)' },
+                { id: '1year', label: isFrench ? '1 an (Hybride)' : '1 Year (Hybrid)' },
+                { id: 'all', label: isFrench ? 'Tout l\'historique' : 'All History' },
+              ].map((rng) => (
+                <button
+                  key={rng.id}
+                  type="button"
+                  aria-pressed={timeRange === rng.id}
+                  onClick={() => setTimeRange(rng.id as '6months' | '1year' | 'all')}
+                  className={`px-2.5 py-1 min-h-[28px] text-xs font-semibold rounded-md transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+                    timeRange === rng.id
+                      ? 'bg-slate-800 text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-200'
+                  }`}
+                >
+                  {rng.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Needs Office Follow-up Toggle */}
             <button
               type="button"
-              onClick={() => void loadIncidents(searchQuery.trim())}
-              disabled={loading || !searchQuery.trim()}
-              className="px-3.5 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-900 rounded-lg transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5"
+              aria-pressed={needsFollowUpOnly}
+              onClick={() => setNeedsFollowUpOnly(!needsFollowUpOnly)}
+              className={`px-3 py-2 min-h-[36px] text-xs font-medium rounded-lg border transition flex items-center gap-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+                needsFollowUpOnly
+                  ? 'bg-amber-500/10 border-amber-400  font-semibold'
+                  : 'border-slate-700 text-slate-300 hover:bg-slate-700'
+              }`}
             >
-              <Search className="w-3.5 h-3.5" />
-              <span>{isFrench ? 'Rechercher dans l\'archive' : 'Search Archive'}</span>
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
+              {isFrench ? 'Suivi bureau requis seulement' : 'Needs Office Follow-up Only'}
             </button>
-          )}
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Time Range Selector */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-900/80 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
-            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 px-2 flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-blue-500" />
-              {isFrench ? 'Période :' : 'Range:'}
-            </span>
-            {[
-              { id: '6months', label: isFrench ? '6 mois (Direct)' : '6 Months (Hot)' },
-              { id: '1year', label: isFrench ? '1 an (Hybride)' : '1 Year (Hybrid)' },
-              { id: 'all', label: isFrench ? 'Tout l\'historique' : 'All History' },
-            ].map((rng) => (
-              <button
-                key={rng.id}
-                type="button"
-                onClick={() => setTimeRange(rng.id as any)}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
-                  timeRange === rng.id
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-              >
-                {rng.label}
-              </button>
-            ))}
+            {/* Status Select */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label={isFrench ? 'Filtrer par statut d\'incident' : 'Filter by incident status'}
+              className="px-3 py-2 text-base sm:text-sm rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
+            >
+              <option value="all">{isFrench ? 'Tous les statuts' : 'All Statuses'}</option>
+              <option value="submitted">{isFrench ? 'Soumis' : 'Submitted'}</option>
+              <option value="under_investigation">{isFrench ? 'Enquête en cours' : 'Under Investigation'}</option>
+              <option value="parent_contacted">{isFrench ? 'Parents notifiés' : 'Parent Contacted'}</option>
+              <option value="school_notified">{isFrench ? 'École notifiée' : 'School Notified'}</option>
+              <option value="closed">{isFrench ? 'Clos' : 'Closed'}</option>
+            </select>
           </div>
-
-          {/* Needs Office Follow-up Toggle */}
-          <button
-            type="button"
-            onClick={() => setNeedsFollowUpOnly(!needsFollowUpOnly)}
-            className={`px-3 py-2 text-xs font-medium rounded-lg border transition flex items-center gap-1.5 ${
-              needsFollowUpOnly
-                ? 'bg-amber-500/10 border-amber-400 text-amber-700 dark:text-amber-300 font-semibold'
-                : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-            }`}
-          >
-            <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-            {isFrench ? 'Suivi bureau requis seulement' : 'Needs Office Follow-up Only'}
-          </button>
-
-          {/* Status Select */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            aria-label={isFrench ? 'Filtrer par statut d\'incident' : 'Filter by incident status'}
-            className="px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
-          >
-            <option value="all">{isFrench ? 'Tous les statuts' : 'All Statuses'}</option>
-            <option value="submitted">{isFrench ? 'Soumis' : 'Submitted'}</option>
-            <option value="under_investigation">{isFrench ? 'Enquête en cours' : 'Under Investigation'}</option>
-            <option value="parent_contacted">{isFrench ? 'Parents notifiés' : 'Parent Contacted'}</option>
-            <option value="school_notified">{isFrench ? 'École notifiée' : 'School Notified'}</option>
-            <option value="closed">{isFrench ? 'Clos' : 'Closed'}</option>
-          </select>
         </div>
-      </div>
+      </search>
 
       {/* 5-Year Safe Scan Notice Banner */}
       {timeRange === 'all' && (
-        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl flex items-start gap-3 text-xs text-amber-800 dark:text-amber-200">
-          <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+        <div role="status" className="p-3.5 border rounded-xl flex items-start gap-3 text-xs">
+          <Info className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="space-y-1">
-            <div className="font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
+            <div className="font-semibold flex items-center gap-1.5">
               <span>{isFrench ? 'Mode Tout l\'historique (Archive froide BigQuery)' : 'All History Mode (BigQuery Cold Archive)'}</span>
-              <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-medium">
                 {isFrench ? 'Recherche sécurisée 5 ans' : '5-Year Safe Scan'}
               </span>
             </div>
-            <p className="text-amber-700 dark:text-amber-300">
+            <p className="">
               {isFrench
                 ? 'Pour protéger les performances de la base de données sur les 5 ans d\'archives d\'incidents, la navigation complète est restreinte. Veuillez saisir un nom d\'élève, un matricule ou un numéro de route pour interroger les archives.'
                 : 'To protect database performance and avoid full-table scans across 5 years of school incidents, full browsing is restricted. Please enter a Student Name, Student #, or Route # to query historical archive records.'}
@@ -607,9 +681,18 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
       )}
 
       {/* ─── Incident Reports Table ──────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs overflow-hidden">
-        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
-          <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300 border-collapse table-fixed min-w-[980px]">
+      <div className="bg-slate-800 rounded-xl border border-slate-700/60 shadow-xs overflow-hidden">
+        <div
+          ref={tableContainerRef}
+          tabIndex={0}
+          role="region"
+          aria-label={isFrench ? 'Tableau des incidents des élèves' : 'Student incidents table'}
+          className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-500"
+        >
+          <table className="w-full text-left text-sm text-slate-300 border-collapse table-fixed min-w-[980px]">
+            <caption className="sr-only">
+              {isFrench ? 'Liste des rapports d\'incidents des élèves' : 'Student incident reports'}
+            </caption>
             <colgroup>
               <col style={{ width: '130px' }} />
               <col style={{ width: '160px' }} />
@@ -620,24 +703,26 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
               <col style={{ width: '150px' }} />
               <col style={{ width: '220px' }} />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900/95 backdrop-blur-xs text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 shadow-xs">
+            <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-xs text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-700 shadow-xs">
               <tr>
-                <th className="px-4 py-3">{isFrench ? 'Date / Heure' : 'Date / Time'}</th>
-                <th className="px-4 py-3">{isFrench ? 'Élève' : 'Student'}</th>
-                <th className="px-4 py-3">{isFrench ? 'École & Circuit' : 'School & Route'}</th>
-                <th className="px-4 py-3">{isFrench ? 'Catégories' : 'Categories'}</th>
-                <th className="px-4 py-3">{isFrench ? 'Conducteur' : 'Reporting Driver'}</th>
-                <th className="px-4 py-3">{isFrench ? 'Alertes sécurité' : 'Safety Alerts'}</th>
-                <th className="px-4 py-3">{isFrench ? 'Statut' : 'Status'}</th>
-                <th className="px-4 py-3 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
+                <th scope="col" className="px-4 py-3">{isFrench ? 'Date / Heure' : 'Date / Time'}</th>
+                <th scope="col" className="px-4 py-3">{isFrench ? 'Élève' : 'Student'}</th>
+                <th scope="col" className="px-4 py-3">{isFrench ? 'École & Circuit' : 'School & Route'}</th>
+                <th scope="col" className="px-4 py-3">{isFrench ? 'Catégories' : 'Categories'}</th>
+                <th scope="col" className="px-4 py-3">{isFrench ? 'Conducteur' : 'Reporting Driver'}</th>
+                <th scope="col" className="px-4 py-3">{isFrench ? 'Alertes sécurité' : 'Safety Alerts'}</th>
+                <th scope="col" className="px-4 py-3">{isFrench ? 'Statut' : 'Status'}</th>
+                <th scope="col" className="px-4 py-3 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+            <tbody className="divide-y divide-slate-700/60">
               {loading ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-400">
-                    <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-amber-500" />
-                    {isFrench ? 'Chargement des rapports d\'incidents...' : 'Loading student incident reports...'}
+                    <div role="status">
+                      <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-amber-500" aria-hidden="true" />
+                      {isFrench ? 'Chargement des rapports d\'incidents...' : 'Loading student incident reports...'}
+                    </div>
                   </td>
                 </tr>
               ) : filteredIncidents.length === 0 ? (
@@ -645,8 +730,8 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                   <td colSpan={8} className="py-12 text-center text-slate-400">
                     {timeRange === 'all' && !searchQuery.trim() ? (
                       <div className="flex flex-col items-center">
-                        <Search className="h-10 w-10 text-amber-500/60 mb-2" />
-                        <h4 className="text-base font-semibold text-slate-700 dark:text-slate-300">
+                        <Search className="h-10 w-10 text-amber-500/60 mb-2" aria-hidden="true" />
+                        <h4 className="text-base font-semibold text-slate-300">
                           {isFrench ? 'Rechercher dans l\'historique des incidents' : 'Search Student Incident History'}
                         </h4>
                         <p className="text-xs text-slate-500 mt-1 max-w-md">
@@ -657,8 +742,8 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                       </div>
                     ) : (
                       <div className="flex flex-col items-center">
-                        <ShieldAlert className="h-8 w-8 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
-                        <h4 className="text-base font-semibold text-slate-700 dark:text-slate-300">
+                        <ShieldAlert className="h-8 w-8 mx-auto mb-2" aria-hidden="true" />
+                        <h4 className="text-base font-semibold text-slate-300">
                           {isFrench ? 'Aucun rapport d\'incident trouvé' : 'No incident reports found'}
                         </h4>
                         <p className="text-xs text-slate-500 mt-1">
@@ -693,24 +778,24 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                     return (
                       <tr
                         key={r.id}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-750/50 transition cursor-pointer"
+                        className="hover:bg-slate-750/50 transition cursor-pointer"
                         onClick={() => handleOpenReview(r)}
                       >
                         <td className="px-4 py-3.5 whitespace-nowrap">
-                          <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                            <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                          <div className="font-medium text-slate-100 flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
                             {r.incidentDate}
                             {isArchivedDate(r.incidentDate) && (
                               <span
                                 title={isFrench ? 'Dossier archivé dans BigQuery (>6 mois)' : 'Record is older than 6 months and retrieved from BigQuery cold archive'}
-                                className="ml-1 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800"
+                                className="ml-1 px-1 py-0.2 rounded text-[10px] font-semibold border"
                               >
                                 BigQuery
                               </span>
                             )}
                           </div>
                           <div className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                            <Clock className="h-3 w-3" />
+                            <Clock className="h-3 w-3" aria-hidden="true" />
                             {r.incidentTime}
                           </div>
                         </td>
@@ -726,13 +811,14 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                                   name: r.studentName,
                                 });
                               }}
-                              className="font-semibold text-slate-900 dark:text-slate-100 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left"
+                              className="font-semibold text-slate-200 hover:text-amber-600 hover:text-amber-300 hover:underline transition text-left rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                               title={isFrench ? "Voir la fiche élève" : 'View student details'}
+                              aria-label={isFrench ? `Voir le profil de ${r.studentName}` : `View student profile for ${r.studentName}`}
                             >
                               {r.studentName}
                             </button>
                           ) : (
-                            <div className="font-semibold text-slate-900 dark:text-slate-100">
+                            <div className="font-semibold text-slate-100">
                               {r.studentName}
                             </div>
                           )}
@@ -750,15 +836,16 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                                 e.stopPropagation();
                                 onSelectSchool(r.schoolId, r.schoolName);
                               }}
-                              className="text-slate-900 dark:text-slate-200 flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left max-w-full"
+                              className="text-slate-200 flex items-center gap-1 hover:text-amber-600 hover:text-amber-300 hover:underline transition text-left max-w-full rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                               title={isFrench ? "Voir la fiche école" : 'View school details'}
+                              aria-label={isFrench ? `Voir l'école ${r.schoolName}` : `View school details for ${r.schoolName}`}
                             >
-                              <School className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                              <School className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
                               <span className="truncate max-w-[180px]">{r.schoolName}</span>
                             </button>
                           ) : (
-                            <div className="text-slate-900 dark:text-slate-200 flex items-center gap-1">
-                              <School className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <div className="text-slate-200 flex items-center gap-1">
+                              <School className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />
                               <span className="truncate max-w-[180px]">
                                 {r.schoolName || (isFrench ? 'École non assignée' : 'Unassigned School')}
                               </span>
@@ -775,7 +862,7 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                             {r.incidentTypes.map((k) => (
                               <span
                                 key={k}
-                                className="px-2 py-0.5 text-xs rounded-md bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600"
+                                className="px-2 py-0.5 text-xs rounded-md bg-slate-700 text-slate-200 border border-slate-600"
                               >
                                 {STUDENT_INCIDENT_CATEGORY_LABELS[k] || k}
                               </span>
@@ -784,7 +871,7 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                         </td>
 
                         <td className="px-4 py-3.5 whitespace-nowrap">
-                          <div className="text-slate-900 dark:text-slate-200 font-medium">
+                          <div className="text-slate-200 font-medium">
                             {r.driverName}
                           </div>
                           <div className="text-xs text-slate-400">ID: {r.driverId}</div>
@@ -793,18 +880,18 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                         <td className="px-4 py-3.5">
                           <div className="flex flex-col gap-1 text-xs">
                             {r.studentRemovedFromBus && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-rose-700 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-400 font-semibold w-fit">
-                                <UserX className="h-3 w-3" /> {isFrench ? 'Débarqué de l\'autobus' : 'Removed from Bus'}
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-rose-300 text-rose-400 font-semibold w-fit">
+                                <UserX className="h-3 w-3" aria-hidden="true" /> {isFrench ? 'Débarqué de l\'autobus' : 'Removed from Bus'}
                               </span>
                             )}
                             {r.firstAidRequired && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-red-700 bg-red-50 dark:bg-red-950/40 dark:text-red-400 font-semibold w-fit">
-                                <HeartPulse className="h-3 w-3" /> {isFrench ? 'Premiers soins' : 'First Aid Given'}
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-red-700 text-red-400 font-semibold w-fit">
+                                <HeartPulse className="h-3 w-3" aria-hidden="true" /> {isFrench ? 'Premiers soins' : 'First Aid Given'}
                               </span>
                             )}
                             {r.parentsNotified && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-blue-700 bg-blue-50 dark:bg-blue-950/40 dark:text-blue-400 w-fit">
-                                <PhoneCall className="h-3 w-3" /> {isFrench ? 'Parents notifiés' : 'Parents Notified'}
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-blue-300 text-blue-400 w-fit">
+                                <PhoneCall className="h-3 w-3" aria-hidden="true" /> {isFrench ? 'Parents notifiés' : 'Parents Notified'}
                               </span>
                             )}
                             {!r.studentRemovedFromBus &&
@@ -823,7 +910,7 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                           </span>
                           {r.officeFollowUp?.isOfficeLocked && (
                             <span className="ml-1 text-slate-400 inline-block align-middle" title={isFrench ? 'Dossier verrouillé' : 'Office Record Locked'}>
-                              <Lock className="h-3 w-3" />
+                              <Lock className="h-3 w-3" aria-hidden="true" />
                             </span>
                           )}
                         </td>
@@ -836,18 +923,21 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                                 e.stopPropagation();
                                 handleOpenPdf(r);
                               }}
-                              className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition border border-slate-200 dark:border-slate-600 flex items-center gap-1 cursor-pointer"
+                              className="px-2.5 py-1.5 min-h-[32px] text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 hover:bg-slate-600 text-slate-200 transition border border-slate-700 flex items-center gap-1 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                               title={isFrench ? 'Imprimer / Exporter PDF' : 'Print Official Incident Form / PDF'}
+                              aria-label={isFrench ? `Imprimer ou exporter le PDF pour ${r.studentName} (${r.incidentDate})` : `Print or export PDF for ${r.studentName} (${r.incidentDate})`}
                             >
-                              <Printer className="w-3.5 h-3.5 text-amber-500" />
+                              <Printer className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
                               <span>{isFrench ? 'Imprimer / PDF' : 'Print / PDF'}</span>
                             </button>
                             <button
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleOpenReview(r);
                               }}
-                              className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition shadow-xs cursor-pointer"
+                              className="px-2.5 py-1.5 min-h-[32px] text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition shadow-xs cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+                              aria-label={isFrench ? `Examiner et traiter l'incident de ${r.studentName} (${r.incidentDate})` : `Review and action incident for ${r.studentName} (${r.incidentDate})`}
                             >
                               {isFrench ? 'Examiner & Traiter' : 'Review & Action'}
                             </button>
@@ -869,14 +959,24 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
       </div>
 
       {/* ─── Office Follow-up Review Modal ────────────────────────────────────── */}
-      {isReviewModalOpen && selectedIncident && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-2xl w-full border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <IncidentModalDialog
+        open={Boolean(isReviewModalOpen && selectedIncident)}
+        onClose={() => setIsReviewModalOpen(false)}
+        ariaLabelledBy="incident-review-modal-title"
+      >
+        {selectedIncident && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSaveReview();
+            }}
+            className="bg-slate-800 rounded-2xl max-w-2xl w-full border border-slate-700 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+          >
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+            <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between bg-slate-900/50">
               <div className="flex items-center gap-2">
-                <ShieldAlert className="h-5 w-5 text-amber-500" />
-                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                <ShieldAlert className="h-5 w-5 text-amber-500" aria-hidden="true" />
+                <h2 id="incident-review-modal-title" className="text-lg font-bold text-slate-200">
                   Student Incident Office Review & Resolution
                 </h2>
               </div>
@@ -884,17 +984,19 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => handleOpenPdf(selectedIncident)}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  className="px-3 py-1.5 min-h-[32px] text-xs font-semibold rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 transition flex items-center gap-1.5 cursor-pointer shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                   title="Print Incident Report PDF"
                 >
-                  <Printer className="w-3.5 h-3.5 text-amber-500" />
+                  <Printer className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
                   <span>Print / PDF</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setIsReviewModalOpen(false)}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+                  aria-label={isFrench ? 'Fermer la fenêtre' : 'Close dialog'}
+                  className="p-1.5 min-w-[32px] min-h-[32px] inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:text-slate-200 transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 >
-                  <X className="h-5 w-5" />
+                  <X className="h-5 w-5" aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -902,13 +1004,13 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
             {/* Modal Content */}
             <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
               {/* Driver Report Summary Box */}
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 space-y-2 text-sm">
+              <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-700 space-y-2 text-sm">
                 <div className="flex justify-between items-start">
                   <div>
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                       Student
                     </span>
-                    <div className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    <div className="text-base font-bold text-slate-100">
                       {onSelectStudent && selectedIncident.studentName ? (
                         <button
                           type="button"
@@ -922,7 +1024,7 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                               name: selectedIncident.studentName,
                             })
                           }
-                          className="hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                          className="hover:text-amber-600 hover:text-amber-300 hover:underline transition rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                           title="View student details"
                         >
                           {selectedIncident.studentName}
@@ -940,13 +1042,13 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                       Occurred
                     </span>
-                    <div className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <div className="text-xs font-medium text-slate-300">
                       {selectedIncident.incidentDate} at {selectedIncident.incidentTime}
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-xs pt-1 text-slate-600 dark:text-slate-400">
+                <div className="grid grid-cols-2 gap-2 text-xs pt-1 text-slate-400">
                   <div>
                     <span className="font-semibold">School:</span>{' '}
                     {onSelectSchool && selectedIncident.schoolName ? (
@@ -955,7 +1057,7 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                         onClick={() =>
                           onSelectSchool(selectedIncident.schoolId, selectedIncident.schoolName)
                         }
-                        className="hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                        className="hover:text-amber-600 hover:text-amber-300 hover:underline transition rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                         title="View school details"
                       >
                         {selectedIncident.schoolName}
@@ -977,28 +1079,28 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
 
                 <div className="pt-2">
                   <span className="text-xs font-semibold text-slate-500">Driver Description:</span>
-                  <p className="mt-1 text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700/80 leading-relaxed text-xs">
+                  <p className="mt-1 text-slate-200 bg-slate-800 p-2.5 rounded-lg border border-slate-700/80 leading-relaxed text-xs">
                     {selectedIncident.description}
                   </p>
                 </div>
 
                 {selectedIncident.immediateActionTaken && (
-                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                  <div className="text-xs text-slate-400">
                     <span className="font-semibold">Immediate Action:</span> {selectedIncident.immediateActionTaken}
                   </div>
                 )}
                 {selectedIncident.otherStudentsInvolved && (
-                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                  <div className="text-xs text-slate-400">
                     <span className="font-semibold">Other Students:</span> {selectedIncident.otherStudentsInvolved}
                   </div>
                 )}
                 {selectedIncident.witnesses && (
-                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                  <div className="text-xs text-slate-400">
                     <span className="font-semibold">Witnesses:</span> {selectedIncident.witnesses}
                   </div>
                 )}
                 {selectedIncident.parentsNotificationDetail && (
-                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                  <div className="text-xs text-slate-400">
                     <span className="font-semibold">Parent Notification:</span> {selectedIncident.parentsNotificationDetail}
                   </div>
                 )}
@@ -1007,13 +1109,17 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
               {/* Status & Review Metadata */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Incident Status *
+                  <label htmlFor={statusSelectId} className="block text-xs font-semibold text-slate-200 mb-1">
+                    Incident Status <span aria-hidden="true">*</span>
                   </label>
                   <select
+                    id={statusSelectId}
+                    name="reviewStatus"
+                    autoFocus
+                    required
                     value={reviewStatus}
                     onChange={(e) => setReviewStatus(e.target.value as StudentIncidentStatus)}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20"
+                    className="w-full px-3 py-2 text-base sm:text-sm rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
                   >
                     <option value="submitted">Submitted</option>
                     <option value="under_investigation">Under Investigation</option>
@@ -1024,36 +1130,46 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Review Date *
+                  <label htmlFor={reviewedDateId} className="block text-xs font-semibold text-slate-200 mb-1">
+                    Review Date <span aria-hidden="true">*</span>
                   </label>
                   <input
+                    id={reviewedDateId}
+                    name="reviewedDate"
                     type="date"
+                    required
+                    aria-invalid={Boolean(reviewError && !reviewedDate)}
+                    aria-describedby={reviewError ? reviewErrorId : undefined}
                     value={reviewedDate}
                     onChange={(e) => setReviewedDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                    className="w-full px-3 py-2 text-base sm:text-sm rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Admin / Officer Name *
+                  <label htmlFor={adminNameId} className="block text-xs font-semibold text-slate-200 mb-1">
+                    Admin / Officer Name <span aria-hidden="true">*</span>
                   </label>
                   <input
+                    id={adminNameId}
+                    name="administratorName"
                     type="text"
+                    required
+                    aria-invalid={Boolean(reviewError && !administratorName.trim())}
+                    aria-describedby={reviewError ? reviewErrorId : undefined}
                     value={administratorName}
                     onChange={(e) => setAdministratorName(e.target.value)}
                     placeholder="e.g. John Doe"
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                    className="w-full px-3 py-2 text-base sm:text-sm rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
                   />
                 </div>
               </div>
 
               {/* Disciplinary Actions Checkboxes */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              <fieldset>
+                <legend className="block text-xs font-semibold text-slate-200 mb-2">
                   Disciplinary & Administrative Actions Taken
-                </label>
+                </legend>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {Object.entries(DISCIPLINARY_ACTION_LABELS).map(([k, label]) => {
                     const isChecked = disciplinaryActions.includes(k);
@@ -1062,8 +1178,8 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
                         key={k}
                         className={`flex items-center gap-2 p-2.5 rounded-lg border text-xs cursor-pointer transition ${
                           isChecked
-                            ? 'bg-amber-500/10 border-amber-400 text-amber-900 dark:text-amber-200 font-semibold'
-                            : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300'
+                            ? 'bg-amber-500/10 border-amber-400  font-semibold'
+                            : 'border-slate-700 hover:bg-slate-750 text-slate-300'
                         }`}
                       >
                         <input
@@ -1080,88 +1196,97 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
 
                 {disciplinaryActions.includes('other') && (
                   <div className="mt-2">
+                    <label htmlFor={otherDisciplineId} className="sr-only">
+                      Other disciplinary or corrective action
+                    </label>
                     <input
+                      id={otherDisciplineId}
+                      name="disciplinaryOther"
                       type="text"
                       placeholder="Specify other disciplinary or corrective action..."
                       value={disciplinaryOther}
                       onChange={(e) => setDisciplinaryOther(e.target.value)}
-                      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                      className="w-full px-3 py-2 text-base sm:text-sm rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
                     />
                   </div>
                 )}
-              </div>
+              </fieldset>
 
               {/* Office Administrative Notes */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label htmlFor={officeNotesId} className="block text-xs font-semibold text-slate-200 mb-1">
                   Administrative Resolution Notes & Follow-up Details
                 </label>
                 <textarea
+                  id={officeNotesId}
+                  name="officeNotes"
                   rows={3}
                   value={officeNotes}
                   onChange={(e) => setOfficeNotes(e.target.value)}
                   placeholder="Record summary of conversations with school principal, parent conferences, or suspension dates..."
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20"
+                  className="w-full px-3 py-2 text-base sm:text-sm rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
                 />
               </div>
 
               {/* Lock Record Checkbox */}
-              <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-200 dark:border-amber-700/40 flex items-center justify-between">
+              <div className="p-3 rounded-lg bg-amber-500/5 border flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <Lock className="h-4 w-4" aria-hidden="true" />
                   <div>
-                    <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                    <label htmlFor={lockRecordId} className="text-xs font-bold text-slate-200 cursor-pointer">
                       Lock Office Record
-                    </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    </label>
+                    <div className="text-[11px] text-slate-400">
                       Prevent subsequent modifications once case has concluded.
                     </div>
                   </div>
                 </div>
                 <input
+                  id={lockRecordId}
+                  name="isOfficeLocked"
                   type="checkbox"
                   checked={isOfficeLocked}
                   onChange={(e) => setIsOfficeLocked(e.target.checked)}
-                  aria-label="Lock Office Record"
                   className="rounded border-slate-300 text-amber-500 focus:ring-amber-500 h-4 w-4"
                 />
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3 bg-slate-50/50 dark:bg-slate-900/50">
+            <div className="px-6 py-4 border-t border-slate-700 flex items-center justify-end gap-3 bg-slate-900/50">
               {reviewError && (
-                <span className="mr-auto text-xs font-semibold text-rose-500">{reviewError}</span>
+                <span id={reviewErrorId} role="alert" className="mr-auto text-xs font-semibold text-rose-500">
+                  {reviewError}
+                </span>
               )}
               <button
                 type="button"
                 onClick={() => setIsReviewModalOpen(false)}
-                className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition"
+                className="px-4 py-2 min-h-[36px] text-sm font-medium rounded-lg border border-slate-700 hover:bg-slate-700 text-slate-200 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
                 Cancel
               </button>
               <button
-                type="button"
-                onClick={handleSaveReview}
+                type="submit"
                 disabled={saving}
-                className="px-4 py-2 text-sm font-semibold rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition flex items-center gap-1.5 shadow-xs"
+                className="px-4 py-2 min-h-[36px] text-sm font-semibold rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition flex items-center gap-1.5 shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
                 {saving ? (
                   <>
-                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
                     Saving...
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="h-4 w-4" />
+                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                     Save Resolution
                   </>
                 )}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </form>
+        )}
+      </IncidentModalDialog>
 
       {isPdfModalOpen && (
         <React.Suspense fallback={<ExportLoadingOverlay />}>
@@ -1173,6 +1298,8 @@ export const StudentIncidentsView: React.FC<StudentIncidentsViewProps> = ({
           />
         </React.Suspense>
       )}
-    </div>
+    </PageShell>
   );
 };
+
+

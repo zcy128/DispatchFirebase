@@ -1,7 +1,9 @@
-import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   getLocalTodayString,
   addDaysToDateString
@@ -135,8 +137,9 @@ const DiffToggle = memo(function DiffToggle({
   return (
     <button
       type="button"
+      aria-expanded={expanded}
       onClick={onToggle}
-      className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300"
+      className="flex items-center space-x-1 text-xs text-sky-400 hover:text-sky-300 px-1.5 py-1 min-h-[28px] rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
     >
       <span>
         {expanded
@@ -144,7 +147,7 @@ const DiffToggle = memo(function DiffToggle({
           : (isFrench ? 'Voir les écarts' : 'View Diffs')}{' '}
         ({count})
       </span>
-      {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+      {expanded ? <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />}
     </button>
   );
 });
@@ -437,7 +440,13 @@ const AuditLogScroller = memo(function AuditLogScroller({
   });
 
   return (
-    <div ref={containerRef} className="overflow-y-auto max-h-[calc(100vh-270px)] pr-1">
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      role="region"
+      aria-label={isFrench ? 'Liste des journaux d\'audit' : 'Audit log records'}
+      className="overflow-y-auto max-h-[calc(100vh-270px)] pr-1 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-400"
+    >
       <div
         style={{
           height: `${virtualizer.getTotalSize()}px`,
@@ -563,6 +572,9 @@ export const AuditLogsView: React.FC = () => {
 
   const requestSeqRef = useRef(0);
   const deferredSearch = useDeferredValue(searchQuery);
+  const baseId = useId();
+  const dateFromId = `${baseId}-date-from`;
+  const dateToId = `${baseId}-date-to`;
 
   useEffect(() => {
     const timerId = window.setInterval(() => {
@@ -1068,7 +1080,7 @@ export const AuditLogsView: React.FC = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
         <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mb-4 shadow-lg shadow-rose-500/10">
-          <ShieldAlert className="w-8 h-8" />
+          <ShieldAlert className="w-8 h-8" aria-hidden="true" />
         </div>
         <h2 className="text-xl font-bold text-white tracking-tight">
           {isFrench ? 'Accès restreint' : 'Access Restricted'}
@@ -1085,51 +1097,48 @@ export const AuditLogsView: React.FC = () => {
   const countLabel = (ready: boolean, count: number) => (ready ? String(count) : '–');
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
-        <div className="flex items-center space-x-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-500 to-sky-400 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-            <History className="w-6 h-6" />
+    <PageShell>
+      <PageHeader
+        title={isFrench ? 'Journaux d\'audit et d\'opérations système' : 'System Audit & Operation Logs'}
+        subtitle={
+          isFrench
+            ? 'Pistes d\'audit de conformité sur 5 modules opérationnels (Fenêtre max. de 7 jours, défaut : aujourd\'hui)'
+            : 'Comprehensive compliance audit trails across 5 operational modules (Max 7-day query window, default: today)'
+        }
+        icon={
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-sky-400 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+            <History className="w-5 h-5" aria-hidden="true" />
           </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-              {isFrench ? 'Journaux d\'audit et d\'opérations système' : 'System Audit & Operation Logs'}
-            </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {isFrench
-                ? 'Pistes d\'audit de conformité sur 5 modules opérationnels (Fenêtre max. de 7 jours, défaut : aujourd\'hui)'
-                : 'Comprehensive compliance audit trails across 5 operational modules (Max 7-day query window, default: today)'}
-            </p>
+        }
+        actions={
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="flex items-center space-x-1.5 px-3 py-2 min-h-[36px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+              <span>{isFrench ? 'Actualiser' : 'Refresh'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              disabled={!activeReady || activeLogsCount === 0}
+              className="flex items-center space-x-1.5 px-3.5 py-2 min-h-[36px] rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
+            >
+              <Download className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>{isFrench ? 'Exporter CSV' : 'Export CSV'}</span>
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>{isFrench ? 'Actualiser' : 'Refresh'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            disabled={!activeReady || activeLogsCount === 0}
-            className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition disabled:opacity-40"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>{isFrench ? 'Exporter CSV' : 'Export CSV'}</span>
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
           <div className="flex items-center space-x-2 text-xs font-bold text-slate-300">
-            <Calendar className="w-4 h-4 text-amber-400" />
+            <Calendar className="w-4 h-4 text-amber-400" aria-hidden="true" />
             <span>
               {isFrench
                 ? 'Fenêtre d\'audit (Maximum 7 jours autorisés)'
@@ -1152,8 +1161,8 @@ export const AuditLogsView: React.FC = () => {
         </div>
 
         {rangeWarning ? (
-          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center space-x-2 text-xs text-amber-300">
-            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+          <div role="alert" className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center space-x-2 text-xs text-amber-300">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" aria-hidden="true" />
             <span>{rangeWarning}</span>
           </div>
         ) : null}
@@ -1161,40 +1170,43 @@ export const AuditLogsView: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              <label htmlFor={dateFromId} className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
                 {isFrench ? 'Date de début (Du)' : 'Start Date (From)'}
               </label>
               <input
+                id={dateFromId}
                 type="date"
                 value={dateFrom}
                 onChange={(e) => handleDateFromChange(e.target.value)}
                 max={today}
-                className="px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-amber-500/50"
+                className="px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              <label htmlFor={dateToId} className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
                 {isFrench ? 'Date de fin (Au)' : 'End Date (To)'}
               </label>
               <input
+                id={dateToId}
                 type="date"
                 value={dateTo}
                 onChange={(e) => handleDateToChange(e.target.value)}
                 min={dateFrom}
                 max={today}
-                className="px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-amber-500/50"
+                className="px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
               />
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 pt-1 md:pt-0">
+          <div role="group" aria-label={isFrench ? 'Préréglages de période' : 'Date range presets'} className="flex items-center space-x-2 pt-1 md:pt-0">
             <span className="text-xs text-slate-400 font-medium mr-1">
               {isFrench ? 'Préréglages :' : 'Presets:'}
             </span>
             <button
               type="button"
+              aria-pressed={selectedDaysCount === 1 && dateTo === today}
               onClick={() => handleApplyPreset(1)}
-              className={`px-2.5 py-1 text-xs rounded-lg border transition font-semibold ${
+              className={`px-2.5 py-1 min-h-[32px] text-xs rounded-lg border transition font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 selectedDaysCount === 1 && dateTo === today
                   ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm'
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
@@ -1204,8 +1216,9 @@ export const AuditLogsView: React.FC = () => {
             </button>
             <button
               type="button"
+              aria-pressed={selectedDaysCount === 3 && dateTo === today}
               onClick={() => handleApplyPreset(3)}
-              className={`px-2.5 py-1 text-xs rounded-lg border transition ${
+              className={`px-2.5 py-1 min-h-[32px] text-xs rounded-lg border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 selectedDaysCount === 3 && dateTo === today
                   ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm font-semibold'
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
@@ -1215,8 +1228,9 @@ export const AuditLogsView: React.FC = () => {
             </button>
             <button
               type="button"
+              aria-pressed={selectedDaysCount === 7 && dateTo === today}
               onClick={() => handleApplyPreset(7)}
-              className={`px-2.5 py-1 text-xs rounded-lg border transition ${
+              className={`px-2.5 py-1 min-h-[32px] text-xs rounded-lg border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 selectedDaysCount === 7 && dateTo === today
                   ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm font-bold'
                   : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold'
@@ -1228,20 +1242,26 @@ export const AuditLogsView: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex items-center space-x-2 border-b border-slate-800 pb-2 overflow-x-auto">
+      <div
+        role="tablist"
+        aria-label={isFrench ? 'Modules d\'audit' : 'Audit log categories'}
+        className="flex items-center space-x-2 border-b border-slate-800 pb-2 overflow-x-auto"
+      >
         <button
           type="button"
+          role="tab"
+          aria-selected={activeCategory === 'dispatch'}
           onClick={() => {
             setActiveCategory('dispatch');
             handleResetFilters();
           }}
-          className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-3.5 py-2 min-h-[36px] rounded-xl text-xs font-bold transition whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeCategory === 'dispatch'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <Radio className="w-3.5 h-3.5" />
+          <Radio className="w-3.5 h-3.5" aria-hidden="true" />
           <span>{isFrench ? '1. Opérations de régulation' : '1. Daily Dispatch Logs'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
             {countLabel(dispatchReady, filteredDispatchLogs.length)}
@@ -1249,17 +1269,19 @@ export const AuditLogsView: React.FC = () => {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={activeCategory === 'routes'}
           onClick={() => {
             setActiveCategory('routes');
             handleResetFilters();
           }}
-          className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-3.5 py-2 min-h-[36px] rounded-xl text-xs font-bold transition whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeCategory === 'routes'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <Navigation className="w-3.5 h-3.5" />
+          <Navigation className="w-3.5 h-3.5" aria-hidden="true" />
           <span>{isFrench ? '2. Circuits & Horaires' : '2. Route & Stops Audit'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
             {countLabel(routesReady, filteredRouteLogs.length)}
@@ -1267,17 +1289,19 @@ export const AuditLogsView: React.FC = () => {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={activeCategory === 'master'}
           onClick={() => {
             setActiveCategory('master');
             handleResetFilters();
           }}
-          className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-3.5 py-2 min-h-[36px] rounded-xl text-xs font-bold transition whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeCategory === 'master'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <GraduationCap className="w-3.5 h-3.5" />
+          <GraduationCap className="w-3.5 h-3.5" aria-hidden="true" />
           <span>{isFrench ? '3. Référentiel Élèves & Véhicules' : '3. Student & Vehicle Master'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
             {countLabel(masterReady, filteredMasterLogs.length)}
@@ -1285,17 +1309,19 @@ export const AuditLogsView: React.FC = () => {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={activeCategory === 'payroll'}
           onClick={() => {
             setActiveCategory('payroll');
             handleResetFilters();
           }}
-          className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-3.5 py-2 min-h-[36px] rounded-xl text-xs font-bold transition whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeCategory === 'payroll'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <DollarSign className="w-3.5 h-3.5" />
+          <DollarSign className="w-3.5 h-3.5" aria-hidden="true" />
           <span>{isFrench ? '4. Opérations de paie' : '4. Payroll Operations'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
             {countLabel(payrollReady, filteredPayrollLogs.length)}
@@ -1303,17 +1329,19 @@ export const AuditLogsView: React.FC = () => {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={activeCategory === 'safety'}
           onClick={() => {
             setActiveCategory('safety');
             handleResetFilters();
           }}
-          className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+          className={`flex items-center space-x-2 px-3.5 py-2 min-h-[36px] rounded-xl text-xs font-bold transition whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeCategory === 'safety'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <ShieldAlert className="w-3.5 h-3.5" />
+          <ShieldAlert className="w-3.5 h-3.5" aria-hidden="true" />
           <span>{isFrench ? '5. Sécurité & Opérations terrain' : '5. Safety & Field Operations'}</span>
           <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-black/20 text-current">
             {countLabel(safetyReady, filteredSafetyLogs.length)}
@@ -1321,10 +1349,13 @@ export const AuditLogsView: React.FC = () => {
         </button>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">
+      <search
+        aria-label={isFrench ? 'Rechercher et filtrer les journaux' : 'Search and filter audit logs'}
+        className="block bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm"
+      >
         <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
           <div className="flex items-center space-x-2 text-xs font-bold text-slate-300">
-            <Filter className="w-4 h-4 text-amber-400" />
+            <Filter className="w-4 h-4 text-amber-400" aria-hidden="true" />
             <span>
               {isFrench
                 ? 'Recherche & Filtres dans le module sélectionné'
@@ -1335,7 +1366,7 @@ export const AuditLogsView: React.FC = () => {
             <button
               type="button"
               onClick={handleResetFilters}
-              className="text-xs font-semibold text-rose-400 hover:text-rose-300 transition"
+              className="text-xs font-semibold text-rose-400 hover:text-rose-300 transition px-2 py-1 min-h-[28px] rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
             >
               {isFrench ? 'Réinitialiser' : 'Reset Filters'}
             </button>
@@ -1344,20 +1375,22 @@ export const AuditLogsView: React.FC = () => {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500" />
+            <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
             <input
-              type="text"
+              type="search"
+              aria-label={isFrench ? 'Rechercher dans le journal sélectionné' : 'Search content, summary, ID, or diff'}
               placeholder={isFrench ? 'Rechercher par intervenant, circuit, ID ou détail...' : 'Search content, summary, ID, or diff...'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
+              className="w-full pl-9 pr-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-base sm:text-xs text-slate-100 placeholder-slate-500 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
           </div>
           <div>
             <select
               value={selectedActor}
               onChange={(e) => setSelectedActor(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-amber-500/50"
+              aria-label={isFrench ? 'Filtrer par opérateur ou utilisateur' : 'Filter by operator or user'}
+              className="w-full px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             >
               <option value="">{isFrench ? 'Tous les utilisateurs / intervenants' : 'All Operators / Users'}</option>
               {activeActors.map((actor) => (
@@ -1371,7 +1404,8 @@ export const AuditLogsView: React.FC = () => {
             <select
               value={selectedAction}
               onChange={(e) => setSelectedAction(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-amber-500/50"
+              aria-label={isFrench ? 'Filtrer par action ou catégorie' : 'Filter by action or category'}
+              className="w-full px-3 py-1.5 bg-slate-950/80 border border-slate-800 rounded-xl text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             >
               <option value="all">{isFrench ? 'Toutes les actions & catégories' : 'All Actions & Categories'}</option>
               {activeCategory === 'dispatch' && (
@@ -1423,16 +1457,16 @@ export const AuditLogsView: React.FC = () => {
             </select>
           </div>
         </div>
-      </div>
+      </search>
 
       {!activeReady && loading ? (
-        <div className="py-16 flex flex-col items-center justify-center space-y-2 text-slate-500 text-xs">
-          <RefreshCw className="w-6 h-6 animate-spin text-amber-400" />
+        <div role="status" className="py-16 flex flex-col items-center justify-center space-y-2 text-slate-500 text-xs">
+          <RefreshCw className="w-6 h-6 animate-spin text-amber-400" aria-hidden="true" />
           <span>{isFrench ? 'Chargement des journaux d\'audit...' : 'Loading audit log records...'}</span>
         </div>
       ) : activeLogsCount === 0 ? (
         <div className="py-12 text-center bg-slate-900 border border-slate-800 rounded-2xl p-6">
-          <History className="w-8 h-8 text-slate-600 mx-auto mb-2 opacity-50" />
+          <History className="w-8 h-8 text-slate-600 mx-auto mb-2 opacity-50" aria-hidden="true" />
           <p className="text-sm font-semibold text-slate-400">
             {isFrench
               ? 'Aucun enregistrement d\'audit trouvé pour cette période'
@@ -1453,6 +1487,6 @@ export const AuditLogsView: React.FC = () => {
           onToggle={toggleExpand}
         />
       )}
-    </div>
+    </PageShell>
   );
 };

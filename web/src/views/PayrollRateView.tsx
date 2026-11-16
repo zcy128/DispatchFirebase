@@ -1,4 +1,6 @@
-import React, { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useDeferredValue, useEffect, useId, useMemo, useState } from 'react';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   DollarSign,
   Plus,
@@ -53,7 +55,7 @@ const BiweeklyPayrollView = React.lazy(() =>
 );
 
 const TabFallback = (
-  <div className="p-8 text-sm text-slate-500 dark:text-slate-400">Loading payroll tab...</div>
+  <div className="p-8 text-sm text-slate-400">Loading payroll tab...</div>
 );
 
 interface PayrollRateViewProps {
@@ -158,7 +160,7 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
     const raw = (weekDays || 'MTWRF').toUpperCase();
     if (raw === 'WEEKDAYS' || raw === 'MTWRF' || raw === 'ALL' || !weekDays) {
       return (
-        <span className="inline-block px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+        <span className="inline-block px-1.5 py-0.5 text-[10px] font-mono font-bold rounded bg-slate-800 text-slate-300 border border-slate-700">
           MTWRF
         </span>
       );
@@ -174,7 +176,7 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
               className={`w-4 h-4 flex items-center justify-center rounded ${
                 active
                   ? 'bg-amber-500 text-slate-950 shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600'
+                  : 'bg-slate-800 text-slate-600'
               }`}
               title={active ? `Runs on ${d}` : `Does not run on ${d}`}
             >
@@ -206,6 +208,13 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
   const [simShiftType, setSimShiftType] = useState<string>('AM');
   const [simResult, setSimResult] = useState<RateCalculationResponse | null>(null);
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
+  const simDateId = useId();
+  const simBoardFieldId = useId();
+  const simRouteFieldId = useId();
+  const simShiftFieldId = useId();
+  const simEmployeeFieldId = useId();
+  const simJobTitleFieldId = useId();
+  const simShiftTypeFieldId = useId();
 
   // Synchronize when initialBoardRates updates from parent
   useEffect(() => {
@@ -436,145 +445,157 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
   }, [customRates, filterBoardId, filterJobTitle, deferredSearchQuery]);
 
   return (
-    <div className="space-y-6 animate-fade-in pb-12">
+    <PageShell className="animate-fade-in pb-12">
       {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-            <DollarSign className="w-7 h-7" />
+      <PageHeader
+        title="Payroll Base Rates & Overrides"
+        subtitle="Manage School Board shift base rates (AM / Midday / PM) and 4-tier custom rate overrides."
+        icon={
+          <div aria-hidden="true" className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <DollarSign className="w-5 h-5" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-              Payroll Base Rates & Overrides
-            </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Manage School Board shift base rates (AM / Midday / PM) and 4-tier custom rate overrides.
-            </p>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="Refresh payroll rates"
+              onClick={() => {
+                loadData(true);
+              }}
+              disabled={loading}
+              className="min-w-[36px] min-h-[36px] inline-flex items-center justify-center p-2 rounded-xl border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors shadow-sm disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+              title="Refresh"
+            >
+              <RefreshCw aria-hidden="true" className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEditingCustomRate(null);
+                setIsCustomModalOpen(true);
+              }}
+              className="min-h-[36px] inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-sm transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+            >
+              <Plus aria-hidden="true" className="w-4 h-4" />
+              <span>New Custom Rate</span>
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              loadData(true);
-            }}
-            disabled={loading}
-            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm disabled:opacity-50"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-
-          <button
-            onClick={() => {
-              setEditingCustomRate(null);
-              setIsCustomModalOpen(true);
-            }}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-sm shadow-sm transition-all hover:shadow hover:-translate-y-0.5"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Custom Rate</span>
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-px">
+      <div role="group" aria-label="Payroll sections" className="flex items-center gap-2 border-b border-slate-700 pb-px overflow-x-auto">
         <button
+          type="button"
+          aria-pressed={activeTab === 'board-rates'}
           onClick={() => setActiveTab('board-rates')}
-          className={`inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
             activeTab === 'board-rates'
-              ? 'border-amber-500 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20 rounded-t-lg'
-              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'border-amber-500   rounded-t-lg'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Building2 className="w-4 h-4" />
+          <Building2 aria-hidden="true" className="w-4 h-4" />
           <span>School Board Base Rates</span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
             {boardRates.length}
           </span>
         </button>
 
         <button
+          type="button"
+          aria-pressed={activeTab === 'custom-rates'}
           onClick={() => setActiveTab('custom-rates')}
-          className={`inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
             activeTab === 'custom-rates'
-              ? 'border-amber-500 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20 rounded-t-lg'
-              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'border-amber-500   rounded-t-lg'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Sliders className="w-4 h-4" />
+          <Sliders aria-hidden="true" className="w-4 h-4" />
           <span>Custom & Override Rates</span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 font-bold">
+          <span className="text-xs px-2 py-0.5 rounded-full font-bold">
             {customRates.length}
           </span>
         </button>
 
         <button
+          type="button"
+          aria-pressed={activeTab === 'calculator'}
           onClick={() => setActiveTab('calculator')}
-          className={`inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
             activeTab === 'calculator'
-              ? 'border-amber-500 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20 rounded-t-lg'
-              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'border-amber-500   rounded-t-lg'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Calculator className="w-4 h-4" />
+          <Calculator aria-hidden="true" className="w-4 h-4" />
           <span>Rate Resolution Simulator</span>
         </button>
 
         <button
+          type="button"
+          aria-pressed={activeTab === 'dispatch-rates'}
           onClick={() => setActiveTab('dispatch-rates')}
-          className={`inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
             activeTab === 'dispatch-rates'
-              ? 'border-amber-500 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20 rounded-t-lg'
-              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'border-amber-500   rounded-t-lg'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <DollarSign className="w-4 h-4" />
+          <DollarSign aria-hidden="true" className="w-4 h-4" />
           <span>Dispatch Shift Rates</span>
         </button>
 
         <button
+          type="button"
+          aria-pressed={activeTab === 'dispatch-payroll'}
           onClick={() => setActiveTab('dispatch-payroll')}
-          className={`inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
             activeTab === 'dispatch-payroll'
-              ? 'border-amber-500 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20 rounded-t-lg'
-              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'border-amber-500   rounded-t-lg'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <UserCheck className="w-4 h-4" />
+          <UserCheck aria-hidden="true" className="w-4 h-4" />
           <span>Daily Dispatch Payroll</span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-bold">
+          <span className="text-xs px-2 py-0.5 rounded-full font-bold">
             Live
           </span>
         </button>
 
         <button
+          type="button"
+          aria-pressed={activeTab === 'payroll-dept-log'}
           onClick={() => setActiveTab('payroll-dept-log')}
-          className={`inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
             activeTab === 'payroll-dept-log'
-              ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-t-lg'
-              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'border-emerald-500   rounded-t-lg'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Receipt className="w-4 h-4" />
+          <Receipt aria-hidden="true" className="w-4 h-4" />
           <span>Payroll Department Log</span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 font-bold">
+          <span className="text-xs px-2 py-0.5 rounded-full font-bold">
             Finance
           </span>
         </button>
 
         <button
+          type="button"
+          aria-pressed={activeTab === 'biweekly-payroll'}
           onClick={() => setActiveTab('biweekly-payroll')}
-          className={`inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+          className={`shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
             activeTab === 'biweekly-payroll'
-              ? 'border-amber-500 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20 rounded-t-lg'
-              : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              ? 'border-amber-500   rounded-t-lg'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <FileSpreadsheet className="w-4 h-4" />
+          <FileSpreadsheet aria-hidden="true" className="w-4 h-4" />
           <span>Bi-Weekly Payroll Summary</span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-bold">
+          <span className="text-xs px-2 py-0.5 rounded-full font-bold">
             2-Week
           </span>
         </button>
@@ -582,8 +603,8 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
 
       {/* Error Banner */}
       {error && (
-        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-sm flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 shrink-0" />
+        <div role="alert" className="p-4 rounded-xl border text-sm flex items-center gap-3">
+          <AlertCircle aria-hidden="true" className="w-5 h-5 shrink-0" />
           <span>{error}</span>
         </div>
       )}
@@ -591,8 +612,8 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
       {/* TAB 1: SCHOOL BOARD BASE RATES */}
       {activeTab === 'board-rates' && (
         <div className="space-y-6">
-          <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/40 rounded-xl p-4 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-3">
-            <HelpCircle className="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="border rounded-xl p-4 text-xs flex items-start gap-3">
+            <HelpCircle aria-hidden="true" className="w-5 h-5 shrink-0" />
             <div>
               <p className="font-semibold text-sm mb-0.5">School Board Base Rates (Tier 4 Baseline)</p>
               <p>
@@ -600,21 +621,20 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
               </p>
             </div>
           </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {boardRates.map((board) => (
               <div
                 key={board.schoolBoardId}
-                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+                className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm hover:shadow-md transition-shadow"
               >
                 {/* Board Card Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-800/40">
                   <div className="flex items-center gap-3">
-                    <span className="px-2.5 py-1 text-xs font-extrabold uppercase tracking-wide bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 rounded-md">
+                    <span className="px-2.5 py-1 text-xs font-extrabold uppercase tracking-wide rounded-md">
                       {board.schoolBoardCode}
                     </span>
                     <div>
-                      <h3 className="font-bold text-slate-900 dark:text-white">
+                      <h3 className="font-bold text-white">
                         {board.schoolBoardName}
                       </h3>
                       <span className="text-xs text-slate-400">Board ID: #{board.schoolBoardId}</span>
@@ -626,7 +646,7 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                       setEditingBoardDTO(board);
                       setIsBoardModalOpen(true);
                     }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shadow-sm"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition-colors shadow-sm"
                   >
                     <Pencil className="w-3.5 h-3.5" />
                     <span>Edit Base Rates</span>
@@ -638,16 +658,16 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                   {/* Drivers Matrix */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                      <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                         Driver Base Rates
                       </span>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2.5 text-center">
-                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/50">
+                      <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
                         <span className="text-[11px] font-bold text-slate-500 uppercase block mb-1">AM Shift</span>
-                        <div className="text-base font-extrabold text-slate-900 dark:text-white">
+                        <div className="text-base font-extrabold text-white">
                           ${board.driver.am.payRate !== undefined ? board.driver.am.payRate.toFixed(2) : '--'}
                         </div>
                         <span className="text-[11px] text-slate-400">
@@ -655,9 +675,9 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                         </span>
                       </div>
 
-                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/50">
+                      <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
                         <span className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Midday</span>
-                        <div className="text-base font-extrabold text-slate-900 dark:text-white">
+                        <div className="text-base font-extrabold text-white">
                           ${board.driver.midday.payRate !== undefined ? board.driver.midday.payRate.toFixed(2) : '--'}
                         </div>
                         <span className="text-[11px] text-slate-400">
@@ -665,9 +685,9 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                         </span>
                       </div>
 
-                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/50">
+                      <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
                         <span className="text-[11px] font-bold text-slate-500 uppercase block mb-1">PM Shift</span>
-                        <div className="text-base font-extrabold text-slate-900 dark:text-white">
+                        <div className="text-base font-extrabold text-white">
                           ${board.driver.pm.payRate !== undefined ? board.driver.pm.payRate.toFixed(2) : '--'}
                         </div>
                         <span className="text-[11px] text-slate-400">
@@ -680,16 +700,16 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                   {/* Attendants Matrix */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                      <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
                         Attendant Base Rates
                       </span>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2.5 text-center">
-                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/50">
+                      <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
                         <span className="text-[11px] font-bold text-slate-500 uppercase block mb-1">AM Shift</span>
-                        <div className="text-base font-extrabold text-slate-900 dark:text-white">
+                        <div className="text-base font-extrabold text-white">
                           ${board.attendant.am.payRate !== undefined ? board.attendant.am.payRate.toFixed(2) : '--'}
                         </div>
                         <span className="text-[11px] text-slate-400">
@@ -697,9 +717,9 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                         </span>
                       </div>
 
-                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/50">
+                      <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
                         <span className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Midday</span>
-                        <div className="text-base font-extrabold text-slate-900 dark:text-white">
+                        <div className="text-base font-extrabold text-white">
                           ${board.attendant.midday.payRate !== undefined ? board.attendant.midday.payRate.toFixed(2) : '--'}
                         </div>
                         <span className="text-[11px] text-slate-400">
@@ -707,9 +727,9 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                         </span>
                       </div>
 
-                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/50">
+                      <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
                         <span className="text-[11px] font-bold text-slate-500 uppercase block mb-1">PM Shift</span>
-                        <div className="text-base font-extrabold text-slate-900 dark:text-white">
+                        <div className="text-base font-extrabold text-white">
                           ${board.attendant.pm.payRate !== undefined ? board.attendant.pm.payRate.toFixed(2) : '--'}
                         </div>
                         <span className="text-[11px] text-slate-400">
@@ -729,23 +749,25 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
       {activeTab === 'custom-rates' && (
         <div className="space-y-4">
           {/* Filters Bar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+          <search aria-label="Filter custom payroll rates" className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-800 p-4 rounded-xl border border-slate-700">
             <div className="relative w-full sm:w-80">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search aria-hidden="true" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
-                type="text"
+                type="search"
+                aria-label="Search custom rates by route, employee, or notes"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by route, employee, or notes..."
-                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full pl-9 pr-3 py-2 text-base sm:text-sm rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               />
             </div>
 
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <select
+                aria-label="Filter by school board"
                 value={filterBoardId}
                 onChange={(e) => setFilterBoardId(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none"
+                className="px-3 py-2 text-base sm:text-sm rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
                 <option value="all">All School Boards</option>
                 {lookups.schoolBoards.map((b) => (
@@ -756,37 +778,39 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
               </select>
 
               <select
+                aria-label="Filter by job title"
                 value={filterJobTitle}
                 onChange={(e) => setFilterJobTitle(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none"
+                className="px-3 py-2 text-base sm:text-sm rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
                 <option value="all">All Job Titles</option>
                 <option value="driver">Driver</option>
                 <option value="attendant">Attendant</option>
               </select>
             </div>
-          </div>
+          </search>
 
           {/* Overrides Table */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
+          <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
+            <div tabIndex={0} role="region" aria-label="Custom and override rates table" className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500">
               <table className="w-full text-left text-sm border-collapse">
+                <caption className="sr-only">Custom and override payroll rates</caption>
                 <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 font-semibold text-xs uppercase tracking-wider">
-                    <th className="py-3.5 px-4">Resolution Tier</th>
-                    <th className="py-3.5 px-4">School Board</th>
-                    <th className="py-3.5 px-4">Scope & Target</th>
-                    <th className="py-3.5 px-4">Shift & Days</th>
-                    <th className="py-3.5 px-4">Pay Rate</th>
-                    <th className="py-3.5 px-4">EI Hours</th>
-                    <th className="py-3.5 px-4">Effective Date</th>
-                    <th className="py-3.5 px-4 text-right">Actions</th>
+                  <tr className="border-b border-slate-800 bg-slate-800/50 text-slate-400 font-semibold text-xs uppercase tracking-wider">
+                    <th scope="col" className="py-3.5 px-4">Resolution Tier</th>
+                    <th scope="col" className="py-3.5 px-4">School Board</th>
+                    <th scope="col" className="py-3.5 px-4">Scope & Target</th>
+                    <th scope="col" className="py-3.5 px-4">Shift & Days</th>
+                    <th scope="col" className="py-3.5 px-4">Pay Rate</th>
+                    <th scope="col" className="py-3.5 px-4">EI Hours</th>
+                    <th scope="col" className="py-3.5 px-4">Effective Date</th>
+                    <th scope="col" className="py-3.5 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                <tbody className="divide-y divide-slate-800">
                   {filteredCustomRates.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-8 text-center text-slate-500 dark:text-slate-400">
+                      <td colSpan={8} className="py-8 text-center text-slate-400">
                         No custom rate overrides found. Click "+ New Custom Rate" to create one.
                       </td>
                     </tr>
@@ -795,22 +819,22 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                       // Determine tier
                       let tier = 3;
                       let tierLabel = 'Tier 3: Route Override';
-                      let tierColor = 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300 dark:border-amber-800';
+                      let tierColor = 'bg-amber-500/15  text-amber-300 ';
 
                       if (rate.employeeId && (rate.routeId || rate.shiftId)) {
                         tier = 1;
                         tierLabel = 'Tier 1: Route + Employee';
-                        tierColor = 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border-purple-300 dark:border-purple-800';
+                        tierColor = 'bg-purple-500/15  text-purple-300 ';
                       } else if (rate.employeeId && !rate.routeId && !rate.shiftId) {
                         tier = 2;
                         tierLabel = 'Tier 2: Universal Employee';
-                        tierColor = 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border-blue-300 dark:border-blue-800';
+                        tierColor = 'bg-blue-500/15  text-blue-300 ';
                       }
 
                       return (
                         <tr
                           key={rate.id}
-                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                          className="hover:bg-slate-800/40 transition-colors"
                         >
                           <td className="py-3 px-4">
                             <span
@@ -821,7 +845,7 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                           </td>
 
                           <td className="py-3 px-4">
-                            <span className="font-semibold text-slate-900 dark:text-white">
+                            <span className="font-semibold text-white">
                               {rate.schoolBoardCode || `Board #${rate.schoolBoardId}`}
                             </span>
                           </td>
@@ -829,18 +853,18 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                           <td className="py-3 px-4">
                             <div className="space-y-0.5">
                               {rate.routeNo && (
-                                <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
-                                  <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                                <div className="font-semibold text-white flex items-center gap-1.5">
+                                  <MapPin aria-hidden="true" className="w-3.5 h-3.5 text-amber-500" />
                                   <span>{rate.routeNo} {rate.routeName ? `– ${rate.routeName}` : ''}</span>
                                 </div>
                               )}
                               {rate.employeeId && (
-                                <div className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-                                  <UserCheck className="w-3.5 h-3.5 text-blue-500" />
+                                <div className="text-xs text-slate-300 flex items-center gap-1.5">
+                                  <UserCheck aria-hidden="true" className="w-3.5 h-3.5 text-blue-500" />
                                   <span>
                                     {rate.employeeName || `Employee #${rate.employeeId}`}
                                     {tier === 1 && (
-                                      <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium ml-1">
+                                      <span className="text-[11px] font-medium ml-1">
                                         (Strict assignment rate)
                                       </span>
                                     )}
@@ -859,7 +883,7 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                           <td className="py-3 px-4">
                             <div className="space-y-1">
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-semibold uppercase text-xs text-slate-800 dark:text-slate-200">
+                                <span className="font-semibold uppercase text-xs text-slate-200">
                                   {rate.shiftType || 'All Shifts'}
                                 </span>
                                 {renderWeekDaysBadge(rate.weekDays)}
@@ -871,19 +895,19 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                           </td>
 
                           <td className="py-3 px-4">
-                            <span className="text-base font-bold text-slate-900 dark:text-white">
+                            <span className="text-base font-bold text-white">
                               ${rate.payRate !== undefined ? rate.payRate.toFixed(2) : '--'}
                             </span>
                           </td>
 
                           <td className="py-3 px-4">
-                            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            <span className="text-sm font-semibold text-slate-300">
                               {rate.eiHours !== undefined ? `${rate.eiHours} hrs` : '--'}
                             </span>
                           </td>
 
                           <td className="py-3 px-4">
-                            <div className="text-xs text-slate-600 dark:text-slate-400 space-y-0.5">
+                            <div className="text-xs text-slate-400 space-y-0.5">
                               <div>From: <span className="font-medium">{rate.effectiveDate}</span></div>
                               <div>To: <span className="font-medium">{rate.retireDate || 'Never'}</span></div>
                             </div>
@@ -892,21 +916,25 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                           <td className="py-3 px-4 text-right">
                             <div className="inline-flex items-center gap-1">
                               <button
+                                type="button"
+                                aria-label={`Edit custom rate for ${rate.routeNo || rate.employeeName || rate.schoolBoardCode || rate.id}`}
                                 onClick={() => {
                                   setEditingCustomRate(rate);
                                   setIsCustomModalOpen(true);
                                 }}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-slate-700 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                                 title="Edit"
                               >
-                                <Pencil className="w-4 h-4" />
+                                <Pencil aria-hidden="true" className="w-4 h-4" />
                               </button>
                               <button
+                                type="button"
+                                aria-label={`Delete custom rate for ${rate.routeNo || rate.employeeName || rate.schoolBoardCode || rate.id}`}
                                 onClick={() => handleDeleteCustomRate(rate.id)}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-slate-700 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                                 title="Delete"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 aria-hidden="true" className="w-4 h-4" />
                               </button>
                             </div>
                           </td>
@@ -925,13 +953,13 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
       {activeTab === 'calculator' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Inputs Column */}
-          <div className="lg:col-span-6 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+          <div className="lg:col-span-6 bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-sm space-y-5">
             <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Calculator className="w-5 h-5 text-amber-500" />
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Calculator aria-hidden="true" className="w-5 h-5 text-amber-500" />
                 Rate Resolution Simulator
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-slate-400">
                 Test how the dispatch engine evaluates active rates following the 4-tier hierarchy.
               </p>
             </div>
@@ -939,29 +967,31 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
             <div className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  <label htmlFor={simDateId} className="block text-xs font-semibold text-slate-200 uppercase tracking-wider">
                     Calculation Date
                   </label>
-                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                  <span className="text-xs font-bold">
                     {getSimDayInfo(simDate)}
                   </span>
                 </div>
                 <input
+                  id={simDateId}
                   type="date"
                   value={simDate}
                   onChange={(e) => setSimDate(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-base sm:text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                <label htmlFor={simBoardFieldId} className="block text-xs font-semibold text-slate-200 uppercase tracking-wider mb-1.5">
                   School Board *
                 </label>
                 <select
+                  id={simBoardFieldId}
                   value={simBoardId}
                   onChange={(e) => setSimBoardId(Number(e.target.value))}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-base sm:text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 >
                   {lookups.schoolBoards.map((b) => (
                     <option key={b.schoolBoardId} value={b.schoolBoardId}>
@@ -973,16 +1003,17 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor={simRouteFieldId} className="block text-xs font-semibold text-slate-200 uppercase tracking-wider mb-1.5">
                     Route (Optional)
                   </label>
                   <select
+                    id={simRouteFieldId}
                     value={simRouteId}
                     onChange={(e) => {
                       setSimRouteId(e.target.value === '' ? '' : Number(e.target.value));
                       setSimShiftId('');
                     }}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-base sm:text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                   >
                     <option value="">No Route Selected</option>
                     {lookups.routes.map((r) => (
@@ -994,14 +1025,15 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor={simShiftFieldId} className="block text-xs font-semibold text-slate-200 uppercase tracking-wider mb-1.5">
                     Shift (Optional)
                   </label>
                   <select
+                    id={simShiftFieldId}
                     value={simShiftId}
                     onChange={(e) => setSimShiftId(e.target.value === '' ? '' : Number(e.target.value))}
                     disabled={!simRouteId}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm disabled:opacity-50"
+                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-base sm:text-sm disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                   >
                     <option value="">Any Shift</option>
                     {lookups.routes
@@ -1016,13 +1048,14 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                <label htmlFor={simEmployeeFieldId} className="block text-xs font-semibold text-slate-200 uppercase tracking-wider mb-1.5">
                   Assigned Employee (Optional)
                 </label>
                 <select
+                  id={simEmployeeFieldId}
                   value={simEmployeeId}
                   onChange={(e) => setSimEmployeeId(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-base sm:text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 >
                   <option value="">No Specific Employee</option>
                   {lookups.employees.map((emp) => (
@@ -1035,13 +1068,14 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor={simJobTitleFieldId} className="block text-xs font-semibold text-slate-200 uppercase tracking-wider mb-1.5">
                     Job Title
                   </label>
                   <select
+                    id={simJobTitleFieldId}
                     value={simJobTitle}
                     onChange={(e) => setSimJobTitle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-base sm:text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                   >
                     <option value="driver">Driver</option>
                     <option value="attendant">Attendant</option>
@@ -1050,13 +1084,14 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor={simShiftTypeFieldId} className="block text-xs font-semibold text-slate-200 uppercase tracking-wider mb-1.5">
                     Shift Type
                   </label>
                   <select
+                    id={simShiftTypeFieldId}
                     value={simShiftType}
                     onChange={(e) => setSimShiftType(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-base sm:text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                   >
                     <option value="AM">AM</option>
                     <option value="MIDDAY">MIDDAY / NOON</option>
@@ -1069,9 +1104,9 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                 type="button"
                 onClick={handleRunSimulation}
                 disabled={isCalculating}
-                className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm shadow transition-colors flex items-center justify-center gap-2"
+                className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm shadow transition-colors flex items-center justify-center gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
-                <Calculator className="w-4 h-4" />
+                <Calculator aria-hidden="true" className="w-4 h-4" />
                 {isCalculating ? 'Evaluating Hierarchy...' : 'Evaluate Rate Hierarchy'}
               </button>
             </div>
@@ -1080,17 +1115,17 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
           {/* Results Column */}
           <div className="lg:col-span-6 space-y-5">
             {simResult && (
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 animate-fade-in">
+              <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-sm space-y-6 animate-fade-in">
                 <div>
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">
                     Simulation Outcome
                   </span>
                   <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
-                      <CheckCircle2 className="w-6 h-6" />
+                    <div className="p-2.5 rounded-xl">
+                      <CheckCircle2 aria-hidden="true" className="w-6 h-6" />
                     </div>
                     <div>
-                      <h4 className="text-xl font-black text-slate-900 dark:text-white">
+                      <h4 className="text-xl font-black text-white">
                         {simResult.matchedRuleDesc}
                       </h4>
                       <span className="text-xs text-slate-500">
@@ -1102,21 +1137,21 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
 
                 {/* Big Metric Display */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60">
-                    <span className="text-xs font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 block mb-1">
+                  <div className="p-4 rounded-xl border">
+                    <span className="text-xs font-bold uppercase tracking-wide block mb-1">
                       Calculated Pay Rate
                     </span>
-                    <div className="text-3xl font-black text-amber-600 dark:text-amber-400">
+                    <div className="text-3xl font-black">
                       ${simResult.payRate.toFixed(2)}
                       <span className="text-xs font-semibold text-slate-500 ml-1">/ run</span>
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60">
-                    <span className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-400 block mb-1">
+                  <div className="p-4 rounded-xl border">
+                    <span className="text-xs font-bold uppercase tracking-wide block mb-1">
                       EI Credited Hours
                     </span>
-                    <div className="text-3xl font-black text-blue-600 dark:text-blue-400">
+                    <div className="text-3xl font-black">
                       {simResult.eiHours.toFixed(2)}
                       <span className="text-xs font-semibold text-slate-500 ml-1">hrs</span>
                     </div>
@@ -1124,7 +1159,7 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                 </div>
 
                 {/* Step-by-Step Hierarchy Evaluation Audit */}
-                <div className="space-y-3 border-t border-slate-100 dark:border-slate-800 pt-4">
+                <div className="space-y-3 border-t border-slate-800 pt-4">
                   <h5 className="text-xs font-bold uppercase tracking-wider text-slate-500">
                     Four-Tier Evaluation Audit
                   </h5>
@@ -1134,12 +1169,12 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                     <div
                       className={`p-3 rounded-lg border flex items-center justify-between ${
                         simResult.matchedTier === 1
-                          ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-300 dark:border-purple-800 text-purple-900 dark:text-purple-200 font-bold'
-                          : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-400'
+                          ? '   font-bold'
+                          : 'bg-slate-800/40 border-slate-800 text-slate-400'
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full flex items-center justify-center bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200 font-extrabold text-[10px]">
+                        <span className="w-5 h-5 rounded-full flex items-center justify-center font-extrabold text-[10px]">
                           1
                         </span>
                         <span>Tier 1: Route / Shift + Employee Specific Override</span>
@@ -1155,12 +1190,12 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                     <div
                       className={`p-3 rounded-lg border flex items-center justify-between ${
                         simResult.matchedTier === 2
-                          ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-900 dark:text-blue-200 font-bold'
-                          : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-400'
+                          ? '   font-bold'
+                          : 'bg-slate-800/40 border-slate-800 text-slate-400'
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full flex items-center justify-center bg-blue-200 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-extrabold text-[10px]">
+                        <span className="w-5 h-5 rounded-full flex items-center justify-center font-extrabold text-[10px]">
                           2
                         </span>
                         <span>Tier 2: Employee Universal Rate Override</span>
@@ -1176,12 +1211,12 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                     <div
                       className={`p-3 rounded-lg border flex items-center justify-between ${
                         simResult.matchedTier === 3
-                          ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 font-bold'
-                          : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-400'
+                          ? '   font-bold'
+                          : 'bg-slate-800/40 border-slate-800 text-slate-400'
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full flex items-center justify-center bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 font-extrabold text-[10px]">
+                        <span className="w-5 h-5 rounded-full flex items-center justify-center font-extrabold text-[10px]">
                           3
                         </span>
                         <span>Tier 3: Route / Shift General Override</span>
@@ -1197,12 +1232,12 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
                     <div
                       className={`p-3 rounded-lg border flex items-center justify-between ${
                         simResult.matchedTier === 4
-                          ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 font-bold'
-                          : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-400'
+                          ? '   font-bold'
+                          : 'bg-slate-800/40 border-slate-800 text-slate-400'
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full flex items-center justify-center bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 font-extrabold text-[10px]">
+                        <span className="w-5 h-5 rounded-full flex items-center justify-center font-extrabold text-[10px]">
                           4
                         </span>
                         <span>Tier 4: School Board Baseline ({simJobTitle.toUpperCase()} {simShiftType})</span>
@@ -1305,6 +1340,8 @@ export const PayrollRateView: React.FC<PayrollRateViewProps> = ({
           />
         </Suspense>
       )}
-    </div>
+    </PageShell>
   );
 };
+
+

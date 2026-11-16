@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, memo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, useId, memo, Suspense } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { PageShell } from '../components/common/PageShell';
+import { useAIOptional, useRegisterPageAIContext } from '../contexts/AIContext';
 import {
   Calendar as CalendarIcon,
+  Sparkles,
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -156,6 +159,9 @@ interface DispatchWorkbenchViewProps {
   onMessageDriver?: (driverId: string) => void;
 }
 
+const FOCUS_VISIBLE_CLASS =
+  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400';
+
 const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
   employees,
   vehicles,
@@ -171,6 +177,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const { isFrench } = useI18n();
+  const filterUid = useId();
   const actorName = currentUser?.displayName || currentUser?.email || 'Dispatcher';
   // Current selected dispatch date (defaults to local today in YYYY-MM-DD)
   const [selectedDate, setSelectedDate] = useState<string>(() => getLocalTodayString());
@@ -348,6 +355,8 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
   const [vehicleFilter, setVehicleFilter] = useState('');
   const [shiftTypeFilter, setShiftTypeFilter] = useState<'ALL' | 'AM' | 'PM' | 'Midday'>('ALL');
   const [yardFilter, setYardFilter] = useState<string>('ALL');
+  const ai = useAIOptional();
+  useRegisterPageAIContext('dispatch', { selectedDate, yardFilter });
   const [healthFilter, setHealthFilter] = useState<'ALL' | 'green' | 'attention' | 'unassigned' | 'checkin_overdue' | 'stop_delayed' | 'alert_message'>('ALL');
   const [viewMode, setViewMode] = useState<'workbench' | 'card' | 'sheet'>('workbench');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
@@ -495,7 +504,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
         }
       }, 150);
     };
-  }, [selectedDate]);
+  }, [selectedDate, ai?.refreshCounter]);
 
   // Keep open modals in sync if real-time shift updates arrive
   useEffect(() => {
@@ -993,25 +1002,25 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
     : 0;
 
   return (
-    <div className="space-y-5 animate-in fade-in duration-300 pb-12">
+    <PageShell width="wide" className="animate-in fade-in duration-300 pb-12">
       {/* Top Header Row matching screenshot */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3.5 bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3.5 bg-slate-900 p-3.5 sm:p-4 rounded-2xl border border-slate-800 shadow-sm">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-xl sm:text-2xl font-serif font-bold tracking-tight text-slate-900 dark:text-white">
+            <h1 className="text-lg sm:text-xl font-black tracking-tight text-white">
               Dispatch Workbench
             </h1>
             {isToday && (
               <span
-                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300 shadow-2xs"
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-mono font-bold shadow-2xs"
                 title="Dynamic auto-refreshing ticker every 15s"
               >
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-emerald-500 motion-safe:animate-pulse" aria-hidden="true" />
                 <DispatchLiveClock />
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-400 mt-0.5">
             Real-time daily bus shift execution, driver check-in tracking, and dynamic delay detection
           </p>
         </div>
@@ -1019,99 +1028,129 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
         {/* Right controls: Date Picker, Sheet View, Create Day, Delete Day */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Date Picker Group */}
-          <div className="flex items-center rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1 shadow-xs">
+          <div className="flex items-center rounded-xl border border-slate-700 bg-slate-800 px-2 py-1 shadow-xs">
             <button
+              type="button"
               onClick={handlePrevDay}
+              aria-label="Previous Day"
               title="Previous Day"
-              className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
+              className={`min-w-[28px] min-h-[28px] flex items-center justify-center p-1 rounded-lg hover:bg-slate-700 text-slate-200 transition ${FOCUS_VISIBLE_CLASS}`}
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-4 h-4" aria-hidden="true" />
             </button>
             <div className="flex items-center gap-1.5 px-1.5 sm:px-2">
-              <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500" />
+              <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500" aria-hidden="true" />
               <input
                 type="date"
+                aria-label="Dispatch date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-transparent text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                className={`bg-transparent text-base sm:text-sm font-semibold text-slate-200 focus:outline-none cursor-pointer rounded ${FOCUS_VISIBLE_CLASS}`}
               />
             </div>
             <button
+              type="button"
               onClick={handleNextDay}
+              aria-label="Next Day"
               title="Next Day"
-              className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
+              className={`min-w-[28px] min-h-[28px] flex items-center justify-center p-1 rounded-lg hover:bg-slate-700 text-slate-200 transition ${FOCUS_VISIBLE_CLASS}`}
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
 
           <button
+            type="button"
             onClick={handleToday}
-            className="px-2.5 py-1 text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            className={`px-2.5 py-1.5 text-xs font-semibold rounded-xl border border-slate-700 text-slate-200 hover:bg-slate-700 transition ${FOCUS_VISIBLE_CLASS}`}
           >
             Today
           </button>
 
-          {/* Workbench / Card / Sheet View Switcher */}
-          <div className="flex items-center gap-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-800 p-0.5 shadow-2xs">
+          {ai && (
             <button
               type="button"
+              onClick={() => ai.openAI({ activePage: 'dispatch', selectedDate, yardFilter })}
+              title="Open page-scoped AI Assistant for this Dispatch Sheet"
+              className={`min-h-[32px] px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-300 text-xs font-bold transition inline-flex items-center gap-1.5 ${FOCUS_VISIBLE_CLASS}`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />
+              <span>AI Assistant</span>
+              <span className="hidden sm:inline px-1.5 py-0.5 rounded-md bg-slate-950/60 border border-amber-500/25 text-[10px] font-mono text-amber-200">
+                {selectedDate}
+              </span>
+            </button>
+          )}
+
+          {/* Workbench / Card / Sheet View Switcher */}
+          <div
+            role="group"
+            aria-label="Dispatch view mode"
+            className="flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-800 p-0.5 shadow-2xs"
+          >
+            <button
+              type="button"
+              aria-pressed={viewMode === 'workbench'}
               onClick={() => setViewMode('workbench')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${FOCUS_VISIBLE_CLASS} ${
                 viewMode === 'workbench'
                   ? 'bg-amber-500 text-slate-950 shadow-xs font-bold'
-                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  : 'text-slate-300 hover:text-white'
               }`}
               title="Workbench Mode: Issue Queue, Recommended Actions & Shift Detail"
             >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden="true" />
               <span>Workbench</span>
             </button>
             <button
               type="button"
+              aria-pressed={viewMode === 'card'}
               onClick={() => setViewMode('card')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${FOCUS_VISIBLE_CLASS} ${
                 viewMode === 'card'
                   ? 'bg-amber-500 text-slate-950 shadow-xs font-bold'
-                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  : 'text-slate-300 hover:text-white'
               }`}
               title="Card View"
             >
-              <Layers className="w-3.5 h-3.5" />
+              <Layers className="w-3.5 h-3.5" aria-hidden="true" />
               <span className="hidden sm:inline">Card view</span>
             </button>
             <button
               type="button"
+              aria-pressed={viewMode === 'sheet'}
               onClick={() => setViewMode('sheet')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${FOCUS_VISIBLE_CLASS} ${
                 viewMode === 'sheet'
                   ? 'bg-amber-500 text-slate-950 shadow-xs font-bold'
-                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  : 'text-slate-300 hover:text-white'
               }`}
               title="Sheet View"
             >
-              <TableIcon className="w-3.5 h-3.5" />
+              <TableIcon className="w-3.5 h-3.5" aria-hidden="true" />
               <span className="hidden sm:inline">Sheet view</span>
             </button>
           </div>
 
           {/* Log Student Absence Button */}
           <button
+            type="button"
             onClick={() => setIsAbsenceModalOpen(true)}
             onMouseEnter={() => { void loadRecordStudentAbsenceModal(); }}
             onFocus={() => { void loadRecordStudentAbsenceModal(); }}
             title="Log parent notification of student absence (Today / Tomorrow / Future date)"
-            className="px-3 py-1 text-xs font-bold rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 shadow-2xs transition flex items-center gap-1.5"
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 shadow-2xs transition flex items-center gap-1.5 ${FOCUS_VISIBLE_CLASS}`}
           >
-            <UserX className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+            <UserX className="w-3.5 h-3.5 text-rose-400" aria-hidden="true" />
             <span>Log Absence</span>
           </button>
 
           {onNavigateToAbsences && (
             <button
+              type="button"
               onClick={onNavigateToAbsences}
               title="View full 2-week rolling student absence schedule"
-              className="px-2.5 py-1 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 transition flex items-center gap-1"
+              className={`px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition flex items-center gap-1 ${FOCUS_VISIBLE_CLASS}`}
             >
               <span>View Absences</span>
             </button>
@@ -1119,53 +1158,59 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
 
           {/* Check-in Reminder Settings Button */}
           <button
+            type="button"
             onClick={() => setIsReminderSettingsOpen(true)}
             onMouseEnter={() => { void loadCheckInReminderSettingsModal(); }}
             onFocus={() => { void loadCheckInReminderSettingsModal(); }}
             title="Configure crew late check-in FCM reminder timing and grace period"
-            className="px-2.5 sm:px-3 py-1 text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1.5"
+            className={`px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-700 text-slate-200 hover:bg-slate-700 transition flex items-center gap-1.5 ${FOCUS_VISIBLE_CLASS}`}
           >
-            <BellRing className="w-3.5 h-3.5 text-amber-500" />
+            <BellRing className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
             <span className="hidden md:inline">Reminder Settings</span>
           </button>
 
           {/* Create Day Button */}
           <button
+            type="button"
             onClick={handleCreateDay}
             disabled={generating || !DISPATCH_DATE_RE.test(selectedDate)}
-            className="px-3 py-1 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition flex items-center gap-1.5 disabled:opacity-50 ${FOCUS_VISIBLE_CLASS}`}
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
             <span>{generating ? 'Generating...' : 'Create Day'}</span>
           </button>
 
           {/* Delete Day Button */}
           <button
+            type="button"
             onClick={handleDeleteDay}
             disabled={deleting || !shifts || shifts.length === 0}
-            className="px-2.5 py-1 text-xs font-semibold rounded-xl border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition flex items-center gap-1 disabled:opacity-40"
+            className={`px-2.5 py-1.5 text-xs font-semibold rounded-xl border   hover:bg-rose-500/15 hover:bg-rose-950/40 transition flex items-center gap-1 disabled:opacity-40 ${FOCUS_VISIBLE_CLASS}`}
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
             <span className="hidden sm:inline">Delete Day</span>
           </button>
 
           {/* Refresh Button */}
           <button
+            type="button"
             onClick={handleRefresh}
+            aria-label="Refresh shifts"
             title="Refresh shifts"
-            className="p-1.5 sm:p-2 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition"
+            className={`min-w-[32px] min-h-[32px] flex items-center justify-center p-1.5 sm:p-2 rounded-xl border border-slate-700 hover:bg-slate-700 text-slate-200 transition ${FOCUS_VISIBLE_CLASS}`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${loading ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />
           </button>
 
           {/* Change Log Button */}
           {onNavigateToChangeLog && (
             <button
+              type="button"
               onClick={() => onNavigateToChangeLog(selectedDate)}
               title="View Dispatch Change Log"
-              className="px-2.5 sm:px-3 py-1 text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition flex items-center gap-1.5 shadow-2xs"
+              className={`px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 transition flex items-center gap-1.5 shadow-2xs ${FOCUS_VISIBLE_CLASS}`}
             >
-              <History className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <History className="w-3.5 h-3.5" aria-hidden="true" />
               <span>Change Log</span>
             </button>
           )}
@@ -1173,11 +1218,12 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           {/* Temporary Assignments Button */}
           {onNavigateToTemporaryAssignments && (
             <button
+              type="button"
               onClick={onNavigateToTemporaryAssignments}
               title="View & Manage Route Temporary Assignments"
-              className="px-2.5 sm:px-3 py-1 text-xs font-semibold rounded-xl border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition flex items-center gap-1.5 shadow-2xs"
+              className={`px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-xl border    hover:bg-amber-500/15 hover:bg-amber-950/60 transition flex items-center gap-1.5 shadow-2xs ${FOCUS_VISIBLE_CLASS}`}
             >
-              <UserCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />
               <span>Temp Assignments</span>
             </button>
           )}
@@ -1186,13 +1232,13 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
 
       {/* Excluded Vehicles Banner (Vehicle Defect / Periodic Inspection) */}
       {unavailableVehiclesList.length > 0 && (
-        <div className="bg-amber-50/90 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/70 rounded-2xl p-3 sm:px-4 sm:py-3 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="border rounded-2xl p-3 sm:px-4 sm:py-3 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-start sm:items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
               <Wrench className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5 flex-wrap">
+              <div className="text-xs font-bold flex items-center gap-1.5 flex-wrap">
                 <span>
                   {isFrench
                     ? `${unavailableVehiclesList.length} véhicule(s) exclu(s) des quarts de répartition le ${selectedDate} (Défectuosité / Inspection périodique)`
@@ -1206,8 +1252,8 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                     title={isFrench ? uv.detailFr : uv.detailEn}
                     className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-bold border ${
                       uv.reason === 'defect'
-                        ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-700'
-                        : 'bg-indigo-100 dark:bg-indigo-950/80 text-indigo-800 dark:text-indigo-200 border-indigo-300 dark:border-indigo-700'
+                        ? '  '
+                        : '  '
                     }`}
                   >
                     <Truck className="w-3 h-3" />
@@ -1233,16 +1279,16 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           }}
           className={`p-2.5 sm:px-4 sm:py-2.5 rounded-xl border flex flex-col sm:flex-row items-center sm:items-center gap-1.5 sm:gap-3 transition-all ${
             healthFilter === 'ALL'
-              ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 shadow-sm'
-              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+              ? '  shadow-sm'
+              : 'bg-slate-900 border-slate-800 hover:bg-slate-800'
           }`}
         >
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-100 dark:bg-blue-900/60 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0">
             <Filter className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="text-center sm:text-left min-w-0">
-            <div className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">Total Shifts</div>
-            <div className="text-sm sm:text-base font-bold text-blue-700 dark:text-blue-400">{metrics.total}</div>
+            <div className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">Total Shifts</div>
+            <div className="text-sm sm:text-base font-bold">{metrics.total}</div>
           </div>
         </button>
 
@@ -1251,16 +1297,16 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           onClick={() => setHealthFilter(healthFilter === 'green' ? 'ALL' : 'green')}
           className={`p-2.5 sm:px-4 sm:py-2.5 rounded-xl border flex flex-col sm:flex-row items-center sm:items-center gap-1.5 sm:gap-3 transition-all ${
             healthFilter === 'green'
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-700 shadow-sm ring-1 ring-emerald-400'
-              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+              ? ' border-emerald-400 border-emerald-700 shadow-sm ring-1 ring-emerald-400'
+              : 'bg-slate-900 border-slate-800 hover:bg-slate-800'
           }`}
         >
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="text-center sm:text-left min-w-0">
-            <div className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">On Track</div>
-            <div className="text-sm sm:text-base font-bold text-emerald-700 dark:text-emerald-400">{metrics.onTrack}</div>
+            <div className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">On Track</div>
+            <div className="text-sm sm:text-base font-bold">{metrics.onTrack}</div>
           </div>
         </button>
 
@@ -1269,16 +1315,16 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           onClick={() => setHealthFilter(healthFilter === 'attention' ? 'ALL' : 'attention')}
           className={`p-2.5 sm:px-4 sm:py-2.5 rounded-xl border flex flex-col sm:flex-row items-center sm:items-center gap-1.5 sm:gap-3 transition-all ${
             healthFilter === 'attention'
-              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-700 shadow-sm ring-1 ring-amber-400'
-              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+              ? ' border-amber-400 border-amber-700 shadow-sm ring-1 ring-amber-400'
+              : 'bg-slate-900 border-slate-800 hover:bg-slate-800'
           }`}
         >
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-100 dark:bg-amber-900/60 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0">
             <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="text-center sm:text-left min-w-0">
-            <div className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">Attention</div>
-            <div className="text-sm sm:text-base font-bold text-amber-700 dark:text-amber-400">{metrics.attention}</div>
+            <div className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">Attention</div>
+            <div className="text-sm sm:text-base font-bold">{metrics.attention}</div>
           </div>
         </button>
 
@@ -1287,25 +1333,25 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           onClick={() => setHealthFilter(healthFilter === 'unassigned' ? 'ALL' : 'unassigned')}
           className={`p-2.5 sm:px-4 sm:py-2.5 rounded-xl border flex flex-col sm:flex-row items-center sm:items-center gap-1.5 sm:gap-3 transition-all ${
             healthFilter === 'unassigned'
-              ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 dark:border-rose-700 shadow-sm ring-1 ring-rose-400'
+              ? ' border-rose-400 border-rose-700 shadow-sm ring-1 ring-rose-400'
               : metrics.unassignedTotal > 0
-              ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/60 hover:bg-rose-50'
-              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+              ? '  hover:bg-rose-500/15'
+              : 'bg-slate-900 border-slate-800 hover:bg-slate-800'
           }`}
         >
           <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
             metrics.unassignedTotal > 0
-              ? 'bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-400'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+              ? ' '
+              : 'bg-slate-800 text-slate-400'
           }`}>
             <UserX className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="text-center sm:text-left min-w-0">
-            <div className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
+            <div className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">
               Unassigned
             </div>
             <div className={`text-sm sm:text-base font-bold ${
-              metrics.unassignedTotal > 0 ? 'text-rose-700 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'
+              metrics.unassignedTotal > 0 ? 'text-rose-400' : 'text-slate-300'
             }`}>
               {metrics.unassignedTotal}
             </div>
@@ -1317,26 +1363,26 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           onClick={() => setHealthFilter(healthFilter === 'checkin_overdue' ? 'ALL' : 'checkin_overdue')}
           className={`p-2.5 sm:px-4 sm:py-2.5 rounded-xl border flex flex-col sm:flex-row items-center sm:items-center gap-1.5 sm:gap-3 transition-all ${
             healthFilter === 'checkin_overdue'
-              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-700 shadow-sm ring-1 ring-amber-400'
+              ? ' border-amber-400 border-amber-700 shadow-sm ring-1 ring-amber-400'
               : metrics.checkInOverdue > 0
-              ? 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800/80 hover:bg-amber-50'
-              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+              ? '  hover:bg-amber-500/15'
+              : 'bg-slate-900 border-slate-800 hover:bg-slate-800'
           }`}
           title="Filter shifts where assigned driver or attendant did not check in on time"
         >
           <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
             metrics.checkInOverdue > 0
-              ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+              ? ' '
+              : 'bg-slate-800 text-slate-400'
           }`}>
             <Clock className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${metrics.checkInOverdue > 0 ? 'animate-pulse' : ''}`} />
           </div>
           <div className="text-center sm:text-left min-w-0">
-            <div className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
+            <div className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">
               Check-In Overdue
             </div>
             <div className={`text-sm sm:text-base font-bold ${
-              metrics.checkInOverdue > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'
+              metrics.checkInOverdue > 0 ? 'text-amber-400' : 'text-slate-300'
             }`}>
               {metrics.checkInOverdue}
             </div>
@@ -1348,26 +1394,26 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           onClick={() => setHealthFilter(healthFilter === 'stop_delayed' ? 'ALL' : 'stop_delayed')}
           className={`p-2.5 sm:px-4 sm:py-2.5 rounded-xl border flex flex-col sm:flex-row items-center sm:items-center gap-1.5 sm:gap-3 transition-all ${
             healthFilter === 'stop_delayed'
-              ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-400 dark:border-rose-700 shadow-sm ring-1 ring-rose-400'
+              ? ' border-rose-400 border-rose-700 shadow-sm ring-1 ring-rose-400'
               : metrics.stopDelayed > 0
-              ? 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800/80 hover:bg-rose-50'
-              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+              ? '  hover:bg-rose-500/15'
+              : 'bg-slate-900 border-slate-800 hover:bg-slate-800'
           }`}
           title="Filter shifts with delayed stops or unarrived stops past schedule"
         >
           <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
             metrics.stopDelayed > 0
-              ? 'bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+              ? ' '
+              : 'bg-slate-800 text-slate-400'
           }`}>
             <MapPin className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${metrics.stopDelayed > 0 ? 'animate-pulse' : ''}`} />
           </div>
           <div className="text-center sm:text-left min-w-0">
-            <div className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
+            <div className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">
               Stop Delayed
             </div>
             <div className={`text-sm sm:text-base font-bold ${
-              metrics.stopDelayed > 0 ? 'text-rose-700 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'
+              metrics.stopDelayed > 0 ? 'text-rose-400' : 'text-slate-300'
             }`}>
               {metrics.stopDelayed}
             </div>
@@ -1379,26 +1425,26 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           onClick={() => setHealthFilter(healthFilter === 'alert_message' ? 'ALL' : 'alert_message')}
           className={`p-2.5 sm:px-4 sm:py-2.5 rounded-xl border flex flex-col sm:flex-row items-center sm:items-center gap-1.5 sm:gap-3 transition-all ${
             healthFilter === 'alert_message'
-              ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-400 dark:border-blue-700 shadow-sm ring-1 ring-blue-400'
+              ? ' border-blue-400 border-blue-700 shadow-sm ring-1 ring-blue-400'
               : metrics.alertMessageCount > 0
-              ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/80 hover:bg-blue-50'
-              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+              ? '  hover:bg-blue-500/15'
+              : 'bg-slate-900 border-slate-800 hover:bg-slate-800'
           }`}
           title="Filter shifts with sent or pending parent delay alert messages (auto-sends at 15m / 45m late)"
         >
           <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
             metrics.alertMessageCount > 0
-              ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+              ? ' '
+              : 'bg-slate-800 text-slate-400'
           }`}>
             <Bell className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div className="text-center sm:text-left min-w-0">
-            <div className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
+            <div className="text-[10px] sm:text-[11px] font-medium text-slate-400 truncate">
               Alert Message
             </div>
             <div className={`text-sm sm:text-base font-bold ${
-              metrics.alertMessageCount > 0 ? 'text-blue-700 dark:text-blue-400' : 'text-slate-700 dark:text-slate-300'
+              metrics.alertMessageCount > 0 ? 'text-blue-400' : 'text-slate-300'
             }`}>
               {metrics.alertMessageCount}
             </div>
@@ -1408,24 +1454,24 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
 
       {/* Dispatcher Alert Banner for Missing Driver or Vehicle */}
       {metrics.unassignedTotal > 0 && (
-        <div className="rounded-2xl border border-rose-300 dark:border-rose-800 bg-rose-50/90 dark:bg-rose-950/40 p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+        <div className="rounded-2xl border border-rose-500/35 bg-rose-950/35 p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
               <AlertTriangle className="w-5 h-5 animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-bold text-rose-950 dark:text-rose-100">
+                <span className="text-sm font-bold text-rose-100">
                   Dispatcher Alert: {metrics.unassignedTotal} Shift(s) Require Crew or Vehicle Assignment
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-200/80 dark:bg-rose-900/60 text-rose-900 dark:text-rose-100">
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
                   Action Needed
                 </span>
               </div>
-              <div className="text-xs text-rose-700 dark:text-rose-300 mt-0.5 flex items-center gap-3 flex-wrap">
-                <span>Missing Drivers: <strong>{metrics.missingDriver}</strong></span>
+              <div className="text-xs text-rose-200/80 mt-0.5 flex items-center gap-3 flex-wrap">
+                <span>Missing Drivers: <strong className="text-white">{metrics.missingDriver}</strong></span>
                 <span>•</span>
-                <span>Missing Vehicles: <strong>{metrics.missingVehicle}</strong></span>
+                <span>Missing Vehicles: <strong className="text-white">{metrics.missingVehicle}</strong></span>
               </div>
             </div>
           </div>
@@ -1436,7 +1482,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs ${
                 healthFilter === 'unassigned'
                   ? 'bg-rose-600 text-white hover:bg-rose-700'
-                  : 'bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700 hover:bg-rose-100/50'
+                  : 'bg-slate-800 text-rose-300 border border-rose-700 hover:bg-rose-500/15'
               }`}
             >
               <Filter className="w-3.5 h-3.5" />
@@ -1448,21 +1494,21 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
 
       {/* Check-In Overdue Filter Alert Banner */}
       {healthFilter === 'checkin_overdue' && (
-        <div className="rounded-2xl border border-amber-300 dark:border-amber-800 bg-amber-50/90 dark:bg-amber-950/40 p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+        <div className="rounded-2xl border p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
               <Clock className="w-5 h-5 animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-bold text-amber-950 dark:text-amber-100">
+                <span className="text-sm font-bold text-amber-950 text-amber-100">
                   Filter Active: Check-In Overdue ({filteredShifts.length} Shift{filteredShifts.length !== 1 ? 's' : ''})
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-100">
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold">
                   Check-In Alert
                 </span>
               </div>
-              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+              <p className="text-xs mt-0.5">
                 Displaying shifts where assigned driver or attendant has not checked in by their scheduled check-in time.
               </p>
             </div>
@@ -1471,7 +1517,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
             <button
               onClick={() => setHealthFilter('ALL')}
-              className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs bg-white dark:bg-slate-800 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 hover:bg-amber-100/60"
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs bg-slate-800 text-amber-200 border border-amber-700 hover:bg-amber-500/15"
             >
               <Filter className="w-3.5 h-3.5" />
               <span>Show All Shifts</span>
@@ -1482,21 +1528,21 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
 
       {/* Stop Delayed Filter Alert Banner */}
       {healthFilter === 'stop_delayed' && (
-        <div className="rounded-2xl border border-rose-300 dark:border-rose-800 bg-rose-50/90 dark:bg-rose-950/40 p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+        <div className="rounded-2xl border p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0">
               <MapPin className="w-5 h-5 animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-bold text-rose-950 dark:text-rose-100">
+                <span className="text-sm font-bold text-rose-950 text-rose-100">
                   Filter Active: Stop Delayed ({filteredShifts.length} Shift{filteredShifts.length !== 1 ? 's' : ''})
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-200/80 dark:bg-rose-900/60 text-rose-900 dark:text-rose-100">
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold">
                   Route Delay
                 </span>
               </div>
-              <p className="text-xs text-rose-700 dark:text-rose-300 mt-0.5">
+              <p className="text-xs mt-0.5">
                 Displaying shifts where one or more stops arrived late or have not arrived past their scheduled stop time.
               </p>
             </div>
@@ -1505,7 +1551,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
             <button
               onClick={() => setHealthFilter('ALL')}
-              className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs bg-white dark:bg-slate-800 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 hover:bg-rose-100/60"
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs bg-slate-800 text-rose-200 border border-rose-700 hover:bg-rose-500/15"
             >
               <Filter className="w-3.5 h-3.5" />
               <span>Show All Shifts</span>
@@ -1516,23 +1562,23 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
 
       {/* Alert Message Filter Banner */}
       {healthFilter === 'alert_message' && (
-        <div className="rounded-2xl border border-blue-300 dark:border-blue-800 bg-blue-50/90 dark:bg-blue-950/40 p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+        <div className="rounded-2xl border p-3.5 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center shrink-0">
               <Bell className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-bold text-blue-950 dark:text-blue-100">
+                <span className="text-sm font-bold text-blue-950 text-blue-100">
                   Filter Active: Alert Message ({filteredShifts.length} Shift{filteredShifts.length !== 1 ? 's' : ''})
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-200/80 dark:bg-blue-900/60 text-blue-900 dark:text-blue-100">
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold">
                   {reminderSettings.autoDelayAlertEnabled !== false
                     ? `Auto-Send ON (+${reminderSettings.autoDelayFirstAlertMinutes || 15}m / +${reminderSettings.autoDelaySecondAlertMinutes || 45}m)`
                     : 'Auto-Send OFF'}
                 </span>
               </div>
-              <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
+              <p className="text-xs mt-0.5">
                 Displaying shifts with sent parent delay notifications or active route/check-in delays requiring parent communication.
               </p>
             </div>
@@ -1550,7 +1596,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
             <button
               type="button"
               onClick={() => setHealthFilter('ALL')}
-              className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs bg-white dark:bg-slate-800 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-100/60"
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs bg-slate-800 text-blue-200 border border-blue-700 hover:bg-blue-500/15"
             >
               <Filter className="w-3.5 h-3.5" />
               <span>Show All Shifts</span>
@@ -1562,19 +1608,22 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
       {/* Mobile Filter Toggle Button */}
       <div className="flex md:hidden items-center justify-between">
         <button
+          type="button"
+          aria-expanded={showMobileFilters}
           onClick={() => setShowMobileFilters(!showMobileFilters)}
-          className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold flex items-center gap-1.5 shadow-2xs text-slate-700 dark:text-slate-200"
+          className={`px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 text-xs font-semibold flex items-center gap-1.5 shadow-2xs text-slate-200 ${FOCUS_VISIBLE_CLASS}`}
         >
-          <SlidersHorizontal className="w-3.5 h-3.5 text-amber-500" />
+          <SlidersHorizontal className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
           <span>Search & Filters</span>
           {(routeFilter || driverFilter || stopFilter || vehicleFilter || shiftTypeFilter !== 'ALL' || yardFilter !== 'ALL' || healthFilter !== 'ALL') && (
-            <span className="w-2 h-2 rounded-full bg-amber-500 ring-2 ring-amber-200" />
+            <span className="w-2 h-2 rounded-full bg-amber-500 ring-2 ring-amber-200" aria-hidden="true" />
           )}
-          <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMobileFilters ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMobileFilters ? 'rotate-180' : ''}`} aria-hidden="true" />
         </button>
 
         {(routeFilter || driverFilter || stopFilter || vehicleFilter || shiftTypeFilter !== 'ALL' || yardFilter !== 'ALL' || healthFilter !== 'ALL') && (
           <button
+            type="button"
             onClick={() => {
               setRouteFilter('');
               setDriverFilter('');
@@ -1584,7 +1633,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
               setYardFilter('ALL');
               setHealthFilter('ALL');
             }}
-            className="text-xs text-amber-600 dark:text-amber-400 font-semibold hover:underline"
+            className={`text-xs  font-semibold hover:underline rounded px-1 ${FOCUS_VISIBLE_CLASS}`}
           >
             Reset
           </button>
@@ -1592,89 +1641,95 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
       </div>
 
       {/* Filter Row matching desktop screenshot and collapsible on mobile */}
-      <div className={`bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm ${showMobileFilters ? 'block space-y-3' : 'hidden md:flex'} md:flex flex-wrap items-center gap-3`}>
+      <search className={`bg-slate-800 p-3 sm:p-4 rounded-2xl border border-slate-700 shadow-sm ${showMobileFilters ? 'block space-y-3' : 'hidden md:flex'} md:flex flex-wrap items-center gap-3`}>
         {/* Route Filter */}
         <div className="w-full sm:flex-1 sm:min-w-[140px]">
-          <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+          <label htmlFor={`${filterUid}-route`} className="block text-[11px] font-bold text-slate-200 uppercase tracking-wider mb-1">
             Route
           </label>
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input
+              id={`${filterUid}-route`}
               type="text"
               placeholder="Filter Route..."
               value={routeFilter}
               onChange={(e) => setRouteFilter(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+              className={`w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 text-base sm:text-xs text-slate-200 ${FOCUS_VISIBLE_CLASS}`}
             />
           </div>
         </div>
 
         {/* Driver Filter */}
         <div className="w-full sm:flex-1 sm:min-w-[140px]">
-          <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+          <label htmlFor={`${filterUid}-driver`} className="block text-[11px] font-bold text-slate-200 uppercase tracking-wider mb-1">
             Driver
           </label>
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input
+              id={`${filterUid}-driver`}
               type="text"
               placeholder="Filter Driver..."
               value={driverFilter}
               onChange={(e) => setDriverFilter(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+              className={`w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 text-base sm:text-xs text-slate-200 ${FOCUS_VISIBLE_CLASS}`}
             />
           </div>
         </div>
 
         {/* Stop Filter */}
         <div className="w-full sm:flex-1 sm:min-w-[140px]">
-          <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+          <label htmlFor={`${filterUid}-stop`} className="block text-[11px] font-bold text-slate-200 uppercase tracking-wider mb-1">
             Stop
           </label>
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input
+              id={`${filterUid}-stop`}
               type="text"
               placeholder="Filter Stop..."
               value={stopFilter}
               onChange={(e) => setStopFilter(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+              className={`w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 text-base sm:text-xs text-slate-200 ${FOCUS_VISIBLE_CLASS}`}
             />
           </div>
         </div>
 
         {/* Vehicle Filter */}
         <div className="w-full sm:flex-1 sm:min-w-[120px]">
-          <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+          <label htmlFor={`${filterUid}-vehicle`} className="block text-[11px] font-bold text-slate-200 uppercase tracking-wider mb-1">
             Vehicle
           </label>
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input
+              id={`${filterUid}-vehicle`}
               type="text"
               placeholder="Filter Vehicle..."
               value={vehicleFilter}
               onChange={(e) => setVehicleFilter(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+              className={`w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 text-base sm:text-xs text-slate-200 ${FOCUS_VISIBLE_CLASS}`}
             />
           </div>
         </div>
 
         {/* Shift Type Pills */}
         <div className="w-full sm:w-auto">
-          <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+          <span className="block text-[11px] font-bold text-slate-200 uppercase tracking-wider mb-1">
             Shift
-          </label>
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+          </span>
+          <div role="group" aria-label="Shift type filter" className="flex items-center gap-1 bg-slate-800 p-0.5 rounded-xl border border-slate-700">
             {(['ALL', 'AM', 'PM', 'Midday'] as const).map((type) => (
               <button
                 key={type}
+                type="button"
+                aria-pressed={shiftTypeFilter === type}
                 onClick={() => setShiftTypeFilter(type)}
-                className={`flex-1 sm:flex-initial px-2.5 py-1 text-xs font-semibold rounded-lg transition ${
+                className={`flex-1 sm:flex-initial px-2.5 py-1 text-xs font-semibold rounded-lg transition ${FOCUS_VISIBLE_CLASS} ${
                   shiftTypeFilter === type
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    ? 'bg-slate-700 text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-200'
                 }`}
               >
                 {type}
@@ -1686,13 +1741,14 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
         {/* Yard Filter */}
         {yards.length > 0 && (
           <div className="w-full sm:w-auto">
-            <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+            <label htmlFor={`${filterUid}-yard`} className="block text-[11px] font-bold text-slate-200 uppercase tracking-wider mb-1">
               Yard
             </label>
             <select
+              id={`${filterUid}-yard`}
               value={yardFilter}
               onChange={(e) => setYardFilter(e.target.value)}
-              className="w-full sm:w-auto px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+              className={`w-full sm:w-auto px-2.5 py-1.5 rounded-xl border border-slate-700 bg-slate-800 text-base sm:text-xs text-slate-200 ${FOCUS_VISIBLE_CLASS}`}
             >
               <option value="ALL">All Yards</option>
               {yards.map((y) => (
@@ -1705,18 +1761,19 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
         )}
 
         {/* Quick Filter Status Pills */}
-        <div className="w-full flex flex-wrap items-center gap-1.5 pt-2.5 mt-1 border-t border-slate-100 dark:border-slate-800">
-          <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-1">
+        <div role="group" aria-label="Status filters" className="w-full flex flex-wrap items-center gap-1.5 pt-2.5 mt-1 border-t border-slate-700">
+          <span className="text-[11px] font-bold text-slate-400 text-slate-500 uppercase tracking-wider mr-1">
             Status Filters:
           </span>
 
           <button
             type="button"
+            aria-pressed={healthFilter === 'ALL'}
             onClick={() => setHealthFilter('ALL')}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition ${
+            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition ${FOCUS_VISIBLE_CLASS} ${
               healthFilter === 'ALL'
                 ? 'bg-blue-600 text-white shadow-2xs'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
             }`}
           >
             All ({metrics.total})
@@ -1724,114 +1781,120 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
 
           <button
             type="button"
+            aria-pressed={healthFilter === 'green'}
             onClick={() => setHealthFilter(healthFilter === 'green' ? 'ALL' : 'green')}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1 ${
+            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1 ${FOCUS_VISIBLE_CLASS} ${
               healthFilter === 'green'
                 ? 'bg-emerald-600 text-white shadow-2xs'
-                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                : '  border  hover:bg-emerald-500/15'
             }`}
           >
-            <CheckCircle2 className="w-3 h-3" />
+            <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
             <span>On Track ({metrics.onTrack})</span>
           </button>
 
           <button
             type="button"
+            aria-pressed={healthFilter === 'attention'}
             onClick={() => setHealthFilter(healthFilter === 'attention' ? 'ALL' : 'attention')}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1 ${
+            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1 ${FOCUS_VISIBLE_CLASS} ${
               healthFilter === 'attention'
                 ? 'bg-amber-600 text-white shadow-2xs'
-                : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100'
+                : '  border  hover:bg-amber-500/15'
             }`}
           >
-            <AlertTriangle className="w-3 h-3" />
+            <AlertTriangle className="w-3 h-3" aria-hidden="true" />
             <span>Attention ({metrics.attention})</span>
           </button>
 
           <button
             type="button"
+            aria-pressed={healthFilter === 'unassigned'}
             onClick={() => setHealthFilter(healthFilter === 'unassigned' ? 'ALL' : 'unassigned')}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1 ${
+            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1 ${FOCUS_VISIBLE_CLASS} ${
               healthFilter === 'unassigned'
                 ? 'bg-rose-600 text-white shadow-2xs'
                 : metrics.unassignedTotal > 0
-                ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'
+                ? '  border  hover:bg-rose-500/15'
+                : 'bg-slate-800 text-slate-500 hover:bg-slate-800'
             }`}
           >
-            <UserX className="w-3 h-3" />
+            <UserX className="w-3 h-3" aria-hidden="true" />
             <span>Unassigned ({metrics.unassignedTotal})</span>
           </button>
 
           <button
             type="button"
+            aria-pressed={healthFilter === 'checkin_overdue'}
             onClick={() => setHealthFilter(healthFilter === 'checkin_overdue' ? 'ALL' : 'checkin_overdue')}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${
+            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${FOCUS_VISIBLE_CLASS} ${
               healthFilter === 'checkin_overdue'
                 ? 'bg-amber-600 text-white shadow-2xs ring-2 ring-amber-400'
                 : metrics.checkInOverdue > 0
-                ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 hover:bg-amber-100'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'
+                ? '  border  hover:bg-amber-500/15'
+                : 'bg-slate-800 text-slate-500 hover:bg-slate-800'
             }`}
             title="Filter shifts where assigned driver or attendant did not check in on time"
           >
-            <Clock className="w-3 h-3 text-amber-500" />
+            <Clock className="w-3 h-3 text-amber-500" aria-hidden="true" />
             <span>Check-In Overdue ({metrics.checkInOverdue})</span>
             {metrics.checkInOverdue > 0 && (
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 motion-safe:animate-ping" aria-hidden="true" />
             )}
           </button>
 
           <button
             type="button"
+            aria-pressed={healthFilter === 'stop_delayed'}
             onClick={() => setHealthFilter(healthFilter === 'stop_delayed' ? 'ALL' : 'stop_delayed')}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${
+            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${FOCUS_VISIBLE_CLASS} ${
               healthFilter === 'stop_delayed'
                 ? 'bg-rose-600 text-white shadow-2xs ring-2 ring-rose-400'
                 : metrics.stopDelayed > 0
-                ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-700 hover:bg-rose-100'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'
+                ? '  border  hover:bg-rose-500/15'
+                : 'bg-slate-800 text-slate-500 hover:bg-slate-800'
             }`}
             title="Filter shifts with delayed stops or unarrived stops past schedule"
           >
-            <MapPin className="w-3 h-3 text-rose-500" />
+            <MapPin className="w-3 h-3 text-rose-500" aria-hidden="true" />
             <span>Stop Delayed ({metrics.stopDelayed})</span>
             {metrics.stopDelayed > 0 && (
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 motion-safe:animate-ping" aria-hidden="true" />
             )}
           </button>
 
           <button
             type="button"
+            aria-pressed={healthFilter === 'alert_message'}
             onClick={() => setHealthFilter(healthFilter === 'alert_message' ? 'ALL' : 'alert_message')}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${
+            className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${FOCUS_VISIBLE_CLASS} ${
               healthFilter === 'alert_message'
                 ? 'bg-blue-600 text-white shadow-2xs ring-2 ring-blue-400'
                 : metrics.alertMessageCount > 0
-                ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-700 hover:bg-blue-100'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200'
+                ? '  border  hover:bg-blue-500/15'
+                : 'bg-slate-800 text-slate-500 hover:bg-slate-800'
             }`}
             title="Filter shifts with sent or pending parent delay alert messages"
           >
-            <Bell className="w-3 h-3 text-blue-500" />
+            <Bell className="w-3 h-3 text-blue-500" aria-hidden="true" />
             <span>Alert Message ({metrics.alertMessageCount})</span>
           </button>
         </div>
-      </div>
+      </search>
 
       {/* Main Shift Rows List matching media_1790353122813.png */}
       {loading && (!shifts || shifts.length === 0) ? (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center text-slate-400">
-          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-3 text-amber-500" />
+        <div className="bg-slate-900 rounded-2xl border border-slate-800 p-12 text-center text-slate-400">
+          <RefreshCw className="w-8 h-8 motion-safe:animate-spin mx-auto mb-3 text-amber-500" aria-hidden="true" />
           <p className="text-sm font-medium">Loading dispatch shifts for {selectedDate}...</p>
         </div>
       ) : !effectiveShifts || effectiveShifts.length === 0 ? (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center">
+        <div className="bg-slate-900 rounded-2xl border border-dashed border-slate-800 p-12 text-center">
           <ShieldAlert className="w-10 h-10 mx-auto text-amber-500 mb-2 opacity-80" />
-          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+          <h3 className="text-base font-bold text-slate-200">
             No Dispatch Shifts Found for {selectedDate}
           </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+          <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
             Click &quot;Create Day&quot; above to automatically compile active routes, evaluate school calendars, and merge marry-up runs into today&apos;s schedule.
           </p>
           <button
@@ -1844,12 +1907,12 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           </button>
         </div>
       ) : viewMode !== 'workbench' && (!filteredShifts || filteredShifts.length === 0) ? (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 p-12 text-center">
+        <div className="bg-slate-900 rounded-2xl border border-dashed border-slate-800 p-12 text-center">
           <Filter className="w-10 h-10 mx-auto text-slate-400 mb-2 opacity-80" />
-          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+          <h3 className="text-base font-bold text-slate-200">
             No Shifts Match the Current Filters
           </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+          <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
             There are {effectiveShifts.length} dispatch shifts on {selectedDate}, but none match your active status or search filters.
           </p>
           <button
@@ -1904,23 +1967,30 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
           onOpenReminderSettings={() => setIsReminderSettingsOpen(true)}
         />
       ) : viewMode === 'sheet' ? (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-          <div ref={sheetContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+        <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-sm">
+          <div
+            ref={sheetContainerRef}
+            tabIndex={0}
+            role="region"
+            aria-label={`Daily dispatch shifts table for ${selectedDate}`}
+            className={`overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] ${FOCUS_VISIBLE_CLASS}`}
+          >
             <table className="w-full text-left text-xs whitespace-nowrap">
-              <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold uppercase tracking-wider shadow-xs">
+              <caption className="sr-only">Daily dispatch shifts for {selectedDate}</caption>
+              <thead className="sticky top-0 z-10 bg-slate-800 border-b border-slate-700 text-slate-500 font-bold uppercase tracking-wider shadow-xs">
                 <tr>
-                  <th className="px-3.5 py-2.5">Status</th>
-                  <th className="px-3.5 py-2.5">Route</th>
-                  <th className="px-3.5 py-2.5">Shift</th>
-                  <th className="px-3.5 py-2.5">Driver</th>
-                  <th className="px-3.5 py-2.5">Unit</th>
-                  <th className="px-3.5 py-2.5">1st Stop</th>
-                  <th className="px-3.5 py-2.5">End Stop</th>
-                  <th className="px-3.5 py-2.5">Progress</th>
-                  <th className="px-3.5 py-2.5 text-right">Actions</th>
+                  <th scope="col" className="px-3.5 py-2.5">Status</th>
+                  <th scope="col" className="px-3.5 py-2.5">Route</th>
+                  <th scope="col" className="px-3.5 py-2.5">Shift</th>
+                  <th scope="col" className="px-3.5 py-2.5">Driver</th>
+                  <th scope="col" className="px-3.5 py-2.5">Unit</th>
+                  <th scope="col" className="px-3.5 py-2.5">1st Stop</th>
+                  <th scope="col" className="px-3.5 py-2.5">End Stop</th>
+                  <th scope="col" className="px-3.5 py-2.5">Progress</th>
+                  <th scope="col" className="px-3.5 py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              <tbody className="divide-y divide-slate-800">
                 {sheetPaddingTop > 0 && (
                   <tr>
                     <td style={{ height: `${sheetPaddingTop}px`, padding: 0, border: 0 }} colSpan={9} />
@@ -1933,28 +2003,33 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                   if (!lateness) return null;
                   const isYellow = lateness.effectiveHealth === 'yellow';
                   const isRed = lateness.effectiveHealth === 'red';
+                  const statusLabel = isRed ? 'Overdue or critical' : isYellow ? 'Needs attention' : 'On track';
                   return (
                     <tr
                       key={shift.id}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition"
+                      className="hover:bg-slate-800/50 transition"
                       onPointerEnter={preloadWorkbenchModals}
                     >
                       <td className="px-3.5 py-2">
-                        <span className={`inline-block w-2.5 h-2.5 rounded-full ${
-                          isRed ? 'bg-rose-500 ring-2 ring-rose-300' : isYellow ? 'bg-amber-400 ring-2 ring-amber-200' : 'bg-emerald-500'
-                        }`} />
+                        <span
+                          aria-hidden="true"
+                          className={`inline-block w-2.5 h-2.5 rounded-full ${
+                            isRed ? 'bg-rose-500 ring-2 ring-rose-300' : isYellow ? 'bg-amber-400 ring-2 ring-amber-200' : 'bg-emerald-500'
+                          }`}
+                        />
+                        <span className="sr-only">{statusLabel}</span>
                       </td>
-                      <td className="px-3.5 py-2 font-mono font-bold text-slate-800 dark:text-slate-100">{shift.routeNo}</td>
-                      <td className="px-3.5 py-2 font-medium text-slate-600 dark:text-slate-300">{shift.shiftType}</td>
-                      <td className="px-3.5 py-2 font-medium text-slate-800 dark:text-slate-200">
+                      <td className="px-3.5 py-2 font-mono font-bold text-slate-100">{shift.routeNo}</td>
+                      <td className="px-3.5 py-2 font-medium text-slate-300">{shift.shiftType}</td>
+                      <td className="px-3.5 py-2 font-medium text-slate-200">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {lateness.isMissingDriver ? (
                             <button
                               onClick={() => setSelectedShiftForCrew(shift)}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 animate-pulse hover:bg-rose-200 transition"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border animate-pulse hover:bg-rose-500/25 transition"
                               title="Missing driver! Click to assign crew"
                             >
-                              <UserX className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                              <UserX className="w-3 h-3" />
                               <span>Assign Driver</span>
                             </button>
                           ) : (
@@ -1972,7 +2047,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                               <span>{shift.driverName}</span>
                               {shift.isTemporaryDriver && (
                                 <span
-                                  className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                                  className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-amber-500/15 border border-amber-500/30"
                                   title="Temporary Replacement Driver"
                                 >
                                   Temp
@@ -1994,7 +2069,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                             </span>
                           )}
                           {lateness.driverLateMinutes > 0 && (
-                            <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                            <span className="text-[11px] font-bold">
                               (+{lateness.driverLateMinutes}m)
                             </span>
                           )}
@@ -2004,7 +2079,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                                 <button
                                   onClick={() => handleQuickCheckIn(shift, true)}
                                   title={`Checked in at ${shift.driverCheckedInAt || lateness.scheduledCheckInTime}. Click to undo check-in.`}
-                                  className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-rose-50 hover:text-rose-700 transition"
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-bold border hover:bg-rose-500/15 hover:text-rose-300 transition"
                                 >
                                   ✓ In {shift.driverCheckedInAt || lateness.scheduledCheckInTime}
                                 </button>
@@ -2012,7 +2087,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                                   <button
                                     onClick={() => handleQuickCheckOut(shift, 'driver', true)}
                                     title={`Checked out at ${shift.driverCheckedOutAt}${shift.driverCheckoutComments ? ` (${shift.driverCheckoutComments})` : ''}. Click to undo.`}
-                                    className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800 hover:bg-rose-50 hover:text-rose-700 transition"
+                                    className="px-1.5 py-0.5 rounded text-[10px] font-bold border hover:bg-rose-500/15 hover:text-rose-300 transition"
                                   >
                                     ✓ Out {shift.driverCheckedOutAt}{shift.driverCheckoutComments && ' 💬'}
                                   </button>
@@ -2020,7 +2095,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                                   <button
                                     onClick={() => handleOpenCheckOutModal(shift, 'driver')}
                                     title="Check out driver"
-                                    className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-purple-100 hover:text-purple-800 hover:border-purple-300 transition"
+                                    className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-700 text-slate-300 border border-slate-600 hover:bg-purple-500/15 hover:text-purple-300 hover:border-purple-300 transition"
                                   >
                                     Out
                                   </button>
@@ -2030,7 +2105,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                               <button
                                 onClick={() => handleQuickCheckIn(shift, false)}
                                 title={`Check-in scheduled at ${lateness.scheduledCheckInTime}. Click to check in now.`}
-                                className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 animate-pulse hover:bg-emerald-100 hover:text-emerald-800 transition"
+                                className="px-1.5 py-0.5 rounded text-[10px] font-bold border animate-pulse hover:bg-emerald-500/15 hover:text-emerald-300 transition"
                               >
                                 ⚠ In (+{lateness.driverLateMinutes}m)
                               </button>
@@ -2038,28 +2113,28 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                               <button
                                 onClick={() => handleQuickCheckIn(shift, false)}
                                 title={`Scheduled check-in at ${lateness.scheduledCheckInTime}. Click to check in early.`}
-                                className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition"
+                                className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-700 text-slate-300 border border-slate-600 hover:bg-emerald-500/15 hover:text-emerald-300 transition"
                               >
                                 In ({lateness.scheduledCheckInTime})
                               </button>
                             )
                           )}
                           {lateness.maxStopLateMinutes > 0 && (
-                            <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800 font-mono ml-1">
+                            <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border font-mono ml-1">
                               Stop +{lateness.maxStopLateMinutes}m
                             </span>
                           )}
                           {lateness.maxLateMinutes > 0 && (
-                            <span className="text-rose-600 dark:text-rose-400 font-bold ml-1">+{lateness.maxLateMinutes}m</span>
+                            <span className="font-bold ml-1">+{lateness.maxLateMinutes}m</span>
                           )}
                           {shift.driverPayOption && (
-                            <span className="ml-1.5 px-1.5 py-0.5 text-[9px] font-bold rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 font-mono">
+                            <span className="ml-1.5 px-1.5 py-0.5 text-[9px] font-bold rounded border font-mono">
                               {shift.driverPayOption}{shift.driverPayAmount !== undefined && shift.driverPayAmount !== null ? ` $${shift.driverPayAmount}` : ''}
                             </span>
                           )}
                         </div>
                         {shift.attendantName && (
-                          <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-600 dark:text-slate-400">
+                          <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-400">
                             <span
                               className="cursor-pointer hover:underline inline-flex items-center gap-1"
                               onClick={() => {
@@ -2074,7 +2149,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                               <span>Attendant: {shift.attendantName}</span>
                               {shift.isTemporaryAttendant && (
                                 <span
-                                  className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                                  className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-amber-500/15 border border-amber-500/30"
                                   title="Temporary Replacement Attendant"
                                 >
                                   Temp
@@ -2099,7 +2174,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                                 <button
                                   onClick={() => handleQuickAttendantCheckIn(shift, true)}
                                   title={`Attendant checked in at ${shift.attendantCheckedInAt || lateness.scheduledCheckInTime}. Click to undo.`}
-                                  className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-rose-50 hover:text-rose-700 transition"
+                                  className="px-1.5 py-0.2 rounded text-[9px] font-bold border hover:bg-rose-500/15 hover:text-rose-300 transition"
                                 >
                                   ✓ In {shift.attendantCheckedInAt || lateness.scheduledCheckInTime}
                                 </button>
@@ -2107,7 +2182,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                                   <button
                                     onClick={() => handleQuickCheckOut(shift, 'attendant', true)}
                                     title={`Attendant checked out at ${shift.attendantCheckedOutAt}${shift.attendantCheckoutComments ? ` (${shift.attendantCheckoutComments})` : ''}. Click to undo.`}
-                                    className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800 hover:bg-rose-50 hover:text-rose-700 transition"
+                                    className="px-1.5 py-0.2 rounded text-[9px] font-bold border hover:bg-rose-500/15 hover:text-rose-300 transition"
                                   >
                                     ✓ Out {shift.attendantCheckedOutAt}{shift.attendantCheckoutComments && ' 💬'}
                                   </button>
@@ -2115,7 +2190,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                                   <button
                                     onClick={() => handleOpenCheckOutModal(shift, 'attendant')}
                                     title="Check out attendant"
-                                    className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-purple-100 hover:text-purple-800 hover:border-purple-300 transition"
+                                    className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-700 text-slate-300 border border-slate-600 hover:bg-purple-500/15 hover:text-purple-300 hover:border-purple-300 transition"
                                   >
                                     Out
                                   </button>
@@ -2125,7 +2200,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                               <button
                                 onClick={() => handleQuickAttendantCheckIn(shift, false)}
                                 title={`Attendant check-in overdue! Scheduled at ${lateness.scheduledCheckInTime}. Click to check in.`}
-                                className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 animate-pulse hover:bg-emerald-100 hover:text-emerald-800 transition"
+                                className="px-1.5 py-0.2 rounded text-[9px] font-bold border animate-pulse hover:bg-emerald-500/15 hover:text-emerald-300 transition"
                               >
                                 ⚠ In (+{lateness.attendantLateMinutes}m)
                               </button>
@@ -2133,7 +2208,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                               <button
                                 onClick={() => handleQuickAttendantCheckIn(shift, false)}
                                 title={`Scheduled check-in at ${lateness.scheduledCheckInTime}. Click to check in.`}
-                                className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition"
+                                className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-700 text-slate-300 border border-slate-600 hover:bg-emerald-500/15 hover:text-emerald-300 transition"
                               >
                                 In ({lateness.scheduledCheckInTime})
                               </button>
@@ -2145,15 +2220,15 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                         {lateness.isMissingVehicle ? (
                           <button
                             onClick={() => setSelectedShiftForCrew(shift)}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 animate-pulse hover:bg-rose-200 transition"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border animate-pulse hover:bg-rose-500/25 transition"
                             title="Missing vehicle! Click to assign unit"
                           >
-                            <Truck className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                            <Truck className="w-3 h-3" />
                             <span>Assign Unit</span>
                           </button>
                         ) : (
                           <span
-                            className="text-slate-700 dark:text-slate-300 cursor-pointer hover:underline"
+                            className="text-slate-300 cursor-pointer hover:underline"
                             onClick={() => {
                               if (onSelectVehicle && (shift.vehicleId || shift.unitNumber)) {
                                 onSelectVehicle(shift.vehicleId, shift.unitNumber);
@@ -2172,7 +2247,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                       <td className="px-3.5 py-2">
                         <div className="flex flex-col">
                           <div>
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">{shift.completedStops}/{shift.totalStops}</span>
+                            <span className="font-semibold text-slate-300">{shift.completedStops}/{shift.totalStops}</span>
                             <span className="text-[10px] text-slate-400 ml-1">stops</span>
                           </div>
                           {(() => {
@@ -2187,7 +2262,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                             });
                             if (totalStu === 0) return null;
                             return (
-                              <span className={`text-[10px] font-semibold flex items-center gap-0.5 ${pickedUpStu > 0 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-slate-400'}`}>
+                              <span className={`text-[10px] font-semibold flex items-center gap-0.5 ${pickedUpStu > 0 ? ' font-bold' : 'text-slate-400'}`}>
                                 <Users className="w-2.5 h-2.5" />
                                 {pickedUpStu}/{totalStu} riders
                               </span>
@@ -2203,10 +2278,10 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                             return (
                               <button
                                 onClick={() => setSelectedShiftForHistory(shift)}
-                                className="px-2 py-1 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900 transition flex items-center gap-1 shrink-0"
+                                className="px-2 py-1 rounded-lg text-xs font-semibold bg-blue-500/15 hover:bg-blue-500/15 text-blue-300 hover:bg-blue-900 transition flex items-center gap-1 shrink-0"
                                 title={`View ${sentNotifs.length} dispatched alert(s)`}
                               >
-                                <MessageSquare className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                                <MessageSquare className="w-3 h-3" />
                                 <span>Alerts ({sentNotifs.length})</span>
                               </button>
                             );
@@ -2217,7 +2292,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                                 setSelectedShiftForNotification(shift);
                                 setSelectedStopForNotification(null);
                               }}
-                              className="px-2 py-1 rounded-lg text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-900 transition flex items-center gap-1"
+                              className="px-2 py-1 rounded-lg text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/15 text-amber-300 hover:bg-amber-900 transition flex items-center gap-1"
                               title="Send delay notification to parents"
                             >
                               <BellRing className="w-3 h-3" />
@@ -2226,7 +2301,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                           )}
                           <button
                             onClick={() => setSelectedShiftForPayroll(shift)}
-                            className="px-2 py-1 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900 transition flex items-center gap-1"
+                            className="px-2 py-1 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/15 text-emerald-300 hover:bg-emerald-900 transition flex items-center gap-1"
                             title="Dispatch Payroll Comment"
                           >
                             <DollarSign className="w-3 h-3" />
@@ -2234,7 +2309,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                           </button>
                           <button
                             onClick={() => setSelectedShiftForSplit(shift)}
-                            className="px-2 py-1 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900 transition flex items-center gap-1"
+                            className="px-2 py-1 rounded-lg text-xs font-semibold bg-blue-500/15 hover:bg-blue-500/15 text-blue-300 hover:bg-blue-900 transition flex items-center gap-1"
                             title="Split Shift"
                           >
                             <Split className="w-3 h-3" />
@@ -2242,7 +2317,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                           </button>
                           <button
                             onClick={() => handleOpenMap(shift)}
-                            className="px-2 py-1 rounded-lg text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 transition flex items-center gap-1"
+                            className="px-2 py-1 rounded-lg text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition flex items-center gap-1"
                             title="View Dispatch Shift Map"
                           >
                             <Navigation className="w-3 h-3 text-amber-500" />
@@ -2250,7 +2325,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
                           </button>
                           <button
                             onClick={() => handleOpenStops(shift)}
-                            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-900 transition"
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/15 text-amber-300 hover:bg-amber-900 transition"
                           >
                             View Stops
                           </button>
@@ -2472,7 +2547,7 @@ const DispatchWorkbenchViewInner: React.FC<DispatchWorkbenchViewProps> = ({
         onClose={() => setCheckoutModal(null)}
         onConfirm={handleQuickCheckOut}
       />
-    </div>
+    </PageShell>
   );
 };
 
@@ -2536,8 +2611,8 @@ const StopBubbleChain: React.FC<{
                 isArrived
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : isStopOverdue
-                  ? 'bg-amber-100 dark:bg-amber-950/70 border border-rose-500 text-rose-600 dark:text-rose-400 font-bold'
-                  : 'bg-white dark:bg-slate-700 border border-slate-400 dark:border-slate-500 text-slate-600 dark:text-slate-300'
+                  ? ' border border-rose-500  font-bold'
+                  : 'bg-slate-700 border border-slate-400 border-slate-500 text-slate-300'
               }`}
             >
               {isArrived ? (
@@ -2553,7 +2628,7 @@ const StopBubbleChain: React.FC<{
                 className={`w-2 h-0.5 ${
                   isArrived && isNextArrived
                     ? 'bg-emerald-600'
-                    : 'bg-slate-300 dark:bg-slate-600'
+                    : ''
                 }`}
               />
             )}
@@ -2637,7 +2712,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
       {/* ------------------------------------------------------------- */}
       <div className="hidden md:flex items-center gap-2 group">
         {/* Left Route Cell: rounded card matching screenshot */}
-        <div className="w-28 shrink-0 bg-[#fdfbf7] dark:bg-slate-800/80 border border-[#eddccb] dark:border-slate-700 rounded-xl px-2.5 py-2.5 shadow-2xs flex items-center gap-2">
+        <div className="w-28 shrink-0 bg-[#fdfbf7] bg-slate-800/80 border border-[#eddccb] border-slate-700 rounded-xl px-2.5 py-2.5 shadow-2xs flex items-center gap-2">
           <span
             className={`w-2 h-2 rounded-full shrink-0 ${
               isRed
@@ -2648,7 +2723,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
             }`}
           />
           <div className="min-w-0">
-            <div className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate font-mono">
+            <div className="text-xs font-bold text-slate-100 truncate font-mono">
               {shift.routeNo}
             </div>
             <div className="text-[10px] text-slate-400 font-semibold tracking-wide">
@@ -2660,8 +2735,8 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
         {/* Main Row Card matching screenshot */}
         <div className={`flex-1 rounded-xl px-4 py-2 shadow-2xs flex items-center justify-between gap-4 transition ${
           lateness.isMissingCrewOrVehicle
-            ? 'bg-rose-50/30 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-800 hover:border-rose-400'
-            : 'bg-[#fbf7f2] dark:bg-slate-800/60 border border-[#eddccb] dark:border-slate-700/80 hover:border-amber-400 dark:hover:border-slate-600'
+            ? ' border  hover:border-rose-400'
+            : 'bg-[#fbf7f2] bg-slate-800/60 border border-[#eddccb] border-slate-700/80 hover:border-amber-400 hover:border-slate-600'
         }`}>
           {/* Section 1: Driver & Check-In */}
           <div className="flex items-center gap-2.5 min-w-[220px] max-w-[320px]">
@@ -2669,8 +2744,8 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
               onClick={() => onOpenCrew(shift)}
               className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 cursor-pointer transition ${
                 lateness.isMissingDriver
-                  ? 'bg-rose-100 dark:bg-rose-950/80 border border-rose-400 text-rose-700 dark:text-rose-300 ring-2 ring-rose-200 dark:ring-rose-900 animate-pulse'
-                  : 'bg-slate-200 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:opacity-80'
+                  ? ' border border-rose-400  ring-2 ring-rose-200 ring-rose-900 animate-pulse'
+                  : 'bg-slate-700 border border-slate-600 text-slate-200 hover:opacity-80'
               }`}
               title={lateness.isMissingDriver ? 'Missing driver! Click to assign crew' : 'Click to assign driver or vehicle'}
             >
@@ -2681,22 +2756,22 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                 {lateness.isMissingDriver ? (
                   <button
                     onClick={() => onOpenCrew(shift)}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 hover:bg-rose-200 transition animate-pulse"
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold border hover:bg-rose-500/25 transition animate-pulse"
                     title="Missing driver! Click to assign crew"
                   >
-                    <UserX className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                    <UserX className="w-3 h-3" />
                     <span>Assign Driver</span>
                   </button>
                 ) : (
                   <span
                     onClick={openDriverDetails}
-                    className="text-xs font-semibold text-slate-800 dark:text-slate-200 cursor-pointer hover:underline inline-flex items-center gap-1"
+                    className="text-xs font-semibold text-slate-200 cursor-pointer hover:underline inline-flex items-center gap-1"
                     title="View driver details"
                   >
                     <span>{shift.driverName}</span>
                     {shift.isTemporaryDriver && (
                       <span
-                        className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                        className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-amber-500/15 border border-amber-500/30"
                         title="Temporary Replacement Driver"
                       >
                         Temp
@@ -2707,7 +2782,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
 
                 {/* Explicit Driver Late Notice */}
                 {lateness.driverLateMinutes > 0 && (
-                  <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400 shrink-0">
+                  <span className="text-[11px] font-bold shrink-0">
                     (+{lateness.driverLateMinutes}m)
                   </span>
                 )}
@@ -2722,7 +2797,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                           onQuickCheckIn(shift, true);
                         }}
                         title={`Checked in at ${shift.driverCheckedInAt || lateness.scheduledCheckInTime}. Click to undo check-in.`}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-rose-50 hover:text-rose-700 transition shrink-0"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border hover:bg-rose-500/15 hover:text-rose-300 transition shrink-0"
                       >
                         <Check className="w-2.5 h-2.5 stroke-[3]" />
                         <span>In {shift.driverCheckedInAt || lateness.scheduledCheckInTime}</span>
@@ -2734,7 +2809,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                             onQuickCheckOut?.(shift, 'driver', true);
                           }}
                           title={`Checked out at ${shift.driverCheckedOutAt}${shift.driverCheckoutComments ? ` (${shift.driverCheckoutComments})` : ''}. Click to undo.`}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800 hover:bg-rose-50 hover:text-rose-700 transition shrink-0"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border hover:bg-rose-500/15 hover:text-rose-300 transition shrink-0"
                         >
                           <LogOut className="w-2.5 h-2.5" />
                           <span>Out {shift.driverCheckedOutAt}{shift.driverCheckoutComments && ' 💬'}</span>
@@ -2746,7 +2821,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                             onOpenCheckOutModal?.(shift, 'driver');
                           }}
                           title="Check out driver"
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-purple-100 hover:text-purple-800 hover:border-purple-300 transition shrink-0"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-700 text-slate-300 border border-slate-600 hover:bg-purple-500/15 hover:text-purple-300 hover:border-purple-300 transition shrink-0"
                         >
                           <LogOut className="w-2.5 h-2.5" />
                           <span>Out</span>
@@ -2762,8 +2837,8 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                       title={`Scheduled check-in at ${lateness.scheduledCheckInTime}. Click to check in now.`}
                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border transition shrink-0 ${
                         lateness.isDriverOverdue
-                          ? 'bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-700 animate-pulse hover:bg-emerald-100 hover:text-emerald-800'
-                          : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
+                          ? '   animate-pulse hover:bg-emerald-500/15 hover:text-emerald-300'
+                          : 'bg-slate-700 text-slate-300 border-slate-600 hover:bg-emerald-500/15 hover:text-emerald-300'
                       }`}
                     >
                       <Clock className="w-2.5 h-2.5" />
@@ -2773,13 +2848,13 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                 )}
 
                 {shift.driverPayOption && (
-                  <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 font-mono">
+                  <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md border font-mono">
                     {shift.driverPayOption}{shift.driverPayAmount !== undefined && shift.driverPayAmount !== null ? ` $${shift.driverPayAmount}` : ''}
                   </span>
                 )}
               </div>
               {shift.attendantName && (
-                <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-400">
                   <span
                     onClick={(e) => {
                       e.stopPropagation();
@@ -2791,7 +2866,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                     <span>Attendant: {shift.attendantName}</span>
                     {shift.isTemporaryAttendant && (
                       <span
-                        className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                        className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-amber-500/15 border border-amber-500/30"
                         title="Temporary Replacement Attendant"
                       >
                         Temp
@@ -2806,7 +2881,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                           onQuickAttendantCheckIn?.(shift, true);
                         }}
                         title={`Attendant checked in at ${shift.attendantCheckedInAt || lateness.scheduledCheckInTime}. Click to undo.`}
-                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-rose-50 hover:text-rose-700 transition"
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold border hover:bg-rose-500/15 hover:text-rose-300 transition"
                       >
                         <Check className="w-2 h-2 stroke-[3]" />
                         <span>In {shift.attendantCheckedInAt || lateness.scheduledCheckInTime}</span>
@@ -2818,7 +2893,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                             onQuickCheckOut?.(shift, 'attendant', true);
                           }}
                           title={`Attendant checked out at ${shift.attendantCheckedOutAt}${shift.attendantCheckoutComments ? ` (${shift.attendantCheckoutComments})` : ''}. Click to undo.`}
-                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800 hover:bg-rose-50 hover:text-rose-700 transition"
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold border hover:bg-rose-500/15 hover:text-rose-300 transition"
                         >
                           <LogOut className="w-2 h-2" />
                           <span>Out {shift.attendantCheckedOutAt}{shift.attendantCheckoutComments && ' 💬'}</span>
@@ -2830,7 +2905,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                             onOpenCheckOutModal?.(shift, 'attendant');
                           }}
                           title="Check out attendant"
-                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 hover:bg-purple-100 hover:text-purple-800 hover:border-purple-300 transition"
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-700 text-slate-300 border border-slate-600 hover:bg-purple-500/15 hover:text-purple-300 hover:border-purple-300 transition"
                         >
                           <LogOut className="w-2 h-2" />
                           <span>Out</span>
@@ -2844,7 +2919,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                         onQuickAttendantCheckIn?.(shift, false);
                       }}
                       title={`Attendant check-in overdue! Scheduled at ${lateness.scheduledCheckInTime}. Click to check in.`}
-                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 animate-pulse hover:bg-emerald-100 hover:text-emerald-800 transition"
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold border animate-pulse hover:bg-emerald-500/15 hover:text-emerald-300 transition"
                     >
                       <Clock className="w-2 h-2" />
                       <span>Overdue (+{lateness.attendantLateMinutes}m)</span>
@@ -2856,7 +2931,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                         onQuickAttendantCheckIn?.(shift, false);
                       }}
                       title={`Scheduled check-in at ${lateness.scheduledCheckInTime}. Click to check in.`}
-                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition"
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-700 text-slate-300 border border-slate-600 hover:bg-emerald-500/15 hover:text-emerald-300 transition"
                     >
                       <span>Check In ({lateness.scheduledCheckInTime})</span>
                     </button>
@@ -2867,18 +2942,18 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
           </div>
 
           {/* Divider */}
-          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 shrink-0" />
+          <div className="w-px h-6 bg-slate-700 shrink-0" />
 
           {/* Section 2: Stop Progress Timeline */}
           <div className="flex-1 flex items-center justify-center gap-3 px-2">
             {/* First Stop Time Label */}
             <div className="flex items-center gap-1.5 shrink-0 text-right">
               <span className="text-[10px] font-bold text-slate-400">1st</span>
-              <span className="text-xs font-bold font-mono text-slate-800 dark:text-slate-100">
+              <span className="text-xs font-bold font-mono text-slate-100">
                 {shift.firstStopTime || '--:--'}
               </span>
               {(firstStop?.actualArrivalTime || firstStop?.stopArrivalTime) && (
-                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border">
                   {firstStop.actualArrivalTime || firstStop.stopArrivalTime}
                 </span>
               )}
@@ -2897,11 +2972,11 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                 title={`Passenger Boarding: ${pickedUpStudents}/${totalStudents} picked up. Click to view manifest.`}
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border transition shrink-0 cursor-pointer ${
                   pickedUpStudents > 0
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-2xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                    ? '   shadow-2xs'
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-300'
                 }`}
               >
-                <Users className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                <Users className="w-3 h-3" />
                 <span>Riders {pickedUpStudents}/{totalStudents}</span>
               </button>
             )}
@@ -2910,11 +2985,11 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
             <div className="flex items-center gap-2 shrink-0 text-left">
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] font-bold text-slate-400">End</span>
-                <span className="text-xs font-bold font-mono text-slate-800 dark:text-slate-100">
+                <span className="text-xs font-bold font-mono text-slate-100">
                   {shift.lastStopTime || '--:--'}
                 </span>
                 {(lastStop?.actualArrivalTime || lastStop?.stopArrivalTime) && (
-                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border">
                     {lastStop.actualArrivalTime || lastStop.stopArrivalTime}
                   </span>
                 )}
@@ -2923,10 +2998,10 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
               {/* Dynamic Stop Delay Badge */}
               {lateness.maxStopLateMinutes > 0 && (
                 <span
-                  className="px-2 py-0.5 rounded-md text-xs font-bold border flex items-center gap-1 text-rose-800 dark:text-rose-200 bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-700 shadow-2xs"
+                  className="px-2 py-0.5 rounded-md text-xs font-bold border flex items-center gap-1 shadow-2xs"
                   title={`Stop delay: ${lateness.maxStopLateMinutes}m past schedule`}
                 >
-                  <MapPin className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                  <MapPin className="w-3 h-3" />
                   <span>Stop +{lateness.maxStopLateMinutes}m</span>
                 </span>
               )}
@@ -2934,10 +3009,10 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
               {/* Dynamic Max Late Badge */}
               {lateness.maxLateMinutes > 0 && (
                 <span
-                  className="px-2 py-0.5 rounded-md text-xs font-bold border flex items-center gap-1 text-rose-700 dark:text-rose-300 bg-rose-100/90 dark:bg-rose-950/80 border-rose-300 dark:border-rose-700 shadow-2xs animate-pulse"
+                  className="px-2 py-0.5 rounded-md text-xs font-bold border flex items-center gap-1 shadow-2xs animate-pulse"
                   title={`Max Delay: ${lateness.maxLateMinutes}m (Driver late: ${lateness.driverLateMinutes}m, Max Stop late: ${lateness.maxStopLateMinutes}m)`}
                 >
-                  <Clock className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                  <Clock className="w-3 h-3" />
                   <span>+{lateness.maxLateMinutes}m</span>
                 </span>
               )}
@@ -2950,9 +3025,9 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                     onOpenNotification(shift);
                   }}
                   title="Notify parents of delay (vehicle breakdown, traffic delay)"
-                  className="px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-900 dark:text-amber-100 bg-amber-100/90 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 hover:bg-amber-200 dark:hover:bg-amber-900 transition flex items-center gap-1.5 shrink-0 shadow-2xs"
+                  className="px-2.5 py-1 rounded-lg text-xs font-semibold border hover:bg-amber-500/25 hover:bg-amber-900 transition flex items-center gap-1.5 shrink-0 shadow-2xs"
                 >
-                  <BellRing className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <BellRing className="w-3.5 h-3.5" />
                   <span className="hidden xl:inline">Alert Parents</span>
                 </button>
               )}
@@ -2960,22 +3035,22 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
           </div>
 
           {/* Divider */}
-          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 shrink-0" />
+          <div className="w-px h-6 bg-slate-700 shrink-0" />
 
           {/* Section 3: Vehicle Unit Badge */}
           {lateness.isMissingVehicle ? (
             <button
               onClick={() => onOpenCrew(shift)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-100 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-700 text-xs font-bold text-rose-800 dark:text-rose-200 shrink-0 cursor-pointer hover:bg-rose-200 transition animate-pulse shadow-2xs"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold shrink-0 cursor-pointer hover:bg-rose-500/25 transition animate-pulse shadow-2xs"
               title="Missing vehicle! Click to assign unit"
             >
-              <Truck className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+              <Truck className="w-3.5 h-3.5" />
               <span>Assign Unit</span>
             </button>
           ) : (
             <div
               onClick={openVehicleDetails}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 shrink-0 cursor-pointer hover:border-amber-400 transition"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-700 border border-slate-600 text-xs font-mono font-bold text-slate-200 shrink-0 cursor-pointer hover:border-amber-400 transition"
               title={`View vehicle details: ${shift.unitNumber}`}
             >
               <Truck className="w-3.5 h-3.5 text-slate-400" />
@@ -2991,11 +3066,11 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                 onOpenHistory(shift);
               }}
               title={`View ${sentParentNotifications.length} dispatched alert(s) sent to parents`}
-              className="px-2.5 py-1 rounded-lg text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition shrink-0 flex items-center gap-1.5 shadow-2xs"
+              className="px-2.5 py-1 rounded-lg text-xs font-semibold border hover:bg-blue-500/15 hover:bg-blue-900/60 transition shrink-0 flex items-center gap-1.5 shadow-2xs"
             >
-              <MessageSquare className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <MessageSquare className="w-3.5 h-3.5" />
               <span className="hidden xl:inline text-[11px]">Sent Alerts</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-blue-200 dark:bg-blue-800 text-blue-900 dark:text-blue-100">
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold">
                 {sentParentNotifications.length}
               </span>
             </button>
@@ -3005,7 +3080,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
           <button
             onClick={() => onOpenPayroll(shift)}
             title="Dispatch Payroll Comment"
-            className="px-2 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 transition shrink-0 flex items-center gap-1"
+            className="px-2 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:text-emerald-300 hover:text-emerald-300 hover:bg-emerald-500/15 hover:bg-emerald-950/40 border border-slate-700 hover:border-emerald-300 transition shrink-0 flex items-center gap-1"
           >
             <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
             <span className="hidden lg:inline text-[11px]">Pay</span>
@@ -3015,7 +3090,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
           <button
             onClick={() => onOpenSplit(shift)}
             title="Split shift into 2 or more routes"
-            className="px-2 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-slate-200 dark:border-slate-700 hover:border-amber-300 transition shrink-0 flex items-center gap-1"
+            className="px-2 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:text-amber-300 hover:text-amber-300 hover:bg-amber-500/15 hover:bg-amber-950/40 border border-slate-700 hover:border-amber-300 transition shrink-0 flex items-center gap-1"
           >
             <Split className="w-3.5 h-3.5 text-amber-600" />
             <span className="hidden lg:inline text-[11px]">Split</span>
@@ -3028,7 +3103,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
               onOpenMap(shift);
             }}
             title="View Live Google Map"
-            className="px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-800 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition shrink-0 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition shrink-0 flex items-center gap-1.5 cursor-pointer shadow-2xs"
           >
             <Navigation className="w-3.5 h-3.5 text-amber-500" />
             <span className="hidden lg:inline text-[11px] font-bold">Map</span>
@@ -3038,7 +3113,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
           <button
             onClick={() => openStop()}
             title="Open Itinerary & Actions"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition shrink-0"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition shrink-0"
           >
             <MoreHorizontal className="w-4 h-4" />
           </button>
@@ -3050,17 +3125,17 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
       {/* ------------------------------------------------------------- */}
       <div className={`block md:hidden rounded-2xl p-3.5 shadow-2xs space-y-2.5 transition ${
         lateness.isMissingCrewOrVehicle
-          ? 'bg-rose-50/40 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-800'
-          : 'bg-[#fbf7f2] dark:bg-slate-800/70 border border-[#eddccb] dark:border-slate-700/80 hover:border-amber-400'
+          ? ' border '
+          : 'bg-[#fbf7f2] bg-slate-800/70 border border-[#eddccb] border-slate-700/80 hover:border-amber-400'
       }`}>
         {/* Unassigned Warning Banner on Mobile */}
         {lateness.isMissingCrewOrVehicle && (
           <div
             onClick={() => onOpenCrew(shift)}
-            className="bg-rose-100/90 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-700 rounded-xl px-2.5 py-1.5 flex items-center justify-between gap-2 cursor-pointer animate-pulse"
+            className="border rounded-xl px-2.5 py-1.5 flex items-center justify-between gap-2 cursor-pointer animate-pulse"
           >
-            <div className="flex items-center gap-1.5 text-xs font-bold text-rose-800 dark:text-rose-200">
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+            <div className="flex items-center gap-1.5 text-xs font-bold">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
               <span>
                 {lateness.isMissingDriver && lateness.isMissingVehicle
                   ? 'Driver & Vehicle Required'
@@ -3069,7 +3144,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   : 'Vehicle Required'}
               </span>
             </div>
-            <span className="text-[11px] font-semibold underline text-rose-700 dark:text-rose-300 shrink-0">
+            <span className="text-[11px] font-semibold underline shrink-0">
               Assign Now
             </span>
           </div>
@@ -3087,14 +3162,14 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   : 'bg-emerald-500'
               }`}
             />
-            <span className="text-sm font-bold font-mono text-slate-900 dark:text-white">
+            <span className="text-sm font-bold font-mono text-white">
               {shift.routeNo}
             </span>
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded">
               {shift.shiftType}
             </span>
             {shift.yardName && (
-              <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-[90px]">
+              <span className="text-[10px] font-medium text-slate-400 truncate max-w-[90px]">
                 {shift.yardName}
               </span>
             )}
@@ -3104,7 +3179,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
             <button
               onClick={() => onOpenPayroll(shift)}
               title="Dispatch Payroll Comment"
-              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold text-emerald-800 dark:text-emerald-300 transition"
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg border text-xs font-semibold transition"
             >
               <DollarSign className="w-3 h-3" />
               <span>Pay</span>
@@ -3112,14 +3187,14 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
             <button
               onClick={() => onOpenSplit(shift)}
               title="Split Shift"
-              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs font-semibold text-amber-800 dark:text-amber-300 transition"
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg border text-xs font-semibold transition"
             >
               <Split className="w-3 h-3" />
               <span>Split</span>
             </button>
             <button
               onClick={() => onOpenMap(shift)}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/30 text-xs font-semibold text-amber-800 dark:text-amber-300 transition"
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/10 bg-amber-950/40 border border-amber-500/30 text-xs font-semibold transition"
               title="View Shift Map"
             >
               <Navigation className="w-3 h-3 text-amber-500" />
@@ -3128,16 +3203,16 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
             {lateness.isMissingVehicle ? (
               <button
                 onClick={() => onOpenCrew(shift)}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-100 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-700 text-xs font-bold text-rose-800 dark:text-rose-200 animate-pulse"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg border text-xs font-bold animate-pulse"
                 title="Missing vehicle! Click to assign"
               >
-                <Truck className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                <Truck className="w-3 h-3" />
                 <span>Unit</span>
               </button>
             ) : (
               <div
                 onClick={openVehicleDetails}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-700 border border-slate-600 text-xs font-mono font-bold text-slate-200 cursor-pointer"
                 title={`View vehicle details: ${shift.unitNumber}`}
               >
                 <Truck className="w-3 h-3 text-slate-400" />
@@ -3146,7 +3221,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
             )}
             <button
               onClick={() => openStop()}
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition"
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition"
             >
               <MoreHorizontal className="w-4 h-4" />
             </button>
@@ -3154,14 +3229,14 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
         </div>
 
         {/* Driver Row & Mobile Check-In */}
-        <div className="bg-white/70 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 space-y-1.5">
+        <div className="bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-700/60 space-y-1.5">
           <div className="flex items-center gap-2">
             <div
               onClick={() => onOpenCrew(shift)}
               className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 cursor-pointer transition ${
                 lateness.isMissingDriver
-                  ? 'bg-rose-100 dark:bg-rose-950/80 border border-rose-400 text-rose-700 dark:text-rose-300 ring-1 ring-rose-200'
-                  : 'bg-slate-200 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200'
+                  ? ' border border-rose-400  ring-1 ring-rose-200'
+                  : 'bg-slate-700 border border-slate-600 text-slate-200'
               }`}
               title="Assign driver or vehicle"
             >
@@ -3170,33 +3245,33 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
             {lateness.isMissingDriver ? (
               <button
                 onClick={() => onOpenCrew(shift)}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 animate-pulse hover:bg-rose-200 transition"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border animate-pulse hover:bg-rose-500/25 transition"
                 title="Missing driver! Click to assign"
               >
-                <UserX className="w-3 h-3 text-rose-600 dark:text-rose-400" />
+                <UserX className="w-3 h-3" />
                 <span>Assign Driver</span>
               </button>
             ) : (
               <span
                 onClick={openDriverDetails}
-                className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate cursor-pointer hover:underline"
+                className="text-xs font-semibold text-slate-200 truncate cursor-pointer hover:underline"
                 title="View driver details"
               >
                 {shift.driverName}
               </span>
             )}
             {lateness.driverLateMinutes > 0 && (
-              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 shrink-0">
+              <span className="text-[10px] font-bold shrink-0">
                 (+{lateness.driverLateMinutes}m)
               </span>
             )}
             {shift.driverPayOption && (
-              <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 font-mono">
+              <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md border font-mono">
                 {shift.driverPayOption}{shift.driverPayAmount !== undefined && shift.driverPayAmount !== null ? ` $${shift.driverPayAmount}` : ''}
               </span>
             )}
             {lateness.maxLateMinutes > 0 && (
-              <span className="text-[10px] font-bold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-300 dark:border-rose-800 flex items-center gap-0.5">
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border flex items-center gap-0.5">
                 <Clock className="w-2.5 h-2.5" />
                 +{lateness.maxLateMinutes}m
               </span>
@@ -3205,14 +3280,14 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
 
           {/* Quick Check-In / Check-Out on Mobile */}
           {shift.driverName && (
-            <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/50">
+            <div className="space-y-1.5 pt-1 border-t border-slate-700/50">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Driver Check-In</span>
+                <span className="text-[10px] text-slate-400 font-medium">Driver Check-In</span>
                 {lateness.isDriverCheckedIn ? (
                   <button
                     onClick={() => onQuickCheckIn(shift, true)}
                     title="Checked in. Click to undo."
-                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1"
+                    className="px-2 py-0.5 rounded text-[10px] font-bold border flex items-center gap-1"
                   >
                     <Check className="w-2.5 h-2.5 stroke-[3]" />
                     <span>In {shift.driverCheckedInAt || lateness.scheduledCheckInTime}</span>
@@ -3221,7 +3296,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   <button
                     onClick={() => onQuickCheckIn(shift, false)}
                     title="Overdue check-in. Click to check in."
-                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 animate-pulse flex items-center gap-1"
+                    className="px-2 py-0.5 rounded text-[10px] font-bold border animate-pulse flex items-center gap-1"
                   >
                     <Clock className="w-2.5 h-2.5" />
                     <span>Check In (+{lateness.driverLateMinutes}m)</span>
@@ -3230,7 +3305,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   <button
                     onClick={() => onQuickCheckIn(shift, false)}
                     title="Click to check in early."
-                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200"
+                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-700 text-slate-300 border border-slate-200"
                   >
                     Check In ({lateness.scheduledCheckInTime})
                   </button>
@@ -3239,12 +3314,12 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
 
               {lateness.isDriverCheckedIn && (
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-purple-700 dark:text-purple-400 font-medium">Driver Check-Out</span>
+                  <span className="text-[10px] font-medium">Driver Check-Out</span>
                   {shift.isDriverCheckedOut ? (
                     <button
                       onClick={() => onQuickCheckOut?.(shift, 'driver', true)}
                       title={`Checked out at ${shift.driverCheckedOutAt}${shift.driverCheckoutComments ? ` (${shift.driverCheckoutComments})` : ''}. Click to undo.`}
-                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-1"
+                      className="px-2 py-0.5 rounded text-[10px] font-bold border flex items-center gap-1"
                     >
                       <LogOut className="w-2.5 h-2.5" />
                       <span>Out {shift.driverCheckedOutAt}{shift.driverCheckoutComments && ' 💬'}</span>
@@ -3252,7 +3327,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   ) : (
                     <button
                       onClick={() => onOpenCheckOutModal?.(shift, 'driver')}
-                      className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 flex items-center gap-1"
+                      className="px-2 py-0.5 rounded text-[10px] font-semibold border hover:bg-purple-500/15 flex items-center gap-1"
                     >
                       <LogOut className="w-2.5 h-2.5" />
                       <span>Check Out</span>
@@ -3266,36 +3341,36 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
 
         {/* Attendant Row & Mobile Check-In */}
         {shift.attendantName && (
-          <div className="bg-white/70 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60 space-y-1.5">
+          <div className="bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-700/60 space-y-1.5">
             <div className="flex items-center gap-2">
               <div
                 onClick={() => onOpenCrew(shift)}
-                className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 cursor-pointer bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300"
+                className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 cursor-pointer border"
               >
                 A
               </div>
               <span
                 onClick={openAttendantDetails}
-                className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate cursor-pointer hover:underline"
+                className="text-xs font-semibold text-slate-200 truncate cursor-pointer hover:underline"
                 title="View attendant details"
               >
                 Attendant: {shift.attendantName}
               </span>
               {lateness.attendantLateMinutes > 0 && (
-                <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 shrink-0">
+                <span className="text-[10px] font-bold shrink-0">
                   (+{lateness.attendantLateMinutes}m)
                 </span>
               )}
             </div>
 
-            <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/50">
+            <div className="space-y-1.5 pt-1 border-t border-slate-700/50">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Attendant Check-In</span>
+                <span className="text-[10px] text-slate-400 font-medium">Attendant Check-In</span>
                 {lateness.isAttendantCheckedIn ? (
                   <button
                     onClick={() => onQuickAttendantCheckIn?.(shift, true)}
                     title="Checked in. Click to undo."
-                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1"
+                    className="px-2 py-0.5 rounded text-[10px] font-bold border flex items-center gap-1"
                   >
                     <Check className="w-2.5 h-2.5 stroke-[3]" />
                     <span>In {shift.attendantCheckedInAt || lateness.scheduledCheckInTime}</span>
@@ -3304,7 +3379,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   <button
                     onClick={() => onQuickAttendantCheckIn?.(shift, false)}
                     title="Overdue check-in. Click to check in."
-                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 animate-pulse flex items-center gap-1"
+                    className="px-2 py-0.5 rounded text-[10px] font-bold border animate-pulse flex items-center gap-1"
                   >
                     <Clock className="w-2.5 h-2.5" />
                     <span>Check In (+{lateness.attendantLateMinutes}m)</span>
@@ -3313,7 +3388,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   <button
                     onClick={() => onQuickAttendantCheckIn?.(shift, false)}
                     title="Click to check in early."
-                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200"
+                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-700 text-slate-300 border border-slate-200"
                   >
                     Check In ({lateness.scheduledCheckInTime})
                   </button>
@@ -3322,12 +3397,12 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
 
               {lateness.isAttendantCheckedIn && (
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-purple-700 dark:text-purple-400 font-medium">Attendant Check-Out</span>
+                  <span className="text-[10px] font-medium">Attendant Check-Out</span>
                   {shift.isAttendantCheckedOut ? (
                     <button
                       onClick={() => onQuickCheckOut?.(shift, 'attendant', true)}
                       title={`Attendant checked out at ${shift.attendantCheckedOutAt}${shift.attendantCheckoutComments ? ` (${shift.attendantCheckoutComments})` : ''}. Click to undo.`}
-                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-1"
+                      className="px-2 py-0.5 rounded text-[10px] font-bold border flex items-center gap-1"
                     >
                       <LogOut className="w-2.5 h-2.5" />
                       <span>Out {shift.attendantCheckedOutAt}{shift.attendantCheckoutComments && ' 💬'}</span>
@@ -3335,7 +3410,7 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                   ) : (
                     <button
                       onClick={() => onOpenCheckOutModal?.(shift, 'attendant')}
-                      className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 flex items-center gap-1"
+                      className="px-2 py-0.5 rounded text-[10px] font-semibold border hover:bg-purple-500/15 flex items-center gap-1"
                     >
                       <LogOut className="w-2.5 h-2.5" />
                       <span>Check Out</span>
@@ -3348,13 +3423,13 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
         )}
 
         {/* Times & Stop Bubbles */}
-        <div className="bg-white/80 dark:bg-slate-900/50 rounded-xl p-2.5 border border-slate-200/70 dark:border-slate-800 space-y-1.5">
+        <div className="bg-slate-900/50 rounded-xl p-2.5 border border-slate-800 space-y-1.5">
           <div className="flex items-center justify-between text-xs">
             <div className="flex items-center gap-1 font-mono">
               <span className="text-[10px] font-bold text-slate-400">1st:</span>
-              <span className="font-bold text-slate-800 dark:text-slate-200">{shift.firstStopTime || '--:--'}</span>
+              <span className="font-bold text-slate-200">{shift.firstStopTime || '--:--'}</span>
               {(firstStop?.actualArrivalTime || firstStop?.stopArrivalTime) && (
-                <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1 py-0.2 rounded border border-emerald-300 dark:border-emerald-800">
+                <span className="text-[9px] font-bold px-1 py-0.2 rounded border">
                   {firstStop.actualArrivalTime || firstStop.stopArrivalTime}
                 </span>
               )}
@@ -3362,16 +3437,16 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
 
             <div className="flex items-center gap-2">
               {lateness.maxStopLateMinutes > 0 && (
-                <span className="text-[9px] font-bold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-300 dark:border-rose-800 flex items-center gap-0.5">
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border flex items-center gap-0.5">
                   <MapPin className="w-2.5 h-2.5" />
                   Stop +{lateness.maxStopLateMinutes}m
                 </span>
               )}
               <div className="flex items-center gap-1 font-mono">
                 <span className="text-[10px] font-bold text-slate-400">End:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">{shift.lastStopTime || '--:--'}</span>
+                <span className="font-bold text-slate-200">{shift.lastStopTime || '--:--'}</span>
                 {(lastStop?.actualArrivalTime || lastStop?.stopArrivalTime) && (
-                  <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1 py-0.2 rounded border border-emerald-300 dark:border-emerald-800">
+                  <span className="text-[9px] font-bold px-1 py-0.2 rounded border">
                     {lastStop.actualArrivalTime || lastStop.stopArrivalTime}
                   </span>
                 )}
@@ -3390,12 +3465,12 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                 }}
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border shrink-0 cursor-pointer ${
                   pickedUpStudents > 0
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    ? '  '
+                    : 'bg-slate-800 text-slate-300 border-slate-700'
                 }`}
                 title={`Passenger Boarding: ${pickedUpStudents}/${totalStudents} picked up`}
               >
-                <Users className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                <Users className="w-2.5 h-2.5" />
                 <span>{pickedUpStudents}/{totalStudents}</span>
               </button>
             )}
@@ -3408,9 +3483,9 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                 e.stopPropagation();
                 onOpenHistory(shift);
               }}
-              className="w-full mt-2 py-1.5 rounded-xl text-xs font-semibold text-blue-900 dark:text-blue-100 bg-blue-50 dark:bg-blue-950/70 border border-blue-300 dark:border-blue-700 flex items-center justify-center gap-1.5 transition"
+              className="w-full mt-2 py-1.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition"
             >
-              <MessageSquare className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <MessageSquare className="w-3.5 h-3.5" />
               <span>View Sent Alerts ({sentParentNotifications.length})</span>
             </button>
           )}
@@ -3422,9 +3497,9 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
                 e.stopPropagation();
                 onOpenNotification(shift);
               }}
-              className="w-full mt-2 py-1.5 rounded-xl text-xs font-semibold text-amber-900 dark:text-amber-100 bg-amber-100/90 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 flex items-center justify-center gap-1.5 transition"
+              className="w-full mt-2 py-1.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition"
             >
-              <BellRing className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <BellRing className="w-3.5 h-3.5" />
               <span>Alert Parents of Delay</span>
             </button>
           )}
@@ -3433,3 +3508,5 @@ const WorkbenchShiftRow = memo(function WorkbenchShiftRow({
     </>
   );
 });
+
+

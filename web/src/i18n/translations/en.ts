@@ -143,7 +143,13 @@ export const en: TranslationDictionary = {
     quickDemoAdmin: 'Demo Admin',
     quickDemoDispatcher: 'Demo Dispatcher',
     quickDemoDriver: 'Demo Driver',
-    secureNotice: 'Authorized personnel only. All access is logged and monitored.'
+    secureNotice: 'Authorized personnel only. All access is logged and monitored.',
+    showPassword: 'Show password',
+    hidePassword: 'Hide password',
+    passwordVisibilityWarning: 'Warning: this will display your password on the screen.',
+    usernameRequired: 'Please enter your username or email.',
+    passwordRequired: 'Please enter your password.',
+    languageSwitcher: 'Language'
   },
   theme: {
     theme: 'Theme',

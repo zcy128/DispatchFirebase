@@ -8,6 +8,9 @@ import { Yard } from '../types/yard';
 import { RouteService } from '../services/routeService';
 import { RouteInlineDetail } from '../components/routes/RouteInlineDetail';
 import { RouteEditModal } from '../components/routes/RouteEditModal';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
+import { useRegisterPageAIContext } from '../contexts/AIContext';
 import { useAuth } from '../contexts/AuthContext';
 import { RouteAuditService } from '../services/routeAuditService';
 import {
@@ -75,6 +78,7 @@ export const RouteListView = memo(function RouteListView({
   const [searchTerm, setSearchTerm] = useState('');
   const [boardFilter, setBoardFilter] = useState('ALL');
   const [yardFilter, setYardFilter] = useState('ALL');
+  useRegisterPageAIContext('routes', { yardFilter });
   const [opDaysFilter, setOpDaysFilter] = useState('ALL'); // ALL, MTWRF, ----F, MTWR-
   const [marryupFilter, setMarryupFilter] = useState<'ALL' | 'ENABLED' | 'DISABLED'>('ALL');
   const [fixFilter, setFixFilter] = useState<RouteFixFilter>('ALL');
@@ -268,63 +272,71 @@ export const RouteListView = memo(function RouteListView({
   });
 
   return (
-    <div className="p-3.5 sm:p-4 space-y-4 sm:space-y-5 w-full">
-      {/* Top Search & Filter Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Search Input */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search by route (e.g. OCDSB-001), school, assigned driver, bus unit #..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500 transition placeholder:text-slate-500"
-            />
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center space-x-2 self-end md:self-auto">
+    <PageShell>
+      <PageHeader
+        title="Routes"
+        subtitle="Active school bus routes, shifts, marry-up assignments, and daily run schedules."
+        actions={
+          <div className="flex items-center space-x-2">
             <button
+              type="button"
               onClick={totalExpanded > 0 ? collapseAll : expandAll}
-              className="px-3 sm:px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5"
+              className="min-h-[28px] px-3 sm:px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
-              <Layers className="w-3.5 h-3.5 text-amber-400" />
+              <Layers aria-hidden="true" className="w-3.5 h-3.5 text-amber-400" />
               <span>{totalExpanded > 0 ? 'Collapse All' : 'Expand All'}</span>
             </button>
 
             {onRefresh && (
               <button
+                type="button"
                 onClick={handleRefresh}
                 disabled={refreshing}
+                aria-label="Refresh routes from cloud"
                 title="Refresh routes from cloud"
-                className="px-3 sm:px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5"
+                className="min-h-[28px] px-3 sm:px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               >
-                <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${refreshing ? 'animate-spin' : ''}`} />
+                <RefreshCw aria-hidden="true" className={`w-3.5 h-3.5 text-amber-400 ${refreshing ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">Refresh</span>
               </button>
             )}
           </div>
-        </div>
+        }
+      >
+        {/* Top Search & Filter Bar */}
+        <search aria-label="Filter routes" className="block space-y-3">
+          <div className="relative">
+            <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="search"
+              aria-label="Search routes by route number, school, driver, or bus unit"
+              placeholder="Search by route (e.g. OCDSB-001), school, assigned driver, bus unit #..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-base sm:text-sm text-white focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 transition placeholder:text-slate-500"
+            />
+          </div>
 
         {/* Mobile Filter Toggle Button */}
         <div className="flex md:hidden items-center justify-between pt-1">
           <button
             type="button"
             onClick={() => setShowMobileFilters(!showMobileFilters)}
-            className="px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 text-xs font-semibold flex items-center gap-1.5 text-slate-200"
+            aria-expanded={showMobileFilters}
+            aria-controls="route-filter-controls"
+            className="min-h-[28px] px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800 text-xs font-semibold flex items-center gap-1.5 text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
-            <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
+            <SlidersHorizontal aria-hidden="true" className="w-3.5 h-3.5 text-amber-400" />
             <span>Search & Filters</span>
             {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || fixFilter !== 'ALL' || opDaysFilter !== 'ALL') && (
               <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-amber-400/30" />
             )}
-            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMobileFilters ? 'rotate-180' : ''}`} />
+            <ChevronDown aria-hidden="true" className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMobileFilters ? 'rotate-180' : ''}`} />
           </button>
 
           {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || fixFilter !== 'ALL' || opDaysFilter !== 'ALL' || searchTerm) && (
             <button
+              type="button"
               onClick={() => {
                 setBoardFilter('ALL');
                 setYardFilter('ALL');
@@ -333,7 +345,7 @@ export const RouteListView = memo(function RouteListView({
                 setOpDaysFilter('ALL');
                 setSearchTerm('');
               }}
-              className="text-xs text-rose-400 hover:underline font-semibold"
+              className="min-h-[28px] px-2 text-xs text-rose-400 hover:underline font-semibold rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
               Reset Filters
             </button>
@@ -341,18 +353,19 @@ export const RouteListView = memo(function RouteListView({
         </div>
 
         {/* Filter Controls */}
-        <div className={`pt-2 border-t border-slate-800/80 text-xs ${showMobileFilters ? 'flex flex-col space-y-2.5' : 'hidden md:flex'} md:flex-row md:flex-wrap md:items-center gap-2`}>
+        <div id="route-filter-controls" className={`pt-2 border-t border-slate-800/80 text-xs ${showMobileFilters ? 'flex flex-col space-y-2.5' : 'hidden md:flex'} md:flex-row md:flex-wrap md:items-center gap-2`}>
           <div className="flex items-center space-x-1.5 text-slate-400 mr-2 font-medium">
-            <Filter className="w-3.5 h-3.5" />
+            <Filter aria-hidden="true" className="w-3.5 h-3.5" />
             <span>Filter by:</span>
           </div>
 
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full md:w-auto">
             {/* School Board Filter */}
             <select
+              aria-label="Filter by school board"
               value={boardFilter}
               onChange={(e) => setBoardFilter(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 w-full sm:w-auto"
+              className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-slate-200 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 w-full sm:w-auto"
             >
               <option value="ALL">All Boards ({uniqueBoards.length})</option>
               {uniqueBoards.map((b) => (
@@ -364,9 +377,10 @@ export const RouteListView = memo(function RouteListView({
 
             {/* Yard Filter */}
             <select
+              aria-label="Filter by yard"
               value={yardFilter}
               onChange={(e) => setYardFilter(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 w-full sm:w-auto"
+              className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-slate-200 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 w-full sm:w-auto"
             >
               <option value="ALL">All Yards ({uniqueYards.length})</option>
               {uniqueYards.map((y) => (
@@ -378,9 +392,10 @@ export const RouteListView = memo(function RouteListView({
 
             {/* Auto Marryup Filter */}
             <select
+              aria-label="Filter by auto marryup"
               value={marryupFilter}
               onChange={(e) => setMarryupFilter(e.target.value as any)}
-              className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 w-full sm:w-auto"
+              className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-slate-200 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 w-full sm:w-auto"
             >
               <option value="ALL">All Marryup</option>
               <option value="ENABLED">Auto Marryup</option>
@@ -389,9 +404,10 @@ export const RouteListView = memo(function RouteListView({
 
             {/* Needs Fix Filter */}
             <select
+              aria-label="Filter by crew and vehicle status"
               value={fixFilter}
               onChange={(e) => setFixFilter(e.target.value as RouteFixFilter)}
-              className={`border rounded-xl px-2.5 py-1.5 text-xs focus:outline-none w-full sm:w-auto ${
+              className={`border rounded-xl px-2.5 py-1.5 text-base sm:text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 w-full sm:w-auto ${
                 fixFilter !== 'ALL' && fixFilter !== 'COMPLETE'
                   ? 'bg-rose-950/60 border-rose-500/60 text-rose-200 focus:border-rose-400'
                   : 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500'
@@ -407,10 +423,12 @@ export const RouteListView = memo(function RouteListView({
           </div>
 
           {/* Op Days Filter (Weekdays vs Friday Early Dismissal) */}
-          <div className="flex flex-wrap items-center gap-1 bg-slate-800/80 p-0.5 rounded-xl border border-slate-700">
+          <div role="group" aria-label="Filter by operating days" className="flex flex-wrap items-center gap-1 bg-slate-800/80 p-0.5 rounded-xl border border-slate-700">
             <button
+              type="button"
+              aria-pressed={opDaysFilter === 'ALL'}
               onClick={() => setOpDaysFilter('ALL')}
-              className={`px-2 py-1 rounded-lg text-[11px] font-bold transition ${
+              className={`min-h-[28px] px-2 py-1 rounded-lg text-[11px] font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 opDaysFilter === 'ALL'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -419,8 +437,10 @@ export const RouteListView = memo(function RouteListView({
               All Op Days
             </button>
             <button
+              type="button"
+              aria-pressed={opDaysFilter === 'MTWRF'}
               onClick={() => setOpDaysFilter('MTWRF')}
-              className={`px-2 py-1 rounded-lg text-[11px] font-mono font-bold transition ${
+              className={`min-h-[28px] px-2 py-1 rounded-lg text-[11px] font-mono font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 opDaysFilter === 'MTWRF'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -429,19 +449,23 @@ export const RouteListView = memo(function RouteListView({
               MTWRF
             </button>
             <button
+              type="button"
+              aria-pressed={opDaysFilter === '----F'}
               onClick={() => setOpDaysFilter('----F')}
-              className={`px-2 py-1 rounded-lg text-[11px] font-mono font-bold transition flex items-center space-x-1 ${
+              className={`min-h-[28px] px-2 py-1 rounded-lg text-[11px] font-mono font-bold transition flex items-center space-x-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 opDaysFilter === '----F'
                   ? 'bg-purple-500 text-white shadow-sm'
                   : 'text-purple-400 hover:bg-purple-500/10'
               }`}
             >
-              <Calendar className="w-3 h-3" />
+              <Calendar aria-hidden="true" className="w-3 h-3" />
               <span>----F (Fri Early)</span>
             </button>
             <button
+              type="button"
+              aria-pressed={opDaysFilter === 'MTWR-'}
               onClick={() => setOpDaysFilter('MTWR-')}
-              className={`px-2 py-1 rounded-lg text-[11px] font-mono font-bold transition ${
+              className={`min-h-[28px] px-2 py-1 rounded-lg text-[11px] font-mono font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 opDaysFilter === 'MTWR-'
                   ? 'bg-sky-500 text-slate-950 shadow-sm'
                   : 'text-sky-400 hover:bg-sky-500/10'
@@ -454,7 +478,8 @@ export const RouteListView = memo(function RouteListView({
           <button
             type="button"
             onClick={() => setFixFilter((prev) => (prev === 'NEEDS_FIX' ? 'ALL' : 'NEEDS_FIX'))}
-            className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center space-x-1 border ${
+            aria-pressed={fixFilter === 'NEEDS_FIX'}
+            className={`min-h-[28px] px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center space-x-1 border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
               fixFilter === 'NEEDS_FIX'
                 ? 'bg-rose-500 text-white border-rose-400 shadow-sm'
                 : fixCounts.needsFix > 0
@@ -462,12 +487,13 @@ export const RouteListView = memo(function RouteListView({
                 : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
             }`}
           >
-            <AlertTriangle className="w-3 h-3" />
+            <AlertTriangle aria-hidden="true" className="w-3 h-3" />
             <span>Needs Fix ({fixCounts.needsFix})</span>
           </button>
 
           {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || fixFilter !== 'ALL' || opDaysFilter !== 'ALL' || searchTerm) && (
             <button
+              type="button"
               onClick={() => {
                 setBoardFilter('ALL');
                 setYardFilter('ALL');
@@ -476,13 +502,14 @@ export const RouteListView = memo(function RouteListView({
                 setOpDaysFilter('ALL');
                 setSearchTerm('');
               }}
-              className="hidden md:inline text-xs text-rose-400 hover:underline ml-auto font-medium"
+              className="hidden md:inline-flex items-center min-h-[28px] px-2 text-xs text-rose-400 hover:underline ml-auto font-medium rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
               Clear Filters
             </button>
           )}
         </div>
-      </div>
+      </search>
+      </PageHeader>
 
       {/* KPI Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
@@ -556,8 +583,9 @@ export const RouteListView = memo(function RouteListView({
         ) : (
           <>
             {/* Desktop Table View (visible on md screens and up) */}
-            <div ref={routeTableContainerRef} className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+            <div ref={routeTableContainerRef} tabIndex={0} role="region" aria-label="Route network table" className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400">
               <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1100px]">
+                <caption className="sr-only">Route network directory</caption>
                 <colgroup>
                   <col style={{ width: '48px' }} />
                   <col style={{ width: '16%' }} />
@@ -569,13 +597,13 @@ export const RouteListView = memo(function RouteListView({
                 </colgroup>
                 <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider text-[11px] shadow-xs">
                   <tr>
-                    <th className="py-3 px-3 w-12 text-center">#</th>
-                    <th className="py-3 px-4">Route Info</th>
-                    <th className="py-3 px-4">Board & Yard</th>
-                    <th className="py-3 px-4">Assigned Crew</th>
-                    <th className="py-3 px-4">Operational Shifts (Op Days)</th>
-                    <th className="py-3 px-4 text-center">Stops / Riders</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    <th scope="col" className="py-3 px-3 w-12 text-center"><span className="sr-only">Expand</span><span aria-hidden="true">#</span></th>
+                    <th scope="col" className="py-3 px-4">Route Info</th>
+                    <th scope="col" className="py-3 px-4">Board & Yard</th>
+                    <th scope="col" className="py-3 px-4">Assigned Crew</th>
+                    <th scope="col" className="py-3 px-4">Operational Shifts (Op Days)</th>
+                    <th scope="col" className="py-3 px-4 text-center">Stops / Riders</th>
+                    <th scope="col" className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -605,17 +633,19 @@ export const RouteListView = memo(function RouteListView({
                                 e.stopPropagation();
                                 toggleRouteExpand(r.id);
                               }}
-                              className={`p-1 rounded-lg border transition ${
+                              className={`min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1 rounded-lg border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                                 isExpanded
                                   ? 'bg-amber-500 text-slate-950 border-amber-400'
                                   : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
                               }`}
+                              aria-expanded={isExpanded}
+                              aria-label={isExpanded ? `Collapse stops for route ${r.routeNo}` : `Expand stops for route ${r.routeNo}`}
                               title={isExpanded ? 'Collapse stops' : 'Expand stops table'}
                             >
                               {isExpanded ? (
-                                <ChevronDown className="w-3.5 h-3.5 font-black" />
+                                <ChevronDown aria-hidden="true" className="w-3.5 h-3.5 font-black" />
                               ) : (
-                                <ChevronRight className="w-3.5 h-3.5" />
+                                <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />
                               )}
                             </button>
                           </td>
@@ -663,10 +693,10 @@ export const RouteListView = memo(function RouteListView({
                                   e.stopPropagation();
                                   if (r.driverName) onSelectEmployee?.(r.driverId, r.driverName);
                                 }}
-                                className="font-bold text-slate-200 flex items-center space-x-1 disabled:cursor-default enabled:hover:text-amber-300 enabled:cursor-pointer"
+                                className="font-bold text-slate-200 flex items-center space-x-1 disabled:cursor-default enabled:hover:text-amber-300 enabled:cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                 title={r.driverName ? 'View driver details' : undefined}
                               >
-                                <User className="w-3.5 h-3.5 text-amber-400" />
+                                <User aria-hidden="true" className="w-3.5 h-3.5 text-amber-400" />
                                 <span>{r.driverName || 'Unassigned'}</span>
                               </button>
                               {r.attendantName && (
@@ -676,10 +706,10 @@ export const RouteListView = memo(function RouteListView({
                                     e.stopPropagation();
                                     onSelectEmployee?.(r.attendantId, r.attendantName);
                                   }}
-                                  className="text-[10px] text-indigo-300 flex items-center space-x-1 hover:text-indigo-200 cursor-pointer"
+                                  className="text-[10px] text-indigo-300 flex items-center space-x-1 hover:text-indigo-200 cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                   title="View attendant details"
                                 >
-                                  <Shield className="w-3 h-3 text-indigo-400" />
+                                  <Shield aria-hidden="true" className="w-3 h-3 text-indigo-400" />
                                   <span>Monitor: {r.attendantName}</span>
                                 </button>
                               )}
@@ -690,15 +720,15 @@ export const RouteListView = memo(function RouteListView({
                                     e.stopPropagation();
                                     onSelectVehicle?.(r.vehicleId, r.unitNumber);
                                   }}
-                                  className="text-[10px] text-slate-300 font-mono flex items-center space-x-1 hover:text-amber-300 cursor-pointer"
+                                  className="text-[10px] text-slate-300 font-mono flex items-center space-x-1 hover:text-amber-300 cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                   title={`View vehicle details: ${r.unitNumber}`}
                                 >
-                                  <Bus className="w-3 h-3 text-slate-400" />
+                                  <Bus aria-hidden="true" className="w-3 h-3 text-slate-400" />
                                   <span>Unit {r.unitNumber}</span>
                                 </button>
                               ) : (
                                 <span className="text-[10px] text-rose-400 font-semibold flex items-center space-x-1">
-                                  <AlertTriangle className="w-3 h-3" />
+                                  <AlertTriangle aria-hidden="true" className="w-3 h-3" />
                                   <span>Missing Vehicle</span>
                                 </span>
                               )}
@@ -706,9 +736,9 @@ export const RouteListView = memo(function RouteListView({
                                 <a
                                   href={`tel:${r.driverPhone}`}
                                   onClick={(e) => e.stopPropagation()}
-                                  className="text-amber-400 hover:underline font-mono text-[11px] flex items-center space-x-1"
+                                  className="text-amber-400 hover:underline font-mono text-[11px] flex items-center space-x-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                 >
-                                  <Phone className="w-3 h-3" />
+                                  <Phone aria-hidden="true" className="w-3 h-3" />
                                   <span>{r.driverPhone}</span>
                                 </a>
                               )}
@@ -776,7 +806,8 @@ export const RouteListView = memo(function RouteListView({
                                   e.stopPropagation();
                                   setEditingRoute(r);
                                 }}
-                                className="text-amber-400 hover:text-amber-300 font-medium text-xs px-2 py-1 rounded hover:bg-slate-800 transition"
+                                className="min-h-[28px] text-amber-400 hover:text-amber-300 font-medium text-xs px-2 py-1 rounded hover:bg-slate-800 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                                aria-label={`Edit route ${r.routeNo}`}
                                 title="Edit Route Details"
                               >
                                 Edit
@@ -787,7 +818,9 @@ export const RouteListView = memo(function RouteListView({
                                 type="button"
                                 onClick={(e) => handleToggleAutoMarryup(e, r)}
                                 disabled={togglingRouteIds[r.id]}
-                                className="text-amber-400 hover:text-amber-300 font-medium text-xs px-2 py-1 rounded hover:bg-slate-800 transition flex items-center space-x-1"
+                                className="min-h-[28px] text-amber-400 hover:text-amber-300 font-medium text-xs px-2 py-1 rounded hover:bg-slate-800 transition flex items-center space-x-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                                aria-pressed={isAutoMarryupEnabled(r)}
+                                aria-label={isAutoMarryupEnabled(r) ? `Disable Auto Marryup for route ${r.routeNo}` : `Enable Auto Marryup for route ${r.routeNo}`}
                                 title={isAutoMarryupEnabled(r) ? 'Disable Auto Marryup for this route' : 'Enable Auto Marryup for this route'}
                               >
                                 {togglingRouteIds[r.id] && (
@@ -803,10 +836,11 @@ export const RouteListView = memo(function RouteListView({
                                     e.stopPropagation();
                                     onAssignCrew(r);
                                   }}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition"
+                                  className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                                  aria-label={`Assign crew for route ${r.routeNo}`}
                                   title="Assign Driver, Vehicle & Attendant"
                                 >
-                                  <UserCheck className="w-4 h-4" />
+                                  <UserCheck aria-hidden="true" className="w-4 h-4" />
                                 </button>
                               )}
                               <button
@@ -815,10 +849,11 @@ export const RouteListView = memo(function RouteListView({
                                   e.stopPropagation();
                                   onSelectRoute(r);
                                 }}
-                                className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs border border-slate-700 transition flex items-center space-x-1"
+                                className="min-h-[28px] px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs border border-slate-700 transition flex items-center space-x-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                                aria-label={`Open drawer for route ${r.routeNo}`}
                                 title="Open slide drawer"
                               >
-                                <FileText className="w-3.5 h-3.5 text-amber-400" />
+                                <FileText aria-hidden="true" className="w-3.5 h-3.5 text-amber-400" />
                                 <span className="hidden sm:inline">Drawer</span>
                               </button>
 
@@ -828,10 +863,11 @@ export const RouteListView = memo(function RouteListView({
                                   e.stopPropagation();
                                   onSelectRoute(r);
                                 }}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition"
+                                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                                aria-label={`View audit history for route ${r.routeNo}`}
                                 title="View Route Audit History"
                               >
-                                <History className="w-3.5 h-3.5" />
+                                <History aria-hidden="true" className="w-3.5 h-3.5" />
                               </button>
 
                               <button
@@ -840,12 +876,14 @@ export const RouteListView = memo(function RouteListView({
                                   e.stopPropagation();
                                   toggleRouteExpand(r.id);
                                 }}
-                                className="p-1 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition"
+                                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                                aria-expanded={isExpanded}
+                                aria-label={isExpanded ? `Collapse stops for route ${r.routeNo}` : `Expand stops for route ${r.routeNo}`}
                               >
                                 {isExpanded ? (
-                                  <ChevronDown className="w-4 h-4 text-amber-400" />
+                                  <ChevronDown aria-hidden="true" className="w-4 h-4 text-amber-400" />
                                 ) : (
-                                  <ChevronRight className="w-4 h-4" />
+                                  <ChevronRight aria-hidden="true" className="w-4 h-4" />
                                 )}
                               </button>
                             </div>
@@ -940,7 +978,8 @@ export const RouteListView = memo(function RouteListView({
                             e.stopPropagation();
                             setEditingRoute(r);
                           }}
-                          className="px-2 py-1 rounded-lg text-amber-400 hover:bg-slate-800 transition text-xs font-semibold"
+                          className="min-h-[28px] px-2 py-1 rounded-lg text-amber-400 hover:bg-slate-800 transition text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                          aria-label={`Edit route ${r.routeNo}`}
                           title="Edit Route"
                         >
                           Edit
@@ -948,12 +987,14 @@ export const RouteListView = memo(function RouteListView({
                         <button
                           type="button"
                           onClick={() => toggleRouteExpand(r.id)}
-                          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                          className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                          aria-expanded={isExpanded}
+                          aria-label={isExpanded ? `Collapse stops for route ${r.routeNo}` : `Expand stops for route ${r.routeNo}`}
                         >
                           {isExpanded ? (
-                            <ChevronDown className="w-4 h-4 text-amber-400" />
+                            <ChevronDown aria-hidden="true" className="w-4 h-4 text-amber-400" />
                           ) : (
-                            <ChevronRight className="w-4 h-4" />
+                            <ChevronRight aria-hidden="true" className="w-4 h-4" />
                           )}
                         </button>
                       </div>
@@ -969,10 +1010,10 @@ export const RouteListView = memo(function RouteListView({
                             e.stopPropagation();
                             if (r.driverName) onSelectEmployee?.(r.driverId, r.driverName);
                           }}
-                          className="font-bold text-slate-200 flex items-center space-x-1.5 disabled:cursor-default enabled:hover:text-amber-300 enabled:cursor-pointer"
+                          className="font-bold text-slate-200 flex items-center space-x-1.5 disabled:cursor-default enabled:hover:text-amber-300 enabled:cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                           title={r.driverName ? 'View driver details' : undefined}
                         >
-                          <User className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <User aria-hidden="true" className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                           <span className="truncate">{r.driverName || 'No Driver Assigned'}</span>
                         </button>
                         <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-slate-400">
@@ -983,7 +1024,7 @@ export const RouteListView = memo(function RouteListView({
                                 e.stopPropagation();
                                 onSelectEmployee?.(r.attendantId, r.attendantName);
                               }}
-                              className="hover:text-indigo-200 cursor-pointer"
+                              className="hover:text-indigo-200 cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title="View attendant details"
                             >
                               Monitor: {r.attendantName}
@@ -996,7 +1037,7 @@ export const RouteListView = memo(function RouteListView({
                                 e.stopPropagation();
                                 onSelectVehicle?.(r.vehicleId, r.unitNumber);
                               }}
-                              className="font-mono hover:text-amber-300 cursor-pointer"
+                              className="font-mono hover:text-amber-300 cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title={`View vehicle details: ${r.unitNumber}`}
                             >
                               Unit {r.unitNumber}
@@ -1006,7 +1047,7 @@ export const RouteListView = memo(function RouteListView({
                             <a
                               href={`tel:${r.driverPhone}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="text-amber-400 hover:underline font-mono"
+                              className="text-amber-400 hover:underline font-mono rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                             >
                               {r.driverPhone}
                             </a>
@@ -1022,10 +1063,11 @@ export const RouteListView = memo(function RouteListView({
                               e.stopPropagation();
                               onAssignCrew(r);
                             }}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition"
+                            className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                            aria-label={`Assign crew for route ${r.routeNo}`}
                             title="Assign Driver & Vehicle"
                           >
-                            <UserCheck className="w-4 h-4" />
+                            <UserCheck aria-hidden="true" className="w-4 h-4" />
                           </button>
                         )}
                         <button
@@ -1034,10 +1076,11 @@ export const RouteListView = memo(function RouteListView({
                             e.stopPropagation();
                             onSelectRoute(r);
                           }}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition"
+                          className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                          aria-label={`Open drawer for route ${r.routeNo}`}
                           title="Open Drawer"
                         >
-                          <FileText className="w-4 h-4" />
+                          <FileText aria-hidden="true" className="w-4 h-4" />
                         </button>
                         <button
                           type="button"
@@ -1045,10 +1088,11 @@ export const RouteListView = memo(function RouteListView({
                             e.stopPropagation();
                             onSelectRoute(r);
                           }}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition"
+                          className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                          aria-label={`View audit history for route ${r.routeNo}`}
                           title="View Route Audit History"
                         >
-                          <History className="w-4 h-4" />
+                          <History aria-hidden="true" className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
@@ -1097,10 +1141,12 @@ export const RouteListView = memo(function RouteListView({
                       <button
                         type="button"
                         onClick={() => toggleRouteExpand(r.id)}
-                        className="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1"
+                        className="min-h-[28px] text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1 rounded px-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? `Hide stops for route ${r.routeNo}` : `View stops for route ${r.routeNo}`}
                       >
                         <span>{isExpanded ? 'Hide Stops' : 'View Stops'}</span>
-                        {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                        {isExpanded ? <ChevronDown aria-hidden="true" className="w-3.5 h-3.5" /> : <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />}
                       </button>
                     </div>
 
@@ -1138,6 +1184,6 @@ export const RouteListView = memo(function RouteListView({
           onSave={handleSaveRoute}
         />
       )}
-    </div>
+    </PageShell>
   );
 });

@@ -206,3 +206,17 @@ html.light ::-webkit-scrollbar-thumb:hover {
     max-height: none !important;
   }
 }
+
+/* Autofill & post-interaction validation styling for form inputs */
+input.login-input:is(:autofill, :-webkit-autofill) {
+  box-shadow:
+    inset 0 0 0 2px #f59e0b,
+    inset 0 0 0 100vmax rgb(var(--color-slate-800));
+  border-color: #f59e0b;
+  -webkit-text-fill-color: rgb(var(--color-white));
+  caret-color: rgb(var(--color-white));
+}
+
+input.login-input:user-invalid {
+  border-color: #f43f5e;
+}

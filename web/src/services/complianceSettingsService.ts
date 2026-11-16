@@ -1,4 +1,4 @@
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import {
   OperatingProvince,
   ProvinceComplianceConfig,
@@ -18,8 +18,8 @@ export const ComplianceSettingsService = {
   },
 
   getConfig: async (): Promise<ProvinceComplianceConfig> => {
-    // 1. Try Firestore if online
-    if (db) {
+    // 1. Try Firestore if online and authenticated
+    if (db && auth?.currentUser) {
       try {
         const { doc, getDoc } = await import('firebase/firestore');
         const docRef = doc(db, 'system_settings', FIRESTORE_DOC_PATH);

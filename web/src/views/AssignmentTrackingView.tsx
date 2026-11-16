@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef, useDeferredValue, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue, useId, Suspense } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { AssignmentHistoryService, isColdRecord } from '../services/assignmentHistoryService';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   AssignmentHistoryRecord,
   AssignmentAction
@@ -53,6 +55,13 @@ export const AssignmentTrackingView: React.FC = () => {
   const [selectedDispatcher, setSelectedDispatcher] = useState<string>('');
   const [selectedAction, setSelectedAction] = useState<AssignmentAction | 'all'>('all');
   const [selectedDate, setSelectedDate] = useState<string>('');
+  const keywordsId = useId();
+  const driverFilterId = useId();
+  const routeFilterId = useId();
+  const vehicleFilterId = useId();
+  const dispatcherFilterId = useId();
+  const actionFilterId = useId();
+  const dateFilterId = useId();
 
   const isArchivedDate = (effectiveDate?: string, timestamp?: string) => {
     return isColdRecord(effectiveDate, timestamp);
@@ -328,43 +337,40 @@ export const AssignmentTrackingView: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+    <PageShell>
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-md">
-            <ArrowRightLeft className="w-5 h-5" />
+      <PageHeader
+        title="Assignment Lifecycle & Audit Tracking"
+        subtitle="Historical timeline of driver-to-route assignments, unassignments, and vehicle allocations"
+        icon={
+          <div aria-hidden="true" className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-md">
+            <ArrowRightLeft className="w-4 h-4" />
           </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-              Assignment Lifecycle & Audit Tracking
-            </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Historical timeline of driver-to-route assignments, unassignments, and vehicle allocations
-            </p>
+        }
+        actions={
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={handleManualRefresh}
+              disabled={refreshing}
+              className="min-h-[32px] flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+            >
+              <RefreshCw aria-hidden="true" className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              disabled={filteredRecords.length === 0}
+              className="min-h-[32px] flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+            >
+              <Download aria-hidden="true" className="w-3.5 h-3.5" />
+              <span>Export CSV</span>
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={handleManualRefresh}
-            disabled={refreshing}
-            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-
-          <button
-            onClick={handleExportCSV}
-            disabled={filteredRecords.length === 0}
-            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition disabled:opacity-50"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -405,7 +411,7 @@ export const AssignmentTrackingView: React.FC = () => {
             Active Current Holds
           </span>
           <div className="text-2xl font-black text-emerald-400 mt-1 flex items-center space-x-1.5">
-            <CheckCircle2 className="w-5 h-5" />
+            <CheckCircle2 aria-hidden="true" className="w-5 h-5" />
             <span>{stats.activeCurrentHolds}</span>
           </div>
           <span className="text-[11px] text-slate-400">Ongoing active assignments</span>
@@ -413,64 +419,74 @@ export const AssignmentTrackingView: React.FC = () => {
       </div>
 
       {/* Primary Category Switcher Tabs */}
-      <div className="flex items-center space-x-2 border-b border-slate-800 pb-2">
+      <div role="group" aria-label="Audit tracking categories" className="flex items-center space-x-2 border-b border-slate-800 pb-2 overflow-x-auto">
         <button
+          type="button"
+          aria-pressed={activeTab === 'all'}
           onClick={() => setActiveTab('all')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+          className={`min-h-[36px] flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeTab === 'all'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <History className="w-4 h-4" />
+          <History aria-hidden="true" className="w-4 h-4" />
           <span>All Assignments & Life-Cycles</span>
         </button>
 
         <button
+          type="button"
+          aria-pressed={activeTab === 'driver_route'}
           onClick={() => setActiveTab('driver_route')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+          className={`min-h-[36px] flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeTab === 'driver_route'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <Bus className="w-4 h-4" />
+          <Bus aria-hidden="true" className="w-4 h-4" />
           <span>Driver ↔ Route Tracking</span>
         </button>
 
         <button
+          type="button"
+          aria-pressed={activeTab === 'driver_vehicle'}
           onClick={() => setActiveTab('driver_vehicle')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+          className={`min-h-[36px] flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeTab === 'driver_vehicle'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <Truck className="w-4 h-4" />
+          <Truck aria-hidden="true" className="w-4 h-4" />
           <span>Driver ↔ Vehicle Tracking</span>
         </button>
 
         <button
+          type="button"
+          aria-pressed={activeTab === 'route_modifications'}
           onClick={() => setActiveTab('route_modifications')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+          className={`min-h-[36px] flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeTab === 'route_modifications'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <Navigation className="w-4 h-4" />
+          <Navigation aria-hidden="true" className="w-4 h-4" />
           <span>Route, Shift & Stop Changes</span>
         </button>
 
         <button
+          type="button"
+          aria-pressed={activeTab === 'entity_operations'}
           onClick={() => setActiveTab('entity_operations')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+          className={`min-h-[36px] flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeTab === 'entity_operations'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <GraduationCap className="w-4 h-4" />
+          <GraduationCap aria-hidden="true" className="w-4 h-4" />
           <span>Student & Vehicle Audit Logs</span>
         </button>
       </div>
@@ -504,20 +520,21 @@ export const AssignmentTrackingView: React.FC = () => {
       ) : (
         <>
           {/* Multi-Faceted Query & Filter Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4 shadow-sm">
+      <search aria-label="Filter assignment audit records" className="block bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800/80 pb-2.5 gap-2">
           <div className="flex items-center space-x-2 text-xs font-bold text-slate-300">
-            <Filter className="w-4 h-4 text-amber-400" />
+            <Filter aria-hidden="true" className="w-4 h-4 text-amber-400" />
             <span>Targeted History Query</span>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
             {/* Time Range Filter (1-Year Live vs All History BigQuery) */}
-            <div className="flex items-center bg-slate-800/80 p-0.5 rounded-xl border border-slate-700">
+            <div role="group" aria-label={isFrench ? 'Plage temporelle' : 'Time range'} className="flex items-center bg-slate-800/80 p-0.5 rounded-xl border border-slate-700">
               <button
                 type="button"
+                aria-pressed={timeRange === '1year'}
                 onClick={() => setTimeRange('1year')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                className={`min-h-[28px] px-3 py-1.5 rounded-lg text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                   timeRange === '1year'
                     ? 'bg-amber-500 text-slate-950 shadow-sm'
                     : 'text-slate-400 hover:text-white'
@@ -527,8 +544,9 @@ export const AssignmentTrackingView: React.FC = () => {
               </button>
               <button
                 type="button"
+                aria-pressed={timeRange === 'all'}
                 onClick={() => setTimeRange('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                className={`min-h-[28px] px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                   timeRange === 'all'
                     ? 'bg-sky-500 text-slate-950 shadow-sm'
                     : 'text-slate-400 hover:text-white'
@@ -540,8 +558,9 @@ export const AssignmentTrackingView: React.FC = () => {
 
             {(searchQuery || selectedDriverId || selectedRouteNo || selectedUnitNumber || selectedAction !== 'all' || selectedDate) && (
               <button
+                type="button"
                 onClick={handleResetFilters}
-                className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 ml-2"
+                className="min-h-[28px] px-2 rounded text-[11px] font-semibold text-rose-400 hover:text-rose-300 ml-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               >
                 {isFrench ? 'Réinitialiser les filtres' : 'Reset Filters'}
               </button>
@@ -552,7 +571,7 @@ export const AssignmentTrackingView: React.FC = () => {
         {/* 5-Year Safe Scan Notice Banner */}
         {timeRange === 'all' && (
           <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3 text-xs text-amber-300">
-            <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <Info aria-hidden="true" className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <div className="font-semibold text-amber-200 flex items-center gap-1.5">
                 <span>{isFrench ? 'Mode Tout l\'historique (Archive froide BigQuery)' : 'All History Mode (BigQuery Cold Archive)'}</span>
@@ -572,26 +591,28 @@ export const AssignmentTrackingView: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
           {/* Freeform Search */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">Keywords</label>
+            <label htmlFor={keywordsId} className="block text-[11px] font-semibold text-slate-400 mb-1">Keywords</label>
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+              <Search aria-hidden="true" className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
               <input
-                type="text"
+                id={keywordsId}
+                type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Driver, route, bus..."
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-base sm:text-xs text-white placeholder-slate-500 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               />
             </div>
           </div>
 
           {/* Driver Select */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">Query by Driver</label>
+            <label htmlFor={driverFilterId} className="block text-[11px] font-semibold text-slate-400 mb-1">Query by Driver</label>
             <select
+              id={driverFilterId}
               value={selectedDriverId}
               onChange={(e) => setSelectedDriverId(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-white focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
               <option value="">All Drivers</option>
               {historicalDrivers.map((d) => (
@@ -604,11 +625,12 @@ export const AssignmentTrackingView: React.FC = () => {
 
           {/* Route Select */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">Query by Route</label>
+            <label htmlFor={routeFilterId} className="block text-[11px] font-semibold text-slate-400 mb-1">Query by Route</label>
             <select
+              id={routeFilterId}
               value={selectedRouteNo}
               onChange={(e) => setSelectedRouteNo(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-white focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 font-mono"
             >
               <option value="">All Routes</option>
               {historicalRoutes.map((r) => (
@@ -621,11 +643,12 @@ export const AssignmentTrackingView: React.FC = () => {
 
           {/* Vehicle Select */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">Query by Vehicle</label>
+            <label htmlFor={vehicleFilterId} className="block text-[11px] font-semibold text-slate-400 mb-1">Query by Vehicle</label>
             <select
+              id={vehicleFilterId}
               value={selectedUnitNumber}
               onChange={(e) => setSelectedUnitNumber(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-white focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 font-mono"
             >
               <option value="">All Vehicles</option>
               {historicalVehicles.map((u) => (
@@ -638,11 +661,12 @@ export const AssignmentTrackingView: React.FC = () => {
 
           {/* Dispatcher Select */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">Changed by Dispatcher</label>
+            <label htmlFor={dispatcherFilterId} className="block text-[11px] font-semibold text-slate-400 mb-1">Changed by Dispatcher</label>
             <select
+              id={dispatcherFilterId}
               value={selectedDispatcher}
               onChange={(e) => setSelectedDispatcher(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-white focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
               <option value="">All Dispatchers</option>
               {historicalDispatchers.map((disp) => (
@@ -655,11 +679,12 @@ export const AssignmentTrackingView: React.FC = () => {
 
           {/* Action Filter */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">Lifecycle Action</label>
+            <label htmlFor={actionFilterId} className="block text-[11px] font-semibold text-slate-400 mb-1">Lifecycle Action</label>
             <select
+              id={actionFilterId}
               value={selectedAction}
               onChange={(e) => setSelectedAction(e.target.value as any)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-white focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
               <option value="all">All Actions</option>
               <option value="assign">Assigned (+)</option>
@@ -670,16 +695,17 @@ export const AssignmentTrackingView: React.FC = () => {
 
           {/* Date Picker */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">Effective Date</label>
+            <label htmlFor={dateFilterId} className="block text-[11px] font-semibold text-slate-400 mb-1">Effective Date</label>
             <input
+              id={dateFilterId}
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-white focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             />
           </div>
         </div>
-      </div>
+      </search>
 
       {/* Main Records Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
@@ -729,8 +755,9 @@ export const AssignmentTrackingView: React.FC = () => {
             )}
           </div>
         ) : (
-          <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+          <div ref={tableContainerRef} tabIndex={0} role="region" aria-label="Assignment audit records table" className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400">
             <table className="w-full text-left border-collapse table-fixed min-w-[1150px]">
+              <caption className="sr-only">Assignment lifecycle and audit records</caption>
               <colgroup>
                 <col style={{ width: '160px' }} />
                 <col style={{ width: '140px' }} />
@@ -743,14 +770,14 @@ export const AssignmentTrackingView: React.FC = () => {
               </colgroup>
               <thead className="sticky top-0 z-10 bg-slate-900 border-b border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-400 shadow-xs">
                 <tr>
-                  <th className="py-3 px-4">Effective Timeline</th>
-                  <th className="py-3 px-4">Assignment Category</th>
-                  <th className="py-3 px-4">Action</th>
-                  <th className="py-3 px-4">Driver Profile</th>
-                  <th className="py-3 px-4">Assigned Target (Route / Bus)</th>
-                  <th className="py-3 px-4">Current Status</th>
-                  <th className="py-3 px-4">Changed by Dispatcher</th>
-                  <th className="py-3 px-4">Assignment Reason</th>
+                  <th scope="col" className="py-3 px-4">Effective Timeline</th>
+                  <th scope="col" className="py-3 px-4">Assignment Category</th>
+                  <th scope="col" className="py-3 px-4">Action</th>
+                  <th scope="col" className="py-3 px-4">Driver Profile</th>
+                  <th scope="col" className="py-3 px-4">Assigned Target (Route / Bus)</th>
+                  <th scope="col" className="py-3 px-4">Current Status</th>
+                  <th scope="col" className="py-3 px-4">Changed by Dispatcher</th>
+                  <th scope="col" className="py-3 px-4">Assignment Reason</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-xs text-slate-300">
@@ -931,6 +958,6 @@ export const AssignmentTrackingView: React.FC = () => {
       </div>
         </>
       )}
-    </div>
+    </PageShell>
   );
 };

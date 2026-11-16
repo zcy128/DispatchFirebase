@@ -3,6 +3,8 @@ import { Employee } from '../types/employee';
 import { Vehicle } from '../types/vehicle';
 import { useCompliance } from '../contexts/ComplianceContext';
 import { useI18n } from '../contexts/I18nContext';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -146,61 +148,64 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
   }, [vehicles, preInspectionWindow]);
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <PageShell>
       {/* Title & Province Indicator */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <div className="flex items-center space-x-2 text-amber-400 text-xs font-semibold uppercase tracking-wider mb-1">
-            <ShieldCheck className="w-4 h-4" />
-            <span>
-              {isFrench ? 'Surveillance de la sécurité et de la conformité' : 'Safety & Regulatory Oversight'}
+      <PageHeader
+        title={
+          isFrench
+            ? 'Radar de sécurité de la flotte et de conformité réglementaire'
+            : 'Fleet Safety & Statutory Compliance Radar'
+        }
+        subtitle={
+          isFrench
+            ? 'Suivi à double volet : Inspections mécaniques semestrielles et permis de conduire commerciaux (CDL).'
+            : 'Dual-track compliance monitoring: Semi-annual mechanical inspections and commercial driver CDL certifications.'
+        }
+        icon={<ShieldCheck className="w-5 h-5 text-amber-400" aria-hidden="true" />}
+        actions={
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="px-3 py-1.5 min-h-[32px] rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{isFrench ? 'Retour à Fleet Pulse' : 'Back to Fleet Pulse'}</span>
+              </button>
+            )}
+            <span className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 border ${
+              isOntario
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                : 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+            }`}>
+              <span aria-hidden="true">{isOntario ? '🇨🇦' : '⚜️'}</span>
+              <span>{isOntario ? 'Ontario: DriveON PMVI (MTO / CVOR)' : 'Québec: SAAQ VMP / PEP (CTQ)'}</span>
             </span>
           </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">
-            {isFrench
-              ? 'Radar de sécurité de la flotte et de conformité réglementaire'
-              : 'Fleet Safety & Statutory Compliance Radar'}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            {isFrench
-              ? 'Suivi à double volet : Inspections mécaniques semestrielles et permis de conduire commerciaux (CDL).'
-              : 'Dual-track compliance monitoring: Semi-annual mechanical inspections and commercial driver CDL certifications.'}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 self-start sm:self-center">
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>{isFrench ? 'Retour à Fleet Pulse' : 'Back to Fleet Pulse'}</span>
-            </button>
-          )}
-          <span className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 border ${
-            isOntario
-              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-              : 'bg-sky-500/10 text-sky-400 border-sky-500/30'
-          }`}>
-            <span>{isOntario ? '🇨🇦' : '⚜️'}</span>
-            <span>{isOntario ? 'Ontario: DriveON PMVI (MTO / CVOR)' : 'Québec: SAAQ VMP / PEP (CTQ)'}</span>
-          </span>
-        </div>
-      </div>
+        }
+      />
 
       {/* Tabs Switcher */}
-      <div className="flex items-center space-x-2 border-b border-slate-800">
+      <div
+        role="tablist"
+        aria-label={isFrench ? 'Catégories de conformité' : 'Compliance categories'}
+        className="flex items-center space-x-2 border-b border-slate-800"
+      >
         <button
+          id="compliance-tab-vehicles"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'vehicles'}
+          aria-controls="compliance-panel-vehicles"
           onClick={() => setActiveTab('vehicles')}
-          className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold border-b-2 transition ${
+          className={`flex items-center space-x-2 px-4 py-2.5 min-h-[36px] text-xs font-bold border-b-2 transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-400 ${
             activeTab === 'vehicles'
               ? 'border-amber-500 text-amber-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Bus className="w-4 h-4" />
+          <Bus className="w-4 h-4" aria-hidden="true" />
           <span>
             {isFrench
               ? `Inspection mécanique semestrielle des véhicules (${vehicles.length})`
@@ -219,14 +224,19 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
         </button>
 
         <button
+          id="compliance-tab-drivers"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'drivers'}
+          aria-controls="compliance-panel-drivers"
           onClick={() => setActiveTab('drivers')}
-          className={`flex items-center space-x-2 px-4 py-2.5 text-xs font-bold border-b-2 transition ${
+          className={`flex items-center space-x-2 px-4 py-2.5 min-h-[36px] text-xs font-bold border-b-2 transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-400 ${
             activeTab === 'drivers'
               ? 'border-amber-500 text-amber-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <UserCheck className="w-4 h-4" />
+          <UserCheck className="w-4 h-4" aria-hidden="true" />
           <span>
             {isFrench
               ? `Permis CDL et qualifications des chauffeurs (${drivers.length})`
@@ -242,7 +252,12 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
 
       {/* VEHICLES TAB */}
       {activeTab === 'vehicles' && (
-        <div className="space-y-6">
+        <div
+          id="compliance-panel-vehicles"
+          role="tabpanel"
+          aria-labelledby="compliance-tab-vehicles"
+          className="space-y-6"
+        >
           {/* Summary Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl">
@@ -298,9 +313,9 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
 
           {/* Urgent Pre-Inspection Notice Banner */}
           {vehPreDue.length > 0 && (
-            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+            <div role="status" className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
               <div className="flex items-center gap-2 text-amber-400 text-sm font-bold">
-                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <AlertTriangle className="w-5 h-5 shrink-0" aria-hidden="true" />
                 <span>
                   {isFrench
                     ? 'Alerte de pré-inspection anticipée (Vérification interne 2 à 3 semaines à l\'avance)'
@@ -339,16 +354,24 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
               </span>
             </div>
 
-            <div className="overflow-x-auto">
+            <div
+              tabIndex={0}
+              role="region"
+              aria-label={isFrench ? 'Registre d\'inspection semestrielle de la flotte' : 'Fleet semi-annual inspection roster table'}
+              className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-500"
+            >
               <table className="w-full text-left text-xs">
+                <caption className="sr-only">
+                  {isFrench ? 'Registre d\'inspection mécanique semestrielle de la flotte' : 'Fleet semi-annual mechanical inspection roster'}
+                </caption>
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 uppercase font-semibold">
-                    <th className="py-3 px-4">{isFrench ? 'Unité # / Plaque' : 'Unit # / Plate'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'Modèle et dépôt' : 'Model & Depot'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'Prochaine inspection due' : 'Next Inspection Due'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'Certificat / Vignette #' : 'Certificate / Sticker #'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'Liste de contrôle d\'archivage' : 'Statutory Archival Checklist'}</th>
-                    <th className="py-3 px-4 text-right">{isFrench ? 'Statut d\'inspection' : 'Inspection Status'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Unité # / Plaque' : 'Unit # / Plate'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Modèle et dépôt' : 'Model & Depot'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Prochaine inspection due' : 'Next Inspection Due'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Certificat / Vignette #' : 'Certificate / Sticker #'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Liste de contrôle d\'archivage' : 'Statutory Archival Checklist'}</th>
+                    <th scope="col" className="py-3 px-4 text-right">{isFrench ? 'Statut d\'inspection' : 'Inspection Status'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -361,7 +384,23 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
                         >
                           <td className="py-3 px-4">
                             <div className="font-bold text-white">
-                              {isFrench ? 'Unité' : 'Unit'} #{v.unitNumber}
+                              {onSelectVehicle ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelectVehicle(v);
+                                  }}
+                                  aria-label={isFrench ? `Voir la fiche véhicule Unité #${v.unitNumber}` : `View vehicle details for Unit #${v.unitNumber}`}
+                                  className="text-left hover:text-amber-300 hover:underline rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                                >
+                                  {isFrench ? 'Unité' : 'Unit'} #{v.unitNumber}
+                                </button>
+                              ) : (
+                                <>
+                                  {isFrench ? 'Unité' : 'Unit'} #{v.unitNumber}
+                                </>
+                              )}
                             </div>
                             <div className="text-[11px] font-mono text-slate-400">
                               {v.plateNumber || (isFrench ? 'Sans plaque' : 'No Plate')}
@@ -472,7 +511,12 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
 
       {/* DRIVERS TAB */}
       {activeTab === 'drivers' && (
-        <div className="space-y-6">
+        <div
+          id="compliance-panel-drivers"
+          role="tabpanel"
+          aria-labelledby="compliance-tab-drivers"
+          className="space-y-6"
+        >
           {/* Summary Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl">
@@ -514,9 +558,9 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
 
           {/* Urgent Warning Section */}
           {driverUrgentList.length > 0 && (
-            <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-3">
+            <div role="status" className="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-3">
               <div className="flex items-center space-x-2 text-amber-400 font-bold text-sm">
-                <AlertTriangle className="w-5 h-5 animate-bounce" />
+                <AlertTriangle className="w-5 h-5 animate-bounce" aria-hidden="true" />
                 <span>
                   {isFrench
                     ? 'Attention immédiate : Permis CDL expirant bientôt'
@@ -535,7 +579,17 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
                     >
                       <div>
                         <div className="flex items-center space-x-2">
-                          <span className="font-bold text-white text-sm">{driver.fullName}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectEmployee(driver);
+                            }}
+                            aria-label={isFrench ? `Voir la fiche de ${driver.fullName}` : `View employee details for ${driver.fullName}`}
+                            className="font-bold text-white text-sm hover:text-amber-300 hover:underline text-left rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                          >
+                            {driver.fullName}
+                          </button>
                           <span className="font-mono text-xs text-slate-400">[{driver.employeeNumber}]</span>
                         </div>
                         <p className="text-xs text-slate-400 mt-0.5 font-mono">
@@ -553,9 +607,10 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
                           <a
                             href={`tel:${driver.mobilePhone}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="p-2 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition"
+                            aria-label={isFrench ? `Appeler ${driver.fullName}` : `Call ${driver.fullName}`}
+                            className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                           >
-                            <Phone className="w-4 h-4" />
+                            <Phone className="w-4 h-4" aria-hidden="true" />
                           </a>
                         )}
                       </div>
@@ -579,16 +634,24 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
               </span>
             </div>
 
-            <div className="overflow-x-auto">
+            <div
+              tabIndex={0}
+              role="region"
+              aria-label={isFrench ? 'Dossiers des chauffeurs commerciaux' : 'Commercial driver records table'}
+              className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-500"
+            >
               <table className="w-full text-left text-xs">
+                <caption className="sr-only">
+                  {isFrench ? 'Dossiers des permis CDL des chauffeurs commerciaux' : 'Commercial driver CDL certification records'}
+                </caption>
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 uppercase font-semibold">
-                    <th className="py-3 px-4">{isFrench ? 'Chauffeur' : 'Driver'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'Dépôt' : 'Depot'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'N° de permis' : 'License ID'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'Classe' : 'Class'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'Date d\'expiration' : 'Expiration Date'}</th>
-                    <th className="py-3 px-4 text-right">{isFrench ? 'Statut' : 'Status'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Chauffeur' : 'Driver'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Dépôt' : 'Depot'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'N° de permis' : 'License ID'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Classe' : 'Class'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Date d\'expiration' : 'Expiration Date'}</th>
+                    <th scope="col" className="py-3 px-4 text-right">{isFrench ? 'Statut' : 'Status'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -600,7 +663,19 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
                           onClick={() => onSelectEmployee(d)}
                           className="hover:bg-slate-800/40 cursor-pointer transition"
                         >
-                          <td className="py-3 px-4 font-bold text-white">{d.fullName}</td>
+                          <td className="py-3 px-4 font-bold text-white">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectEmployee(d);
+                              }}
+                              aria-label={isFrench ? `Voir la fiche de ${d.fullName}` : `View employee details for ${d.fullName}`}
+                              className="text-left hover:text-amber-300 hover:underline rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                            >
+                              {d.fullName}
+                            </button>
+                          </td>
                           <td className="py-3 px-4 text-slate-300">{d.yardId}</td>
                           <td className="py-3 px-4 font-mono text-slate-300">{d.driverLicense?.licenseId}</td>
                           <td className="py-3 px-4 text-amber-400 font-semibold">
@@ -641,6 +716,6 @@ export const ComplianceView: React.FC<ComplianceViewProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 };

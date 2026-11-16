@@ -1,4 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import { useI18n } from '../contexts/I18nContext';
 import {
   ClientOperationErrorRecord,
@@ -69,33 +71,36 @@ export const ErrorLogsView: React.FC = memo(function ErrorLogsView() {
   }, [rows, search]);
 
   return (
-    <div className="p-4 md:p-6 space-y-4 max-w-[1400px] mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
-            <AlertTriangle className="w-6 h-6 text-rose-400" />
-            {isFrench ? 'Journaux d\'erreurs client' : 'Client Error Logs'}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            {isFrench
-              ? 'Échecs de lecture/écriture du portail web, avec état d\'envoi des alertes courriel.'
-              : 'Failed web portal reads and writes, including email alert delivery status.'}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm font-semibold hover:bg-slate-700"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          {isFrench ? 'Actualiser' : 'Refresh'}
-        </button>
-      </div>
+    <PageShell>
+      <PageHeader
+        title={isFrench ? 'Journaux d\'erreurs client' : 'Client Error Logs'}
+        subtitle={
+          isFrench
+            ? 'Échecs de lecture/écriture du portail web, avec état d\'envoi des alertes courriel.'
+            : 'Failed web portal reads and writes, including email alert delivery status.'
+        }
+        icon={<AlertTriangle className="w-5 h-5 text-rose-400" aria-hidden="true" />}
+        actions={
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="inline-flex items-center gap-2 px-3 py-2 min-h-[36px] rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+            {isFrench ? 'Actualiser' : 'Refresh'}
+          </button>
+        }
+      />
 
-      <div className="flex flex-col sm:flex-row gap-2">
+      <search
+        aria-label={isFrench ? 'Rechercher et filtrer les journaux d\'erreurs' : 'Search and filter error logs'}
+        className="flex flex-col sm:flex-row gap-2"
+      >
         <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
           <input
+            type="search"
+            aria-label={isFrench ? 'Rechercher page, utilisateur, endpoint ou message' : 'Search page, user, endpoint, or message'}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={
@@ -103,13 +108,14 @@ export const ErrorLogsView: React.FC = memo(function ErrorLogsView() {
                 ? 'Rechercher page, utilisateur, endpoint, message...'
                 : 'Search page, user, endpoint, message...'
             }
-            className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-slate-100 placeholder:text-slate-550 focus:outline-none focus:ring-2 focus:ring-rose-500/30"
+            className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-base sm:text-sm text-slate-100 placeholder:text-slate-550 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-rose-400"
           />
         </div>
         <select
           value={pageFilter}
           onChange={(e) => setPageFilter(e.target.value)}
-          className="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100"
+          aria-label={isFrench ? 'Filtrer par page' : 'Filter by page'}
+          className="rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-base sm:text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-rose-400"
         >
           <option value="all">{isFrench ? 'Toutes les pages' : 'All pages'}</option>
           {Array.from(
@@ -132,34 +138,44 @@ export const ErrorLogsView: React.FC = memo(function ErrorLogsView() {
               </option>
             ))}
         </select>
-      </div>
+      </search>
 
       {error && (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
+        <div role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
           {error}
         </div>
       )}
 
       <div className="rounded-2xl border border-slate-800 overflow-hidden bg-slate-950/40">
-        <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label={isFrench ? 'Tableau des journaux d\'erreurs client' : 'Client error logs table'}
+          className="overflow-x-auto max-h-[70vh] overflow-y-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-rose-400"
+        >
           <table className="min-w-full text-left text-sm">
+            <caption className="sr-only">
+              {isFrench ? 'Journaux d\'erreurs client' : 'Client error logs'}
+            </caption>
             <thead className="sticky top-0 bg-slate-900 text-slate-400 text-xs uppercase tracking-wide">
               <tr>
-                <th className="px-4 py-3 font-semibold">{isFrench ? 'Heure' : 'Time'}</th>
-                <th className="px-4 py-3 font-semibold">Page</th>
-                <th className="px-4 py-3 font-semibold">{isFrench ? 'Utilisateur' : 'User'}</th>
-                <th className="px-4 py-3 font-semibold">Request</th>
-                <th className="px-4 py-3 font-semibold">Status</th>
-                <th className="px-4 py-3 font-semibold">Message</th>
-                <th className="px-4 py-3 font-semibold">Email</th>
+                <th scope="col" className="px-4 py-3 font-semibold">{isFrench ? 'Heure' : 'Time'}</th>
+                <th scope="col" className="px-4 py-3 font-semibold">Page</th>
+                <th scope="col" className="px-4 py-3 font-semibold">{isFrench ? 'Utilisateur' : 'User'}</th>
+                <th scope="col" className="px-4 py-3 font-semibold">Request</th>
+                <th scope="col" className="px-4 py-3 font-semibold">Status</th>
+                <th scope="col" className="px-4 py-3 font-semibold">Message</th>
+                <th scope="col" className="px-4 py-3 font-semibold">Email</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80">
               {loading && rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-rose-400" />
-                    {isFrench ? 'Chargement...' : 'Loading...'}
+                    <div role="status">
+                      <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-rose-400" aria-hidden="true" />
+                      {isFrench ? 'Chargement...' : 'Loading...'}
+                    </div>
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
@@ -178,7 +194,7 @@ export const ErrorLogsView: React.FC = memo(function ErrorLogsView() {
                       <td className="px-4 py-3 whitespace-nowrap text-slate-300">
                         <div className="text-[10px] text-slate-500">{row.date}</div>
                         <div className="flex items-center gap-1 font-mono text-xs">
-                          <Clock className="w-3 h-3 text-amber-500/70" />
+                          <Clock className="w-3 h-3 text-amber-500/70" aria-hidden="true" />
                           {timeStr}
                         </div>
                       </td>
@@ -225,7 +241,7 @@ export const ErrorLogsView: React.FC = memo(function ErrorLogsView() {
                       <td className="px-4 py-3 whitespace-nowrap">
                         {row.emailSent ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
-                            <Mail className="w-3.5 h-3.5" />
+                            <Mail className="w-3.5 h-3.5" aria-hidden="true" />
                             Sent
                           </span>
                         ) : (
@@ -235,12 +251,12 @@ export const ErrorLogsView: React.FC = memo(function ErrorLogsView() {
                           >
                             {row.emailSkipped ? (
                               <>
-                                <MailX className="w-3.5 h-3.5" />
+                                <MailX className="w-3.5 h-3.5" aria-hidden="true" />
                                 {row.emailSkipped}
                               </>
                             ) : (
                               <>
-                                <CheckCircle2 className="w-3.5 h-3.5 opacity-40" />
+                                <CheckCircle2 className="w-3.5 h-3.5 opacity-40" aria-hidden="true" />
                                 —
                               </>
                             )}
@@ -255,6 +271,6 @@ export const ErrorLogsView: React.FC = memo(function ErrorLogsView() {
           </table>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 });

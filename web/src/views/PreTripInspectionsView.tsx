@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
+import { useRegisterPageAIContext } from '../contexts/AIContext';
 import { PreTripInspection, VehiclePretripStatus } from '../types/pretrip';
 import { PreTripService } from '../services/pretripService';
 import { DispatchService } from '../services/dispatchService';
@@ -47,6 +50,7 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
   onSelectVehicle,
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>(() => getLocalTodayString());
+  useRegisterPageAIContext('pre_trip', { selectedDate });
 
   const [inspections, setInspections] = useState<PreTripInspection[]>([]);
   const [shifts, setShifts] = useState<DispatchShift[]>([]);
@@ -316,45 +320,39 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
     : 0;
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+    <PageShell>
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-xl shadow-xs">
-              <ClipboardCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                  Pre-Trip Inspections
-                </h1>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                  Daily Schedule 5 Check
-                </span>
-                {isColdData && (
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800 flex items-center gap-1">
-                    <Database className="w-3 h-3" /> BigQuery Archive (&gt;7d)
-                  </span>
-                )}
-              </div>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                Monitor vehicle pre-trip completion, identify missing inspections, and export audit certificates
-              </p>
-            </div>
+      <PageHeader
+        title="Pre-Trip Inspections"
+        subtitle="Monitor vehicle pre-trip completion, identify missing inspections, and export audit certificates"
+        icon={
+          <div className="p-2 bg-emerald-950/60 text-emerald-400 rounded-xl border border-emerald-500/20">
+            <ClipboardCheck className="w-5 h-5" aria-hidden="true" />
           </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2.5">
+        }
+        badge={
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-950 text-blue-300 border border-blue-800">
+              Daily Schedule 5 Check
+            </span>
+            {isColdData && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 flex items-center gap-1">
+                <Database className="w-3 h-3" aria-hidden="true" /> BigQuery Archive (&gt;7d)
+              </span>
+            )}
+          </div>
+        }
+        actions={
+          <div className="flex items-center gap-2.5 flex-wrap">
           {/* Date Picker */}
-          <div className="flex items-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 shadow-xs">
-            <Calendar className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
+          <div className="flex items-center bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 shadow-xs">
+            <Calendar className="w-4 h-4 text-slate-400 mr-2 shrink-0" aria-hidden="true" />
             <input
               type="date"
+              aria-label="Select pre-trip inspection date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent text-sm font-semibold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+              className="bg-transparent text-base sm:text-sm font-semibold text-slate-200 focus:outline-none cursor-pointer"
             />
           </div>
 
@@ -362,10 +360,10 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
           <button
             type="button"
             onClick={() => setIsRosterPdfOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 transition shadow-xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[36px] text-xs font-semibold bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-700 text-slate-200 transition shadow-xs cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
             title="Export or Print Full Fleet Pre-Trip Compliance Audit Log"
           >
-            <Download className="w-4 h-4 text-blue-500" />
+            <Download className="w-4 h-4 text-blue-500" aria-hidden="true" />
             <span>Export Compliance Roster (PDF)</span>
           </button>
 
@@ -374,24 +372,26 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
             type="button"
             onClick={() => void loadData()}
             disabled={loading}
-            className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-600 dark:text-slate-300 transition shadow-xs disabled:opacity-50 cursor-pointer"
+            aria-label="Refresh inspections and shifts"
+            className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-700 text-slate-200 transition shadow-xs disabled:opacity-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
             title="Refresh Inspections & Shifts"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
           </button>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {/* BigQuery Cold Data Banner (When date > 7 days ago) */}
       {isColdData && (
-        <div className="p-3.5 bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60 rounded-xl flex items-start gap-3 text-xs text-sky-800 dark:text-sky-200">
-          <Database className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+        <div className="p-3.5 border rounded-xl flex items-start gap-3 text-xs" role="status">
+          <Database className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="space-y-0.5">
-            <div className="font-semibold text-sky-900 dark:text-sky-100 flex items-center gap-1.5">
+            <div className="font-semibold flex items-center gap-1.5">
               <span>BigQuery Cold Archive Mode (Date: {selectedDate})</span>
-              <span className="text-[10px] bg-sky-200 dark:bg-sky-900 text-sky-800 dark:text-sky-200 px-1.5 py-0.2 rounded font-medium">Historical Cold Tier</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded font-medium">Historical Cold Tier</span>
             </div>
-            <p className="text-sky-700 dark:text-sky-300">
+            <p className="">
               Live operational pre-trip logs are retained in Firestore for 7 days. Data for <strong>{selectedDate}</strong> is retrieved transparently from Google Cloud BigQuery cold archives for compliance audit integrity.
             </p>
           </div>
@@ -401,67 +401,69 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
         {/* Total Dispatched */}
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
-          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-xs">
+          <div className="text-xs font-semibold text-slate-400 flex items-center justify-between">
             <span>Dispatched Units</span>
-            <Truck className="w-4 h-4 text-slate-400" />
+            <Truck className="w-4 h-4 text-slate-400" aria-hidden="true" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.totalAssigned}</div>
+          <div className="mt-2 text-2xl font-bold text-slate-100">{stats.totalAssigned}</div>
           <div className="text-[11px] text-slate-400 mt-0.5">Active on route shifts</div>
         </div>
 
         {/* Missing Pre-Trip Card - Core Focus of Fleet! */}
-        <div
+        <button
+          type="button"
           onClick={() => setActiveTab('missing')}
-          className={`p-4 rounded-xl border cursor-pointer transition shadow-xs ${
+          aria-pressed={activeTab === 'missing'}
+          className={`w-full text-left p-4 rounded-xl border cursor-pointer transition shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500 ${
             stats.missingCount > 0
-              ? 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800/80 ring-2 ring-rose-500/20 hover:bg-rose-100/80'
-              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
+              ? '  ring-2 ring-rose-500/20 hover:bg-rose-500/15'
+              : 'bg-slate-800 border-slate-700'
           }`}
         >
-          <div className="text-xs font-bold text-rose-600 dark:text-rose-400 flex items-center justify-between">
+          <div className="text-xs font-bold flex items-center justify-between">
             <span className="flex items-center gap-1.5">
-              <ShieldAlert className="w-4 h-4 animate-pulse" />
+              <ShieldAlert className="w-4 h-4 animate-pulse" aria-hidden="true" />
               Missing Pre-Trip
             </span>
-            <span className="text-[10px] uppercase px-1.5 py-0.2 rounded bg-rose-200 dark:bg-rose-900 text-rose-800 dark:text-rose-200 font-bold">
+            <span className="text-[10px] uppercase px-1.5 py-0.2 rounded font-bold">
               High Alert
             </span>
           </div>
-          <div className="mt-2 text-2xl font-black text-rose-600 dark:text-rose-400">{stats.missingCount}</div>
-          <div className="text-[11px] text-rose-500 dark:text-rose-300 mt-0.5 font-medium">
+          <div className="mt-2 text-2xl font-black">{stats.missingCount}</div>
+          <div className="text-[11px] text-rose-500 text-rose-300 mt-0.5 font-medium">
             {stats.missingCount > 0 ? 'Assigned but uninspected!' : 'All dispatched units checked'}
           </div>
-        </div>
+        </button>
 
         {/* Inspected Clean */}
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
-          <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-xs">
+          <div className="text-xs font-semibold flex items-center justify-between">
             <span>Passed & Clean</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" aria-hidden="true" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.passedClean}</div>
+          <div className="mt-2 text-2xl font-bold">{stats.passedClean}</div>
           <div className="text-[11px] text-slate-400 mt-0.5">Zero defects recorded</div>
         </div>
 
         {/* Defects Flagged */}
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
-          <div className="text-xs font-semibold text-amber-600 dark:text-amber-400 flex items-center justify-between">
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-xs">
+          <div className="text-xs font-semibold flex items-center justify-between">
             <span>Defects Noted</span>
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
+            <AlertTriangle className="w-4 h-4 text-amber-500" aria-hidden="true" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.defects}</div>
+          <div className="mt-2 text-2xl font-bold">{stats.defects}</div>
           <div className="text-[11px] text-slate-400 mt-0.5">Minor or major issues</div>
         </div>
 
         {/* Compliance Rate */}
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs col-span-2 sm:col-span-1">
-          <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 flex items-center justify-between">
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-xs col-span-2 sm:col-span-1">
+          <div className="text-xs font-semibold flex items-center justify-between">
             <span>Compliance Rate</span>
-            <ShieldCheck className="w-4 h-4 text-blue-500" />
+            <ShieldCheck className="w-4 h-4 text-blue-500" aria-hidden="true" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.complianceRate}%</div>
-          <div className="w-full bg-slate-100 dark:bg-slate-700 h-1.5 rounded-full mt-2 overflow-hidden">
+          <div className="mt-2 text-2xl font-bold">{stats.complianceRate}%</div>
+          <div className="w-full bg-slate-700 h-1.5 rounded-full mt-2 overflow-hidden">
             <div
               className={`h-full transition-all duration-500 ${
                 stats.complianceRate === 100 ? 'bg-emerald-500' : stats.complianceRate > 80 ? 'bg-amber-500' : 'bg-rose-500'
@@ -474,14 +476,14 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
 
       {/* Missing Pre-Trip Alert Banner */}
       {stats.missingCount > 0 && (
-        <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-300 dark:border-rose-800 rounded-2xl flex items-start justify-between gap-4 shadow-xs">
+        <div role="alert" className="p-4 border-2 rounded-2xl flex items-start justify-between gap-4 shadow-xs">
           <div className="flex items-start gap-3">
-            <ShieldAlert className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
             <div className="space-y-1">
-              <h4 className="text-sm font-bold text-rose-900 dark:text-rose-100">
+              <h4 className="text-sm font-bold">
                 Action Required: {stats.missingCount} Vehicle(s) are active on routes without verified Pre-Trip Inspection!
               </h4>
-              <p className="text-xs text-rose-700 dark:text-rose-300">
+              <p className="text-xs">
                 Under Ontario Highway Traffic Act Regulation 199/07, drivers must complete and record a Schedule 5 inspection prior to transporting passengers. Prompt drivers to complete their inspection in the Driver App immediately.
               </p>
             </div>
@@ -489,7 +491,7 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('missing')}
-            className="px-3.5 py-1.5 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs whitespace-nowrap cursor-pointer transition"
+            className="px-3.5 py-1.5 min-h-[32px] text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs whitespace-nowrap cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
           >
             Filter Missing Only
           </button>
@@ -497,44 +499,55 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
       )}
 
       {/* Toolbar: Search & Filter Tabs */}
-      <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-3">
+      <search
+        aria-label="Filter pre-trip inspections"
+        className="block bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-xs space-y-3"
+      >
         <div className="flex flex-col md:flex-row gap-3">
           {/* Search Box */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input
-              type="text"
+              type="search"
+              aria-label="Search pre-trip inspections"
               placeholder="Search by Bus #, Plate, Driver Name, or Route..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+              className="w-full pl-9 pr-9 py-2 bg-slate-800 border border-slate-700 rounded-lg text-base sm:text-sm text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                aria-label="Clear search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 min-w-[24px] min-h-[24px] flex items-center justify-center rounded text-slate-400 hover:text-slate-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             )}
           </div>
         </div>
 
         {/* Tab Filters */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-700/60">
-          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mr-2">Filter View:</span>
+        <div
+          role="tablist"
+          aria-label="Inspection status filters"
+          className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-700"
+        >
+          <span className="text-xs font-semibold text-slate-400 mr-2">Filter View:</span>
           {filterTabs.map((tab) => {
             const active = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 type="button"
+                role="tab"
+                aria-selected={active}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+                className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-medium transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 ${
                   active
                     ? tab.badgeClass || 'bg-emerald-600 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
                 }`}
               >
                 {tab.label}
@@ -542,30 +555,37 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
             );
           })}
         </div>
-      </div>
+      </search>
 
       {/* Main Roster Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs overflow-hidden">
-        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] min-h-[300px]">
-          <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
-            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 text-xs uppercase font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700 shadow-xs backdrop-blur-xs">
+      <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-xs overflow-hidden">
+        <div
+          ref={tableContainerRef}
+          tabIndex={0}
+          role="region"
+          aria-label="Pre-trip inspections roster table"
+          className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] min-h-[300px] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-500"
+        >
+          <table className="w-full text-left text-sm text-slate-300">
+            <caption className="sr-only">Pre-trip inspections roster for {selectedDate}</caption>
+            <thead className="sticky top-0 z-10 bg-slate-900 text-xs uppercase font-semibold text-slate-400 border-b border-slate-700 shadow-xs backdrop-blur-xs">
               <tr>
-                <th className="px-4 py-3.5">Status</th>
-                <th className="px-4 py-3.5">Unit #</th>
-                <th className="px-4 py-3.5">Plate & Vehicle</th>
-                <th className="px-4 py-3.5">Assigned Route</th>
-                <th className="px-4 py-3.5">Driver / Inspector</th>
-                <th className="px-4 py-3.5">Check Time</th>
-                <th className="px-4 py-3.5">Odometer</th>
-                <th className="px-4 py-3.5">Defect Notes</th>
-                <th className="px-4 py-3.5 text-right">Actions</th>
+                <th scope="col" className="px-4 py-3.5">Status</th>
+                <th scope="col" className="px-4 py-3.5">Unit #</th>
+                <th scope="col" className="px-4 py-3.5">Plate & Vehicle</th>
+                <th scope="col" className="px-4 py-3.5">Assigned Route</th>
+                <th scope="col" className="px-4 py-3.5">Driver / Inspector</th>
+                <th scope="col" className="px-4 py-3.5">Check Time</th>
+                <th scope="col" className="px-4 py-3.5">Odometer</th>
+                <th scope="col" className="px-4 py-3.5">Defect Notes</th>
+                <th scope="col" className="px-4 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+            <tbody className="divide-y divide-slate-700/60">
               {loading && roster.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-500" />
+                  <td colSpan={9} className="px-4 py-12 text-center text-slate-400" role="status">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-500" aria-hidden="true" />
                     Loading pre-trip inspection roster...
                   </td>
                 </tr>
@@ -574,19 +594,19 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
                   <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
                     {activeTab === 'missing' && stats.missingCount === 0 ? (
                       <div className="py-6 flex flex-col items-center justify-center space-y-2">
-                        <div className="p-3 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-full">
-                          <CheckCircle2 className="w-8 h-8" />
+                        <div className="p-3 rounded-full">
+                          <CheckCircle2 className="w-8 h-8" aria-hidden="true" />
                         </div>
-                        <div className="text-base font-bold text-slate-800 dark:text-slate-100">
+                        <div className="text-base font-bold text-slate-100">
                           No Missing Pre-Trips — 100% Compliant!
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md text-center">
+                        <p className="text-xs text-slate-400 max-w-md text-center">
                           All {stats.totalAssigned} dispatched vehicles for {selectedDate} have completed and submitted their Schedule 5 circle check inspection.
                         </p>
                         <button
                           type="button"
                           onClick={() => setActiveTab('all_dispatched')}
-                          className="mt-2 px-3.5 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition shadow-xs cursor-pointer"
+                          className="mt-2 px-3.5 py-1.5 min-h-[32px] text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition shadow-xs cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
                         >
                           View All {stats.totalAssigned} Dispatched Units
                         </button>
@@ -616,54 +636,55 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
                         key={item.unitNumber}
                       className={
                         isMissing
-                          ? 'bg-rose-50/60 dark:bg-rose-950/20 hover:bg-rose-100/60 dark:hover:bg-rose-950/40 transition-colors'
-                          : 'hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors'
+                          ? ' hover:bg-rose-500/15 hover:bg-rose-950/40 transition-colors'
+                          : 'hover:bg-slate-750 transition-colors'
                       }
                     >
                       {/* Status */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         {isMissing ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
-                            <ShieldAlert className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border">
+                            <ShieldAlert className="w-3.5 h-3.5" aria-hidden="true" />
                             MISSING
                           </span>
                         ) : isPassed ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border">
+                            <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
                             Passed
                           </span>
                         ) : isMinor ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                            <AlertTriangle className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border">
+                            <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
                             Minor Defect
                           </span>
                         ) : isMajor ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
-                            <XCircle className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border">
+                            <XCircle className="w-3.5 h-3.5" aria-hidden="true" />
                             Major Defect
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-slate-400 bg-slate-100 dark:bg-slate-800">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs text-slate-400 bg-slate-800">
                             Idle / Reserve
                           </span>
                         )}
                       </td>
 
                       {/* Unit Number */}
-                      <td className="px-4 py-3.5 whitespace-nowrap font-bold text-slate-900 dark:text-slate-100 font-mono">
+                      <td className="px-4 py-3.5 whitespace-nowrap font-bold text-slate-100 font-mono">
                         {onSelectVehicle ? (
                           <button
                             type="button"
                             onClick={() => onSelectVehicle(item.vehicleId, item.unitNumber)}
-                            className="flex items-center gap-1.5 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                            aria-label={`View vehicle details for Unit #${item.unitNumber}`}
+                            className="flex items-center gap-1.5 hover:text-amber-600 hover:text-amber-300 hover:underline transition rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                             title="View vehicle details"
                           >
-                            <Truck className="w-3.5 h-3.5 text-amber-500" />
+                            <Truck className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
                             #{item.unitNumber}
                           </button>
                         ) : (
                           <div className="flex items-center gap-1.5">
-                            <Truck className="w-3.5 h-3.5 text-amber-500" />
+                            <Truck className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
                             #{item.unitNumber}
                           </div>
                         )}
@@ -671,7 +692,7 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
 
                       {/* Plate & Vehicle Info */}
                       <td className="px-4 py-3.5 whitespace-nowrap text-xs">
-                        <div className="font-semibold text-slate-800 dark:text-slate-200">
+                        <div className="font-semibold text-slate-100">
                           {item.vehiclePlate || `ON-${item.unitNumber}`}
                         </div>
                         <div className="text-slate-400 text-[11px]">
@@ -681,7 +702,7 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
 
                       {/* Assigned Route */}
                       <td className="px-4 py-3.5 whitespace-nowrap text-xs">
-                        <div className="font-semibold text-slate-900 dark:text-slate-100">
+                        <div className="font-semibold text-slate-100">
                           {item.routeId || 'Yard Reserve'}
                         </div>
                         {item.shiftType && (
@@ -696,8 +717,8 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
                           const id = item.inspection?.inspectorId || item.driverId;
                           if (!name) {
                             return (
-                              <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-1">
-                                <User className="w-3 h-3 text-slate-400" />
+                              <div className="font-medium text-slate-100 flex items-center gap-1">
+                                <User className="w-3 h-3 text-slate-400" aria-hidden="true" />
                                 —
                               </div>
                             );
@@ -708,15 +729,16 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onSelectEmployee(id, name)}
-                                  className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                                  aria-label={`View employee details for ${name}`}
+                                  className="font-medium text-slate-200 flex items-center gap-1 hover:text-amber-600 hover:text-amber-300 hover:underline transition rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                                   title="View employee details"
                                 >
-                                  <User className="w-3 h-3 text-slate-400" />
+                                  <User className="w-3 h-3 text-slate-400" aria-hidden="true" />
                                   {name}
                                 </button>
                               ) : (
-                                <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-1">
-                                  <User className="w-3 h-3 text-slate-400" />
+                                <div className="font-medium text-slate-100 flex items-center gap-1">
+                                  <User className="w-3 h-3 text-slate-400" aria-hidden="true" />
                                   {name}
                                 </div>
                               )}
@@ -733,20 +755,20 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
                       {/* Check Time */}
                       <td className="px-4 py-3.5 whitespace-nowrap text-xs font-mono">
                         {item.inspection?.inspectionTime ? (
-                          <div className="flex items-center gap-1 text-slate-800 dark:text-slate-200 font-semibold">
-                            <Clock className="w-3 h-3 text-slate-400" />
+                          <div className="flex items-center gap-1 text-slate-200 font-semibold">
+                            <Clock className="w-3 h-3 text-slate-400" aria-hidden="true" />
                             {item.inspection.inspectionTime}
                             {isColdData && (
                               <span
                                 title="Retrieved from BigQuery cold archive"
-                                className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800"
+                                className="px-1.5 py-0.2 rounded text-[9px] font-semibold border"
                               >
                                 BigQuery
                               </span>
                             )}
                           </div>
                         ) : isMissing ? (
-                          <span className="text-rose-600 dark:text-rose-400 font-bold text-[11px]">
+                          <span className="font-bold text-[11px]">
                             NOT SUBMITTED
                           </span>
                         ) : (
@@ -766,7 +788,7 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
                       {/* Defect Notes */}
                       <td className="px-4 py-3.5 text-xs max-w-[200px] truncate">
                         {item.inspection?.defectNotes ? (
-                          <span className="text-amber-700 dark:text-amber-300 font-medium">
+                          <span className="font-medium">
                             {item.inspection.defectNotes}
                           </span>
                         ) : isMissing ? (
@@ -787,10 +809,11 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
                               setSelectedInspectionForPdf(item.inspection || null);
                               setIsIndividualPdfOpen(true);
                             }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-100 transition cursor-pointer"
+                            aria-label={`View and export Schedule 5 PDF certificate for Unit #${item.unitNumber}`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 min-h-[28px] text-xs font-medium border rounded-lg hover:bg-emerald-500/15 transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
                             title="View & Export Official Schedule 5 Certificate (PDF)"
                           >
-                            <Download className="w-3.5 h-3.5" />
+                            <Download className="w-3.5 h-3.5" aria-hidden="true" />
                             <span>Certificate (PDF)</span>
                           </button>
                         ) : (
@@ -835,6 +858,8 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
           />
         </React.Suspense>
       )}
-    </div>
+    </PageShell>
   );
 };
+
+

@@ -12,6 +12,8 @@ import {
   getUniqueUnavailableVehicleList
 } from '../utils/vehicleAvailabilityUtils';
 import { useI18n } from '../contexts/I18nContext';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import type { VehicleExportFieldDef } from '../utils/vehicleExcelExporter';
 import {
   Search,
@@ -59,6 +61,59 @@ const GRID_DISPLAYED_FIELD_KEYS = new Set([
   'driverName',
   'status',
 ]);
+
+interface VehicleModalDialogProps {
+  open: boolean;
+  onClose: () => void;
+  ariaLabelledBy: string;
+  children: React.ReactNode;
+}
+
+const VehicleModalDialog: React.FC<VehicleModalDialogProps> = ({
+  open,
+  onClose,
+  ariaLabelledBy,
+  children,
+}) => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    if (open && !el.open) {
+      el.showModal();
+    } else if (!open && el.open) {
+      el.close();
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={ariaLabelledBy}
+      onClose={onClose}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="m-0 max-w-none max-h-none w-screen h-screen bg-black/80 backdrop-blur-sm p-4 flex items-center justify-center overflow-y-auto overscroll-contain backdrop:overscroll-contain animate-in fade-in duration-200"
+    >
+      <div
+        className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </dialog>
+  );
+};
 
 interface VehicleListViewProps {
   vehicles: Vehicle[];
@@ -294,63 +349,73 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
   );
 
   return (
-    <div className="p-3.5 sm:p-4 space-y-5 w-full">
-      {/* Top Search & Filter Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Search Input */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search by Unit # (e.g. 1001), Plate, Driver, Route (OCDSB-001), Make/Model..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500 transition placeholder:text-slate-500"
-            />
-          </div>
-
-          {/* Action Buttons */}
+    <PageShell>
+      <PageHeader
+        title={isFrench ? 'Flotte de véhicules' : 'Fleet & Vehicles'}
+        subtitle={
+          isFrench
+            ? 'Unités actives, état mécanique, affectations de cour et historique d\'inspection.'
+            : 'Active fleet units, mechanical availability, yard assignments, and inspection status.'
+        }
+        actions={
           <div className="flex items-center space-x-2">
             <button
+              type="button"
               onClick={() => {
                 void openExportModal();
               }}
               title={t.vehicles.exportExcel}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow transition flex items-center space-x-1.5 shrink-0"
+              className="px-3.5 py-2 min-h-[36px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow transition flex items-center space-x-1.5 shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             >
-              <FileSpreadsheet className="w-4 h-4" />
+              <FileSpreadsheet className="w-4 h-4" aria-hidden="true" />
               <span>{t.vehicles.exportExcel}</span>
             </button>
 
             {onCreateVehicle && (
               <button
+                type="button"
                 onClick={onCreateVehicle}
-                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow transition flex items-center space-x-1.5"
+                className="px-3.5 py-2 min-h-[36px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow transition flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-4 h-4" aria-hidden="true" />
                 <span>Add Vehicle</span>
               </button>
             )}
             {onRefresh && (
               <button
+                type="button"
                 onClick={handleRefresh}
                 disabled={refreshing}
+                aria-label="Refresh vehicles from cloud"
                 title="Refresh vehicles from cloud"
-                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5"
+                className="px-3.5 py-2 min-h-[36px] bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               >
-                <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${refreshing ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
                 <span className="hidden sm:inline">Refresh Fleet</span>
               </button>
             )}
           </div>
-        </div>
+        }
+      >
+        {/* Top Search & Filter Bar */}
+        <search aria-label="Filter vehicles" className="block space-y-3">
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" aria-hidden="true" />
+            <input
+              type="search"
+              aria-label="Search vehicles"
+              placeholder="Search by Unit # (e.g. 1001), Plate, Driver, Route (OCDSB-001), Make/Model..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-base sm:text-sm text-white focus:outline-none focus:border-amber-500 transition placeholder:text-slate-500"
+            />
+          </div>
 
 
         {/* Filter Controls */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80 text-xs">
           <div className="flex items-center space-x-1.5 text-slate-400 mr-2 font-medium">
-            <Filter className="w-3.5 h-3.5" />
+            <Filter className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Filter by:</span>
           </div>
 
@@ -358,7 +423,8 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+            aria-label="Filter by vehicle type"
+            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-slate-200 focus:outline-none focus:border-amber-500"
           >
             <option value="ALL">All Vehicle Types</option>
             <option value="Bus">School Buses (50)</option>
@@ -370,7 +436,8 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
           <select
             value={fuelFilter}
             onChange={(e) => setFuelFilter(e.target.value)}
-            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+            aria-label="Filter by fuel type"
+            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-slate-200 focus:outline-none focus:border-amber-500"
           >
             <option value="ALL">All Fuel Types</option>
             <option value="Diesel">Diesel</option>
@@ -381,7 +448,8 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+            aria-label="Filter by operational status"
+            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-slate-200 focus:outline-none focus:border-amber-500"
           >
             <option value="ALL">All Statuses</option>
             <option value="ASSIGNED">In Service / On Route</option>
@@ -397,7 +465,8 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
           <select
             value={yardFilter}
             onChange={(e) => setYardFilter(e.target.value)}
-            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+            aria-label="Filter by terminal or yard"
+            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-slate-200 focus:outline-none focus:border-amber-500"
           >
             <option value="ALL">All Terminals / Yards</option>
             {uniqueYards.map((y) => (
@@ -409,6 +478,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 
           {(typeFilter !== 'ALL' || fuelFilter !== 'ALL' || statusFilter !== 'ALL' || yardFilter !== 'ALL' || searchTerm) && (
             <button
+              type="button"
               onClick={() => {
                 setTypeFilter('ALL');
                 setFuelFilter('ALL');
@@ -416,19 +486,20 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                 setYardFilter('ALL');
                 setSearchTerm('');
               }}
-              className="text-xs text-rose-400 hover:underline ml-auto font-medium"
+              className="px-2 py-1 min-h-[28px] text-xs text-rose-400 hover:underline ml-auto font-medium rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
             >
               Clear Filters
             </button>
           )}
         </div>
-      </div>
+      </search>
+      </PageHeader>
 
       {/* KPI Metric Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center space-x-3.5">
           <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold">
-            <Bus className="w-5 h-5" />
+            <Bus className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
             <div className="text-xl font-bold text-white tracking-tight">{stats.totalVehicles}</div>
@@ -438,7 +509,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center space-x-3.5">
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold">
-            <CheckCircle2 className="w-5 h-5" />
+            <CheckCircle2 className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
             <div className="text-xl font-bold text-white tracking-tight">{stats.assignedToRoutes}</div>
@@ -448,7 +519,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center space-x-3.5">
           <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 font-bold">
-            <Clock className="w-5 h-5" />
+            <Clock className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
             <div className="text-xl font-bold text-white tracking-tight">{stats.spareVehicles}</div>
@@ -458,7 +529,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center space-x-3.5">
           <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold">
-            <ShieldCheck className="w-5 h-5" />
+            <ShieldCheck className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
             <div className="text-xl font-bold text-white tracking-tight">{stats.wheelchairAccessible}</div>
@@ -468,13 +539,14 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 
         <button
           type="button"
+          aria-pressed={statusFilter === 'EXCLUDED'}
           onClick={() => setStatusFilter(statusFilter === 'EXCLUDED' ? 'ALL' : 'EXCLUDED')}
           title={
             isFrench
               ? 'Filtrer les véhicules exclus des quarts de répartition'
               : 'Filter vehicles excluded from dispatch shifts'
           }
-          className={`rounded-2xl p-4 flex items-center space-x-3.5 text-left transition border ${
+          className={`rounded-2xl p-4 flex items-center space-x-3.5 text-left transition border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
             statusFilter === 'EXCLUDED'
               ? 'bg-rose-950/50 border-rose-500/60 ring-1 ring-rose-500/40'
               : unavailableVehiclesList.length > 0
@@ -489,7 +561,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                 : 'bg-slate-800 border border-slate-700 text-slate-400'
             }`}
           >
-            <Wrench className="w-5 h-5" />
+            <Wrench className="w-5 h-5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
             <div
@@ -521,13 +593,20 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 
         {filteredVehicles.length === 0 ? (
           <div className="p-12 text-center text-slate-500 space-y-2">
-            <Bus className="w-8 h-8 mx-auto text-slate-600" />
+            <Bus className="w-8 h-8 mx-auto text-slate-600" aria-hidden="true" />
             <div className="font-semibold text-sm">No vehicles match current filter criteria</div>
             <div className="text-xs text-slate-600">Try changing vehicle type, fuel, or search terms</div>
           </div>
         ) : (
-          <div ref={vehicleTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+          <div
+            ref={vehicleTableContainerRef}
+            tabIndex={0}
+            role="region"
+            aria-label="Vehicle fleet roster table"
+            className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-500"
+          >
             <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1240px]">
+              <caption className="sr-only">Vehicle fleet roster</caption>
               <colgroup>
                 <col style={{ width: '230px' }} />
                 <col style={{ width: '170px' }} />
@@ -540,14 +619,14 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
               </colgroup>
               <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider text-[11px] shadow-xs">
                 <tr>
-                  <th className="py-3 px-4">Unit # & Type</th>
-                  <th className="py-3 px-4">Make, Model & Year</th>
-                  <th className="py-3 px-4">Terminal / Yard</th>
-                  <th className="py-3 px-4">Capacities</th>
-                  <th className="py-3 px-4">Assigned Route</th>
-                  <th className="py-3 px-4">Assigned Driver</th>
-                  <th className="py-3 px-4 text-center">Status</th>
-                  <th className="py-3 px-4 text-right">Details</th>
+                  <th scope="col" className="py-3 px-4">Unit # & Type</th>
+                  <th scope="col" className="py-3 px-4">Make, Model & Year</th>
+                  <th scope="col" className="py-3 px-4">Terminal / Yard</th>
+                  <th scope="col" className="py-3 px-4">Capacities</th>
+                  <th scope="col" className="py-3 px-4">Assigned Route</th>
+                  <th scope="col" className="py-3 px-4">Assigned Driver</th>
+                  <th scope="col" className="py-3 px-4 text-center">Status</th>
+                  <th scope="col" className="py-3 px-4 text-right">Details</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -589,11 +668,21 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                                 : 'bg-amber-500/10 border border-amber-500/20 text-amber-400'
                             }`}
                           >
-                            {isBus ? <Bus className="w-5 h-5" /> : isVan ? <Truck className="w-5 h-5" /> : <Car className="w-5 h-5" />}
+                            {isBus ? <Bus className="w-5 h-5" aria-hidden="true" /> : isVan ? <Truck className="w-5 h-5" aria-hidden="true" /> : <Car className="w-5 h-5" aria-hidden="true" />}
                           </div>
                           <div className="min-w-0">
                             <div className="font-bold text-white group-hover:text-amber-400 transition flex items-center space-x-1.5 flex-wrap">
-                              <span>Unit #{v.unitNumber}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectVehicle(v);
+                                }}
+                                aria-label={`View details for Unit #${v.unitNumber}`}
+                                className="text-left hover:underline rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                              >
+                                Unit #{v.unitNumber}
+                              </button>
                               {exclusionReason && (
                                 <span
                                   title={isFrench ? exclusionReason.detailFr : exclusionReason.detailEn}
@@ -603,7 +692,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                                       : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                                   }`}
                                 >
-                                  <Wrench className="w-2.5 h-2.5 shrink-0" />
+                                  <Wrench className="w-2.5 h-2.5 shrink-0" aria-hidden="true" />
                                   <span>{isFrench ? 'Exclu répartition' : 'Excluded from Dispatch'}</span>
                                 </span>
                               )}
@@ -633,7 +722,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                           <span>{v.year}</span>
                           <span>•</span>
                           <span className="flex items-center space-x-1">
-                            <Fuel className="w-3 h-3 text-slate-500" />
+                            <Fuel className="w-3 h-3 text-slate-500" aria-hidden="true" />
                             <span>{v.fuelType}</span>
                           </span>
                         </div>
@@ -642,7 +731,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                       {/* Terminal / Yard */}
                       <td className="py-2.5 px-4 align-middle h-16">
                         <div className="flex items-center space-x-1.5 text-slate-300 font-medium">
-                          <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                          <Building2 className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
                           <span>{v.yardName}</span>
                         </div>
                         <div className="text-[10px] text-slate-500 mt-0.5">
@@ -667,18 +756,25 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                       <td className="py-2.5 px-4 align-middle h-16">
                         {v.assignedRouteNo ? (
                           <div className="space-y-0.5">
-                            <div
-                              onClick={(e) => {
-                                if (onSelectRoute) {
+                            {onSelectRoute ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
                                   e.stopPropagation();
                                   onSelectRoute(v.assignedRouteNo!);
-                                }
-                              }}
-                              className="font-bold text-amber-400 hover:underline flex items-center space-x-1 cursor-pointer"
-                            >
-                              <RouteIcon className="w-3 h-3" />
-                              <span>{v.assignedRouteNo}</span>
-                            </div>
+                                }}
+                                aria-label={`View route ${v.assignedRouteNo}`}
+                                className="font-bold text-amber-400 hover:underline flex items-center space-x-1 cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                              >
+                                <RouteIcon className="w-3 h-3" aria-hidden="true" />
+                                <span>{v.assignedRouteNo}</span>
+                              </button>
+                            ) : (
+                              <div className="font-bold text-amber-400 flex items-center space-x-1">
+                                <RouteIcon className="w-3 h-3" aria-hidden="true" />
+                                <span>{v.assignedRouteNo}</span>
+                              </div>
+                            )}
                             <div className="text-[11px] text-slate-400 truncate max-w-[160px]" title={v.assignedRouteName}>
                               {v.assignedRouteName}
                             </div>
@@ -693,16 +789,16 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                         {v.driverName ? (
                           <div className="space-y-0.5">
                             <div className="font-bold text-slate-200 flex items-center space-x-1">
-                              <User className="w-3.5 h-3.5 text-amber-400" />
+                              <User className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
                               <span>{v.driverName}</span>
                             </div>
                             {v.driverPhone && (
                               <a
                                 href={`tel:${v.driverPhone}`}
                                 onClick={(e) => e.stopPropagation()}
-                                className="text-amber-400 hover:underline font-mono text-[11px] flex items-center space-x-1"
+                                className="text-amber-400 hover:underline font-mono text-[11px] flex items-center space-x-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               >
-                                <Phone className="w-3 h-3" />
+                                <Phone className="w-3 h-3" aria-hidden="true" />
                                 <span>{v.driverPhone}</span>
                               </a>
                             )}
@@ -726,7 +822,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                                   : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
                               }`}
                             >
-                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" />
                               <span className="truncate max-w-[125px]">
                                 {isFrench ? exclusionReason.badgeTextFr : exclusionReason.badgeTextEn}
                               </span>
@@ -753,31 +849,35 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                         <div className="flex items-center justify-end space-x-1">
                           {onEditVehicle && (
                             <button
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onEditVehicle(v);
                               }}
+                              aria-label={`Edit vehicle ${v.unitNumber}`}
                               title="Edit Vehicle"
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition"
+                              className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                             >
-                              <Edit2 className="w-3.5 h-3.5" />
+                              <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
                           )}
                           {onDeleteVehicle && (
                             <button
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onDeleteVehicle(v);
                               }}
+                              aria-label={`Delete vehicle ${v.unitNumber}`}
                               title="Delete / Decommission Vehicle"
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
+                              className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
                           )}
                           <div className="flex items-center text-slate-400 group-hover:text-amber-400 transition pl-1">
                             <span className="text-[11px] mr-1 hidden sm:inline">Specs</span>
-                            <ChevronRight className="w-4 h-4" />
+                            <ChevronRight className="w-4 h-4" aria-hidden="true" />
                           </div>
                         </div>
                       </td>
@@ -796,17 +896,19 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
       </div>
 
       {/* Excel Export Configuration Modal */}
-      {isExportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <VehicleModalDialog
+        open={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        ariaLabelledBy="vehicle-export-modal-title"
+      >
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-800 flex items-start justify-between bg-slate-950/60">
               <div className="flex items-center space-x-3">
                 <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
-                  <FileSpreadsheet className="w-5 h-5" />
+                  <FileSpreadsheet className="w-5 h-5" aria-hidden="true" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
+                  <h2 id="vehicle-export-modal-title" className="text-base font-bold text-white tracking-tight flex items-center gap-2">
                     <span>{t.vehicles.exportModalTitle}</span>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                       .XLSX
@@ -818,10 +920,13 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                 </div>
               </div>
               <button
+                type="button"
+                autoFocus
                 onClick={() => setIsExportModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+                aria-label="Close export modal"
+                className="text-slate-400 hover:text-white p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
-                <X className="w-5 h-5" />
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
 
@@ -829,9 +934,9 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
             <div className="p-5 overflow-y-auto space-y-5 flex-1 text-xs">
               {/* Export Scope Selector */}
               <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3.5 space-y-2">
-                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                <span className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider">
                   {t.vehicles.exportScope}
-                </label>
+                </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <label
                     className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
@@ -907,21 +1012,21 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                     <button
                       type="button"
                       onClick={handleSelectAllFields}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition"
+                      className="px-2.5 py-1 min-h-[28px] rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                     >
                       {t.vehicles.selectAll}
                     </button>
                     <button
                       type="button"
                       onClick={handleDeselectAllFields}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 font-medium transition"
+                      className="px-2.5 py-1 min-h-[28px] rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                     >
                       {t.vehicles.deselectAll}
                     </button>
                     <button
                       type="button"
                       onClick={handleResetAllFields}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 font-medium transition"
+                      className="px-2.5 py-1 min-h-[28px] rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                     >
                       {t.vehicles.resetDefaults}
                     </button>
@@ -930,13 +1035,14 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
 
                 {/* Quick field search */}
                 <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
                   <input
-                    type="text"
+                    type="search"
+                    aria-label="Search export fields"
                     placeholder={t.vehicles.searchFieldsPlaceholder}
                     value={exportFieldSearch}
                     onChange={(e) => setExportFieldSearch(e.target.value)}
-                    className="w-full bg-slate-950/60 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-950/60 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-base sm:text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
@@ -981,17 +1087,20 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                               const label = isFrench ? field.labelFr : field.labelEn;
 
                               return (
-                                <div
+                                <button
+                                  type="button"
+                                  role="checkbox"
+                                  aria-checked={isChecked}
                                   key={field.key}
                                   onClick={() => handleToggleField(field.key)}
-                                  className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition select-none ${
+                                  className={`w-full p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition select-none text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 ${
                                     isChecked
                                       ? 'bg-emerald-500/10 border-emerald-500/30 text-white'
                                       : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800'
                                   }`}
                                 >
                                   <div className="flex items-center space-x-2.5 min-w-0 pr-2">
-                                    <div className="shrink-0 text-emerald-400">
+                                    <div className="shrink-0 text-emerald-400" aria-hidden="true">
                                       {isChecked ? (
                                         <CheckSquare className="w-4 h-4" />
                                       ) : (
@@ -1023,7 +1132,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                                       ? 'Étendu'
                                       : 'Extended'}
                                   </span>
-                                </div>
+                                </button>
                               );
                             })}
                           </div>
@@ -1035,8 +1144,8 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
               </div>
 
               {exportError && (
-                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center space-x-2 text-xs">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
+                <div role="alert" className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center space-x-2 text-xs">
+                  <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
                   <span>{exportError}</span>
                 </div>
               )}
@@ -1056,7 +1165,7 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                   type="button"
                   disabled={isExporting}
                   onClick={() => setIsExportModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition border border-slate-700 disabled:opacity-50"
+                  className="px-4 py-2 min-h-[36px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition border border-slate-700 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                 >
                   {t.vehicles.cancel}
                 </button>
@@ -1065,26 +1174,24 @@ export const VehicleListView: React.FC<VehicleListViewProps> = ({
                   type="button"
                   disabled={isExporting || selectedFieldKeys.length === 0}
                   onClick={handleExportExcelSubmit}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-lg flex items-center space-x-2 disabled:opacity-50"
+                  className="px-4 py-2 min-h-[36px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-lg flex items-center space-x-2 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                 >
                   {isExporting ? (
                     <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
                       <span>{t.vehicles.exporting}</span>
                     </>
                   ) : (
                     <>
-                      <Download className="w-4 h-4" />
+                      <Download className="w-4 h-4" aria-hidden="true" />
                       <span>{t.vehicles.downloadExcel}</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-    </div>
+      </VehicleModalDialog>
+    </PageShell>
   );
 };
 

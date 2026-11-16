@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useId, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../contexts/I18nContext';
 import {
@@ -10,6 +10,11 @@ import {
 export const AdminAccountSection = memo(function AdminAccountSection() {
   const { currentUser, isMockMode } = useAuth();
   const { isFrench } = useI18n();
+  const baseId = useId();
+  const formHeadingId = `${baseId}-form-heading`;
+  const emailId = `${baseId}-email`;
+  const passwordId = `${baseId}-password`;
+  const errorId = `${baseId}-error`;
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [provisionStatus, setProvisionStatus] = useState<string | null>(null);
@@ -93,28 +98,38 @@ export const AdminAccountSection = memo(function AdminAccountSection() {
         </div>
 
         {/* Provisioning form */}
-        <form onSubmit={handleSetupAdmin} className="pt-2 space-y-3">
-          <h3 className="text-xs font-bold text-slate-300">Provision / Reset Admin User</h3>
+        <form aria-labelledby={formHeadingId} onSubmit={handleSetupAdmin} className="pt-2 space-y-3">
+          <h3 id={formHeadingId} className="text-xs font-bold text-slate-300">Provision / Reset Admin User</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Admin Work Email</label>
+              <label htmlFor={emailId} className="block text-xs text-slate-400 mb-1">Admin Work Email</label>
               <input
+                id={emailId}
+                name="adminEmail"
                 type="email"
+                required
+                aria-invalid={Boolean(provisionError && (!adminEmail.trim() || !adminEmail.includes('@')))}
+                aria-describedby={provisionError ? errorId : undefined}
                 value={adminEmail}
                 onChange={(e) => setAdminEmail(e.target.value)}
                 placeholder="name@company.com"
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-xs text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Admin Password</label>
+              <label htmlFor={passwordId} className="block text-xs text-slate-400 mb-1">Admin Password</label>
               <input
+                id={passwordId}
+                name="adminPassword"
                 type="password"
+                required
+                aria-invalid={Boolean(provisionError && !adminPassword.trim())}
+                aria-describedby={provisionError ? errorId : undefined}
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
                 autoComplete="new-password"
                 placeholder="Enter a password"
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono"
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-xs text-white font-mono focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
               />
             </div>
           </div>
@@ -123,20 +138,20 @@ export const AdminAccountSection = memo(function AdminAccountSection() {
             <button
               type="submit"
               disabled={loading}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition disabled:opacity-50"
+              className="px-4 py-2 min-h-[36px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
             >
               {loading ? 'Registering Admin...' : 'Provision Admin Account'}
             </button>
 
             {provisionStatus && (
-              <span className="text-xs text-emerald-400 flex items-center space-x-1">
-                <CheckCircle2 className="w-4 h-4" />
+              <span role="status" className="text-xs text-emerald-400 flex items-center space-x-1">
+                <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
                 <span>{provisionStatus}</span>
               </span>
             )}
             {provisionError && (
-              <span className="text-xs text-rose-400 flex items-center space-x-1">
-                <AlertCircle className="w-4 h-4" />
+              <span id={errorId} role="alert" className="text-xs text-rose-400 flex items-center space-x-1">
+                <AlertCircle className="w-4 h-4" aria-hidden="true" />
                 <span>{provisionError}</span>
               </span>
             )}

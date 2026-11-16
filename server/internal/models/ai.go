@@ -22,6 +22,8 @@ type AIChatRequest struct {
 	OperatorID      string            `json:"operatorId,omitempty"`
 	UserRole        string            `json:"userRole,omitempty"`
 	PagePermissions map[string]string `json:"pagePermissions,omitempty"`
+	ActivePage      string            `json:"activePage,omitempty"`
+	PageContext     map[string]string `json:"pageContext,omitempty"`
 	Lang            string            `json:"lang,omitempty"` // "en" or "fr"
 }
 
@@ -49,8 +51,9 @@ type AIChatResponse struct {
 // PendingDispatchAction stores details of an action waiting for user confirmation
 type PendingDispatchAction struct {
 	ID            string    `json:"id"`
-	ActionType    string    `json:"actionType"` // "ASSIGN_DRIVER", "REASSIGN_CREW"
+	ActionType    string    `json:"actionType"` // "ASSIGN_DRIVER", "ASSIGN_VEHICLE", "ASSIGN_ROUTE_CREW", "CREATE_DISPATCH_SHEET"
 	Date          string    `json:"date"`
+	RouteID       string    `json:"routeId,omitempty"`
 	RouteNo       string    `json:"routeNo"`
 	RouteName     string    `json:"routeName"`
 	ShiftType     string    `json:"shiftType"` // "ALL", "AM", "PM"
@@ -59,6 +62,9 @@ type PendingDispatchAction struct {
 	DriverName    string    `json:"driverName"`
 	DriverPhone   string    `json:"driverPhone"`
 	OldDriverName string    `json:"oldDriverName"`
+	VehicleID     int       `json:"vehicleId,omitempty"`
+	UnitNumber    string    `json:"unitNumber,omitempty"`
+	OldUnitNumber string    `json:"oldUnitNumber,omitempty"`
 	CreatedBy     string    `json:"createdBy"`
 	CreatedByRole string    `json:"createdByRole,omitempty"`
 	CreatedAt     time.Time `json:"createdAt"`

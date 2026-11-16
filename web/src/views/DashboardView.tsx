@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { DashboardStats, Employee } from '../types/employee';
+import { PageShell } from '../components/common/PageShell';
 import { BusRoute } from '../types/route';
 import { DispatchShift } from '../types/dispatch';
 import { TimeOffRequest } from '../types/timeOff';
@@ -119,6 +120,9 @@ const ACCENT_STYLES: Record<
   },
 };
 
+const FOCUS_VISIBLE_CLASS =
+  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400';
+
 const PulseActionCard: React.FC<PulseActionCardProps> = ({
   title,
   count,
@@ -134,7 +138,7 @@ const PulseActionCard: React.FC<PulseActionCardProps> = ({
     <button
       type="button"
       onClick={onClick}
-      className={`text-left bg-slate-900/90 border p-4 rounded-xl transition-all cursor-pointer group hover:bg-slate-800/70 shadow-sm ${
+      className={`w-full h-full text-left bg-slate-900/90 border p-4 rounded-xl transition-all cursor-pointer group hover:bg-slate-800/70 shadow-sm flex flex-col justify-between ${FOCUS_VISIBLE_CLASS} ${
         hasItems ? styles.border : 'border-slate-800 hover:border-slate-700'
       }`}
     >
@@ -143,6 +147,7 @@ const PulseActionCard: React.FC<PulseActionCardProps> = ({
           {title}
         </span>
         <div
+          aria-hidden="true"
           className={`p-2 rounded-lg shrink-0 ${
             hasItems ? styles.iconBg : 'bg-slate-800 text-slate-500'
           }`}
@@ -161,11 +166,11 @@ const PulseActionCard: React.FC<PulseActionCardProps> = ({
         </span>
         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 group-hover:text-amber-400 transition">
           <span>{hasItems ? 'Resolve' : 'View'}</span>
-          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" aria-hidden="true" />
         </span>
       </div>
 
-      <p className="text-xs text-slate-400 mt-1.5 truncate" title={subtitle}>
+      <p className="text-xs text-slate-400 mt-1.5 line-clamp-2">
         {subtitle}
       </p>
     </button>
@@ -186,6 +191,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
   const [draggedCardId, setDraggedCardId] = useState<DashboardCardId | null>(null);
+  const [reorderStatus, setReorderStatus] = useState('');
 
   useEffect(() => {
     if (!prefUserId) return;
@@ -368,16 +374,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [employees]);
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <PageShell>
+      <p role="status" className="sr-only">
+        {reorderStatus}
+      </p>
+
       {/* Welcome & Fleet Pulse Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center space-x-2 text-amber-400 text-xs font-semibold uppercase tracking-wider mb-1">
-              <ShieldAlert className="w-4 h-4" />
+              <ShieldAlert className="w-4 h-4" aria-hidden="true" />
               <span>Fleet Pulse • Live Dispatch Operations</span>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 normal-case">
-                <Radio className="w-2.5 h-2.5 animate-pulse" />
+                <Radio className="w-2.5 h-2.5 motion-safe:animate-pulse" aria-hidden="true" />
                 Live Sync
               </span>
             </div>
@@ -405,14 +415,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             <button
               type="button"
+              aria-expanded={isCustomizing}
               onClick={() => setIsCustomizing((prev) => !prev)}
-              className={`px-3.5 py-2.5 font-bold text-xs rounded-xl transition flex items-center space-x-2 cursor-pointer border ${
+              className={`px-3.5 py-2.5 font-bold text-xs rounded-xl transition flex items-center space-x-2 cursor-pointer border ${FOCUS_VISIBLE_CLASS} ${
                 isCustomizing
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
                   : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
               }`}
             >
-              {isCustomizing ? <Check className="w-4 h-4" /> : <SlidersHorizontal className="w-4 h-4" />}
+              {isCustomizing ? (
+                <Check className="w-4 h-4" aria-hidden="true" />
+              ) : (
+                <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
+              )}
               <span>{isCustomizing ? 'Done' : 'Customize Cards'}</span>
               {!isCustomizing && hiddenCardMetas.length > 0 && (
                 <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
@@ -422,16 +437,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </button>
 
             <button
+              type="button"
               onClick={() => onNavigateTab('dispatch')}
-              className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition shadow-md shadow-amber-500/20 flex items-center space-x-2 cursor-pointer"
+              className={`px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition shadow-md shadow-amber-500/20 flex items-center space-x-2 cursor-pointer ${FOCUS_VISIBLE_CLASS}`}
             >
               <span>Open Dispatch</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         </div>
 
-        <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
       </div>
 
       {/* Customization & Hidden Cards Toolbar */}
@@ -439,7 +455,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="bg-slate-900/90 border border-amber-500/30 rounded-xl p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center space-x-2 text-xs text-slate-300">
-              <SlidersHorizontal className="w-4 h-4 text-amber-400" />
+              <SlidersHorizontal className="w-4 h-4 text-amber-400" aria-hidden="true" />
               <span className="font-bold text-white">Customize Fleet Pulse Layout</span>
               <span className="text-slate-400">
                 Drag cards or use arrows to reorder, click &times; to hide. Changes sync to your account across devices.
@@ -448,10 +464,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => persistPrefs(createDefaultDashboardPreferences())}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center space-x-1.5 cursor-pointer transition"
+              onClick={() => {
+                persistPrefs(createDefaultDashboardPreferences());
+                setReorderStatus('Reset Fleet Pulse layout to default.');
+              }}
+              className={`px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center space-x-1.5 cursor-pointer transition ${FOCUS_VISIBLE_CLASS}`}
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
               <span>Reset Default Layout</span>
             </button>
           </div>
@@ -465,10 +484,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <button
                   key={meta.id}
                   type="button"
-                  onClick={() => persistPrefs(restoreDashboardCard(prefs, meta.id))}
-                  className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-amber-500/20 text-slate-200 hover:text-amber-300 border border-slate-700 hover:border-amber-500/40 text-xs font-semibold transition cursor-pointer"
+                  onClick={() => {
+                    persistPrefs(restoreDashboardCard(prefs, meta.id));
+                    setReorderStatus(`Restored ${meta.label} card.`);
+                  }}
+                  className={`inline-flex items-center space-x-1.5 px-2.5 py-1.5 min-h-[32px] rounded-lg bg-slate-800 hover:bg-amber-500/20 text-slate-200 hover:text-amber-300 border border-slate-700 hover:border-amber-500/40 text-xs font-semibold transition cursor-pointer ${FOCUS_VISIBLE_CLASS}`}
                 >
-                  <Plus className="w-3.5 h-3.5 text-amber-400" />
+                  <Plus className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
                   <span>{meta.label}</span>
                 </button>
               ))}
@@ -504,7 +526,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
             {visibleActionCardIds.map((cardId, idx) => {
               const cardPropsMap: Record<DashboardActionCardId, Omit<PulseActionCardProps, 'onClick'> & { targetTab: NavTab }> = {
                 dispatch_missing_driver: {
@@ -623,48 +645,61 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     e.preventDefault();
                     if (isCustomizing && draggedCardId && draggedCardId !== cardId) {
                       persistPrefs(reorderDashboardCards(prefs, draggedCardId, cardId));
+                      setReorderStatus(`Reordered cards, ${visibleActionCardIds.length} visible.`);
                     }
                     setDraggedCardId(null);
                   }}
                   onDragEnd={() => setDraggedCardId(null)}
-                  className={`relative ${isCustomizing ? 'ring-1 ring-amber-500/30 rounded-xl' : ''}`}
+                  className={`relative flex flex-col ${isCustomizing ? 'ring-1 ring-amber-500/30 rounded-xl' : ''}`}
                 >
                   {isCustomizing && (
                     <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-800/95 border-b border-slate-700 rounded-t-xl text-[11px] text-slate-300">
                       <span className="inline-flex items-center space-x-1 text-slate-400 cursor-grab">
-                        <GripVertical className="w-3.5 h-3.5" />
+                        <GripVertical className="w-3.5 h-3.5" aria-hidden="true" />
                         <span>Drag</span>
                       </span>
                       <div className="flex items-center space-x-1">
                         <button
                           type="button"
                           disabled={idx === 0}
-                          onClick={() =>
-                            persistPrefs(moveDashboardCardStep(prefs, cardId, -1, 'action'))
-                          }
-                          className="p-1 rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer"
+                          onClick={() => {
+                            persistPrefs(moveDashboardCardStep(prefs, cardId, -1, 'action'));
+                            setReorderStatus(
+                              `Moved ${cfg.title} to position ${idx} of ${visibleActionCardIds.length}.`
+                            );
+                          }}
+                          className={`min-w-[28px] min-h-[28px] flex items-center justify-center rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer ${FOCUS_VISIBLE_CLASS}`}
+                          aria-label={`Move ${cfg.title} earlier`}
                           title="Move earlier"
                         >
-                          <ChevronLeft className="w-3.5 h-3.5" />
+                          <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>
                         <button
                           type="button"
                           disabled={idx === visibleActionCardIds.length - 1}
-                          onClick={() =>
-                            persistPrefs(moveDashboardCardStep(prefs, cardId, 1, 'action'))
-                          }
-                          className="p-1 rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer"
+                          onClick={() => {
+                            persistPrefs(moveDashboardCardStep(prefs, cardId, 1, 'action'));
+                            setReorderStatus(
+                              `Moved ${cfg.title} to position ${idx + 2} of ${visibleActionCardIds.length}.`
+                            );
+                          }}
+                          className={`min-w-[28px] min-h-[28px] flex items-center justify-center rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer ${FOCUS_VISIBLE_CLASS}`}
+                          aria-label={`Move ${cfg.title} later`}
                           title="Move later"
                         >
-                          <ChevronRight className="w-3.5 h-3.5" />
+                          <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>
                         <button
                           type="button"
-                          onClick={() => persistPrefs(hideDashboardCard(prefs, cardId))}
-                          className="p-1 rounded hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                          onClick={() => {
+                            persistPrefs(hideDashboardCard(prefs, cardId));
+                            setReorderStatus(`Hid ${cfg.title} card.`);
+                          }}
+                          className={`min-w-[28px] min-h-[28px] flex items-center justify-center rounded hover:bg-rose-500/20 text-rose-400 cursor-pointer ${FOCUS_VISIBLE_CLASS}`}
+                          aria-label={`Hide ${cfg.title}`}
                           title="Hide card"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>
                       </div>
                     </div>
@@ -702,6 +737,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     ? 'lg:col-span-3'
                     : '';
 
+            const panelTitle = isCdl
+              ? 'Driver CDL Expiration Watchlist'
+              : 'Staff Depot Distribution';
+
             return (
               <div
                 key={panelId}
@@ -714,6 +753,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   e.preventDefault();
                   if (isCustomizing && draggedCardId && draggedCardId !== panelId) {
                     persistPrefs(reorderDashboardCards(prefs, draggedCardId, panelId));
+                    setReorderStatus(`Reordered ${panelTitle} panel.`);
                   }
                   setDraggedCardId(null);
                 }}
@@ -723,39 +763,51 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {isCustomizing && (
                   <div className="flex items-center justify-between px-3 py-1.5 bg-slate-800/95 border-b border-slate-700 text-[11px] text-slate-300">
                     <span className="inline-flex items-center space-x-1 text-slate-400 cursor-grab">
-                      <GripVertical className="w-3.5 h-3.5" />
+                      <GripVertical className="w-3.5 h-3.5" aria-hidden="true" />
                       <span>Drag Panel</span>
                     </span>
                     <div className="flex items-center space-x-1">
                       <button
                         type="button"
                         disabled={idx === 0}
-                        onClick={() =>
-                          persistPrefs(moveDashboardCardStep(prefs, panelId, -1, 'summary'))
-                        }
-                        className="p-1 rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer"
+                        onClick={() => {
+                          persistPrefs(moveDashboardCardStep(prefs, panelId, -1, 'summary'));
+                          setReorderStatus(
+                            `Moved ${panelTitle} to position ${idx} of ${visibleSummaryPanelIds.length}.`
+                          );
+                        }}
+                        className={`min-w-[28px] min-h-[28px] flex items-center justify-center rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer ${FOCUS_VISIBLE_CLASS}`}
+                        aria-label={`Move ${panelTitle} earlier`}
                         title="Move earlier"
                       >
-                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                       <button
                         type="button"
                         disabled={idx === visibleSummaryPanelIds.length - 1}
-                        onClick={() =>
-                          persistPrefs(moveDashboardCardStep(prefs, panelId, 1, 'summary'))
-                        }
-                        className="p-1 rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer"
+                        onClick={() => {
+                          persistPrefs(moveDashboardCardStep(prefs, panelId, 1, 'summary'));
+                          setReorderStatus(
+                            `Moved ${panelTitle} to position ${idx + 2} of ${visibleSummaryPanelIds.length}.`
+                          );
+                        }}
+                        className={`min-w-[28px] min-h-[28px] flex items-center justify-center rounded hover:bg-slate-700 disabled:opacity-30 cursor-pointer ${FOCUS_VISIBLE_CLASS}`}
+                        aria-label={`Move ${panelTitle} later`}
                         title="Move later"
                       >
-                        <ChevronRight className="w-3.5 h-3.5" />
+                        <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                       <button
                         type="button"
-                        onClick={() => persistPrefs(hideDashboardCard(prefs, panelId))}
-                        className="p-1 rounded hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                        onClick={() => {
+                          persistPrefs(hideDashboardCard(prefs, panelId));
+                          setReorderStatus(`Hid ${panelTitle} panel.`);
+                        }}
+                        className={`min-w-[28px] min-h-[28px] flex items-center justify-center rounded hover:bg-rose-500/20 text-rose-400 cursor-pointer ${FOCUS_VISIBLE_CLASS}`}
+                        aria-label={`Hide ${panelTitle}`}
                         title="Hide panel"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <X className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -763,25 +815,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                 {isCdl ? (
                   <div
-                    onClick={() => {
-                      if (!isCustomizing) onNavigateTab('compliance');
-                    }}
                     className={`bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-xl p-5 space-y-4 transition h-full ${
-                      isCustomizing ? 'rounded-t-none border-t-0' : 'cursor-pointer'
+                      isCustomizing ? 'rounded-t-none border-t-0' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                       <div className="flex items-center space-x-2">
-                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        <AlertTriangle className="w-4 h-4 text-amber-400" aria-hidden="true" />
                         <h2 className="text-sm font-bold text-white">Driver CDL Expiration Watchlist</h2>
                       </div>
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!isCustomizing) onNavigateTab('compliance');
-                        }}
-                        className="text-xs text-amber-400 hover:underline font-semibold cursor-pointer"
+                        disabled={isCustomizing}
+                        onClick={() => onNavigateTab('compliance')}
+                        className={`text-xs text-amber-400 hover:underline font-semibold cursor-pointer disabled:opacity-50 ${FOCUS_VISIBLE_CLASS} rounded px-1`}
                       >
                         View Full Compliance Radar &rarr;
                       </button>
@@ -789,7 +836,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                     {cdlSummary.totalAttention === 0 ? (
                       <div className="py-8 text-center text-slate-400 text-xs">
-                        <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-80" />
+                        <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-80" aria-hidden="true" />
                         All active driver licenses are currently compliant.
                       </div>
                     ) : (
@@ -820,10 +867,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <span>
                             {cdlSummary.totalAttention} driver{cdlSummary.totalAttention === 1 ? '' : 's'} requiring license attention
                           </span>
-                          <span className="inline-flex items-center space-x-1 text-amber-400 font-semibold">
+                          <button
+                            type="button"
+                            disabled={isCustomizing}
+                            onClick={() => onNavigateTab('compliance')}
+                            className={`inline-flex items-center space-x-1 text-amber-400 hover:underline font-semibold cursor-pointer disabled:opacity-50 ${FOCUS_VISIBLE_CLASS} rounded px-1`}
+                          >
                             <span>Open Compliance Radar</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </span>
+                            <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
                         </div>
                       </div>
                     )}
@@ -835,7 +887,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     }`}
                   >
                     <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
-                      <Building2 className="w-4 h-4 text-blue-400" />
+                      <Building2 className="w-4 h-4 text-blue-400" aria-hidden="true" />
                       <h2 className="text-sm font-bold text-white">Staff Depot Distribution</h2>
                     </div>
 
@@ -849,7 +901,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                 <span>{yard}</span>
                                 <span className="text-slate-400 font-mono">{count} staff ({percentage}%)</span>
                               </div>
-                              <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                              <div
+                                role="progressbar"
+                                aria-label={yard}
+                                aria-valuenow={percentage}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                className="h-2 w-full bg-slate-800 rounded-full overflow-hidden"
+                              >
                                 <div
                                   className="h-full bg-amber-500 rounded-full"
                                   style={{ width: `${percentage}%` }}
@@ -874,6 +933,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           })}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 };

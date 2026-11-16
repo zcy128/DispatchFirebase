@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Student, StudentContact, StudentStats } from '../types/student';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import { School } from '../types/school';
 import { StudentService } from '../services/studentService';
 import {
@@ -392,7 +394,11 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
   });
 
   return (
-    <div className="p-3.5 sm:p-4 space-y-5 w-full">
+    <PageShell>
+      <PageHeader
+        title="Students"
+        subtitle="Student riders, school assignments, parent contacts, and transportation plans."
+      />
       {/* Top Header Card: Breadcrumb School Switcher + Primary Actions */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-4">
         {/* Row 1: Workspace Breadcrumb Navigation & Global Action Buttons */}
@@ -406,8 +412,11 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
             <div className="relative" ref={schoolDropdownRef}>
               <button
                 type="button"
+                aria-expanded={isSchoolDropdownOpen}
+                aria-haspopup="listbox"
+                aria-label="Switch active school context"
                 onClick={() => setIsSchoolDropdownOpen(!isSchoolDropdownOpen)}
-                className={`group flex items-center space-x-2.5 px-3 py-1.5 rounded-xl border text-xs sm:text-sm font-semibold transition shadow-sm ${
+                className={`group flex items-center space-x-2.5 px-3 py-1.5 min-h-[36px] rounded-xl border text-xs sm:text-sm font-semibold transition shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
                   selectedSchoolId === 'ALL'
                     ? 'bg-slate-800 hover:bg-slate-700/80 text-slate-200 border-slate-700'
                     : 'bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border-sky-500/30'
@@ -416,7 +425,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
               >
                 {selectedSchoolId === 'ALL' ? (
                   <>
-                    <Globe className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <Globe className="w-4 h-4 text-emerald-400 flex-shrink-0" aria-hidden="true" />
                     <span>All Schools (District-Wide)</span>
                     <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-slate-700/80 text-slate-300">
                       {students.length} riders
@@ -424,7 +433,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                   </>
                 ) : (
                   <>
-                    <SchoolIcon className="w-4 h-4 text-sky-400 flex-shrink-0" />
+                    <SchoolIcon className="w-4 h-4 text-sky-400 flex-shrink-0" aria-hidden="true" />
                     <span className="max-w-[220px] sm:max-w-[320px] truncate">
                       {currentSchool?.schoolName || `School #${selectedSchoolId}`}
                     </span>
@@ -434,6 +443,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                   </>
                 )}
                 <ChevronDown
+                  aria-hidden="true"
                   className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${
                     isSchoolDropdownOpen ? 'rotate-180 text-sky-400' : 'group-hover:text-slate-200'
                   }`}
@@ -445,40 +455,44 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                 <div className="absolute left-0 top-full mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-50 p-2 space-y-2 backdrop-blur-md">
                   {/* Popover School Search Filter */}
                   <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
                     <input
-                      type="text"
+                      type="search"
+                      aria-label="Filter schools by name or board"
                       placeholder={`Filter ${schools.length} schools by name or board...`}
                       value={schoolSearchQuery}
                       onChange={(e) => setSchoolSearchQuery(e.target.value)}
                       autoFocus
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-8 py-1.5 text-base sm:text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500"
                     />
                     {schoolSearchQuery && (
                       <button
                         type="button"
                         onClick={() => setSchoolSearchQuery('')}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                        aria-label="Clear school search"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 min-w-[24px] min-h-[24px] flex items-center justify-center rounded text-slate-400 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <X className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                     )}
                   </div>
 
                   {/* School List Scroll Area */}
-                  <div className="max-h-72 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                  <div role="listbox" aria-label="Schools" className="max-h-72 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                     {/* Option: All Schools */}
                     <button
                       type="button"
+                      role="option"
+                      aria-selected={selectedSchoolId === 'ALL'}
                       onClick={() => handleSelectSchool('ALL')}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition text-left ${
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-400 ${
                         selectedSchoolId === 'ALL'
                           ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/30'
                           : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                       }`}
                     >
                       <div className="flex items-center space-x-2.5">
-                        <Globe className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                        <Globe className="w-4 h-4 text-emerald-400 flex-shrink-0" aria-hidden="true" />
                         <div>
                           <div className="font-semibold">All Schools (District-Wide)</div>
                           <div className="text-[10px] text-slate-400">View roster across entire fleet</div>
@@ -486,7 +500,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                       </div>
                       <div className="flex items-center space-x-2">
                         <span className="text-[11px] text-slate-400 font-mono">{stats.totalStudents || students.length}</span>
-                        {selectedSchoolId === 'ALL' && <Check className="w-3.5 h-3.5 text-sky-400" />}
+                        {selectedSchoolId === 'ALL' && <Check className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />}
                       </div>
                     </button>
 
@@ -505,15 +519,17 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                           <button
                             key={sch.schoolId}
                             type="button"
+                            role="option"
+                            aria-selected={isSelected}
                             onClick={() => handleSelectSchool(String(sch.schoolId))}
-                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition text-left ${
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-400 ${
                               isSelected
                                 ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/30'
                                 : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                             }`}
                           >
                             <div className="flex items-center space-x-2.5 truncate">
-                              <SchoolIcon className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                              <SchoolIcon className="w-4 h-4 text-slate-400 flex-shrink-0" aria-hidden="true" />
                               <div className="truncate">
                                 <div className="font-semibold truncate">{sch.schoolName}</div>
                                 <div className="text-[10px] text-slate-400 truncate">
@@ -523,7 +539,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                             </div>
                             <div className="flex items-center space-x-2 flex-shrink-0 ml-2">
                               <span className="text-[11px] text-slate-400 font-mono">{count}</span>
-                              {isSelected && <Check className="w-3.5 h-3.5 text-sky-400" />}
+                              {isSelected && <Check className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />}
                             </div>
                           </button>
                         );
@@ -539,131 +555,152 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
           <div className="flex items-center space-x-2 flex-shrink-0">
             {onCreateStudent && (
               <button
+                type="button"
                 onClick={onCreateStudent}
-                className="px-3.5 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs rounded-xl shadow-md shadow-sky-500/20 transition flex items-center space-x-1.5"
+                className="px-3.5 py-2 min-h-[36px] bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs rounded-xl shadow-md shadow-sky-500/20 transition flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>New Student</span>
               </button>
             )}
 
             {onRefresh && (
               <button
+                type="button"
                 onClick={handleRefresh}
                 disabled={refreshing}
+                aria-label="Refresh student roster from cloud"
                 title="Refresh student roster from cloud"
-                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5"
+                className="px-3.5 py-2 min-h-[36px] bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
               >
-                <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${refreshing ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
                 <span className="hidden sm:inline">Refresh Directory</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Row 2: Smart Unified Search Input */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder={searchPlaceholder}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-9 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-sky-500 transition placeholder:text-slate-500"
-          />
-          {isCrossSearching ? (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-sky-400" title="Searching across district schools...">
-              <Loader2 className="w-4 h-4 animate-spin" />
+        {/* Row 2 & 3: Smart Unified Search Input & Filter Row */}
+        <search aria-label="Filter students" className="block space-y-4">
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" aria-hidden="true" />
+            <input
+              type="search"
+              aria-label="Search students"
+              placeholder={searchPlaceholder}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-9 py-2.5 text-base sm:text-sm text-white focus:outline-none focus:border-sky-500 transition placeholder:text-slate-500"
+            />
+            {isCrossSearching ? (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-sky-400" title="Searching across district schools..." role="status">
+                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+              </div>
+            ) : searchTerm ? (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                aria-label="Clear search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 min-w-[24px] min-h-[24px] flex items-center justify-center rounded text-slate-400 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+                title="Clear search"
+              >
+                <X className="w-4 h-4" aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+
+          {/* Row 3: Filter Row (Grade, Route Assignment, Met at Bus, Clear) */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <div className="flex items-center space-x-1.5 text-slate-400 mr-2 font-medium">
+              <Filter className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Refine:</span>
             </div>
-          ) : searchTerm ? (
+
+            {/* Grade Filter */}
+            <select
+              value={selectedGrade}
+              aria-label="Filter by grade"
+              onChange={(e) => setSelectedGrade(e.target.value)}
+              className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-slate-200 focus:outline-none focus:border-sky-500"
+            >
+              <option value="ALL">All Grades</option>
+              {AVAILABLE_GRADES.map((g) => (
+                <option key={g} value={g}>
+                  Grade {g}
+                </option>
+              ))}
+            </select>
+
+            {/* Route Assignment Filter */}
+            <div
+              role="group"
+              aria-label="Filter by route assignment"
+              className="flex items-center bg-slate-800 p-0.5 rounded-xl border border-slate-700"
+            >
+              <button
+                type="button"
+                aria-pressed={routeFilter === 'ALL'}
+                onClick={() => setRouteFilter('ALL')}
+                className={`px-2.5 py-1 min-h-[28px] rounded-lg text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
+                  routeFilter === 'ALL'
+                    ? 'bg-sky-500/20 text-sky-300 font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                All Routes
+              </button>
+              <button
+                type="button"
+                aria-pressed={routeFilter === 'ASSIGNED'}
+                onClick={() => setRouteFilter('ASSIGNED')}
+                className={`px-2.5 py-1 min-h-[28px] rounded-lg text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
+                  routeFilter === 'ASSIGNED'
+                    ? 'bg-amber-500/20 text-amber-300 font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Assigned
+              </button>
+              <button
+                type="button"
+                aria-pressed={routeFilter === 'UNASSIGNED'}
+                onClick={() => setRouteFilter('UNASSIGNED')}
+                className={`px-2.5 py-1 min-h-[28px] rounded-lg text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 ${
+                  routeFilter === 'UNASSIGNED'
+                    ? 'bg-slate-700 text-white font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Unassigned
+              </button>
+            </div>
+
+            {/* Met at Bus toggle */}
             <button
               type="button"
-              onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-              title="Clear search"
+              aria-pressed={metAtBusOnly}
+              onClick={() => setMetAtBusOnly(!metAtBusOnly)}
+              className={`px-3 py-1.5 min-h-[32px] rounded-xl text-xs font-semibold border transition flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
+                metAtBusOnly
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+              }`}
             >
-              <X className="w-4 h-4" />
+              <span>★ Met at Bus Only</span>
             </button>
-          ) : null}
-        </div>
 
-        {/* Row 3: Filter Row (Grade, Route Assignment, Met at Bus, Clear) */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <div className="flex items-center space-x-1.5 text-slate-400 mr-2 font-medium">
-            <Filter className="w-3.5 h-3.5" />
-            <span>Refine:</span>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleClearAllFilters}
+                className="px-2 py-1 min-h-[28px] text-xs text-rose-400 hover:text-rose-300 hover:underline ml-auto font-medium flex items-center space-x-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
+              >
+                <X className="w-3 h-3" aria-hidden="true" />
+                <span>Reset Filters</span>
+              </button>
+            )}
           </div>
-
-          {/* Grade Filter */}
-          <select
-            value={selectedGrade}
-            onChange={(e) => setSelectedGrade(e.target.value)}
-            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-500"
-          >
-            <option value="ALL">All Grades</option>
-            {AVAILABLE_GRADES.map((g) => (
-              <option key={g} value={g}>
-                Grade {g}
-              </option>
-            ))}
-          </select>
-
-          {/* Route Assignment Filter */}
-          <div className="flex items-center bg-slate-800 p-0.5 rounded-xl border border-slate-700">
-            <button
-              onClick={() => setRouteFilter('ALL')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                routeFilter === 'ALL'
-                  ? 'bg-sky-500/20 text-sky-300 font-bold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              All Routes
-            </button>
-            <button
-              onClick={() => setRouteFilter('ASSIGNED')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                routeFilter === 'ASSIGNED'
-                  ? 'bg-amber-500/20 text-amber-300 font-bold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Assigned
-            </button>
-            <button
-              onClick={() => setRouteFilter('UNASSIGNED')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                routeFilter === 'UNASSIGNED'
-                  ? 'bg-slate-700 text-white font-bold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Unassigned
-            </button>
-          </div>
-
-          {/* Met at Bus toggle */}
-          <button
-            onClick={() => setMetAtBusOnly(!metAtBusOnly)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center space-x-1.5 ${
-              metAtBusOnly
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-            }`}
-          >
-            <span>★ Met at Bus Only</span>
-          </button>
-
-          {hasActiveFilters && (
-            <button
-              onClick={handleClearAllFilters}
-              className="text-xs text-rose-400 hover:text-rose-300 hover:underline ml-auto font-medium flex items-center space-x-1"
-            >
-              <X className="w-3 h-3" />
-              <span>Reset Filters</span>
-            </button>
-          )}
-        </div>
+        </search>
 
         {/* Row 4: Smart Cross-School Peek Notification Banner */}
         {crossSchoolMatches.length > 0 && filteredStudents.length > 0 && (
@@ -826,8 +863,15 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
         ) : (
           <>
             {/* Desktop Table View */}
-            <div ref={studentTableContainerRef} className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+            <div
+              ref={studentTableContainerRef}
+              tabIndex={0}
+              role="region"
+              aria-label="Student directory roster table"
+              className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
+            >
               <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1100px]">
+                <caption className="sr-only">Student directory roster</caption>
                 <colgroup>
                   <col style={{ width: '240px' }} />
                   <col style={{ width: '200px' }} />
@@ -839,13 +883,13 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                 </colgroup>
                 <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider text-[11px] shadow-xs">
                   <tr>
-                    <th className="py-3 px-4">Student</th>
-                    <th className="py-3 px-4">School & Bell</th>
-                    <th className="py-3 px-4">Assigned Routes</th>
-                    <th className="py-3 px-4">Primary Contact</th>
-                    <th className="py-3 px-4">Home Address</th>
-                    <th className="py-3 px-4 text-center">Status</th>
-                    <th className="py-3 px-4 text-right">Details</th>
+                    <th scope="col" className="py-3 px-4">Student</th>
+                    <th scope="col" className="py-3 px-4">School & Bell</th>
+                    <th scope="col" className="py-3 px-4">Assigned Routes</th>
+                    <th scope="col" className="py-3 px-4">Primary Contact</th>
+                    <th scope="col" className="py-3 px-4">Home Address</th>
+                    <th scope="col" className="py-3 px-4 text-center">Status</th>
+                    <th scope="col" className="py-3 px-4 text-right">Details</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -871,13 +915,23 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                         {/* Name & ID */}
                         <td className="py-3 px-4">
                           <div className="flex items-center space-x-3">
-                            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500/20 to-indigo-500/20 border border-sky-500/30 flex items-center justify-center font-bold text-sky-400 text-xs">
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500/20 to-indigo-500/20 border border-sky-500/30 flex items-center justify-center font-bold text-sky-400 text-xs" aria-hidden="true">
                               {s.firstName[0]}
                               {s.lastName[0]}
                             </div>
                             <div>
                               <div className="font-bold text-white group-hover:text-sky-400 transition flex items-center space-x-1">
-                                <span>{s.studentName}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelectStudent(s);
+                                  }}
+                                  aria-label={`View profile for ${s.studentName}`}
+                                  className="text-left hover:underline rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+                                >
+                                  {s.studentName}
+                                </button>
                                 {s.metatBus && (
                                   <span className="text-amber-400 text-xs font-bold" title="Met at Bus">
                                     *
@@ -902,15 +956,16 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                                 e.stopPropagation();
                                 onSelectSchool(s.schoolId, s.schoolName);
                               }}
-                              className="text-slate-200 font-medium flex items-center space-x-1 hover:text-amber-300 hover:underline transition text-left max-w-full"
+                              aria-label={`View school details for ${s.schoolName}`}
+                              className="text-slate-200 font-medium flex items-center space-x-1 hover:text-amber-300 hover:underline transition text-left max-w-full rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title="View school details"
                             >
-                              <SchoolIcon className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                              <SchoolIcon className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" aria-hidden="true" />
                               <span className="truncate max-w-[180px]">{s.schoolName}</span>
                             </button>
                           ) : (
                             <div className="text-slate-200 font-medium flex items-center space-x-1">
-                              <SchoolIcon className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                              <SchoolIcon className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" aria-hidden="true" />
                               <span className="truncate max-w-[180px]">{s.schoolName}</span>
                             </div>
                           )}
@@ -929,21 +984,29 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                           title="Click to view and manage route stops"
                         >
                           {routeList.length > 0 ? (
-                            <div className="flex flex-wrap items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenStops(s);
+                              }}
+                              aria-label={`View and manage route stops for ${s.studentName}`}
+                              className="flex flex-wrap items-center gap-1 text-left rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                            >
                               {routeList.map((rt: string) => (
                                 <span
                                   key={rt}
                                   className="inline-flex items-center px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover/route:border-amber-400/50 group-hover/route:bg-amber-500/20 font-mono text-[11px] font-semibold transition"
                                 >
-                                  <Bus className="w-3 h-3 mr-1 flex-shrink-0" />
+                                  <Bus className="w-3 h-3 mr-1 flex-shrink-0" aria-hidden="true" />
                                   {rt}
                                 </span>
                               ))}
                               <span className="text-[10px] text-amber-400 opacity-0 group-hover/route:opacity-100 transition-opacity ml-1 font-semibold flex items-center space-x-0.5">
                                 <span>Stops</span>
-                                <ChevronRight className="w-3 h-3 inline" />
+                                <ChevronRight className="w-3 h-3 inline" aria-hidden="true" />
                               </span>
-                            </div>
+                            </button>
                           ) : (
                             <button
                               type="button"
@@ -951,7 +1014,8 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                                 e.stopPropagation();
                                 handleOpenStops(s);
                               }}
-                              className="text-slate-500 hover:text-amber-400 text-[11px] italic hover:underline flex items-center space-x-1 transition cursor-pointer"
+                              aria-label={`View stops and assign route for ${s.studentName}`}
+                              className="text-slate-500 hover:text-amber-400 text-[11px] italic hover:underline flex items-center space-x-1 transition cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title="Click to view stops and assign route"
                             >
                               <span>Unassigned</span>
@@ -979,9 +1043,10 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                                   <a
                                     href={`tel:${primaryContact.mobilePhone}`}
                                     onClick={(e) => e.stopPropagation()}
-                                    className="text-amber-400 hover:underline font-mono text-[11px] flex items-center space-x-1"
+                                    aria-label={`Call ${primaryContact.contactName || 'parent'} at ${primaryContact.mobilePhone}`}
+                                    className="text-amber-400 hover:underline font-mono text-[11px] flex items-center space-x-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                   >
-                                    <Phone className="w-3 h-3" />
+                                    <Phone className="w-3 h-3" aria-hidden="true" />
                                     <span>{primaryContact.mobilePhone}</span>
                                   </a>
                                 )}
@@ -1001,10 +1066,11 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                                         grade: s.grade,
                                       });
                                     }}
-                                    className="text-indigo-400 hover:text-indigo-300 hover:underline font-semibold text-[11px] flex items-center space-x-1"
+                                    aria-label={`Open operations chat with parent of ${s.studentName}`}
+                                    className="text-indigo-400 hover:text-indigo-300 hover:underline font-semibold text-[11px] flex items-center space-x-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
                                     title="Open operations chat with parent"
                                   >
-                                    <MessageSquare className="w-3 h-3" />
+                                    <MessageSquare className="w-3 h-3" aria-hidden="true" />
                                     <span>Chat</span>
                                   </button>
                                 )}
@@ -1043,28 +1109,34 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                           >
                             {onEditStudent && (
                               <button
+                                type="button"
                                 onClick={() => onEditStudent(s)}
+                                aria-label={`Edit ${s.studentName}`}
                                 title="Edit student"
-                                className="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-lg transition"
+                                className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
+                                <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                               </button>
                             )}
                             {onDeleteStudent && (
                               <button
+                                type="button"
                                 onClick={() => onDeleteStudent(s)}
+                                aria-label={`Delete ${s.studentName}`}
                                 title="Delete student profile"
-                                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
+                                className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                               </button>
                             )}
                             <button
+                              type="button"
                               onClick={() => onSelectStudent(s)}
-                              className="flex items-center space-x-0.5 text-slate-400 hover:text-sky-400 transition"
+                              aria-label={`View profile for ${s.studentName}`}
+                              className="px-1.5 py-1 min-h-[28px] flex items-center space-x-0.5 text-slate-400 hover:text-sky-400 rounded-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
                             >
                               <span className="text-[11px] hidden sm:inline">Profile</span>
-                              <ChevronRight className="w-4 h-4" />
+                              <ChevronRight className="w-4 h-4" aria-hidden="true" />
                             </button>
                           </div>
                         </td>
@@ -1251,19 +1323,21 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                             <button
                               type="button"
                               onClick={() => onEditStudent(s)}
-                              className="p-1.5 text-slate-400 hover:text-sky-400 rounded-lg hover:bg-slate-800 transition"
+                              aria-label={`Edit ${s.studentName}`}
+                              className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-sky-400 rounded-lg hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
                               title="Edit student"
                             >
-                              <Edit2 className="w-3.5 h-3.5" />
+                              <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
                           )}
                           <button
                             type="button"
                             onClick={() => onSelectStudent(s)}
-                            className="flex items-center space-x-1 text-slate-400 hover:text-sky-400 px-2 py-1 rounded-lg hover:bg-slate-800 transition text-xs font-semibold"
+                            aria-label={`View profile for ${s.studentName}`}
+                            className="flex items-center space-x-1 text-slate-400 hover:text-sky-400 px-2 py-1 min-h-[28px] rounded-lg hover:bg-slate-800 transition text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
                           >
                             <span>Profile</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
+                            <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
                           </button>
                         </div>
                       </div>
@@ -1275,6 +1349,6 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
           </>
         )}
       </div>
-    </div>
+    </PageShell>
   );
 };

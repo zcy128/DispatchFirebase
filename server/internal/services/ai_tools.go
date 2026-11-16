@@ -68,6 +68,304 @@ func (s *AIToolService) GetUnassignedShifts(ctx context.Context, date string, ya
 	return unassigned, nil
 }
 
+// GetShiftsWithoutVehicle finds shifts on a date that do not have a vehicle assigned
+func (s *AIToolService) GetShiftsWithoutVehicle(ctx context.Context, date string, yardFilter string) ([]*models.DispatchShift, error) {
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+
+	shifts, err := s.dispatchRepo.ListShifts(ctx, date, repository.DispatchFilter{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list shifts for date %s: %w", date, err)
+	}
+
+	var missing []*models.DispatchShift
+	for _, shift := range shifts {
+		if yardFilter != "" && yardFilter != "ALL" && !strings.EqualFold(shift.YardName, yardFilter) {
+			continue
+		}
+		unitNo := strings.TrimSpace(shift.UnitNumber)
+		if shift.VehicleID == 0 && (unitNo == "" || strings.EqualFold(unitNo, "unassigned")) {
+			missing = append(missing, shift)
+		}
+	}
+
+	return missing, nil
+}
+
+// FindAvailableVehicles finds active/spare vehicles not assigned to any shift on the given date
+func (s *AIToolService) FindAvailableVehicles(ctx context.Context, date string, yardFilter string) ([]*models.Vehicle, error) {
+	if s.vehicleRepo == nil {
+		return nil, nil
+	}
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+
+	vehicles, err := s.vehicleRepo.ListVehicles(ctx, repository.VehicleFilter{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list vehicles: %w", err)
+	}
+
+	shifts, err := s.dispatchRepo.ListShifts(ctx, date, repository.DispatchFilter{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list shifts for date %s: %w", date, err)
+	}
+
+	busyVehicleIDs := make(map[int]bool)
+	busyUnitNos := make(map[string]bool)
+	for _, sh := range shifts {
+		if sh.VehicleID > 0 {
+			busyVehicleIDs[sh.VehicleID] = true
+		}
+		if u := strings.ToLower(strings.TrimSpace(sh.UnitNumber)); u != "" {
+			busyUnitNos[u] = true
+		}
+	}
+
+	groundedVehicleIDs, groundedUnitNos := s.getGroundedVehiclesForDate(ctx, date)
+
+	var available []*models.Vehicle
+	for _, v := range vehicles {
+		if !v.Active && v.Status != "" {
+			continue
+		}
+		if isVehicleStatusGrounded(v.Status) {
+			continue
+		}
+		if yardFilter != "" && yardFilter != "ALL" && !strings.EqualFold(v.YardName, yardFilter) {
+			continue
+		}
+		if v.VehicleID > 0 && (busyVehicleIDs[v.VehicleID] || groundedVehicleIDs[v.VehicleID]) {
+			continue
+		}
+		if u := strings.ToLower(strings.TrimSpace(v.UnitNumber)); u != "" && (busyUnitNos[u] || groundedUnitNos[u]) {
+			continue
+		}
+		available = append(available, v)
+	}
+
+	return available, nil
+}
+
+func isVehicleStatusGrounded(rawStatus string) bool {
+	s := strings.ToLower(strings.TrimSpace(rawStatus))
+	return s == "maintenance" ||
+		s == "out of service" ||
+		s == "in inspection" ||
+		s == "periodic inspection" ||
+		s == "defective" ||
+		s == "under repair" ||
+		strings.Contains(s, "out") ||
+		strings.Contains(s, "maint") ||
+		strings.Contains(s, "repair") ||
+		strings.Contains(s, "inspect") ||
+		strings.Contains(s, "defect") ||
+		strings.Contains(s, "inactive") ||
+		strings.Contains(s, "retired")
+}
+
+func (s *AIToolService) getGroundedVehiclesForDate(ctx context.Context, date string) (map[int]bool, map[string]bool) {
+	groundedIDs := make(map[int]bool)
+	groundedUnits := make(map[string]bool)
+	if s.dispatchRepo == nil {
+		return groundedIDs, groundedUnits
+	}
+	defects, err := s.dispatchRepo.ListDefectReports(ctx, "", "", "")
+	if err != nil {
+		return groundedIDs, groundedUnits
+	}
+	targetDate := date
+	if len(targetDate) > 10 {
+		targetDate = targetDate[:10]
+	}
+	for _, d := range defects {
+		if d == nil {
+			continue
+		}
+		repDate := strings.TrimSpace(d.ReportDate)
+		if len(repDate) > 10 {
+			repDate = repDate[:10]
+		}
+		if !strings.EqualFold(strings.TrimSpace(d.Status), "resolved") {
+			if repDate == "" || targetDate == "" || targetDate >= repDate {
+				if d.VehicleID > 0 {
+					groundedIDs[d.VehicleID] = true
+				}
+				if u := strings.ToLower(strings.TrimSpace(d.VehicleUnitNumber)); u != "" {
+					groundedUnits[u] = true
+				}
+			}
+		}
+	}
+	return groundedIDs, groundedUnits
+}
+
+// FindVehicleByQuery looks up an active vehicle by unit number or plate number
+func (s *AIToolService) FindVehicleByQuery(ctx context.Context, query string) (*models.Vehicle, error) {
+	if s.vehicleRepo == nil {
+		return nil, nil
+	}
+	clean := strings.ToLower(strings.TrimSpace(query))
+	clean = strings.TrimPrefix(clean, "unit")
+	clean = strings.TrimPrefix(clean, "bus")
+	clean = strings.TrimPrefix(clean, "#")
+	clean = strings.TrimSpace(clean)
+	if clean == "" {
+		return nil, nil
+	}
+
+	vehicles, err := s.vehicleRepo.ListVehicles(ctx, repository.VehicleFilter{})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, v := range vehicles {
+		if strings.EqualFold(strings.TrimSpace(v.UnitNumber), clean) ||
+			strings.EqualFold(strings.TrimSpace(v.PlateNumber), clean) ||
+			strings.EqualFold(strings.TrimSpace(v.ID), clean) {
+			return v, nil
+		}
+	}
+	return nil, nil
+}
+
+// PrepareVehicleAssignment matches vehicle and dispatch shifts on a date, then generates a pending confirmation action
+func (s *AIToolService) PrepareVehicleAssignment(
+	ctx context.Context,
+	date string,
+	routeQuery string,
+	vehicle *models.Vehicle,
+	shiftType string,
+	operatorName string,
+	operatorRole string,
+	pagePermissions map[string]string,
+	lang string,
+) (*models.PendingDispatchAction, string, error) {
+	if !CanModifyDispatchShifts(operatorRole, pagePermissions) {
+		return nil, "", fmt.Errorf("insufficient permissions: role '%s' cannot modify dispatch shifts", operatorRole)
+	}
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+
+	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
+
+	// Commercial vehicle safety quarantine gate: never assign grounded/defective vehicles
+	groundedIDs, groundedUnits := s.getGroundedVehiclesForDate(ctx, date)
+	unitKey := strings.ToLower(strings.TrimSpace(vehicle.UnitNumber))
+	if isVehicleStatusGrounded(vehicle.Status) || groundedIDs[vehicle.VehicleID] || (unitKey != "" && groundedUnits[unitKey]) {
+		if isFr {
+			return nil, "", fmt.Errorf("le véhicule Unité %s est actuellement immobilisé (défectuosité, maintenance ou hors service) et ne peut pas être assigné", vehicle.UnitNumber)
+		}
+		if isZh {
+			return nil, "", fmt.Errorf("车辆 Unit %s 当前处于停运/故障维修/检查隔离状态，依据商用车安全合规门禁禁止指派", vehicle.UnitNumber)
+		}
+		return nil, "", fmt.Errorf("Unit %s is currently grounded (unresolved defect, maintenance, or out-of-service) and cannot be assigned", vehicle.UnitNumber)
+	}
+
+	shifts, err := s.dispatchRepo.ListShifts(ctx, date, repository.DispatchFilter{})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to retrieve shifts for date %s: %w", date, err)
+	}
+
+	var targetShifts []*models.DispatchShift
+	cleanRouteQuery := strings.ToLower(strings.TrimSpace(routeQuery))
+	cleanRouteQuery = strings.TrimPrefix(cleanRouteQuery, "线路")
+	cleanRouteQuery = strings.TrimPrefix(cleanRouteQuery, "route")
+	cleanRouteQuery = strings.TrimPrefix(cleanRouteQuery, "ligne")
+	cleanRouteQuery = strings.TrimSpace(cleanRouteQuery)
+
+	for _, sh := range shifts {
+		match := strings.EqualFold(sh.RouteNo, cleanRouteQuery) ||
+			strings.EqualFold(sh.RouteNo, routeQuery) ||
+			strings.Contains(strings.ToLower(sh.RouteNo), cleanRouteQuery) ||
+			strings.Contains(strings.ToLower(sh.RouteName), cleanRouteQuery)
+		if match {
+			if shiftType == "" || strings.EqualFold(shiftType, "ALL") || strings.EqualFold(sh.ShiftType, shiftType) {
+				targetShifts = append(targetShifts, sh)
+			}
+		}
+	}
+
+	if len(targetShifts) == 0 {
+		if isFr {
+			return nil, "", fmt.Errorf("aucun quart trouvé pour la ligne '%s' au %s", routeQuery, date)
+		}
+		return nil, "", fmt.Errorf("no dispatch shifts found for route '%s' on %s", routeQuery, date)
+	}
+
+	shiftIDs := make([]string, len(targetShifts))
+	oldUnits := make([]string, 0)
+	for i, sh := range targetShifts {
+		shiftIDs[i] = sh.ID
+		if strings.TrimSpace(sh.UnitNumber) != "" {
+			oldUnits = append(oldUnits, fmt.Sprintf("%s: %s", sh.ShiftType, sh.UnitNumber))
+		}
+	}
+
+	routeNo := targetShifts[0].RouteNo
+	routeName := targetShifts[0].RouteName
+	oldUnitStr := strings.Join(oldUnits, "; ")
+	if oldUnitStr == "" {
+		if isFr {
+			oldUnitStr = "Aucun (Non assigné)"
+		} else {
+			oldUnitStr = "None (Unassigned)"
+		}
+	}
+
+	shiftTypeDisplay := "All Shifts (AM/PM)"
+	if isFr {
+		shiftTypeDisplay = "Tous les quarts (AM/PM)"
+	}
+	if shiftType != "" && !strings.EqualFold(shiftType, "ALL") {
+		shiftTypeDisplay = fmt.Sprintf("%s Shift", strings.ToUpper(shiftType))
+	}
+
+	actionID := fmt.Sprintf("ACT-%d", time.Now().UnixNano())
+	action := &models.PendingDispatchAction{
+		ID:            actionID,
+		ActionType:    "ASSIGN_VEHICLE",
+		Date:          date,
+		RouteNo:       routeNo,
+		RouteName:     routeName,
+		ShiftType:     shiftTypeDisplay,
+		ShiftIDs:      shiftIDs,
+		VehicleID:     vehicle.VehicleID,
+		UnitNumber:    vehicle.UnitNumber,
+		OldUnitNumber: oldUnitStr,
+		CreatedBy:     operatorName,
+		CreatedByRole: operatorRole,
+		CreatedAt:     time.Now().UTC(),
+	}
+
+	s.mu.Lock()
+	s.pendingActions[actionID] = action
+	s.mu.Unlock()
+
+	var summaryMsg string
+	if isFr {
+		summaryMsg = fmt.Sprintf(
+			"Affectation de véhicule prête. Veuillez confirmer :\n- **Ligne** : %s (%s)\n- **Date** : %s (%s)\n- **Véhicule assigné** : Unité %s (%s)\n- **Ancien véhicule** : %s\n\nVeuillez confirmer ou annuler ci-dessous.",
+			routeNo, routeName, date, shiftTypeDisplay, vehicle.UnitNumber, vehicle.UnitType, oldUnitStr,
+		)
+	} else if isZh {
+		summaryMsg = fmt.Sprintf(
+			"车辆调度指派已就绪，请确认：\n- **路线**：%s (%s)\n- **日期**：%s (%s)\n- **指派车辆**：Unit %s (%s)\n- **原车辆**：%s\n\n请点击下方按钮确认或取消。",
+			routeNo, routeName, date, shiftTypeDisplay, vehicle.UnitNumber, vehicle.UnitType, oldUnitStr,
+		)
+	} else {
+		summaryMsg = fmt.Sprintf(
+			"Vehicle dispatch assignment ready for execution. Please confirm:\n- **Route**: %s (%s)\n- **Date**: %s (%s)\n- **Assigned Vehicle**: Unit %s (%s)\n- **Previous Vehicle**: %s\n\nPlease click the button below to confirm or cancel.",
+			routeNo, routeName, date, shiftTypeDisplay, vehicle.UnitNumber, vehicle.UnitType, oldUnitStr,
+		)
+	}
+
+	return action, summaryMsg, nil
+}
+
 // PrepareDriverAssignment matches driver and route, then generates a pending confirmation action
 func (s *AIToolService) PrepareDriverAssignment(
 	ctx context.Context,
@@ -218,6 +516,133 @@ func (s *AIToolService) PrepareDriverAssignment(
 	return action, summaryMsg, nil
 }
 
+// PrepareRouteCrewAssignment matches driver and permanent BusRoute, then generates a pending confirmation action
+func (s *AIToolService) PrepareRouteCrewAssignment(
+	ctx context.Context,
+	routeQuery string,
+	driverQuery string,
+	operatorName string,
+	operatorRole string,
+	pagePermissions map[string]string,
+	lang string,
+) (*models.PendingDispatchAction, string, error) {
+	if !CanModifyRoutes(operatorRole, pagePermissions) {
+		return nil, "", fmt.Errorf("insufficient permissions: role '%s' cannot modify route assignments", operatorRole)
+	}
+
+	isFr := strings.EqualFold(lang, "fr")
+	isZh := strings.EqualFold(lang, "zh")
+
+	// 1. Search employee (driver)
+	matchedEmp, candidates, err := s.FindDriver(ctx, driverQuery)
+	if err != nil {
+		return nil, "", err
+	}
+	if matchedEmp == nil {
+		if len(candidates) > 1 {
+			names := make([]string, len(candidates))
+			for i, c := range candidates {
+				names[i] = fmt.Sprintf("%s (%s)", c.FullName, c.ID)
+			}
+			if isFr {
+				return nil, "", fmt.Errorf("plusieurs employés correspondent : %s. Veuillez préciser le nom ou le matricule exact", strings.Join(names, ", "))
+			}
+			return nil, "", fmt.Errorf("multiple matching employees found: %s. Please specify the exact name or employee ID", strings.Join(names, ", "))
+		}
+		if isFr {
+			return nil, "", fmt.Errorf("aucun chauffeur actif trouvé sous le nom '%s'", driverQuery)
+		}
+		return nil, "", fmt.Errorf("no active driver or employee found matching '%s'", driverQuery)
+	}
+
+	// 2. Search permanent route
+	routes, err := s.routeRepo.ListRoutes(ctx, repository.RouteFilter{})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to list routes: %w", err)
+	}
+
+	cleanRouteQuery := strings.ToLower(strings.TrimSpace(routeQuery))
+	cleanRouteQuery = strings.TrimPrefix(cleanRouteQuery, "线路")
+	cleanRouteQuery = strings.TrimPrefix(cleanRouteQuery, "route")
+	cleanRouteQuery = strings.TrimPrefix(cleanRouteQuery, "ligne")
+	cleanRouteQuery = strings.TrimSpace(cleanRouteQuery)
+
+	var matchedRoute *models.BusRoute
+	for _, rt := range routes {
+		if strings.EqualFold(rt.RouteNo, cleanRouteQuery) || strings.EqualFold(rt.RouteNo, routeQuery) {
+			matchedRoute = rt
+			break
+		}
+	}
+	if matchedRoute == nil {
+		for _, rt := range routes {
+			if strings.Contains(strings.ToLower(rt.RouteNo), cleanRouteQuery) ||
+				strings.Contains(strings.ToLower(rt.RouteName), cleanRouteQuery) {
+				matchedRoute = rt
+				break
+			}
+		}
+	}
+
+	if matchedRoute == nil {
+		if isFr {
+			return nil, "", fmt.Errorf("aucune ligne permanente trouvée pour '%s'", routeQuery)
+		}
+		return nil, "", fmt.Errorf("no permanent route found matching '%s'", routeQuery)
+	}
+
+	oldDriverStr := strings.TrimSpace(matchedRoute.DriverName)
+	if oldDriverStr == "" {
+		if isFr {
+			oldDriverStr = "Aucun (Non assigné)"
+		} else {
+			oldDriverStr = "None (Unassigned)"
+		}
+	}
+
+	actionID := fmt.Sprintf("ACT-%d", time.Now().UnixNano())
+	action := &models.PendingDispatchAction{
+		ID:            actionID,
+		ActionType:    "ASSIGN_ROUTE_CREW",
+		Date:          "PERMANENT",
+		RouteID:       matchedRoute.ID,
+		RouteNo:       matchedRoute.RouteNo,
+		RouteName:     matchedRoute.RouteName,
+		ShiftType:     "Permanent Route Assignment",
+		DriverID:      matchedEmp.ID,
+		DriverName:    matchedEmp.FullName,
+		DriverPhone:   matchedEmp.MobilePhone,
+		OldDriverName: oldDriverStr,
+		CreatedBy:     operatorName,
+		CreatedByRole: operatorRole,
+		CreatedAt:     time.Now().UTC(),
+	}
+
+	s.mu.Lock()
+	s.pendingActions[actionID] = action
+	s.mu.Unlock()
+
+	var summaryMsg string
+	if isFr {
+		summaryMsg = fmt.Sprintf(
+			"Affectation permanente de ligne prête. Veuillez confirmer :\n- **Type** : Affectation permanente (Routes)\n- **Ligne** : %s (%s)\n- **Chauffeur désigné** : %s (Matricule : %s)\n- **Ancien chauffeur** : %s\n\nVeuillez confirmer ou annuler ci-dessous.",
+			matchedRoute.RouteNo, matchedRoute.RouteName, matchedEmp.FullName, matchedEmp.ID, oldDriverStr,
+		)
+	} else if isZh {
+		summaryMsg = fmt.Sprintf(
+			"永久路线司机分配已就绪，请确认：\n- **操作范围**：永久路线分配（Route Assignment，非单日 Dispatch 班表）\n- **路线**：%s (%s)\n- **新分配司机**：%s (ID: %s)\n- **原默认司机**：%s\n\n请点击下方按钮确认或取消。",
+			matchedRoute.RouteNo, matchedRoute.RouteName, matchedEmp.FullName, matchedEmp.ID, oldDriverStr,
+		)
+	} else {
+		summaryMsg = fmt.Sprintf(
+			"Permanent route assignment ready for execution. Please confirm:\n- **Scope**: Permanent Route Assignment (not single-day Dispatch Sheet)\n- **Route**: %s (%s)\n- **Assigned Driver**: %s (ID: %s)\n- **Previous Default Driver**: %s\n\nPlease click the button below to confirm or cancel.",
+			matchedRoute.RouteNo, matchedRoute.RouteName, matchedEmp.FullName, matchedEmp.ID, oldDriverStr,
+		)
+	}
+
+	return action, summaryMsg, nil
+}
+
 // PrepareCreateDispatchSheet prepares a confirmation action to generate shifts for a date
 func (s *AIToolService) PrepareCreateDispatchSheet(
 	ctx context.Context,
@@ -303,7 +728,11 @@ func (s *AIToolService) ExecutePendingAction(ctx context.Context, actionID strin
 	if effectiveRole == "" {
 		effectiveRole = action.CreatedByRole
 	}
-	if !CanModifyDispatchShifts(effectiveRole, pagePermissions) {
+	if action.ActionType == "ASSIGN_ROUTE_CREW" {
+		if !CanModifyRoutes(effectiveRole, pagePermissions) {
+			return nil, fmt.Errorf("insufficient permissions: role '%s' cannot execute route assignment changes", effectiveRole)
+		}
+	} else if !CanModifyDispatchShifts(effectiveRole, pagePermissions) {
 		return nil, fmt.Errorf("insufficient permissions: role '%s' cannot execute dispatch shift changes", effectiveRole)
 	}
 
@@ -335,6 +764,59 @@ func (s *AIToolService) ExecutePendingAction(ctx context.Context, actionID strin
 			CreatedAt:    now.UTC().Format(time.RFC3339),
 		}
 		_, _ = s.dispatchRepo.AddChangeLog(ctx, changeLog)
+		return action, nil
+	}
+
+	// Execute permanent route crew assignment if action is ASSIGN_ROUTE_CREW
+	if action.ActionType == "ASSIGN_ROUTE_CREW" {
+		existingRoute, err := s.routeRepo.GetRouteByID(ctx, action.RouteID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load route %s: %w", action.RouteNo, err)
+		}
+		assignReq := &models.AssignRouteCrewRequest{
+			DriverID:       action.DriverID,
+			DriverName:     action.DriverName,
+			DriverPhone:    action.DriverPhone,
+			VehicleID:      existingRoute.VehicleID,
+			UnitNumber:     existingRoute.UnitNumber,
+			PlateNumber:    existingRoute.PlateNumber,
+			AttendantID:    existingRoute.AttendantID,
+			AttendantName:  existingRoute.AttendantName,
+			AttendantPhone: existingRoute.AttendantPhone,
+		}
+		if _, err := s.routeRepo.AssignCrew(ctx, action.RouteID, assignReq); err != nil {
+			return nil, fmt.Errorf("failed to assign crew on route %s: %w", action.RouteNo, err)
+		}
+		return action, nil
+	}
+
+	// Execute shift vehicle updates if action is ASSIGN_VEHICLE
+	if action.ActionType == "ASSIGN_VEHICLE" {
+		for _, shiftID := range action.ShiftIDs {
+			updateReq := &models.UpdateDispatchShiftRequest{
+				VehicleID:  &action.VehicleID,
+				UnitNumber: &action.UnitNumber,
+			}
+			_, err := s.dispatchRepo.UpdateShift(ctx, shiftID, updateReq)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update vehicle on shift %s: %w", shiftID, err)
+			}
+
+			changeLog := &models.DispatchChangeLog{
+				ID:           fmt.Sprintf("LOG-AI-%d", time.Now().UnixNano()),
+				DispatchDate: action.Date,
+				ShiftID:      shiftID,
+				RouteNo:      action.RouteNo,
+				ShiftType:    action.ShiftType,
+				Type:         "Assignment Updated",
+				Detail:       fmt.Sprintf("AI Dispatcher: Assigned vehicle Unit %s. Previous: %s", action.UnitNumber, action.OldUnitNumber),
+				Time:         nowTimeStr,
+				Timestamp:    now.UnixMilli(),
+				User:         fmt.Sprintf("%s (AI Copilot)", operatorName),
+				CreatedAt:    now.UTC().Format(time.RFC3339),
+			}
+			_, _ = s.dispatchRepo.AddChangeLog(ctx, changeLog)
+		}
 		return action, nil
 	}
 

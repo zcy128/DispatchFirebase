@@ -1,5 +1,7 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Employee, UserRole } from '../types/employee';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   USER_ROLES,
   ROLE_LABELS,
@@ -166,51 +168,45 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
   const closePermissionsModal = useCallback(() => setIsPermissionsModalOpen(false), []);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-6 text-slate-100">
+    <PageShell className="text-slate-100">
       {/* View Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">
-                Roles & Staff Allocations
-              </h1>
-              <p className="text-xs md:text-sm text-slate-400">
-                Manage system role-based access control (RBAC), view staff per role, and configure granular page permissions.
-              </p>
-            </div>
+      <PageHeader
+        title="Roles & Staff Allocations"
+        subtitle="Manage system role-based access control (RBAC), view staff per role, and configure granular page permissions."
+        icon={
+          <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <ShieldCheck className="w-4 h-4" aria-hidden="true" />
           </div>
-        </div>
-
-        <div className="flex items-center space-x-3 self-end md:self-auto">
-          {loading && (
-            <span className="text-xs text-slate-400 flex items-center space-x-1.5">
-              <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
-              <span>Loading staff...</span>
-            </span>
-          )}
-          {onRefresh && (
-            <button
-              onClick={onRefresh}
-              disabled={refreshing || loading}
-              className="flex items-center space-x-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold border border-slate-700 transition"
-              title="Refresh staff data"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${refreshing || loading ? 'animate-spin text-amber-400' : ''}`} />
-              <span>{refreshing || loading ? 'Syncing...' : 'Sync Data'}</span>
-            </button>
-          )}
-        </div>
-      </div>
+        }
+        actions={
+          <div className="flex items-center space-x-3">
+            {loading && (
+              <span role="status" className="text-xs text-slate-400 flex items-center space-x-1.5">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" aria-hidden="true" />
+                <span>Loading staff...</span>
+              </span>
+            )}
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={refreshing || loading}
+                className="flex items-center space-x-2 px-3 py-2 min-h-[36px] bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                title="Refresh staff data"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshing || loading ? 'animate-spin text-amber-400' : ''}`} aria-hidden="true" />
+                <span>{refreshing || loading ? 'Syncing...' : 'Sync Data'}</span>
+              </button>
+            )}
+          </div>
+        }
+      />
 
       {/* Top Metrics Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 flex items-center space-x-3">
           <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-            <Users className="w-5 h-5" />
+            <Users className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
             <div className="text-xl font-bold text-white">{totalEmployees}</div>
@@ -220,7 +216,7 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
 
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 flex items-center space-x-3">
           <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-            <Truck className="w-5 h-5" />
+            <Truck className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
             <div className="text-xl font-bold text-amber-400">{totalDriversAndHelpers}</div>
@@ -230,7 +226,7 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
 
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 flex items-center space-x-3">
           <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-            <Radio className="w-5 h-5" />
+            <Radio className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
             <div className="text-xl font-bold text-emerald-400">{totalOperations}</div>
@@ -240,7 +236,7 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
 
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 flex items-center space-x-3">
           <div className="w-10 h-10 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-            <Sliders className="w-5 h-5" />
+            <Sliders className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
             <div className="text-xl font-bold text-purple-400">{totalWithOverrides}</div>
@@ -250,14 +246,16 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
       </div>
 
       {/* Role Navigation Carousel / Cards */}
-      <div className="space-y-2">
+      <div role="group" aria-label="Filter by system role" className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
             System Roles (Custom Claims)
           </span>
           <button
+            type="button"
+            aria-pressed={selectedRole === 'ALL'}
             onClick={() => setSelectedRole('ALL')}
-            className={`text-xs font-semibold px-2.5 py-1 rounded-md transition ${
+            className={`text-xs font-semibold px-2.5 py-1 min-h-[28px] rounded-md transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
               selectedRole === 'ALL'
                 ? 'bg-amber-500 text-slate-950 font-bold'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -278,8 +276,9 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
               <button
                 key={r}
                 type="button"
+                aria-pressed={isSelected}
                 onClick={() => setSelectedRole(r)}
-                className={`p-3 rounded-xl border text-left transition-all duration-150 relative overflow-hidden group ${
+                className={`p-3 rounded-xl border text-left transition-all duration-150 relative overflow-hidden group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                   isSelected
                     ? `${theme.bgColor} ${theme.borderColor} ring-2 ring-amber-500/50 shadow-lg`
                     : 'bg-slate-900/70 border-slate-800 hover:bg-slate-800/80 hover:border-slate-700'
@@ -287,7 +286,7 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className={`w-7 h-7 rounded-lg ${theme.badgeBg} flex items-center justify-center ${theme.color}`}>
-                    <Icon className="w-4 h-4" />
+                    <Icon className="w-4 h-4" aria-hidden="true" />
                   </div>
                   <div className="flex items-center space-x-1.5">
                     {customizedRoles.has(r) && (
@@ -316,7 +315,7 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
         <div className={`p-4 md:p-5 rounded-xl border ${ROLE_THEMES[selectedRole].bgColor} ${ROLE_THEMES[selectedRole].borderColor} space-y-3 animate-in fade-in duration-200`}>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="flex items-center space-x-3">
-              <div className={`w-10 h-10 rounded-xl ${ROLE_THEMES[selectedRole].badgeBg} flex items-center justify-center ${ROLE_THEMES[selectedRole].color}`}>
+              <div aria-hidden="true" className={`w-10 h-10 rounded-xl ${ROLE_THEMES[selectedRole].badgeBg} flex items-center justify-center ${ROLE_THEMES[selectedRole].color}`}>
                 {React.createElement(ROLE_THEMES[selectedRole].icon, { className: 'w-5 h-5' })}
               </div>
               <div>
@@ -350,9 +349,9 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
                   setPermissionsModalRole(selectedRole);
                   setIsPermissionsModalOpen(true);
                 }}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition shadow-md shadow-amber-500/20"
+                className="flex items-center space-x-1.5 px-3 py-1.5 min-h-[32px] rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition shadow-md shadow-amber-500/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
               >
-                <Sliders className="w-3.5 h-3.5" />
+                <Sliders className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Edit Default Access</span>
               </button>
             </div>
@@ -493,22 +492,28 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
       )}
 
       {/* Staff Filter Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+      <search
+        aria-label="Search and filter staff allocations"
+        className="block bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3"
+      >
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           {/* Search Input */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
             <input
-              type="text"
+              type="search"
+              aria-label="Search staff by name, employee ID, username, or position"
               placeholder="Search staff by name, employee ID, username, or position..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs md:text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-14 py-2 text-base md:text-sm text-slate-100 placeholder-slate-400 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
             {searchTerm && (
               <button
+                type="button"
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 min-h-[28px] rounded text-slate-400 hover:text-white text-xs focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-amber-400"
               >
                 Clear
               </button>
@@ -521,7 +526,8 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
             <select
               value={selectedYard}
               onChange={(e) => setSelectedYard(e.target.value)}
-              className="bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-amber-500"
+              aria-label="Filter by assigned yard"
+              className="bg-slate-800 border border-slate-700 text-base sm:text-xs text-slate-200 rounded-lg px-2.5 py-2 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             >
               <option value="ALL">All Yards</option>
               {yards.map((y) => (
@@ -532,8 +538,9 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
             {/* Overrides Filter */}
             <select
               value={overrideFilter}
-              onChange={(e) => setOverrideFilter(e.target.value as any)}
-              className="bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-amber-500"
+              onChange={(e) => setOverrideFilter(e.target.value as 'ALL' | 'OVERRIDES' | 'STANDARD')}
+              aria-label="Filter by page permissions"
+              className="bg-slate-800 border border-slate-700 text-base sm:text-xs text-slate-200 rounded-lg px-2.5 py-2 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             >
               <option value="ALL">All Permissions</option>
               <option value="OVERRIDES">Custom Overrides Only</option>
@@ -541,20 +548,26 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
             </select>
 
             {/* View Mode Toggle */}
-            <div className="flex items-center bg-slate-800 border border-slate-700 rounded-lg p-0.5">
+            <div role="group" aria-label="View mode" className="flex items-center bg-slate-800 border border-slate-700 rounded-lg p-0.5">
               <button
+                type="button"
+                aria-pressed={viewMode === 'grid'}
                 onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
+                className={`p-1.5 min-w-[32px] min-h-[32px] inline-flex items-center justify-center rounded focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-amber-400 ${viewMode === 'grid' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
                 title="Grid View"
+                aria-label="Grid View"
               >
-                <LayoutGrid className="w-3.5 h-3.5" />
+                <LayoutGrid className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
               <button
+                type="button"
+                aria-pressed={viewMode === 'table'}
                 onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded ${viewMode === 'table' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
+                className={`p-1.5 min-w-[32px] min-h-[32px] inline-flex items-center justify-center rounded focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-amber-400 ${viewMode === 'table' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
                 title="List View"
+                aria-label="List View"
               >
-                <List className="w-3.5 h-3.5" />
+                <List className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -571,27 +584,28 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
 
           {(searchTerm || selectedYard !== 'ALL' || overrideFilter !== 'ALL' || selectedRole !== 'ALL') && (
             <button
+              type="button"
               onClick={() => {
                 setSearchTerm('');
                 setSelectedYard('ALL');
                 setOverrideFilter('ALL');
                 setSelectedRole('ALL');
               }}
-              className="text-amber-400 hover:text-amber-300 text-xs font-semibold"
+              className="text-amber-400 hover:text-amber-300 text-xs font-semibold px-2 py-1 min-h-[28px] rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
               Reset Filters
             </button>
           )}
         </div>
-      </div>
+      </search>
 
       {/* Staff Presentation Area */}
       {filteredEmployees.length === 0 ? (
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-12 text-center space-y-3">
           <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mx-auto text-slate-400">
-            <Users className="w-6 h-6" />
+            <Users className="w-6 h-6" aria-hidden="true" />
           </div>
-          <h3 className="text-sm font-bold text-white">No Staff Members Found</h3>
+          <h2 className="text-sm font-bold text-white">No Staff Members Found</h2>
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
             No employees match the active filters{selectedRole !== 'ALL' ? ` for role "${ROLE_LABELS[selectedRole]}"` : ''}. Try adjusting search criteria or clearing filters.
           </p>
@@ -614,16 +628,22 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
       ) : (
         /* TABLE / LIST VIEW */
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
-          <div className="overflow-x-auto">
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label="Staff role allocations table"
+            className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-400"
+          >
             <table className="w-full text-left text-xs text-slate-300">
+              <caption className="sr-only">Staff role allocations</caption>
               <thead className="bg-slate-800/80 text-[10px] uppercase font-bold text-slate-400 tracking-wider border-b border-slate-700/80">
                 <tr>
-                  <th className="py-3 px-4">Staff Member</th>
-                  <th className="py-3 px-4">Role & Custom Claims</th>
-                  <th className="py-3 px-4">Assigned Yard</th>
-                  <th className="py-3 px-4">Job Position</th>
-                  <th className="py-3 px-4">Page Permissions</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th scope="col" className="py-3 px-4">Staff Member</th>
+                  <th scope="col" className="py-3 px-4">Role & Custom Claims</th>
+                  <th scope="col" className="py-3 px-4">Assigned Yard</th>
+                  <th scope="col" className="py-3 px-4">Job Position</th>
+                  <th scope="col" className="py-3 px-4">Page Permissions</th>
+                  <th scope="col" className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
@@ -653,6 +673,6 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
           />
         </React.Suspense>
       )}
-    </div>
+    </PageShell>
   );
 };

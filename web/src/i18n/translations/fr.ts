@@ -143,7 +143,13 @@ export const fr: TranslationDictionary = {
     quickDemoAdmin: 'Démo Admin',
     quickDemoDispatcher: 'Démo Régulateur',
     quickDemoDriver: 'Démo Chauffeur',
-    secureNotice: 'Accès réservé au personnel autorisé. Toutes les connexions sont enregistrées et surveillées.'
+    secureNotice: 'Accès réservé au personnel autorisé. Toutes les connexions sont enregistrées et surveillées.',
+    showPassword: 'Afficher le mot de passe',
+    hidePassword: 'Masquer le mot de passe',
+    passwordVisibilityWarning: 'Attention : cela affichera votre mot de passe à l’écran.',
+    usernameRequired: 'Veuillez entrer votre nom d’utilisateur ou courriel.',
+    passwordRequired: 'Veuillez entrer votre mot de passe.',
+    languageSwitcher: 'Langue'
   },
   theme: {
     theme: 'Thème',

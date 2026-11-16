@@ -1,5 +1,7 @@
-import React, { Suspense, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, memo, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   CalendarOff,
   Plus,
@@ -124,6 +126,9 @@ export const TimeOffView = memo(function TimeOffView({
   const [filterSpecificDate, setFilterSpecificDate] = useState<string>(todayStr);
   const [filterRangeStart, setFilterRangeStart] = useState<string>(todayStr);
   const [filterRangeEnd, setFilterRangeEnd] = useState<string>(addDaysToDateString(todayStr, 7));
+  const statusFilterId = useId();
+  const leaveTypeFilterId = useId();
+  const dateFilterId = useId();
 
   // Planning horizon: Dispatch prepares coverage 30 days ahead; older than 30 days is archived
   const COVERAGE_HORIZON_DAYS = 30;
@@ -571,41 +576,40 @@ export const TimeOffView = memo(function TimeOffView({
     : 0;
 
   return (
-    <div className="space-y-6">
+    <PageShell>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-lg">
-        <div className="flex items-center space-x-3.5">
-          <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-            <CalendarOff className="w-6 h-6" />
+      <PageHeader
+        title="Time Off Requests"
+        subtitle="Submit employee leave requests, review HR approvals, and assign replacement dispatch coverage"
+        icon={
+          <div aria-hidden="true" className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+            <CalendarOff className="w-4 h-4" />
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-wide">Time Off Requests</h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Submit employee leave requests, review HR approvals, and assign replacement dispatch coverage
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center space-x-3">
+        }
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
             onClick={loadData}
             disabled={loading}
-            className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition border border-slate-700 disabled:opacity-50"
+            aria-label="Refresh live Firestore data"
+            className="min-w-[32px] min-h-[32px] inline-flex items-center justify-center p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition border border-slate-700 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             title="Refresh live Firestore data"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw aria-hidden="true" className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
             type="button"
             onClick={() => handleLoadBigQueryArchive(true)}
             disabled={loadingArchive}
-            className={`px-3 py-2 border font-semibold text-xs rounded-lg flex items-center space-x-1.5 transition shadow-sm ${
+            className={`min-h-[32px] px-3 py-2 border font-semibold text-xs rounded-lg flex items-center space-x-1.5 transition shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
               hasLoadedArchive
                 ? 'bg-sky-500/15 border-sky-500/40 text-sky-300 hover:bg-sky-500/25'
                 : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
             }`}
             title="Query BigQuery cold data lake: Records with endDate older than 30 days are transferred to BigQuery (default rolling 1 year)"
           >
-            <Database className={`w-3.5 h-3.5 ${loadingArchive ? 'animate-spin text-sky-400' : 'text-sky-400'}`} />
+            <Database aria-hidden="true" className={`w-3.5 h-3.5 ${loadingArchive ? 'animate-spin text-sky-400' : 'text-sky-400'}`} />
             <span>
               {loadingArchive
                 ? 'Loading BigQuery...'
@@ -615,57 +619,63 @@ export const TimeOffView = memo(function TimeOffView({
             </span>
           </button>
           <button
+            type="button"
             onClick={() => setViewMode(prev => prev === 'requests' ? 'monthly_report' : 'requests')}
-            className={`px-3 py-2 border font-semibold text-xs rounded-lg flex items-center space-x-1.5 transition shadow-sm ${
+            className={`min-h-[32px] px-3 py-2 border font-semibold text-xs rounded-lg flex items-center space-x-1.5 transition shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
               viewMode === 'monthly_report'
                 ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
                 : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
             }`}
             title="Toggle between leave requests board and monthly statistics report"
           >
-            <BarChart3 className="w-3.5 h-3.5" />
+            <BarChart3 aria-hidden="true" className="w-3.5 h-3.5" />
             <span>{viewMode === 'monthly_report' ? 'Leave Requests' : 'Monthly Report'}</span>
           </button>
           <button
+            type="button"
             onClick={() => handleOpenPdfExport(null)}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs rounded-lg flex items-center space-x-1.5 transition shadow-sm"
+            className="min-h-[32px] px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs rounded-lg flex items-center space-x-1.5 transition shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             title="Export or print official employee time off authorization form"
           >
-            <Printer className="w-3.5 h-3.5 text-amber-400" />
+            <Printer aria-hidden="true" className="w-3.5 h-3.5 text-amber-400" />
             <span>Export PDF Form</span>
           </button>
           {isDispatcher && (
             <button
+              type="button"
               onClick={() => setIsSettingsModalOpen(true)}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs rounded-lg flex items-center space-x-1.5 transition"
+              className="min-h-[32px] px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs rounded-lg flex items-center space-x-1.5 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               title="Configure notification delivery channels"
             >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
+              <SlidersHorizontal aria-hidden="true" className="w-3.5 h-3.5 text-amber-400" />
               <span>Settings</span>
             </button>
           )}
           <button
+            type="button"
             onClick={handleCreateNew}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm rounded-lg flex items-center space-x-2 transition shadow-lg shadow-amber-500/20"
+            className="min-h-[32px] px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm rounded-lg flex items-center space-x-2 transition shadow-lg shadow-amber-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
-            <Plus className="w-4 h-4" />
+            <Plus aria-hidden="true" className="w-4 h-4" />
             <span>Request Time Off</span>
           </button>
         </div>
-      </div>
+        }
+      />
 
       {/* View Switcher Tabs: Requests Board vs Monthly Summary Report */}
-      <div className="flex items-center space-x-2 border-b border-slate-800 pb-1">
+      <div role="group" aria-label="Time off views" className="flex items-center space-x-2 border-b border-slate-800 pb-1">
         <button
           type="button"
+          aria-pressed={viewMode === 'requests'}
           onClick={() => setViewMode('requests')}
-          className={`px-4 py-2 text-xs font-bold rounded-lg flex items-center space-x-2 transition ${
+          className={`min-h-[36px] px-4 py-2 text-xs font-bold rounded-lg flex items-center space-x-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             viewMode === 'requests'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <CalendarOff className="w-4 h-4" />
+          <CalendarOff aria-hidden="true" className="w-4 h-4" />
           <span>Leave Requests</span>
           <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-slate-950/40 text-current font-mono">
             {filteredRequests.length}
@@ -674,14 +684,15 @@ export const TimeOffView = memo(function TimeOffView({
 
         <button
           type="button"
+          aria-pressed={viewMode === 'monthly_report'}
           onClick={() => setViewMode('monthly_report')}
-          className={`px-4 py-2 text-xs font-bold rounded-lg flex items-center space-x-2 transition ${
+          className={`min-h-[36px] px-4 py-2 text-xs font-bold rounded-lg flex items-center space-x-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             viewMode === 'monthly_report'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
-          <BarChart3 className="w-4 h-4" />
+          <BarChart3 aria-hidden="true" className="w-4 h-4" />
           <span>Monthly Statistical Report</span>
         </button>
       </div>
@@ -704,15 +715,16 @@ export const TimeOffView = memo(function TimeOffView({
         {/* Pending HR Review */}
         <button
           type="button"
+          aria-pressed={categoryFilter === 'pending'}
           onClick={() => setCategoryFilter(prev => prev === 'pending' ? 'all' : 'pending')}
-          className={`p-4 rounded-xl flex items-center justify-between text-left transition-all cursor-pointer border ${
+          className={`p-4 rounded-xl flex items-center justify-between text-left transition-all cursor-pointer border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             categoryFilter === 'pending'
               ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/40 shadow-lg shadow-amber-500/10'
               : 'bg-slate-900 border-slate-800 hover:border-slate-700 hover:bg-slate-800/60'
           }`}
         >
           <div className="flex items-center space-x-3.5">
-            <div className={`w-11 h-11 rounded-lg flex items-center justify-center border transition ${
+            <div aria-hidden="true" className={`w-11 h-11 rounded-lg flex items-center justify-center border transition ${
               categoryFilter === 'pending'
                 ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
                 : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
@@ -735,15 +747,16 @@ export const TimeOffView = memo(function TimeOffView({
         {/* Needs Replacement Cover */}
         <button
           type="button"
+          aria-pressed={categoryFilter === 'needs_coverage'}
           onClick={() => setCategoryFilter(prev => prev === 'needs_coverage' ? 'all' : 'needs_coverage')}
-          className={`p-4 rounded-xl flex items-center justify-between text-left transition-all cursor-pointer border ${
+          className={`p-4 rounded-xl flex items-center justify-between text-left transition-all cursor-pointer border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             categoryFilter === 'needs_coverage'
               ? 'bg-blue-500/10 border-blue-500 ring-2 ring-blue-500/40 shadow-lg shadow-blue-500/10'
               : 'bg-slate-900 border-slate-800 hover:border-slate-700 hover:bg-slate-800/60'
           }`}
         >
           <div className="flex items-center space-x-3.5">
-            <div className={`w-11 h-11 rounded-lg flex items-center justify-center border transition ${
+            <div aria-hidden="true" className={`w-11 h-11 rounded-lg flex items-center justify-center border transition ${
               categoryFilter === 'needs_coverage'
                 ? 'bg-blue-500 text-white border-blue-400 font-bold'
                 : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
@@ -770,15 +783,16 @@ export const TimeOffView = memo(function TimeOffView({
         {/* Active Absences Today */}
         <button
           type="button"
+          aria-pressed={categoryFilter === 'active_today'}
           onClick={() => setCategoryFilter(prev => prev === 'active_today' ? 'all' : 'active_today')}
-          className={`p-4 rounded-xl flex items-center justify-between text-left transition-all cursor-pointer border ${
+          className={`p-4 rounded-xl flex items-center justify-between text-left transition-all cursor-pointer border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             categoryFilter === 'active_today'
               ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-500/10'
               : 'bg-slate-900 border-slate-800 hover:border-slate-700 hover:bg-slate-800/60'
           }`}
         >
           <div className="flex items-center space-x-3.5">
-            <div className={`w-11 h-11 rounded-lg flex items-center justify-center border transition ${
+            <div aria-hidden="true" className={`w-11 h-11 rounded-lg flex items-center justify-center border transition ${
               categoryFilter === 'active_today'
                 ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
                 : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
@@ -801,15 +815,16 @@ export const TimeOffView = memo(function TimeOffView({
         {/* All Requests */}
         <button
           type="button"
+          aria-pressed={categoryFilter === 'all'}
           onClick={() => setCategoryFilter('all')}
-          className={`p-4 rounded-xl flex items-center justify-between text-left transition-all cursor-pointer border ${
+          className={`p-4 rounded-xl flex items-center justify-between text-left transition-all cursor-pointer border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             categoryFilter === 'all'
               ? 'bg-purple-500/10 border-purple-500 ring-2 ring-purple-500/40 shadow-lg shadow-purple-500/10'
               : 'bg-slate-900 border-slate-800 hover:border-slate-700 hover:bg-slate-800/60'
           }`}
         >
           <div className="flex items-center space-x-3.5">
-            <div className={`w-11 h-11 rounded-lg flex items-center justify-center border transition ${
+            <div aria-hidden="true" className={`w-11 h-11 rounded-lg flex items-center justify-center border transition ${
               categoryFilter === 'all'
                 ? 'bg-purple-500 text-white border-purple-400 font-bold'
                 : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
@@ -842,13 +857,15 @@ export const TimeOffView = memo(function TimeOffView({
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
+      <search aria-label="Filter time off requests" className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center space-x-3 w-full md:w-auto">
           {/* Scope Pills */}
-          <div className="bg-slate-800 p-1 rounded-lg flex items-center text-xs font-semibold">
+          <div role="group" aria-label="Request scope" className="bg-slate-800 p-1 rounded-lg flex items-center text-xs font-semibold">
             <button
+              type="button"
+              aria-pressed={viewScope === 'all'}
               onClick={() => setViewScope('all')}
-              className={`px-3 py-1.5 rounded-md transition ${
+              className={`min-h-[28px] px-3 py-1.5 rounded-md transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 viewScope === 'all'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -857,8 +874,10 @@ export const TimeOffView = memo(function TimeOffView({
               All Requests
             </button>
             <button
+              type="button"
+              aria-pressed={viewScope === 'mine'}
               onClick={() => setViewScope('mine')}
-              className={`px-3 py-1.5 rounded-md transition ${
+              className={`min-h-[28px] px-3 py-1.5 rounded-md transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 viewScope === 'mine'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -869,13 +888,14 @@ export const TimeOffView = memo(function TimeOffView({
           </div>
 
           <div className="relative flex-1 md:w-72">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search aria-hidden="true" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
-              type="text"
+              type="search"
+              aria-label="Search staff, leave type, or notes"
               placeholder="Search staff, leave type, notes..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-base sm:text-xs text-slate-100 placeholder-slate-500 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             />
           </div>
         </div>
@@ -883,11 +903,12 @@ export const TimeOffView = memo(function TimeOffView({
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           {/* Status Filter */}
           <div className="flex items-center space-x-2 text-xs">
-            <span className="text-slate-400 font-medium">Status:</span>
+            <label htmlFor={statusFilterId} className="text-slate-400 font-medium">Status:</label>
             <select
+              id={statusFilterId}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-amber-500"
+              className="bg-slate-800 border border-slate-700 text-slate-200 text-base sm:text-xs rounded-lg px-2.5 py-1.5 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
               <option value="all">All Statuses</option>
               <option value="pending">Pending Review</option>
@@ -899,11 +920,12 @@ export const TimeOffView = memo(function TimeOffView({
 
           {/* Leave Type Filter */}
           <div className="flex items-center space-x-2 text-xs">
-            <span className="text-slate-400 font-medium">Type:</span>
+            <label htmlFor={leaveTypeFilterId} className="text-slate-400 font-medium">Type:</label>
             <select
+              id={leaveTypeFilterId}
               value={leaveTypeFilter}
               onChange={(e) => setLeaveTypeFilter(e.target.value)}
-              className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-amber-500"
+              className="bg-slate-800 border border-slate-700 text-slate-200 text-base sm:text-xs rounded-lg px-2.5 py-1.5 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
               <option value="all">All Leave Types</option>
               {Object.entries(LEAVE_TYPE_LABELS).map(([k, v]) => (
@@ -916,11 +938,12 @@ export const TimeOffView = memo(function TimeOffView({
 
           {/* Date Filter */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-slate-400 font-medium">Date:</span>
+            <label htmlFor={dateFilterId} className="text-slate-400 font-medium">Date:</label>
             <select
+              id={dateFilterId}
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value as any)}
-              className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-amber-500"
+              className="bg-slate-800 border border-slate-700 text-slate-200 text-base sm:text-xs rounded-lg px-2.5 py-1.5 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
               <option value="upcoming">Upcoming Only (Live Storage)</option>
               <option value="recent">Recent (Last 30 Days &amp; Upcoming)</option>
@@ -935,9 +958,10 @@ export const TimeOffView = memo(function TimeOffView({
               <div className="flex items-center space-x-1.5">
                 <input
                   type="date"
+                  aria-label="Filter by specific date"
                   value={filterSpecificDate}
                   onChange={(e) => setFilterSpecificDate(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500"
+                  className="bg-slate-800 border border-slate-700 text-slate-200 text-base sm:text-xs rounded-lg px-2 py-1 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                 />
               </div>
             )}
@@ -946,19 +970,21 @@ export const TimeOffView = memo(function TimeOffView({
               <div className="flex items-center space-x-1.5">
                 <input
                   type="date"
+                  aria-label="Filter start date"
                   value={filterRangeStart}
                   onChange={(e) => setFilterRangeStart(e.target.value)}
                   placeholder="From"
-                  className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500"
+                  className="bg-slate-800 border border-slate-700 text-slate-200 text-base sm:text-xs rounded-lg px-2 py-1 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                 />
-                <span className="text-slate-500">→</span>
+                <span aria-hidden="true" className="text-slate-500">→</span>
                 <input
                   type="date"
+                  aria-label="Filter end date"
                   value={filterRangeEnd}
                   min={filterRangeStart}
                   onChange={(e) => setFilterRangeEnd(e.target.value)}
                   placeholder="To"
-                  className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500"
+                  className="bg-slate-800 border border-slate-700 text-slate-200 text-base sm:text-xs rounded-lg px-2 py-1 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                 />
               </div>
             )}
@@ -966,31 +992,34 @@ export const TimeOffView = memo(function TimeOffView({
             {dateFilter !== 'upcoming' && (
               <button
                 type="button"
+                aria-label="Reset date filter to upcoming only"
                 onClick={() => setDateFilter('upcoming')}
-                className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition"
+                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                 title="Reset to Upcoming Only"
               >
-                <X className="w-3.5 h-3.5" />
+                <X aria-hidden="true" className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
         </div>
-      </div>
+      </search>
 
       {/* Main Data Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
         {/* BigQuery Archive Toast / Notice */}
         {archiveNotice && (
-          <div className="px-6 py-2 bg-sky-500/10 border-b border-sky-500/20 text-xs text-sky-300 flex items-center justify-between">
+          <div role="status" className="px-6 py-2 bg-sky-500/10 border-b border-sky-500/20 text-xs text-sky-300 flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <Database className="w-3.5 h-3.5 text-sky-400" />
+              <Database aria-hidden="true" className="w-3.5 h-3.5 text-sky-400" />
               <span>{archiveNotice}</span>
             </div>
             <button
+              type="button"
+              aria-label="Dismiss archive notice"
               onClick={() => setArchiveNotice(null)}
-              className="text-sky-400 hover:text-white transition"
+              className="min-w-[24px] min-h-[24px] inline-flex items-center justify-center text-sky-400 hover:text-white rounded transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
-              <X className="w-3.5 h-3.5" />
+              <X aria-hidden="true" className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
@@ -1014,7 +1043,7 @@ export const TimeOffView = memo(function TimeOffView({
                 <button
                   type="button"
                   onClick={() => setIncludeAdvanceInCoverage(!includeAdvanceInCoverage)}
-                  className="ml-2 text-[11px] px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 transition"
+                  className="min-h-[24px] ml-2 text-[11px] px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                 >
                   {includeAdvanceInCoverage
                     ? `Hide advance leaves (${advanceBookingCount})`
@@ -1023,13 +1052,14 @@ export const TimeOffView = memo(function TimeOffView({
               )}
             </div>
             <button
+              type="button"
               onClick={() => {
                 setCategoryFilter('all');
                 setIncludeAdvanceInCoverage(false);
               }}
-              className="text-slate-400 hover:text-white flex items-center space-x-1 text-xs px-2 py-1 rounded hover:bg-slate-700/60 transition"
+              className="min-h-[24px] text-slate-400 hover:text-white flex items-center space-x-1 text-xs px-2 py-1 rounded hover:bg-slate-700/60 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
-              <X className="w-3.5 h-3.5" />
+              <X aria-hidden="true" className="w-3.5 h-3.5" />
               <span>Clear Filter</span>
             </button>
           </div>
@@ -1037,40 +1067,43 @@ export const TimeOffView = memo(function TimeOffView({
 
         {loading ? (
           <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center space-y-3">
-            <RefreshCw className="w-6 h-6 animate-spin text-amber-500" />
+            <RefreshCw aria-hidden="true" className="w-6 h-6 animate-spin text-amber-500" />
             <p className="text-sm">Loading time off requests...</p>
           </div>
         ) : error ? (
-          <div className="p-8 text-center text-rose-400 flex flex-col items-center justify-center space-y-2">
-            <AlertCircle className="w-6 h-6" />
+          <div role="alert" className="p-8 text-center text-rose-400 flex flex-col items-center justify-center space-y-2">
+            <AlertCircle aria-hidden="true" className="w-6 h-6" />
             <p className="text-sm font-medium">{error}</p>
           </div>
         ) : filteredRequests.length === 0 ? (
           <div className="p-12 text-center text-slate-500 space-y-3">
-            <CalendarOff className="w-8 h-8 mx-auto text-slate-600" />
+            <CalendarOff aria-hidden="true" className="w-8 h-8 mx-auto text-slate-600" />
             <p className="text-sm">No time off requests match your filter criteria.</p>
             {categoryFilter !== 'all' ? (
               <button
+                type="button"
                 onClick={() => {
                   setCategoryFilter('all');
                   setIncludeAdvanceInCoverage(false);
                 }}
-                className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 text-xs rounded-lg transition"
+                className="min-h-[28px] px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 text-xs rounded-lg transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               >
                 Reset Category Filter
               </button>
             ) : (
               <button
+                type="button"
                 onClick={handleCreateNew}
-                className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 text-xs rounded-lg transition"
+                className="min-h-[28px] px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 text-xs rounded-lg transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               >
                 + Submit First Request
               </button>
             )}
           </div>
         ) : (
-          <div ref={timeOffTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+          <div ref={timeOffTableContainerRef} tabIndex={0} role="region" aria-label="Time off requests table" className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400">
             <table className="w-full text-left text-sm text-slate-200 border-collapse table-fixed min-w-[1420px]">
+              <caption className="sr-only">Employee time off requests</caption>
               <colgroup>
                 <col style={{ width: '200px' }} />
                 <col style={{ width: '150px' }} />
@@ -1082,13 +1115,13 @@ export const TimeOffView = memo(function TimeOffView({
               </colgroup>
               <thead className="sticky top-0 z-10 bg-slate-900 text-xs uppercase tracking-wider text-slate-400 border-b border-slate-800 shadow-xs">
                 <tr>
-                  <th className="py-3 px-4 font-semibold">Employee</th>
-                  <th className="py-3 px-4 font-semibold">Leave Type</th>
-                  <th className="py-3 px-4 font-semibold">Dates & Shifts</th>
-                  <th className="py-3 px-4 font-semibold">Comments</th>
-                  <th className="py-3 px-4 font-semibold">Status</th>
-                  <th className="py-3 px-4 font-semibold">Review History</th>
-                  <th className="py-3 px-4 font-semibold text-right">Actions</th>
+                  <th scope="col" className="py-3 px-4 font-semibold">Employee</th>
+                  <th scope="col" className="py-3 px-4 font-semibold">Leave Type</th>
+                  <th scope="col" className="py-3 px-4 font-semibold">Dates & Shifts</th>
+                  <th scope="col" className="py-3 px-4 font-semibold">Comments</th>
+                  <th scope="col" className="py-3 px-4 font-semibold">Status</th>
+                  <th scope="col" className="py-3 px-4 font-semibold">Review History</th>
+                  <th scope="col" className="py-3 px-4 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -1335,11 +1368,13 @@ export const TimeOffView = memo(function TimeOffView({
                           {/* HR Decision Action: only HR can approve/reject */}
                           {isHR && r.status === 'pending' && (
                             <button
+                              type="button"
+                              aria-label={`Review time off request for ${r.employeeName}`}
                               onClick={() => handleOpenReview(r)}
-                              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg flex items-center space-x-1 transition shadow-sm"
+                              className="min-h-[28px] px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg flex items-center space-x-1 transition shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title="Review and approve/reject"
                             >
-                              <ShieldCheck className="w-3.5 h-3.5" />
+                              <ShieldCheck aria-hidden="true" className="w-3.5 h-3.5" />
                               <span>Review</span>
                             </button>
                           )}
@@ -1354,7 +1389,7 @@ export const TimeOffView = memo(function TimeOffView({
                               <div className="flex items-center space-x-1.5 justify-end">
                                 {hasCover ? (
                                   <div className="flex items-center space-x-1.5 bg-blue-500/10 border border-blue-500/25 px-2.5 py-1 rounded-lg text-xs">
-                                    <UserCheck className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                                    <UserCheck aria-hidden="true" className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                                     <span
                                       className="font-medium text-blue-200 max-w-[130px] truncate"
                                       title={`Assigned Cover: ${coverPersonnelName}`}
@@ -1363,30 +1398,35 @@ export const TimeOffView = memo(function TimeOffView({
                                     </span>
                                     <button
                                       type="button"
+                                      aria-label={`Remove substitute for ${r.employeeName}`}
                                       onClick={() => handleDeleteCoverage(r, coverAssignment)}
                                       disabled={deletingCoverageId === r.id}
-                                      className="p-0.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 rounded transition ml-1 cursor-pointer disabled:opacity-50"
+                                      className="min-w-[24px] min-h-[24px] inline-flex items-center justify-center p-0.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 rounded transition ml-1 cursor-pointer disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                       title="Remove substitute driver (allows re-assigning)"
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <Trash2 aria-hidden="true" className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
                                 ) : (
                                   <>
                                     <button
+                                      type="button"
+                                      aria-label={`Assign cover for ${r.employeeName}`}
                                       onClick={() => handleAssignCoverage(r)}
-                                      className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs rounded-lg flex items-center space-x-1 transition shadow-sm cursor-pointer"
+                                      className="min-h-[28px] px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs rounded-lg flex items-center space-x-1 transition shadow-sm cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                       title="Manually assign replacement driver / attendant / vehicle"
                                     >
-                                      <UserCheck className="w-3.5 h-3.5" />
+                                      <UserCheck aria-hidden="true" className="w-3.5 h-3.5" />
                                       <span>Assign Cover</span>
                                     </button>
                                     <button
+                                      type="button"
+                                      aria-label={`Post route opening for ${r.employeeName}`}
                                       onClick={() => handlePostRouteOpening(r)}
-                                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs rounded-lg flex items-center space-x-1 transition shadow-sm cursor-pointer"
+                                      className="min-h-[28px] px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs rounded-lg flex items-center space-x-1 transition shadow-sm cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                       title="Publish Route Opening & Coverage Bulletin to Bidding Board"
                                     >
-                                      <Radio className="w-3.5 h-3.5" />
+                                      <Radio aria-hidden="true" className="w-3.5 h-3.5" />
                                       <span>Post Opening</span>
                                     </button>
                                   </>
@@ -1398,42 +1438,50 @@ export const TimeOffView = memo(function TimeOffView({
                           {/* Edit pending request */}
                           {!isArchived && r.status === 'pending' && (r.requestedByUserId === currentUser?.uid || isHR) && (
                             <button
+                              type="button"
+                              aria-label={`Edit time off request for ${r.employeeName}`}
                               onClick={() => handleEdit(r)}
-                              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded transition"
+                              className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title="Edit Request"
                             >
-                              <Edit className="w-4 h-4" />
+                              <Edit aria-hidden="true" className="w-4 h-4" />
                             </button>
                           )}
 
                           {/* Cancel pending request */}
                           {canCancel && (
                             <button
+                              type="button"
+                              aria-label={`Cancel time off request for ${r.employeeName}`}
                               onClick={() => handleCancelRequest(r.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded transition"
+                              className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title="Cancel Request"
                             >
-                              <XCircle className="w-4 h-4" />
+                              <XCircle aria-hidden="true" className="w-4 h-4" />
                             </button>
                           )}
 
                           {/* Export / Print PDF Form */}
                           <button
+                            type="button"
+                            aria-label={`Export PDF form for ${r.employeeName}`}
                             onClick={() => handleOpenPdfExport(r)}
-                            className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded transition"
+                            className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                             title="Export / Print Official PDF Form"
                           >
-                            <Printer className="w-4 h-4" />
+                            <Printer aria-hidden="true" className="w-4 h-4" />
                           </button>
 
                           {/* Delete (Admin only) */}
                           {currentUser?.role === 'admin' && (
                             <button
+                              type="button"
+                              aria-label={`Delete time off request for ${r.employeeName}`}
                               onClick={() => handleDelete(r.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-800 rounded transition"
+                              className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-800 rounded transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title="Delete permanently"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 aria-hidden="true" className="w-4 h-4" />
                             </button>
                           )}
                         </div>
@@ -1584,6 +1632,6 @@ export const TimeOffView = memo(function TimeOffView({
           />
         </Suspense>
       )}
-    </div>
+    </PageShell>
   );
 });

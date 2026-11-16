@@ -12,6 +12,8 @@ import { VehicleInspectionService } from '../services/vehicleInspectionService';
 import { DispatchService } from '../services/dispatchService';
 import { useCompliance } from '../contexts/ComplianceContext';
 import { useI18n } from '../contexts/I18nContext';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   formatStickerMonth,
   getDaysRemainingUntilEndOfMonth,
@@ -56,6 +58,59 @@ import {
   FileCheck,
   UserCheck
 } from 'lucide-react';
+
+interface InspectionModalDialogProps {
+  open: boolean;
+  onClose: () => void;
+  ariaLabelledBy: string;
+  children: React.ReactNode;
+}
+
+const InspectionModalDialog: React.FC<InspectionModalDialogProps> = ({
+  open,
+  onClose,
+  ariaLabelledBy,
+  children,
+}) => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    if (open && !el.open) {
+      el.showModal();
+    } else if (!open && el.open) {
+      el.close();
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={ariaLabelledBy}
+      onClose={onClose}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="m-0 max-w-none max-h-none w-screen h-screen bg-slate-950/80 backdrop-blur-sm p-4 flex items-center justify-center overflow-y-auto overscroll-contain backdrop:overscroll-contain"
+    >
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </dialog>
+  );
+};
 
 interface VehicleInspectionsViewProps {
   vehicles: Vehicle[];
@@ -536,82 +591,82 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
     : 0;
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <PageShell>
       {/* Header & Jurisdiction Flag */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <div className="flex items-center space-x-2 text-amber-400 text-xs font-semibold uppercase tracking-wider mb-1">
-            <ShieldCheck className="w-4 h-4" />
-            <span>
-              {isFrench
-                ? 'Conformité légale de sécurité mécanique et d\'entretien préventif'
-                : 'Statutory Mechanical Safety & Preventive Maintenance Compliance'}
+      <PageHeader
+        title={
+          activeModule === 'sticker_inspections'
+            ? isFrench
+              ? 'Gestion des inspections mécaniques semestrielles des véhicules'
+              : 'Vehicle Semi-Annual Mechanical Inspection Management'
+            : isFrench
+            ? 'Entretien préventif (EP), vidanges d\'huile et Fiche d\'entretien'
+            : 'Preventive Maintenance (PM), Oil Changes & Fiche d\'Entretien'
+        }
+        subtitle={
+          activeModule === 'sticker_inspections'
+            ? isFrench
+              ? 'Validité jusqu\'au dernier jour du mois de la vignette, pièces jointes numériques (PDF et images) et archivage BigQuery après 2 ans.'
+              : 'Sticker month validity ending on the last day of the month, digital inspection attachments (PDF & images), and 2-year BigQuery historical cold archival.'
+            : isOntario
+            ? isFrench
+              ? 'Plan d\'entretien écrit CVOR du MTO de l\'Ontario (« Écrire ce que l\'on fait, faire ce que l\'on écrit ») avec suivi strict des intervalles (km et jours) et des 5 éléments d\'audit.'
+              : 'Ontario MTO CVOR Written Maintenance Plan ("Write What You Do, Do What You Write") with strict mileage & day interval monitoring and 5 mandatory audit elements.'
+            : isFrench
+            ? 'Entretien mécanique obligatoire SAAQ du Québec (Fiche d\'entretien signée) intercalé aux 3 à 6 mois et 5 éléments obligatoires du dossier.'
+            : 'Québec SAAQ Mandatory Mechanical Maintenance (Entretien mécanique obligatoire / Signed Fiche d\'entretien) interleaved every 3 to 6 months + 5 statutory record elements.'
+        }
+        icon={<ShieldCheck className="w-5 h-5 text-amber-400" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <span className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 border ${
+              isOntario
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                : 'bg-sky-500/10 text-sky-400 border-sky-500/30'
+            }`}>
+              <span>{isOntario ? '🇨🇦' : '⚜️'}</span>
+              <span>
+                {isOntario
+                  ? isFrench
+                    ? 'Ontario : DriveON PMVI et Plan CVOR'
+                    : 'Ontario: DriveON PMVI & CVOR WMP'
+                  : 'Québec: SAAQ VMP & Fiche d\'Entretien'}
+              </span>
             </span>
+
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              aria-label={isFrench ? 'Actualiser les données' : 'Refresh Inspection & PM Data'}
+              className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+              title={isFrench ? 'Actualiser les données' : 'Refresh Inspection & PM Data'}
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+            </button>
           </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">
-            {activeModule === 'sticker_inspections'
-              ? isFrench
-                ? 'Gestion des inspections mécaniques semestrielles des véhicules'
-                : 'Vehicle Semi-Annual Mechanical Inspection Management'
-              : isFrench
-              ? 'Entretien préventif (EP), vidanges d\'huile et Fiche d\'entretien'
-              : 'Preventive Maintenance (PM), Oil Changes & Fiche d\'Entretien'}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            {activeModule === 'sticker_inspections'
-              ? isFrench
-                ? 'Validité jusqu\'au dernier jour du mois de la vignette, pièces jointes numériques (PDF et images) et archivage BigQuery après 2 ans.'
-                : 'Sticker month validity ending on the last day of the month, digital inspection attachments (PDF & images), and 2-year BigQuery historical cold archival.'
-              : isOntario
-              ? isFrench
-                ? 'Plan d\'entretien écrit CVOR du MTO de l\'Ontario (« Écrire ce que l\'on fait, faire ce que l\'on écrit ») avec suivi strict des intervalles (km et jours) et des 5 éléments d\'audit.'
-                : 'Ontario MTO CVOR Written Maintenance Plan ("Write What You Do, Do What You Write") with strict mileage & day interval monitoring and 5 mandatory audit elements.'
-              : isFrench
-              ? 'Entretien mécanique obligatoire SAAQ du Québec (Fiche d\'entretien signée) intercalé aux 3 à 6 mois et 5 éléments obligatoires du dossier.'
-              : 'Québec SAAQ Mandatory Mechanical Maintenance (Entretien mécanique obligatoire / Signed Fiche d\'entretien) interleaved every 3 to 6 months + 5 statutory record elements.'}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 self-start sm:self-center">
-          <span className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 border ${
-            isOntario
-              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-              : 'bg-sky-500/10 text-sky-400 border-sky-500/30'
-          }`}>
-            <span>{isOntario ? '🇨🇦' : '⚜️'}</span>
-            <span>
-              {isOntario
-                ? isFrench
-                  ? 'Ontario : DriveON PMVI et Plan CVOR'
-                  : 'Ontario: DriveON PMVI & CVOR WMP'
-                : 'Québec: SAAQ VMP & Fiche d\'Entretien'}
-            </span>
-          </span>
-
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700"
-            title={isFrench ? 'Actualiser les données' : 'Refresh Inspection & PM Data'}
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Top Module Switcher Tabs: Semi-Annual Sticker Inspection vs Preventive Maintenance & Oil Changes */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/90 p-2 rounded-2xl border border-slate-800">
-        <div className="flex items-center gap-2">
+        <div
+          role="tablist"
+          aria-label={isFrench ? 'Modules d\'inspection et d\'entretien' : 'Inspection and maintenance modules'}
+          className="flex items-center gap-2"
+        >
           <button
             type="button"
+            role="tab"
+            aria-selected={activeModule === 'sticker_inspections'}
             onClick={() => setActiveModule('sticker_inspections')}
-            className={`px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center space-x-2 ${
+            className={`px-4 py-2.5 min-h-[36px] rounded-xl text-xs font-black transition flex items-center space-x-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
               activeModule === 'sticker_inspections'
                 ? 'bg-amber-500 text-slate-950 shadow-md'
                 : 'text-slate-300 hover:text-white hover:bg-slate-800'
             }`}
           >
-            <ShieldCheck className="w-4 h-4" />
+            <ShieldCheck className="w-4 h-4" aria-hidden="true" />
             <span>
               {isFrench
                 ? '1. Inspections semestrielles (Vignette 6 mois PMVI / VMP)'
@@ -626,14 +681,16 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
 
           <button
             type="button"
+            role="tab"
+            aria-selected={activeModule === 'preventive_maintenance'}
             onClick={() => setActiveModule('preventive_maintenance')}
-            className={`px-4 py-2.5 rounded-xl text-xs font-black transition flex items-center space-x-2 ${
+            className={`px-4 py-2.5 min-h-[36px] rounded-xl text-xs font-black transition flex items-center space-x-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
               activeModule === 'preventive_maintenance'
                 ? 'bg-amber-500 text-slate-950 shadow-md'
                 : 'text-slate-300 hover:text-white hover:bg-slate-800'
             }`}
           >
-            <Wrench className="w-4 h-4" />
+            <Wrench className="w-4 h-4" aria-hidden="true" />
             <span>
               {isFrench
                 ? `2. Entretien préventif et vidanges d'huile (${isOntario ? 'Plan écrit ON A/B/C' : 'Fiche d\'entretien QC'})`
@@ -657,9 +714,9 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
           <button
             type="button"
             onClick={() => setIsPrintPlanModalOpen(true)}
-            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold flex items-center space-x-1.5 transition"
+            className="px-3 py-2 min-h-[36px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold flex items-center space-x-1.5 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
-            <Printer className="w-3.5 h-3.5 text-amber-400" />
+            <Printer className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
             <span>
               {isFrench
                 ? 'Imprimer le plan écrit et dossier d\'audit'
@@ -671,9 +728,9 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
             <button
               type="button"
               onClick={() => handleOpenInspForm()}
-              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center space-x-1.5 transition shadow"
+              className="px-3.5 py-2 min-h-[36px] rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center space-x-1.5 transition shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4" aria-hidden="true" />
               <span>
                 {isFrench ? 'Planifier / Enregistrer inspection' : 'Schedule / Log Inspection'}
               </span>
@@ -687,9 +744,9 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 setEditingPMRecord(null);
                 setIsPMFormOpen(true);
               }}
-              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center space-x-1.5 transition shadow"
+              className="px-3.5 py-2 min-h-[36px] rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center space-x-1.5 transition shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4" aria-hidden="true" />
               <span>{isFrench ? 'Nouvel entretien / Huile' : 'Log PM / Oil Change'}</span>
             </button>
           )}
@@ -698,14 +755,15 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
 
       {/* BigQuery Sync Notification Toast */}
       {bqSyncSuccessMsg && (
-        <div className="p-3.5 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-semibold flex items-center justify-between animate-in fade-in duration-150">
+        <div role="status" className="p-3.5 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-semibold flex items-center justify-between animate-in fade-in duration-150">
           <div className="flex items-center space-x-2">
-            <Database className="w-4 h-4 text-sky-400 shrink-0" />
+            <Database className="w-4 h-4 text-sky-400 shrink-0" aria-hidden="true" />
             <span>{bqSyncSuccessMsg}</span>
           </div>
           <button
+            type="button"
             onClick={() => setBqSyncSuccessMsg(null)}
-            className="text-sky-400 hover:text-white text-xs font-bold"
+            className="px-2 py-1 min-h-[24px] text-sky-400 hover:text-white text-xs font-bold rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
           >
             {isFrench ? 'Fermer' : 'Dismiss'}
           </button>
@@ -759,9 +817,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
 
           {/* Summary KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <div
+            <button
+              type="button"
+              aria-pressed={activeFilterTab === 'due_30'}
               onClick={() => setActiveFilterTab('due_30')}
-              className={`p-5 rounded-2xl border cursor-pointer transition ${
+              className={`w-full text-left p-5 rounded-2xl border cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 activeFilterTab === 'due_30'
                   ? 'bg-amber-950/20 border-amber-500/40 ring-1 ring-amber-500/20'
                   : 'bg-slate-900 border-slate-800 hover:border-slate-700'
@@ -771,7 +831,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
                   {isFrench ? 'Échéance dans 30 jours' : 'Due in 30 Days'}
                 </span>
-                <Clock className="w-4 h-4 text-amber-400" />
+                <Clock className="w-4 h-4 text-amber-400" aria-hidden="true" />
               </div>
               <div className="mt-2 flex items-baseline space-x-2">
                 <span className="text-3xl font-black text-amber-400">{stats.dueWithin30Days}</span>
@@ -779,11 +839,13 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                   {isFrench ? 'Vue par défaut • Planifier' : 'Default view • Schedule now'}
                 </span>
               </div>
-            </div>
+            </button>
 
-            <div
+            <button
+              type="button"
+              aria-pressed={activeFilterTab === 'overdue'}
               onClick={() => setActiveFilterTab('overdue')}
-              className={`p-5 rounded-2xl border cursor-pointer transition ${
+              className={`w-full text-left p-5 rounded-2xl border cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
                 activeFilterTab === 'overdue'
                   ? 'bg-rose-950/20 border-rose-500/40 ring-1 ring-rose-500/20'
                   : 'bg-slate-900 border-slate-800 hover:border-slate-700'
@@ -793,7 +855,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 <span className="text-xs font-semibold text-rose-400 uppercase tracking-wider">
                   {isFrench ? 'En retard (Hors service)' : 'Overdue (Out of Service)'}
                 </span>
-                <AlertTriangle className="w-4 h-4 text-rose-400" />
+                <AlertTriangle className="w-4 h-4 text-rose-400" aria-hidden="true" />
               </div>
               <div className="mt-2 flex items-baseline space-x-2">
                 <span className="text-3xl font-black text-rose-400">{stats.overdue}</span>
@@ -801,11 +863,13 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                   {isFrench ? 'Immobiliser immédiatement' : 'Ground immediately'}
                 </span>
               </div>
-            </div>
+            </button>
 
-            <div
+            <button
+              type="button"
+              aria-pressed={activeFilterTab === 'all'}
               onClick={() => setActiveFilterTab('all')}
-              className={`p-5 rounded-2xl border cursor-pointer transition ${
+              className={`w-full text-left p-5 rounded-2xl border cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 ${
                 activeFilterTab === 'all'
                   ? 'bg-emerald-950/20 border-emerald-500/40 ring-1 ring-emerald-500/20'
                   : 'bg-slate-900 border-slate-800 hover:border-slate-700'
@@ -815,7 +879,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">
                   {isFrench ? 'Flotte active conforme' : 'Active Fleet'}
                 </span>
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" aria-hidden="true" />
               </div>
               <div className="mt-2 flex items-baseline space-x-2">
                 <span className="text-3xl font-black text-emerald-400">{stats.compliant}</span>
@@ -823,11 +887,13 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                   {isFrench ? `Total ${stats.totalInspected} autobus` : `Total ${stats.totalInspected} buses`}
                 </span>
               </div>
-            </div>
+            </button>
 
-            <div
+            <button
+              type="button"
+              aria-pressed={activeFilterTab === 'bigquery'}
               onClick={() => setActiveFilterTab('bigquery')}
-              className={`p-5 rounded-2xl border cursor-pointer transition ${
+              className={`w-full text-left p-5 rounded-2xl border cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
                 activeFilterTab === 'bigquery'
                   ? 'bg-sky-950/20 border-sky-500/40 ring-1 ring-sky-500/20'
                   : 'bg-slate-900 border-slate-800 hover:border-slate-700'
@@ -837,7 +903,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 <span className="text-xs font-semibold text-sky-400 uppercase tracking-wider">
                   {isFrench ? 'Archives BigQuery (>2 ans)' : 'BigQuery Archive (>2 Years)'}
                 </span>
-                <Database className="w-4 h-4 text-sky-400" />
+                <Database className="w-4 h-4 text-sky-400" aria-hidden="true" />
               </div>
               <div className="mt-2 flex items-baseline space-x-2">
                 <span className="text-3xl font-black text-sky-400">{stats.archivedToBigQuery}</span>
@@ -845,15 +911,25 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                   {isFrench ? 'Entrepôt de données froides' : 'Cold data warehouse'}
                 </span>
               </div>
-            </div>
+            </button>
           </div>
 
           {/* Filter Tabs & Search Controls */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            <div className="flex items-center space-x-1.5 p-1 bg-slate-900 border border-slate-800 rounded-xl overflow-x-auto">
+          <search
+            aria-label={isFrench ? 'Filtrer les inspections semestrielles' : 'Filter semi-annual inspections'}
+            className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3"
+          >
+            <div
+              role="tablist"
+              aria-label={isFrench ? 'Filtres de statut d\'inspection' : 'Inspection status filters'}
+              className="flex items-center space-x-1.5 p-1 bg-slate-900 border border-slate-800 rounded-xl overflow-x-auto"
+            >
               <button
+                type="button"
+                role="tab"
+                aria-selected={activeFilterTab === 'due_30'}
                 onClick={() => setActiveFilterTab('due_30')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 ${
+                className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                   activeFilterTab === 'due_30'
                     ? 'bg-amber-500 text-slate-950 shadow'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -866,8 +942,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </button>
 
               <button
+                type="button"
+                role="tab"
+                aria-selected={activeFilterTab === 'overdue'}
                 onClick={() => setActiveFilterTab('overdue')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 ${
+                className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
                   activeFilterTab === 'overdue'
                     ? 'bg-rose-500 text-white shadow'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -880,8 +959,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </button>
 
               <button
+                type="button"
+                role="tab"
+                aria-selected={activeFilterTab === 'all'}
                 onClick={() => setActiveFilterTab('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 ${
                   activeFilterTab === 'all'
                     ? 'bg-slate-700 text-white shadow'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -891,14 +973,17 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </button>
 
               <button
+                type="button"
+                role="tab"
+                aria-selected={activeFilterTab === 'bigquery'}
                 onClick={() => setActiveFilterTab('bigquery')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 ${
+                className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
                   activeFilterTab === 'bigquery'
                     ? 'bg-sky-600 text-white shadow'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
               >
-                <Database className="w-3.5 h-3.5" />
+                <Database className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>{isFrench ? 'Archives BigQuery (>2 ans)' : 'BigQuery Archive (>2 Yrs)'}</span>
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-950/40 text-white font-mono">
                   {stats.archivedToBigQuery}
@@ -911,7 +996,8 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 <select
                   value={yardFilter}
                   onChange={(e) => setYardFilter(e.target.value)}
-                  className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                  aria-label={isFrench ? 'Filtrer par dépôt' : 'Filter by yard or depot'}
+                  className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-base sm:text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
                 >
                   <option value="ALL">{isFrench ? 'Tous les dépôts' : 'All Yards / Depots'}</option>
                   {yardsList.map((y) => (
@@ -923,9 +1009,10 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </div>
 
               <div className="relative flex-1 sm:w-64">
-                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
                 <input
-                  type="text"
+                  type="search"
+                  aria-label={isFrench ? 'Rechercher des inspections' : 'Search semi-annual inspections'}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder={
@@ -933,27 +1020,27 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                       ? 'Rechercher Unité #, Plaque, NIV, Doc #...'
                       : 'Search Unit #, Plate, VIN, Doc #...'
                   }
-                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-base sm:text-xs text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none"
                 />
               </div>
 
               <button
                 type="button"
                 onClick={handleBatchArchiveToBigQuery}
-                className="px-3 py-2 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-xs font-bold flex items-center space-x-1.5 transition whitespace-nowrap"
+                className="px-3 py-2 min-h-[36px] rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-xs font-bold flex items-center space-x-1.5 transition whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
                 title={
                   isFrench
                     ? 'Migrer automatiquement les dossiers de plus de 2 ans vers BigQuery'
                     : 'Automatically migrate records older than 2 years to BigQuery cold storage'
                 }
               >
-                <Archive className="w-3.5 h-3.5" />
+                <Archive className="w-3.5 h-3.5" aria-hidden="true" />
                 <span className="hidden sm:inline">
                   {isFrench ? 'Archiver >2A vers BigQuery' : 'Archive >2Y to BigQuery'}
                 </span>
               </button>
             </div>
-          </div>
+          </search>
 
           {/* Main Sticker Inspections Table */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
@@ -990,25 +1077,34 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </div>
             </div>
 
-            <div ref={inspectionTableRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)]">
+            <div
+              ref={inspectionTableRef}
+              tabIndex={0}
+              role="region"
+              aria-label={isFrench ? 'Tableau des inspections semestrielles' : 'Semi-annual mechanical inspections table'}
+              className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-500"
+            >
               <table className="w-full text-left text-xs">
+                <caption className="sr-only">
+                  {isFrench ? 'Dossiers d\'inspection mécanique semestrielle des véhicules' : 'Vehicle semi-annual mechanical inspection records'}
+                </caption>
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 uppercase font-semibold">
-                    <th className="py-3.5 px-4">{isFrench ? 'Unité / Plaque' : 'Vehicle Unit / Plate'}</th>
-                    <th className="py-3.5 px-4">{isFrench ? 'Date réelle d\'inspection' : 'Actual Inspection Date'}</th>
-                    <th className="py-3.5 px-4">{isFrench ? 'Mois de vignette et expiration' : 'Sticker Month & Legal Expiry'}</th>
-                    <th className="py-3.5 px-4">{isFrench ? 'Jours restants' : 'Days Left'}</th>
-                    <th className="py-3.5 px-4">{isFrench ? 'Certificat et vignette #' : 'Doc & Sticker #'}</th>
-                    <th className="py-3.5 px-4">{isFrench ? 'Pièces jointes (PDF / Images)' : 'Attachments (PDF / Images)'}</th>
-                    <th className="py-3.5 px-4">{isFrench ? '3 obligations d\'archivage' : '3 Statutory Records'}</th>
-                    <th className="py-3.5 px-4 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
+                    <th scope="col" className="py-3.5 px-4">{isFrench ? 'Unité / Plaque' : 'Vehicle Unit / Plate'}</th>
+                    <th scope="col" className="py-3.5 px-4">{isFrench ? 'Date réelle d\'inspection' : 'Actual Inspection Date'}</th>
+                    <th scope="col" className="py-3.5 px-4">{isFrench ? 'Mois de vignette et expiration' : 'Sticker Month & Legal Expiry'}</th>
+                    <th scope="col" className="py-3.5 px-4">{isFrench ? 'Jours restants' : 'Days Left'}</th>
+                    <th scope="col" className="py-3.5 px-4">{isFrench ? 'Certificat et vignette #' : 'Doc & Sticker #'}</th>
+                    <th scope="col" className="py-3.5 px-4">{isFrench ? 'Pièces jointes (PDF / Images)' : 'Attachments (PDF / Images)'}</th>
+                    <th scope="col" className="py-3.5 px-4">{isFrench ? '3 obligations d\'archivage' : '3 Statutory Records'}</th>
+                    <th scope="col" className="py-3.5 px-4 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   {filteredInspections.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-12 text-center text-slate-500">
-                        <ShieldCheck className="w-8 h-8 mx-auto opacity-30 mb-2" />
+                        <ShieldCheck className="w-8 h-8 mx-auto opacity-30 mb-2" aria-hidden="true" />
                         <div>
                           {isFrench
                             ? 'Aucun véhicule ne correspond au filtre sélectionné.'
@@ -1134,9 +1230,14 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleOpenAttachments(r)}
-                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold flex items-center space-x-1.5 border border-slate-700 transition"
+                                aria-label={
+                                  isFrench
+                                    ? `Gérer ${atts.length} pièces jointes pour Unité #${r.unitNumber}`
+                                    : `Manage ${atts.length} attachments for Unit #${r.unitNumber}`
+                                }
+                                className="px-2.5 py-1 min-h-[28px] rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold flex items-center space-x-1.5 border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               >
-                                <Paperclip className="w-3.5 h-3.5 text-amber-400" />
+                                <Paperclip className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
                                 <span>
                                   {atts.length} {isFrench ? 'Fichiers' : 'Files'}
                                 </span>
@@ -1144,13 +1245,13 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
 
                               {pdfCount > 0 && (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/15 text-rose-300 flex items-center space-x-0.5" title={`${pdfCount} PDF document(s)`}>
-                                  <FileText className="w-3 h-3" />
+                                  <FileText className="w-3 h-3" aria-hidden="true" />
                                   <span>{pdfCount}</span>
                                 </span>
                               )}
                               {imgCount > 0 && (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/15 text-sky-300 flex items-center space-x-0.5" title={`${imgCount} Photo(s)`}>
-                                  <ImageIcon className="w-3 h-3" />
+                                  <ImageIcon className="w-3 h-3" aria-hidden="true" />
                                   <span>{imgCount}</span>
                                 </span>
                               )}
@@ -1208,8 +1309,18 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                             <div className="flex items-center justify-end space-x-2">
                               <button
                                 type="button"
+                                aria-pressed={r.inspectionStatus === 'in_inspection'}
                                 onClick={() => handleToggleInInspectionToday(r)}
-                                className={`px-2 py-1 rounded text-[10px] font-bold transition border flex items-center space-x-1 ${
+                                aria-label={
+                                  r.inspectionStatus === 'in_inspection'
+                                    ? isFrench
+                                      ? `Terminer l'inspection pour Unité #${r.unitNumber}`
+                                      : `Complete inspection for Unit #${r.unitNumber}`
+                                    : isFrench
+                                      ? `Mettre Unité #${r.unitNumber} en inspection`
+                                      : `Mark Unit #${r.unitNumber} in inspection`
+                                }
+                                className={`px-2 py-1 min-h-[28px] rounded text-[10px] font-bold transition border flex items-center space-x-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                                   r.inspectionStatus === 'in_inspection'
                                     ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
                                     : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
@@ -1224,7 +1335,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                                       : 'Mark as in inspection today (remove from dispatch shifts)'
                                 }
                               >
-                                <Wrench className="w-3 h-3" />
+                                <Wrench className="w-3 h-3" aria-hidden="true" />
                                 <span>
                                   {r.inspectionStatus === 'in_inspection'
                                     ? isFrench
@@ -1239,10 +1350,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleOpenInspForm(r)}
-                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                                aria-label={isFrench ? `Modifier l'inspection de l'Unité #${r.unitNumber}` : `Edit inspection for Unit #${r.unitNumber}`}
+                                className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                 title={isFrench ? 'Modifier / Planifier l\'inspection' : 'Edit / Schedule inspection'}
                               >
-                                <Edit3 className="w-3.5 h-3.5" />
+                                <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
                               </button>
 
                               {r.isArchivedToBigQuery ? (
@@ -1250,21 +1362,22 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                                   className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30 text-[10px] font-mono font-bold flex items-center space-x-1"
                                   title={`Archived to BigQuery dataset: ${r.bigQueryDataset || 'fleet_compliance'}`}
                                 >
-                                  <Database className="w-3 h-3" />
+                                  <Database className="w-3 h-3" aria-hidden="true" />
                                   <span>BigQuery</span>
                                 </span>
                               ) : isOver2Years ? (
                                 <button
                                   type="button"
                                   onClick={() => handleSyncToBigQuery(r.id)}
-                                  className="px-2 py-1 rounded bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 text-[10px] font-bold transition flex items-center space-x-1"
+                                  aria-label={isFrench ? `Synchroniser l'Unité #${r.unitNumber} vers BigQuery` : `Sync Unit #${r.unitNumber} to BigQuery`}
+                                  className="px-2 py-1 min-h-[28px] rounded bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 text-[10px] font-bold transition flex items-center space-x-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
                                   title={
                                     isFrench
                                       ? 'Migrer le dossier (>2 ans) vers BigQuery'
                                       : 'Migrate record (>2 years old) to BigQuery'
                                   }
                                 >
-                                  <Database className="w-3 h-3" />
+                                  <Database className="w-3 h-3" aria-hidden="true" />
                                   <span>Sync BQ</span>
                                 </button>
                               ) : (
@@ -1276,10 +1389,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleOpenAttachments(r)}
-                                className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition"
+                                aria-label={isFrench ? `Ajouter pièce jointe pour Unité #${r.unitNumber}` : `Add attachment for Unit #${r.unitNumber}`}
+                                className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                 title={isFrench ? 'Gérer les pièces jointes' : 'Manage attachments'}
                               >
-                                <Plus className="w-3.5 h-3.5" />
+                                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                               </button>
                             </div>
                           </td>
@@ -1485,9 +1599,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
 
           {/* PM KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <div
+            <button
+              type="button"
+              aria-pressed={pmFilterTab === 'due_soon'}
               onClick={() => setPmFilterTab('due_soon')}
-              className={`p-5 rounded-2xl border cursor-pointer transition ${
+              className={`w-full text-left p-5 rounded-2xl border cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 pmFilterTab === 'due_soon'
                   ? 'bg-amber-950/20 border-amber-500/40 ring-1 ring-amber-500/20'
                   : 'bg-slate-900 border-slate-800 hover:border-slate-700'
@@ -1497,7 +1613,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
                   {isFrench ? 'EP à venir (≤30j ou ≤1 000 km)' : 'PM Due Soon (≤30d or ≤1,000 km)'}
                 </span>
-                <Clock className="w-4 h-4 text-amber-400" />
+                <Clock className="w-4 h-4 text-amber-400" aria-hidden="true" />
               </div>
               <div className="mt-2 flex items-baseline space-x-2">
                 <span className="text-3xl font-black text-amber-400">{pmStats.dueSoonCount}</span>
@@ -1505,11 +1621,13 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                   {isFrench ? 'Planifier vidange / graissage' : 'Schedule oil / lube'}
                 </span>
               </div>
-            </div>
+            </button>
 
-            <div
+            <button
+              type="button"
+              aria-pressed={pmFilterTab === 'violation'}
               onClick={() => setPmFilterTab('violation')}
-              className={`p-5 rounded-2xl border cursor-pointer transition ${
+              className={`w-full text-left p-5 rounded-2xl border cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
                 pmFilterTab === 'violation'
                   ? 'bg-rose-950/20 border-rose-500/40 ring-1 ring-rose-500/20'
                   : 'bg-slate-900 border-slate-800 hover:border-slate-700'
@@ -1519,7 +1637,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 <span className="text-xs font-semibold text-rose-400 uppercase tracking-wider">
                   {isFrench ? 'En retard / Infraction au plan' : 'Overdue / Plan Violation'}
                 </span>
-                <AlertTriangle className="w-4 h-4 text-rose-400" />
+                <AlertTriangle className="w-4 h-4 text-rose-400" aria-hidden="true" />
               </div>
               <div className="mt-2 flex items-baseline space-x-2">
                 <span className="text-3xl font-black text-rose-400">{pmStats.overdueOrViolationCount}</span>
@@ -1527,11 +1645,13 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                   {isFrench ? 'Dépassement km ou jours' : 'Exceeded km or days'}
                 </span>
               </div>
-            </div>
+            </button>
 
-            <div
+            <button
+              type="button"
+              aria-pressed={pmFilterTab === 'all'}
               onClick={() => setPmFilterTab('all')}
-              className={`p-5 rounded-2xl border cursor-pointer transition ${
+              className={`w-full text-left p-5 rounded-2xl border cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 ${
                 pmFilterTab === 'all'
                   ? 'bg-emerald-950/20 border-emerald-500/40 ring-1 ring-emerald-500/20'
                   : 'bg-slate-900 border-slate-800 hover:border-slate-700'
@@ -1541,7 +1661,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">
                   {isFrench ? 'EP conforme à temps' : 'On-Time Compliant PM'}
                 </span>
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" aria-hidden="true" />
               </div>
               <div className="mt-2 flex items-baseline space-x-2">
                 <span className="text-3xl font-black text-emerald-400">{pmStats.compliantCount}</span>
@@ -1549,11 +1669,13 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                   {isFrench ? `Total ${pmStats.totalRecords} dossiers` : `Total ${pmStats.totalRecords} logs`}
                 </span>
               </div>
-            </div>
+            </button>
 
-            <div
+            <button
+              type="button"
+              aria-pressed={pmFilterTab === 'bigquery'}
               onClick={() => setPmFilterTab('bigquery')}
-              className={`p-5 rounded-2xl border cursor-pointer transition ${
+              className={`w-full text-left p-5 rounded-2xl border cursor-pointer transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
                 pmFilterTab === 'bigquery'
                   ? 'bg-sky-950/20 border-sky-500/40 ring-1 ring-sky-500/20'
                   : 'bg-slate-900 border-slate-800 hover:border-slate-700'
@@ -1563,7 +1685,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 <span className="text-xs font-semibold text-sky-400 uppercase tracking-wider">
                   {isFrench ? 'Archives EP BigQuery (>2 ans)' : 'BigQuery PM Archive (>2 Yrs)'}
                 </span>
-                <Database className="w-4 h-4 text-sky-400" />
+                <Database className="w-4 h-4 text-sky-400" aria-hidden="true" />
               </div>
               <div className="mt-2 flex items-baseline space-x-2">
                 <span className="text-3xl font-black text-sky-400">{pmStats.archivedToBigQueryCount}</span>
@@ -1571,15 +1693,25 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                   {isFrench ? 'Archives légales 2 ans+' : '2-Year statutory archive'}
                 </span>
               </div>
-            </div>
+            </button>
           </div>
 
           {/* PM Filter Pills & Search */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            <div className="flex items-center space-x-1.5 p-1 bg-slate-900 border border-slate-800 rounded-xl overflow-x-auto">
+          <search
+            aria-label={isFrench ? 'Filtrer les dossiers d\'entretien préventif' : 'Filter preventive maintenance logs'}
+            className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3"
+          >
+            <div
+              role="tablist"
+              aria-label={isFrench ? 'Filtres d\'entretien préventif' : 'Preventive maintenance status filters'}
+              className="flex items-center space-x-1.5 p-1 bg-slate-900 border border-slate-800 rounded-xl overflow-x-auto"
+            >
               <button
+                type="button"
+                role="tab"
+                aria-selected={pmFilterTab === 'due_soon'}
                 onClick={() => setPmFilterTab('due_soon')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 ${
+                className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                   pmFilterTab === 'due_soon'
                     ? 'bg-amber-500 text-slate-950 shadow'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -1592,8 +1724,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </button>
 
               <button
+                type="button"
+                role="tab"
+                aria-selected={pmFilterTab === 'violation'}
                 onClick={() => setPmFilterTab('violation')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 ${
+                className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
                   pmFilterTab === 'violation'
                     ? 'bg-rose-500 text-white shadow'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -1606,8 +1741,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </button>
 
               <button
+                type="button"
+                role="tab"
+                aria-selected={pmFilterTab === 'all'}
                 onClick={() => setPmFilterTab('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 ${
                   pmFilterTab === 'all'
                     ? 'bg-slate-700 text-white shadow'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -1619,14 +1757,17 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </button>
 
               <button
+                type="button"
+                role="tab"
+                aria-selected={pmFilterTab === 'bigquery'}
                 onClick={() => setPmFilterTab('bigquery')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 ${
+                className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
                   pmFilterTab === 'bigquery'
                     ? 'bg-sky-600 text-white shadow'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
               >
-                <Database className="w-3.5 h-3.5" />
+                <Database className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>{isFrench ? 'Archives BigQuery (>2 ans)' : 'BigQuery Archive (>2 Yrs)'}</span>
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-950/40 text-white font-mono">
                   {pmStats.archivedToBigQueryCount}
@@ -1638,7 +1779,8 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               <select
                 value={yardFilter}
                 onChange={(e) => setYardFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                aria-label={isFrench ? 'Filtrer par dépôt' : 'Filter by yard or depot'}
+                className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-base sm:text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
               >
                 <option value="ALL">{isFrench ? 'Tous les dépôts' : 'All Yards / Depots'}</option>
                 {yardsList.map((y) => (
@@ -1649,9 +1791,10 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </select>
 
               <div className="relative flex-1 sm:w-64">
-                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
                 <input
-                  type="text"
+                  type="search"
+                  aria-label={isFrench ? 'Rechercher dans l\'entretien préventif' : 'Search preventive maintenance logs'}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder={
@@ -1659,11 +1802,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                       ? 'Rechercher Unité #, NIV, BT #, Mécanicien...'
                       : 'Search Unit #, VIN, WO #, Mechanic...'
                   }
-                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none"
+                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-base sm:text-xs text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none"
                 />
               </div>
             </div>
-          </div>
+          </search>
 
           {/* 5-Element Preventive Maintenance Table */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
@@ -1685,26 +1828,35 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </div>
             </div>
 
-            <div ref={pmTableRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)]">
+            <div
+              ref={pmTableRef}
+              tabIndex={0}
+              role="region"
+              aria-label={isFrench ? 'Tableau d\'entretien préventif' : 'Preventive maintenance records table'}
+              className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-500"
+            >
               <table className="w-full text-left text-xs">
+                <caption className="sr-only">
+                  {isFrench ? 'Registre d\'entretien préventif et vidanges d\'huile' : 'Preventive maintenance and oil change register'}
+                </caption>
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 uppercase font-semibold">
-                    <th className="py-3.5 px-4">
+                    <th scope="col" className="py-3.5 px-4">
                       {isFrench ? '1. Véhicule (Unité / Plaque / NIV)' : '1. Vehicle ID (Unit / Plate / VIN)'}
                     </th>
-                    <th className="py-3.5 px-4">
+                    <th scope="col" className="py-3.5 px-4">
                       {isFrench ? '2. Date d\'entretien et catégorie' : '2. Service Date & Tier'}
                     </th>
-                    <th className="py-3.5 px-4">
+                    <th scope="col" className="py-3.5 px-4">
                       {isFrench ? '3. Odomètre (km), heures et audit d\'intervalle' : '3. Odometer (km), Hours & Interval Audit'}
                     </th>
-                    <th className="py-3.5 px-4">
+                    <th scope="col" className="py-3.5 px-4">
                       {isFrench ? '4. Travaux détaillés (Huile / Graissage / Freins) et facture' : '4. Itemized Oil / Lube / Brake & Invoice'}
                     </th>
-                    <th className="py-3.5 px-4">
+                    <th scope="col" className="py-3.5 px-4">
                       {isFrench ? '5. Signature mécanicien / atelier' : '5. Mechanic / Shop Sign-Off'}
                     </th>
-                    <th className="py-3.5 px-4 text-right">
+                    <th scope="col" className="py-3.5 px-4 text-right">
                       {isFrench ? 'Fichiers et actions' : 'Files & Actions'}
                     </th>
                   </tr>
@@ -1713,7 +1865,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                   {filteredPMRecords.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-12 text-center text-slate-500">
-                        <Wrench className="w-8 h-8 mx-auto opacity-30 mb-2" />
+                        <Wrench className="w-8 h-8 mx-auto opacity-30 mb-2" aria-hidden="true" />
                         <div>
                           {isFrench
                             ? 'Aucun dossier d\'entretien préventif ne correspond au filtre.'
@@ -1781,7 +1933,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                           {/* 3. Odometer & Interval Audit */}
                           <td className="py-3.5 px-4 font-mono">
                             <div className="text-white font-bold flex items-center gap-1.5">
-                              <Gauge className="w-3.5 h-3.5 text-amber-400" />
+                              <Gauge className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
                               <span>{r.odometerAtServiceKm.toLocaleString()} km</span>
                               <span className="text-[10px] text-slate-400 font-normal">({r.engineHoursAtService} hrs)</span>
                             </div>
@@ -1795,7 +1947,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                             <div className="mt-1">
                               {!r.wasPerformedOnTime || isCurrentlyOverdue ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold">
-                                  <AlertTriangle className="w-3 h-3" />
+                                  <AlertTriangle className="w-3 h-3" aria-hidden="true" />
                                   {!r.wasPerformedOnTime
                                     ? isFrench
                                       ? 'INFRACTION : PLAN ÉCRIT DÉPASSÉ'
@@ -1806,7 +1958,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 text-[10px] font-bold">
-                                  <CheckCircle2 className="w-3 h-3" />
+                                  <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
                                   {isFrench
                                     ? `${kmRemaining.toLocaleString()} km ou ${daysRemaining}j restants`
                                     : `${kmRemaining.toLocaleString()} km or ${daysRemaining}d remaining`}
@@ -1860,7 +2012,7 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                           {/* 5. Performer Identity & Signature */}
                           <td className="py-3.5 px-4">
                             <div className="font-bold text-white flex items-center gap-1">
-                              <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
                               <span>{r.mechanicName}</span>
                             </div>
                             <div className="text-[10px] text-slate-400">{r.shopName}</div>
@@ -1875,14 +2027,19 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleOpenAttachments(r)}
-                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold flex items-center space-x-1 border border-slate-700 transition"
+                                aria-label={
+                                  isFrench
+                                    ? `Gérer ${atts.length} pièces jointes EP pour Unité #${r.unitNumber}`
+                                    : `Manage ${atts.length} PM attachments for Unit #${r.unitNumber}`
+                                }
+                                className="px-2.5 py-1 min-h-[28px] rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold flex items-center space-x-1 border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                 title={
                                   isFrench
                                     ? 'Téléverser ou voir le bon de travail, la facture de pièces et la Fiche d\'entretien'
                                     : 'Upload or view Work Order, Parts Invoice & Fiche d\'entretien PDF/Images'
                                 }
                               >
-                                <Paperclip className="w-3.5 h-3.5 text-amber-400" />
+                                <Paperclip className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
                                 <span>{atts.length}</span>
                               </button>
 
@@ -1892,10 +2049,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                                   setEditingPMRecord(r);
                                   setIsPMFormOpen(true);
                                 }}
-                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+                                aria-label={isFrench ? `Modifier le dossier EP pour Unité #${r.unitNumber}` : `Edit PM record for Unit #${r.unitNumber}`}
+                                className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                 title={isFrench ? 'Modifier le dossier EP' : 'Edit PM Record'}
                               >
-                                <Edit3 className="w-3.5 h-3.5" />
+                                <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
                               </button>
 
                               {r.isArchivedToBigQuery ? (
@@ -1903,14 +2061,15 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                                   className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30 text-[10px] font-mono font-bold flex items-center space-x-1"
                                   title={isFrench ? 'Archivé dans BigQuery (>2 ans)' : 'Archived to BigQuery (>2 Years)'}
                                 >
-                                  <Database className="w-3 h-3" />
+                                  <Database className="w-3 h-3" aria-hidden="true" />
                                   <span>BQ</span>
                                 </span>
                               ) : isOver2Years ? (
                                 <button
                                   type="button"
                                   onClick={() => handleSyncPMToBigQuery(r.id)}
-                                  className="px-2 py-1 rounded bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 text-[10px] font-bold transition"
+                                  aria-label={isFrench ? `Synchroniser le dossier EP de l'Unité #${r.unitNumber} vers BigQuery` : `Sync PM record for Unit #${r.unitNumber} to BigQuery`}
+                                  className="px-2 py-1 min-h-[28px] rounded bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white border border-sky-500/30 text-[10px] font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
                                 >
                                   Sync BQ
                                 </button>
@@ -1980,13 +2139,15 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
       )}
 
       {/* Schedule / Log Periodic Sticker Inspection Modal */}
-      {isInspFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+      <InspectionModalDialog
+        open={isInspFormOpen}
+        onClose={() => setIsInspFormOpen(false)}
+        ariaLabelledBy="insp-form-modal-title"
+      >
             <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
               <div>
-                <h3 className="text-base font-bold text-white flex items-center space-x-2">
-                  <ShieldCheck className="w-5 h-5 text-amber-400" />
+                <h3 id="insp-form-modal-title" className="text-base font-bold text-white flex items-center space-x-2">
+                  <ShieldCheck className="w-5 h-5 text-amber-400" aria-hidden="true" />
                   <span>
                     {isFrench
                       ? 'Planifier / Enregistrer une inspection périodique'
@@ -2001,8 +2162,10 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
               </div>
               <button
                 type="button"
+                autoFocus
                 onClick={() => setIsInspFormOpen(false)}
-                className="text-slate-400 hover:text-white text-sm font-bold px-2 py-1 rounded-lg hover:bg-slate-800"
+                aria-label={isFrench ? 'Fermer le formulaire' : 'Close inspection modal'}
+                className="text-slate-400 hover:text-white text-sm font-bold p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               >
                 ✕
               </button>
@@ -2011,14 +2174,15 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
             <form onSubmit={handleSaveInspectionForm} className="p-5 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor="insp-form-unit" className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                     {isFrench ? 'Véhicule (Unité)' : 'Vehicle (Unit)'}
                   </label>
                   <select
+                    id="insp-form-unit"
                     value={inspFormUnit}
                     onChange={(e) => setInspFormUnit(e.target.value)}
                     required
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-amber-500"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-amber-500"
                   >
                     {vehicles.map((v) => (
                       <option key={v.id} value={v.unitNumber}>
@@ -2029,13 +2193,14 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor="insp-form-status" className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                     {isFrench ? 'Statut de l\'inspection' : 'Inspection Status'}
                   </label>
                   <select
+                    id="insp-form-status"
                     value={inspFormStatus}
                     onChange={(e) => setInspFormStatus(e.target.value as any)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-amber-500"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-amber-500"
                   >
                     <option value="in_inspection">
                       {isFrench ? 'En inspection (Exclu de la répartition)' : 'In Inspection (Excluded from Dispatch)'}
@@ -2052,10 +2217,11 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor="insp-form-date" className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                     {isFrench ? 'Date d\'inspection / Prévue' : 'Inspection / Scheduled Date'}
                   </label>
                   <input
+                    id="insp-form-date"
                     type="date"
                     value={inspFormScheduledDate || inspFormDate}
                     onChange={(e) => {
@@ -2063,56 +2229,60 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                       setInspFormDate(e.target.value);
                     }}
                     required
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-amber-500"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-amber-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor="insp-form-sticker-month" className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                     {isFrench ? 'Mois d\'expiration de la vignette' : 'Sticker Expiry Month'}
                   </label>
                   <input
+                    id="insp-form-sticker-month"
                     type="month"
                     value={inspFormStickerMonth}
                     onChange={(e) => setInspFormStickerMonth(e.target.value)}
                     required
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-amber-500"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-amber-500"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor="insp-form-sticker-no" className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                     {isFrench ? 'Numéro de vignette' : 'Sticker Number'}
                   </label>
                   <input
+                    id="insp-form-sticker-no"
                     type="text"
                     value={inspFormStickerNo}
                     onChange={(e) => setInspFormStickerNo(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white font-mono focus:outline-none focus:border-amber-500"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-sm text-white font-mono focus:outline-none focus:border-amber-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  <label htmlFor="insp-form-facility" className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                     {isFrench ? 'Station / Technicien' : 'Station / Mechanic'}
                   </label>
                   <input
+                    id="insp-form-facility"
                     type="text"
                     value={inspFormFacility}
                     onChange={(e) => setInspFormFacility(e.target.value)}
                     placeholder={isFrench ? 'Nom du centre ou mécanicien' : 'Inspection station or mechanic'}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-amber-500"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-amber-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                <label htmlFor="insp-form-notes" className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                   {isFrench ? 'Notes' : 'Notes'}
                 </label>
                 <textarea
+                  id="insp-form-notes"
                   rows={2}
                   value={inspFormNotes}
                   onChange={(e) => setInspFormNotes(e.target.value)}
@@ -2121,12 +2291,12 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                       ? 'Détails de l\'inspection périodique...'
                       : 'Periodic inspection details...'
                   }
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-amber-500"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-amber-500"
                 />
               </div>
 
               <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 flex items-start space-x-2">
-                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
                 <span>
                   {isFrench
                     ? 'Si le statut est « En inspection » ou « Planifiée », ce véhicule sera automatiquement retiré des quarts de répartition (Dispatch Shifts) pour la date sélectionnée.'
@@ -2138,21 +2308,19 @@ export const VehicleInspectionsView: React.FC<VehicleInspectionsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsInspFormOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition"
+                  className="px-4 py-2 min-h-[36px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                 >
                   {isFrench ? 'Annuler' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition shadow-lg shadow-amber-500/20"
+                  className="px-4 py-2 min-h-[36px] rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition shadow-lg shadow-amber-500/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                 >
                   {isFrench ? 'Enregistrer' : 'Save Inspection'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-    </div>
+      </InspectionModalDialog>
+    </PageShell>
   );
 };

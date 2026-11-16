@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, memo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, useId, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Calendar,
@@ -448,6 +448,7 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
         {onNavigateToFinanceLog && (
           <div className="pt-2">
             <button
+              type="button"
               onClick={onNavigateToFinanceLog}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-xs transition-all"
             >
@@ -468,33 +469,39 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
             <button
+              type="button"
               onClick={handlePrevDay}
-              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:shadow-xs transition-all"
+              aria-label="Previous day"
+              className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:shadow-xs transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               title="Previous Day"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft aria-hidden="true" className="w-4 h-4" />
             </button>
             <div className="flex items-center gap-2 px-2">
-              <Calendar className="w-4 h-4 text-amber-500" />
+              <Calendar aria-hidden="true" className="w-4 h-4 text-amber-500" />
               <input
                 type="date"
+                aria-label="Select payroll date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-transparent text-sm font-semibold text-slate-800 dark:text-slate-100 focus:outline-hidden cursor-pointer"
+                className="bg-transparent text-base sm:text-sm font-semibold text-slate-800 dark:text-slate-100 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 cursor-pointer"
               />
             </div>
             <button
+              type="button"
               onClick={handleNextDay}
-              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:shadow-xs transition-all"
+              aria-label="Previous day"
+              className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:shadow-xs transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               title="Next Day"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight aria-hidden="true" className="w-4 h-4" />
             </button>
           </div>
 
           <button
+            type="button"
             onClick={handleToday}
-            className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-colors"
+            className="min-h-[28px] px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
           >
             Today
           </button>
@@ -504,32 +511,35 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
         <div className="flex items-center gap-2">
           {onNavigateToFinanceLog && (
             <button
+              type="button"
               onClick={onNavigateToFinanceLog}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-sm font-semibold transition-colors shadow-xs"
+              className="min-h-[28px] inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-sm font-semibold transition-colors shadow-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
               title="Go to Payroll Department Log"
             >
               <span>Finance Log</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight aria-hidden="true" className="w-3.5 h-3.5" />
             </button>
           )}
           <button
+            type="button"
             onClick={handleRefresh}
             disabled={loading}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium transition-colors shadow-xs disabled:opacity-50"
+            className="min-h-[28px] inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium transition-colors shadow-xs disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
             title="Refresh"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw aria-hidden="true" className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
 
           <button
+            type="button"
             onClick={handleExportExcel}
             disabled={filteredPayrolls.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-xs hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="min-h-[28px] inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-xs hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
             title="Export filtered records to Microsoft Excel format"
           >
-            <Download className="w-4 h-4" />
-            <FileSpreadsheet className="w-4 h-4" />
+            <Download aria-hidden="true" className="w-4 h-4" />
+            <FileSpreadsheet aria-hidden="true" className="w-4 h-4" />
             <span>Export to Excel</span>
           </button>
         </div>
@@ -600,10 +610,12 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
       </div>
 
       {/* TWO PRIMARY CATEGORIES TAB BAR */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-px">
+      <div role="group" aria-label="Payroll record categories" className="flex flex-wrap items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-px">
         <button
+          type="button"
+          aria-pressed={category === 'all'}
           onClick={() => setCategory('all')}
-          className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-colors ${
+          className={`min-h-[36px] inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
             category === 'all'
               ? 'bg-white dark:bg-slate-900 border-t border-l border-r border-slate-200 dark:border-slate-800 text-amber-600 dark:text-amber-400'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
@@ -616,14 +628,16 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
         </button>
 
         <button
+          type="button"
+          aria-pressed={category === 'with_comments'}
           onClick={() => setCategory('with_comments')}
-          className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-colors ${
+          className={`min-h-[36px] inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
             category === 'with_comments'
               ? 'bg-white dark:bg-slate-900 border-t border-l border-r border-slate-200 dark:border-slate-800 text-amber-600 dark:text-amber-400'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <MessageSquare className="w-3.5 h-3.5 text-amber-500" />
+          <MessageSquare aria-hidden="true" className="w-3.5 h-3.5 text-amber-500" />
           <span>Needs Review (Comments)</span>
           <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold">
             {withCommentsCount}
@@ -631,14 +645,16 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
         </button>
 
         <button
+          type="button"
+          aria-pressed={category === 'without_comments'}
           onClick={() => setCategory('without_comments')}
-          className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-colors ${
+          className={`min-h-[36px] inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
             category === 'without_comments'
               ? 'bg-white dark:bg-slate-900 border-t border-l border-r border-slate-200 dark:border-slate-800 text-amber-600 dark:text-amber-400'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+          <CheckCircle2 aria-hidden="true" className="w-3.5 h-3.5 text-emerald-500" />
           <span>Without Comments (Clean / Auto)</span>
           <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold">
             {withoutCommentsCount}
@@ -646,14 +662,16 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
         </button>
 
         <button
+          type="button"
+          aria-pressed={category === 'charter'}
           onClick={() => setCategory('charter')}
-          className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-colors ${
+          className={`min-h-[36px] inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
             category === 'charter'
               ? 'bg-white dark:bg-slate-900 border-t border-l border-r border-slate-200 dark:border-slate-800 text-indigo-600 dark:text-indigo-400'
               : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
-          <Compass className="w-3.5 h-3.5 text-indigo-500" />
+          <Compass aria-hidden="true" className="w-3.5 h-3.5 text-indigo-500" />
           <span>Charter Trips</span>
           <span className="px-2 py-0.5 rounded-full text-[10px] bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold">
             {charterCount}
@@ -662,25 +680,27 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+      <search aria-label="Filter dispatch payroll records" className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
         <div className="relative flex-1 min-w-[240px]">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search aria-hidden="true" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
-            type="text"
+            type="search"
+            aria-label="Search by route, employee name, ID, or unit number"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by route, employee name, ID, unit #..."
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+            className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-base sm:text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
           />
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Filter className="w-3.5 h-3.5" />
+            <Filter aria-hidden="true" className="w-3.5 h-3.5" />
             <select
+              aria-label="Filter by role"
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value as 'all' | 'driver' | 'attendant')}
-              className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
+              className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-base sm:text-xs font-medium text-slate-700 dark:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
             >
               <option value="all">All Roles</option>
               <option value="driver">Drivers Only</option>
@@ -689,9 +709,10 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
           </div>
 
           <select
+            aria-label="Filter by pay option"
             value={payOptionFilter}
             onChange={(e) => setPayOptionFilter(e.target.value)}
-            className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
+            className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-base sm:text-xs font-medium text-slate-700 dark:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
           >
             <option value="all">All Pay Options</option>
             <option value="STANDARD">Standard Rate</option>
@@ -701,9 +722,10 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
             <option value="F">F (Fixed Override)</option>
           </select>
           <select
+            aria-label="Filter by approval status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
+            className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-base sm:text-xs font-medium text-slate-700 dark:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
           >
             <option value="all">All Statuses</option>
             <option value="approved">Approved</option>
@@ -712,19 +734,20 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
             <option value="rejected">Rejected</option>
           </select>
         </div>
-      </div>
+      </search>
 
       {error && (
-        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-sm flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 shrink-0" />
+        <div role="alert" className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-sm flex items-center gap-3">
+          <AlertCircle aria-hidden="true" className="w-5 h-5 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Main Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-        <div ref={payrollTableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)]">
+        <div ref={payrollTableContainerRef} tabIndex={0} role="region" aria-label="Dispatch daily payroll table" className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500">
           <table className="w-full text-left text-sm min-w-[980px] border-collapse table-fixed">
+            <caption className="sr-only">Dispatch daily payroll records for {selectedDate}</caption>
             <colgroup>
               <col style={{ width: '120px' }} />
               <col style={{ width: '72px' }} />
@@ -739,16 +762,16 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
             </colgroup>
             <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700 shadow-xs">
               <tr>
-                <th className="py-2.5 px-2.5">Route & Shift</th>
-                <th className="py-2.5 px-2">Role</th>
-                <th className="py-2.5 px-2.5">Employee</th>
-                <th className="py-2.5 px-2">Check In/Out</th>
-                <th className="py-2.5 px-2 text-right">Pay</th>
-                <th className="py-2.5 px-2 text-right">EI</th>
-                <th className="py-2.5 px-2.5">Comments</th>
-                <th className="py-2.5 px-2 text-center">Status</th>
-                <th className="py-2.5 px-2 text-left">Modified</th>
-                <th className="sticky right-0 z-30 py-2.5 px-2 text-center bg-slate-100 dark:bg-slate-800 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.25)]">
+                <th scope="col" className="py-2.5 px-2.5">Route & Shift</th>
+                <th scope="col" className="py-2.5 px-2">Role</th>
+                <th scope="col" className="py-2.5 px-2.5">Employee</th>
+                <th scope="col" className="py-2.5 px-2">Check In/Out</th>
+                <th scope="col" className="py-2.5 px-2 text-right">Pay</th>
+                <th scope="col" className="py-2.5 px-2 text-right">EI</th>
+                <th scope="col" className="py-2.5 px-2.5">Comments</th>
+                <th scope="col" className="py-2.5 px-2 text-center">Status</th>
+                <th scope="col" className="py-2.5 px-2 text-left">Modified</th>
+                <th scope="col" className="sticky right-0 z-30 py-2.5 px-2 text-center bg-slate-100 dark:bg-slate-800 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.25)]">
                   Action
                 </th>
               </tr>
@@ -844,7 +867,7 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
                           <button
                             type="button"
                             onClick={() => onSelectEmployee(rec.employeeId, rec.employeeName)}
-                            className="font-medium text-slate-900 dark:text-slate-100 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left truncate max-w-full block"
+                            className="font-medium text-slate-900 dark:text-slate-100 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left truncate max-w-full block rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                             title={rec.employeeName || 'View employee details'}
                           >
                             {rec.employeeName}
@@ -928,17 +951,21 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
                           {rec.status === 'pending_approval' && (
                             <>
                               <button
+                                type="button"
                                 onClick={() => handleQuickApprove(rec)}
                                 disabled={savingAction}
-                                className="px-1.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-semibold shadow-xs transition-colors"
+                                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center px-1.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-semibold shadow-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+                                aria-label={`Approve and sync payroll for ${rec.employeeName} on route ${rec.routeNo}`}
                                 title="Approve & Send to Finance"
                               >
                                 OK
                               </button>
                               <button
+                                type="button"
                                 onClick={() => handleQuickReject(rec)}
                                 disabled={savingAction}
-                                className="px-1.5 py-1 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-semibold border border-rose-200 transition-colors"
+                                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center px-1.5 py-1 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-semibold border border-rose-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+                                aria-label={`Reject payroll for ${rec.employeeName} on route ${rec.routeNo}`}
                                 title="Reject"
                               >
                                 No
@@ -947,12 +974,14 @@ export const DispatchDailyPayrollTab = memo(function DispatchDailyPayrollTab({
                           )}
 
                           <button
+                            type="button"
                             onClick={() => handleOpenEditModal(rec)}
                             disabled={savingAction}
-                            className="p-1 rounded-md border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1 rounded-md border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+                            aria-label={`Edit rate, hours or comments for ${rec.employeeName} on route ${rec.routeNo}`}
                             title="Edit Rate, Hours or Comments"
                           >
-                            <Pencil className="w-3.5 h-3.5" />
+                            <Pencil aria-hidden="true" className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -1021,6 +1050,19 @@ function DispatchPayrollEditModal({
   const [payOption, setPayOption] = useState(record.payOption || 'STANDARD');
   const [comments, setComments] = useState(record.payrollComments || '');
   const [saving, setSaving] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const payOptionId = useId();
+  const payRateId = useId();
+  const eiHoursId = useId();
+  const commentsId = useId();
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) {
+      dialog.showModal();
+    }
+  }, []);
 
   const handleApprove = async () => {
     try {
@@ -1096,21 +1138,28 @@ function DispatchPayrollEditModal({
   };
 
   return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden animate-scale-in">
+        <dialog
+          ref={dialogRef}
+          aria-labelledby={titleId}
+          onClose={onClose}
+          className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-0 shadow-xl overflow-hidden animate-scale-in backdrop:bg-slate-900/60 backdrop:backdrop-blur-xs [overscroll-behavior:contain] backdrop:[overflow:hidden] backdrop:[overscroll-behavior:contain]"
+        >
+          <div>
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-amber-500" />
-                <h3 className="font-bold text-slate-900 dark:text-white">
+                <ShieldCheck aria-hidden="true" className="w-5 h-5 text-amber-500" />
+                <h3 id={titleId} className="font-bold text-slate-900 dark:text-white">
                   Review & Approve Dispatch Payroll
                 </h3>
               </div>
                 <button
+                type="button"
+                aria-label="Close modal"
                 onClick={onClose}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
-                <X className="w-5 h-5" />
+                <X aria-hidden="true" className="w-5 h-5" />
               </button>
             </div>
 
@@ -1156,13 +1205,15 @@ function DispatchPayrollEditModal({
 
               {/* Pay Option */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label htmlFor={payOptionId} className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Pay Option
                 </label>
                 <select
+                  id={payOptionId}
+                  autoFocus
                   value={payOption}
                   onChange={(e) => setPayOption(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-hidden"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-base sm:text-sm font-semibold text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 >
                   <option value="STANDARD">STANDARD (Route Shift Rate)</option>
                   <option value="PD">PD (Partial Day Override)</option>
@@ -1174,45 +1225,48 @@ function DispatchPayrollEditModal({
 
               {/* Pay Rate */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label htmlFor={payRateId} className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Pay Rate ($)
                 </label>
                 <input
+                  id={payRateId}
                   type="number"
                   step="0.01"
                   min="0"
                   value={payRate}
                   onChange={(e) => setPayRate(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-base sm:text-sm font-semibold text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 />
               </div>
 
               {/* EI Hours */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label htmlFor={eiHoursId} className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Insurable EI Hours
                 </label>
                 <input
+                  id={eiHoursId}
                   type="number"
                   step="0.1"
                   min="0"
                   value={eiHours}
                   onChange={(e) => setEiHours(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-base sm:text-sm font-semibold text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 />
               </div>
 
               {/* Dispatcher Comments */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label htmlFor={commentsId} className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Dispatcher Review Comments
                 </label>
                 <textarea
+                  id={commentsId}
                   rows={2}
                   value={comments}
                   onChange={(e) => setComments(e.target.value)}
                   placeholder="Review notes, e.g. Approved overtime, weather delay confirmed..."
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-base sm:text-xs text-slate-900 dark:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 />
               </div>
             </div>
@@ -1223,7 +1277,7 @@ function DispatchPayrollEditModal({
                 type="button"
                 onClick={handleReject}
                 disabled={saving}
-                className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors"
+                className="min-h-[32px] px-3.5 py-2 rounded-xl text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
               >
                 Reject Record
               </button>
@@ -1232,7 +1286,7 @@ function DispatchPayrollEditModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  className="min-h-[32px] px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 >
                   Cancel
                 </button>
@@ -1240,14 +1294,14 @@ function DispatchPayrollEditModal({
                   type="button"
                   onClick={handleApprove}
                   disabled={saving}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50"
+                  className="min-h-[32px] inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <CheckCircle2 aria-hidden="true" className="w-3.5 h-3.5" />
                   <span>{saving ? 'Saving...' : 'Approve & Sync to Finance'}</span>
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </dialog>
   );
 }

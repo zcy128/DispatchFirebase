@@ -153,6 +153,12 @@ export interface TranslationDictionary {
     quickDemoDispatcher: string;
     quickDemoDriver: string;
     secureNotice: string;
+    showPassword: string;
+    hidePassword: string;
+    passwordVisibilityWarning: string;
+    usernameRequired: string;
+    passwordRequired: string;
+    languageSwitcher: string;
   };
 
   // Theme

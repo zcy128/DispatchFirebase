@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import { useI18n } from '../contexts/I18nContext';
 import { useAuth } from '../contexts/AuthContext';
 import { VehicleSignout, CreateVehicleSignoutPayload, VehicleSignoutAttachment } from '../types/vehicleSignout';
@@ -59,6 +61,61 @@ const SAFETY_EQUIPMENT_ITEMS = [
   { key: 'checkCleankit', label: 'Body Fluid / Spill Kit' },
   { key: 'checkQstraints', label: 'Wheelchair Q-Straints' },
 ] as const;
+
+interface SignoutModalDialogProps {
+  open: boolean;
+  onClose: () => void;
+  ariaLabelledBy: string;
+  maxWidthClassName: string;
+  children: React.ReactNode;
+}
+
+const SignoutModalDialog: React.FC<SignoutModalDialogProps> = ({
+  open,
+  onClose,
+  ariaLabelledBy,
+  maxWidthClassName,
+  children,
+}) => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    if (open && !el.open) {
+      el.showModal();
+    } else if (!open && el.open) {
+      el.close();
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={ariaLabelledBy}
+      onClose={onClose}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="m-0 max-w-none max-h-none w-screen h-screen bg-slate-950/80 backdrop-blur-sm p-4 flex items-center justify-center overflow-y-auto overscroll-contain backdrop:overscroll-contain"
+    >
+      <div
+        className={`bg-slate-900 border border-slate-800 rounded-3xl w-full ${maxWidthClassName} overflow-hidden shadow-2xl my-8`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </dialog>
+  );
+};
 
 interface VehicleSignoutViewProps {
   onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
@@ -149,6 +206,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
 
   const [uploadingPhoto, setUploadingPhoto] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Fast hash maps for O(1) vehicle and driver lookups
   const vehiclesByUnit = useMemo(() => {
@@ -315,7 +373,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
       }));
     } catch (err) {
       console.error('Failed to upload image:', err);
-      alert('Photo upload failed. Check that you are signed in and try again.');
+      setFormError('Photo upload failed. Check that you are signed in and try again.');
     } finally {
       setUploadingPhoto(false);
     }
@@ -325,16 +383,17 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.unitNumber || !formData.employeeName) {
-      alert('Please provide Vehicle Unit Number and Driver Name.');
+      setFormError('Please provide Vehicle Unit Number and Driver Name.');
       return;
     }
+    setFormError(null);
     setSubmitting(true);
     try {
       await VehicleSignoutService.create(formData);
       setIsCreateOpen(false);
       fetchData();
     } catch (err: any) {
-      alert(`Failed to save handover record: ${err?.message || err}`);
+      setFormError(`Failed to save handover record: ${err?.message || err}`);
     } finally {
       setSubmitting(false);
     }
@@ -433,30 +492,25 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
   }
 
   return (
-    <div className="p-3.5 sm:p-4 w-full space-y-5">
+    <PageShell>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
-              <FileSignature className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-                Vehicle Sign-Out & Handover
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 uppercase tracking-wider">
-                  Fleet Exclusive
-                </span>
-              </h1>
-              <p className="text-sm text-slate-400">
-                Track unit custody, vehicle document packs, safety equipment checks, and driver sign-off agreements.
-              </p>
-            </div>
+      <PageHeader
+        title="Vehicle Sign-Out & Handover"
+        subtitle="Track unit custody, vehicle document packs, safety equipment checks, and driver sign-off agreements."
+        icon={
+          <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
+            <FileSignature className="w-5 h-5" aria-hidden="true" />
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        }
+        badge={
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 uppercase tracking-wider">
+            Fleet Exclusive
+          </span>
+        }
+        actions={
+          <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() => {
               if (timeRange === 'all') {
                 if (searchQuery.trim() || dateFilter) {
@@ -468,12 +522,14 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                 fetchData();
               }
             }}
-            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors border border-slate-700"
+            aria-label="Refresh handover list"
+            className="p-2.5 min-w-[36px] min-h-[36px] flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors border border-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             title="Refresh List"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
           </button>
           <button
+            type="button"
             onClick={() => {
               setFormData({
                 isSignIn: false,
@@ -523,23 +579,25 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                 attachments: [],
                 createdBy: currentUser?.email || 'Fleet Officer'
               });
+              setFormError(null);
               setActiveTab('details');
               setIsCreateOpen(true);
             }}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold rounded-xl transition-colors shadow-lg shadow-amber-500/20"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 min-h-[36px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold rounded-xl transition-colors shadow-lg shadow-amber-500/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4" aria-hidden="true" />
             <span>New Handover Form</span>
           </button>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-xs uppercase font-semibold">Total Records</span>
-            <FileText className="w-4 h-4 text-slate-500" />
+            <FileText className="w-4 h-4 text-slate-500" aria-hidden="true" />
           </div>
           <div className="text-2xl font-bold text-slate-100">{stats.total}</div>
           <div className="text-xs text-slate-500 mt-1">Custody logs on file</div>
@@ -548,7 +606,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-xs uppercase font-semibold text-blue-400">Signed Out</span>
-            <Truck className="w-4 h-4 text-blue-400" />
+            <Truck className="w-4 h-4 text-blue-400" aria-hidden="true" />
           </div>
           <div className="text-2xl font-bold text-blue-400">{stats.signedOut}</div>
           <div className="text-xs text-slate-500 mt-1">In field custody</div>
@@ -557,7 +615,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-xs uppercase font-semibold text-emerald-400">Signed In</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" aria-hidden="true" />
           </div>
           <div className="text-2xl font-bold text-emerald-400">{stats.signedIn}</div>
           <div className="text-xs text-slate-500 mt-1">Returned to yard/fleet</div>
@@ -566,7 +624,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-xs uppercase font-semibold text-amber-400">Today's Activity</span>
-            <Calendar className="w-4 h-4 text-amber-400" />
+            <Calendar className="w-4 h-4 text-amber-400" aria-hidden="true" />
           </div>
           <div className="text-2xl font-bold text-amber-400">{stats.todayCount}</div>
           <div className="text-xs text-slate-500 mt-1">Handovers today</div>
@@ -574,12 +632,16 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-3">
+      <search
+        aria-label="Filter vehicle handover records"
+        className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-3"
+      >
         <div className="flex items-center gap-2 flex-1">
           <div className="flex-1 relative">
-            <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" aria-hidden="true" />
             <input
-              type="text"
+              type="search"
+              aria-label="Search vehicle handover records"
               placeholder={
                 timeRange === 'all'
                   ? 'Bus #, driver, route, or keyword to search archive...'
@@ -592,15 +654,16 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                   loadRecords(searchQuery.trim());
                 }
               }}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-9 py-2 text-base sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                aria-label="Clear search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 min-w-[24px] min-h-[24px] flex items-center justify-center rounded text-slate-400 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             )}
           </div>
@@ -609,26 +672,31 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
               type="button"
               onClick={() => loadRecords(searchQuery.trim())}
               disabled={loading || (!searchQuery.trim() && !dateFilter)}
-              className="px-3.5 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 rounded-xl transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5"
+              className="px-3.5 py-2 min-h-[36px] text-xs font-semibold bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 rounded-xl transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
-              <Search className="w-3.5 h-3.5" />
+              <Search className="w-3.5 h-3.5" aria-hidden="true" />
               Search Archive
             </button>
           )}
         </div>
 
         {/* Time Range Selector */}
-        <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+        <div
+          role="group"
+          aria-label="Handover record time range"
+          className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800"
+        >
           <span className="text-[11px] font-semibold text-slate-400 px-2 flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5 text-blue-400" />
+            <Clock className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
             Range:
           </span>
           {TIME_RANGE_OPTIONS.map((rng) => (
             <button
               key={rng.id}
               type="button"
+              aria-pressed={timeRange === rng.id}
               onClick={() => setTimeRange(rng.id as any)}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
+              className={`px-2.5 py-1 min-h-[28px] text-xs font-semibold rounded-lg transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 timeRange === rng.id
                   ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
                   : 'text-slate-400 hover:text-slate-200'
@@ -641,26 +709,36 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
 
         <div className="flex items-center gap-2">
           {/* Type Toggle */}
-          <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+          <div
+            role="group"
+            aria-label="Handover direction filter"
+            className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs"
+          >
             <button
+              type="button"
+              aria-pressed={typeFilter === 'all'}
               onClick={() => setTypeFilter('all')}
-              className={`px-3 py-1.5 rounded-lg transition-colors ${
+              className={`px-3 py-1.5 min-h-[28px] rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 typeFilter === 'all' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               All
             </button>
             <button
+              type="button"
+              aria-pressed={typeFilter === 'sign_out'}
               onClick={() => setTypeFilter('sign_out')}
-              className={`px-3 py-1.5 rounded-lg transition-colors ${
+              className={`px-3 py-1.5 min-h-[28px] rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 ${
                 typeFilter === 'sign_out' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               Sign Out (Handover)
             </button>
             <button
+              type="button"
+              aria-pressed={typeFilter === 'sign_in'}
               onClick={() => setTypeFilter('sign_in')}
-              className={`px-3 py-1.5 rounded-lg transition-colors ${
+              className={`px-3 py-1.5 min-h-[28px] rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 ${
                 typeFilter === 'sign_in' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -671,25 +749,27 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
           {/* Date Picker */}
           <input
             type="date"
+            aria-label="Filter handover records by date"
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500/50"
+            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-base sm:text-xs text-slate-200 focus:outline-none focus:border-amber-500/50"
           />
           {dateFilter && (
             <button
+              type="button"
               onClick={() => setDateFilter('')}
-              className="text-xs text-slate-500 hover:text-slate-300"
+              className="px-2 py-1 min-h-[28px] text-xs text-slate-400 hover:text-slate-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
               Clear
             </button>
           )}
         </div>
-      </div>
+      </search>
 
       {/* 5-Year Safe Scan Notice Banner */}
       {timeRange === 'all' && (
-        <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-3 text-xs text-amber-300">
-          <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+        <div role="status" className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-3 text-xs text-amber-300">
+          <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="space-y-1">
             <div className="font-semibold text-amber-200 flex items-center gap-1.5">
               <span>All History Mode (BigQuery Cold Archive)</span>
@@ -704,8 +784,15 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
 
       {/* Record Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+        <div
+          ref={tableContainerRef}
+          tabIndex={0}
+          role="region"
+          aria-label="Vehicle sign-out and handover records table"
+          className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-500"
+        >
           <table className="w-full text-left text-sm text-slate-300">
+            <caption className="sr-only">Vehicle sign-out and handover records</caption>
             <colgroup>
               <col style={{ width: '10%' }} />
               <col style={{ width: '13%' }} />
@@ -719,29 +806,29 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
             </colgroup>
             <thead className="sticky top-0 z-10 bg-slate-950 border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wider font-semibold">
               <tr>
-                <th className="py-3.5 px-4">{isFrench ? 'Type' : 'Type'}</th>
-                <th className="py-3.5 px-4">{isFrench ? 'Date' : 'Date'}</th>
-                <th className="py-3.5 px-4">{isFrench ? 'Unité Véhicule' : 'Vehicle Unit'}</th>
-                <th className="py-3.5 px-4">{isFrench ? 'Chauffeur / Destinataire' : 'Driver / Recipient'}</th>
-                <th className="py-3.5 px-4">{isFrench ? 'Trajet' : 'Route'}</th>
-                <th className="py-3.5 px-4">{isFrench ? 'Odomètre & Carburant' : 'Odometer & Fuel'}</th>
-                <th className="py-3.5 px-4">{isFrench ? 'État' : 'Condition'}</th>
-                <th className="py-3.5 px-4 text-center">{isFrench ? 'Photos' : 'Photos'}</th>
-                <th className="py-3.5 px-4 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
+                <th scope="col" className="py-3.5 px-4">{isFrench ? 'Type' : 'Type'}</th>
+                <th scope="col" className="py-3.5 px-4">{isFrench ? 'Date' : 'Date'}</th>
+                <th scope="col" className="py-3.5 px-4">{isFrench ? 'Unité Véhicule' : 'Vehicle Unit'}</th>
+                <th scope="col" className="py-3.5 px-4">{isFrench ? 'Chauffeur / Destinataire' : 'Driver / Recipient'}</th>
+                <th scope="col" className="py-3.5 px-4">{isFrench ? 'Trajet' : 'Route'}</th>
+                <th scope="col" className="py-3.5 px-4">{isFrench ? 'Odomètre & Carburant' : 'Odometer & Fuel'}</th>
+                <th scope="col" className="py-3.5 px-4">{isFrench ? 'État' : 'Condition'}</th>
+                <th scope="col" className="py-3.5 px-4 text-center">{isFrench ? 'Photos' : 'Photos'}</th>
+                <th scope="col" className="py-3.5 px-4 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-amber-500" />
+                  <td colSpan={9} className="py-12 text-center text-slate-500" role="status">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-amber-500" aria-hidden="true" />
                     {isFrench ? 'Chargement des fiches de transfert...' : 'Loading vehicle handover records...'}
                   </td>
                 </tr>
               ) : filteredRecords.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-500">
-                    <FileSignature className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                    <FileSignature className="w-10 h-10 mx-auto mb-2 opacity-30" aria-hidden="true" />
                     {timeRange === 'all' && !searchQuery.trim() && !dateFilter ? (
                       <div className="space-y-1">
                         <div className="text-sm font-semibold text-slate-300">
@@ -774,12 +861,12 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                         <td className="py-3.5 px-4">
                           {r.isSignIn ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
                               {isFrench ? 'Entrée' : 'Sign In'}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                              <ArrowRightLeft className="w-3.5 h-3.5" />
+                              <ArrowRightLeft className="w-3.5 h-3.5" aria-hidden="true" />
                               {isFrench ? 'Sortie' : 'Sign Out'}
                             </span>
                           )}
@@ -806,15 +893,16 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                             <button
                               type="button"
                               onClick={() => onSelectVehicle(r.unitId, r.unitNumber)}
-                              className="font-bold text-slate-100 flex items-center gap-1.5 hover:text-amber-300 hover:underline transition text-left"
+                              aria-label={isFrench ? `Voir la fiche véhicule Unité #${r.unitNumber}` : `View vehicle details for Unit #${r.unitNumber}`}
+                              className="font-bold text-slate-100 flex items-center gap-1.5 hover:text-amber-300 hover:underline transition text-left rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title={isFrench ? 'Voir la fiche véhicule' : 'View vehicle details'}
                             >
-                              <Truck className="w-3.5 h-3.5 text-amber-400" />
+                              <Truck className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
                               #{r.unitNumber}
                             </button>
                           ) : (
                             <div className="font-bold text-slate-100 flex items-center gap-1.5">
-                              <Truck className="w-3.5 h-3.5 text-amber-400" />
+                              <Truck className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
                               #{r.unitNumber}
                             </div>
                           )}
@@ -829,15 +917,16 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                             <button
                               type="button"
                               onClick={() => onSelectEmployee(r.employeeId, r.employeeName)}
-                              className="font-medium text-slate-100 flex items-center gap-1.5 hover:text-amber-300 hover:underline transition text-left"
+                              aria-label={isFrench ? `Voir la fiche chauffeur ${r.employeeName}` : `View employee details for ${r.employeeName}`}
+                              className="font-medium text-slate-100 flex items-center gap-1.5 hover:text-amber-300 hover:underline transition text-left rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title={isFrench ? 'Voir la fiche chauffeur' : 'View employee details'}
                             >
-                              <User className="w-3.5 h-3.5 text-slate-400" />
+                              <User className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
                               {r.employeeName}
                             </button>
                           ) : (
                             <div className="font-medium text-slate-100 flex items-center gap-1.5">
-                              <User className="w-3.5 h-3.5 text-slate-400" />
+                              <User className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
                               {r.employeeName}
                             </div>
                           )}
@@ -861,11 +950,11 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                         {/* Odometer & Fuel */}
                         <td className="py-3.5 px-4">
                           <div className="flex items-center gap-1 text-slate-200 font-mono text-xs">
-                            <Gauge className="w-3 h-3 text-slate-400" />
+                            <Gauge className="w-3 h-3 text-slate-400" aria-hidden="true" />
                             {r.odometer ? r.odometer.toLocaleString() + ' km' : '—'}
                           </div>
                           <div className="flex items-center gap-1 text-xs text-slate-400">
-                            <Fuel className="w-3 h-3 text-amber-400" />
+                            <Fuel className="w-3 h-3 text-amber-400" aria-hidden="true" />
                             {r.fuelLevelDescription || 'Full'} ({r.fuelTypeDescription || 'Diesel'})
                           </div>
                         </td>
@@ -886,7 +975,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                         <td className="py-3.5 px-4 text-center">
                           {r.attachments && r.attachments.length > 0 ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-amber-400 border border-amber-500/30">
-                              <Camera className="w-3 h-3" />
+                              <Camera className="w-3 h-3" aria-hidden="true" />
                               {r.attachments.length}
                             </span>
                           ) : (
@@ -898,23 +987,27 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <button
+                              type="button"
                               onClick={() => setSelectedRecord(r)}
-                              className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
+                              aria-label={isFrench ? `Voir les détails pour Unité #${r.unitNumber} du ${r.signDate}` : `View handover details for Unit #${r.unitNumber} on ${r.signDate}`}
+                              className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title={isFrench ? 'Voir Détails' : 'View Details'}
                             >
-                              <Eye className="w-4 h-4" />
+                              <Eye className="w-4 h-4" aria-hidden="true" />
                             </button>
                             <button
+                              type="button"
                               onClick={async () => {
                                 if (confirm(`Delete vehicle handover record for Unit #${r.unitNumber}?`)) {
                                   await VehicleSignoutService.delete(r.id);
                                   fetchData();
                                 }
                               }}
-                              className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                              aria-label={isFrench ? `Supprimer la fiche pour Unité #${r.unitNumber} du ${r.signDate}` : `Delete handover record for Unit #${r.unitNumber} on ${r.signDate}`}
+                              className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
                               title={isFrench ? 'Supprimer' : 'Delete Record'}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-4 h-4" aria-hidden="true" />
                             </button>
                           </div>
                         </td>
@@ -934,29 +1027,37 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
       </div>
 
       {/* ── CREATE NEW HANDOVER MODAL ─────────────────────────────────────── */}
-      {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl my-8">
+      <SignoutModalDialog
+        open={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        ariaLabelledBy="signout-create-modal-title"
+        maxWidthClassName="max-w-3xl"
+      >
             {/* Modal Header */}
             <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <FileSignature className="w-5 h-5 text-amber-400" />
-                <h3 className="font-bold text-slate-100">Create Vehicle Handover Record</h3>
+                <FileSignature className="w-5 h-5 text-amber-400" aria-hidden="true" />
+                <h3 id="signout-create-modal-title" className="font-bold text-slate-100">Create Vehicle Handover Record</h3>
               </div>
               <button
+                type="button"
+                autoFocus
                 onClick={() => setIsCreateOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-200 rounded-lg"
+                aria-label="Close create handover modal"
+                className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center text-slate-400 hover:text-slate-200 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               >
-                <X className="w-5 h-5" />
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
 
             {/* Stepper Tabs */}
-            <div className="flex border-b border-slate-800 bg-slate-900/50">
+            <div role="tablist" aria-label="Handover form steps" className="flex border-b border-slate-800 bg-slate-900/50">
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'details'}
                 onClick={() => setActiveTab('details')}
-                className={`flex-1 py-3 text-xs font-semibold uppercase tracking-wider text-center border-b-2 transition-colors ${
+                className={`flex-1 py-3 text-xs font-semibold uppercase tracking-wider text-center border-b-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-400 ${
                   activeTab === 'details'
                     ? 'border-amber-500 text-amber-400 bg-amber-500/5'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -966,8 +1067,10 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'checklist'}
                 onClick={() => setActiveTab('checklist')}
-                className={`flex-1 py-3 text-xs font-semibold uppercase tracking-wider text-center border-b-2 transition-colors ${
+                className={`flex-1 py-3 text-xs font-semibold uppercase tracking-wider text-center border-b-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-400 ${
                   activeTab === 'checklist'
                     ? 'border-amber-500 text-amber-400 bg-amber-500/5'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -977,8 +1080,10 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'signatures'}
                 onClick={() => setActiveTab('signatures')}
-                className={`flex-1 py-3 text-xs font-semibold uppercase tracking-wider text-center border-b-2 transition-colors ${
+                className={`flex-1 py-3 text-xs font-semibold uppercase tracking-wider text-center border-b-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-400 ${
                   activeTab === 'signatures'
                     ? 'border-amber-500 text-amber-400 bg-amber-500/5'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -993,18 +1098,19 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
               {activeTab === 'details' && (
                 <div className="space-y-4">
                   {/* Handover Direction */}
-                  <div className="grid grid-cols-2 gap-3">
+                  <div role="group" aria-label="Handover direction" className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
+                      aria-pressed={!formData.isSignIn}
                       onClick={() => setFormData((p) => ({ ...p, isSignIn: false }))}
-                      className={`p-3.5 rounded-2xl border text-left transition-all ${
+                      className={`p-3.5 rounded-2xl border text-left transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 ${
                         !formData.isSignIn
                           ? 'bg-blue-600/15 border-blue-500 text-blue-400'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                       }`}
                     >
                       <div className="font-bold text-sm mb-1 flex items-center gap-2">
-                        <ArrowRightLeft className="w-4 h-4" />
+                        <ArrowRightLeft className="w-4 h-4" aria-hidden="true" />
                         Sign Out (Dispatch to Driver)
                       </div>
                       <div className="text-xs opacity-75">Vehicle handed over to driver for route service.</div>
@@ -1012,15 +1118,16 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
 
                     <button
                       type="button"
+                      aria-pressed={formData.isSignIn}
                       onClick={() => setFormData((p) => ({ ...p, isSignIn: true }))}
-                      className={`p-3.5 rounded-2xl border text-left transition-all ${
+                      className={`p-3.5 rounded-2xl border text-left transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 ${
                         formData.isSignIn
                           ? 'bg-emerald-600/15 border-emerald-500 text-emerald-400'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                       }`}
                     >
                       <div className="font-bold text-sm mb-1 flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4" />
+                        <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
                         Sign In (Return to Yard)
                       </div>
                       <div className="text-xs opacity-75">Vehicle returned and custody transferred back to fleet.</div>
@@ -1030,15 +1137,16 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                   {/* Vehicle Unit Selection */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">Vehicle Unit # *</label>
+                      <label htmlFor="signout-unit-number" className="block text-xs font-semibold text-slate-300 mb-1.5">Vehicle Unit # *</label>
                       <input
+                        id="signout-unit-number"
                         type="text"
                         required
                         placeholder="e.g. 101 or select from fleet"
                         list="vehicle-options"
                         value={formData.unitNumber}
                         onChange={(e) => handleSelectVehicle(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                       />
                       <datalist id="vehicle-options">
                         {vehicles.map((v) => (
@@ -1050,13 +1158,14 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">Handover Date *</label>
+                      <label htmlFor="signout-date" className="block text-xs font-semibold text-slate-300 mb-1.5">Handover Date *</label>
                       <input
+                        id="signout-date"
                         type="date"
                         required
                         value={formData.signDate}
                         onChange={(e) => setFormData((p) => ({ ...p, signDate: e.target.value }))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                       />
                     </div>
                   </div>
@@ -1064,8 +1173,9 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                   {/* Driver Selection */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">Driver / Employee Name *</label>
+                      <label htmlFor="signout-employee-name" className="block text-xs font-semibold text-slate-300 mb-1.5">Driver / Employee Name *</label>
                       <input
+                        id="signout-employee-name"
                         type="text"
                         required
                         placeholder="Select or enter driver name"
@@ -1077,7 +1187,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                           const match = employeesByFullName.get(val.toLowerCase());
                           if (match) handleSelectEmployee(match.id);
                         }}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                       />
                       <datalist id="driver-options">
                         {employees.map((emp) => (
@@ -1089,21 +1199,25 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">License Class & Conditions</label>
+                      <label htmlFor="signout-license-class" className="block text-xs font-semibold text-slate-300 mb-1.5">License Class & Conditions</label>
                       <div className="flex gap-2">
                         <input
+                          id="signout-license-class"
                           type="text"
+                          aria-label="Driver license class"
                           placeholder="e.g. Class 2-S"
                           value={formData.driverLicenseClass || ''}
                           onChange={(e) => setFormData((p) => ({ ...p, driverLicenseClass: e.target.value }))}
-                          className="w-1/2 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                          className="w-1/2 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                         />
                         <input
+                          id="signout-license-condition"
                           type="text"
+                          aria-label="Driver license conditions"
                           placeholder="e.g. None / Lenses"
                           value={formData.driverLicenseCondition || ''}
                           onChange={(e) => setFormData((p) => ({ ...p, driverLicenseCondition: e.target.value }))}
-                          className="w-1/2 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                          className="w-1/2 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                         />
                       </div>
                     </div>
@@ -1112,24 +1226,26 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                   {/* Route & Phone */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">Assigned Route (Optional)</label>
+                      <label htmlFor="signout-route" className="block text-xs font-semibold text-slate-300 mb-1.5">Assigned Route (Optional)</label>
                       <input
+                        id="signout-route"
                         type="text"
                         placeholder="e.g. Route 101 or General"
                         value={formData.routeId || ''}
                         onChange={(e) => setFormData((p) => ({ ...p, routeId: e.target.value, routeName: e.target.value }))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">Driver Contact Phone</label>
+                      <label htmlFor="signout-phone" className="block text-xs font-semibold text-slate-300 mb-1.5">Driver Contact Phone</label>
                       <input
+                        id="signout-phone"
                         type="text"
                         placeholder="e.g. 403-555-0199"
                         value={formData.cellPhone || ''}
                         onChange={(e) => setFormData((p) => ({ ...p, cellPhone: e.target.value }))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                       />
                     </div>
                   </div>
@@ -1137,22 +1253,24 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                   {/* Odometer & Fuel Level */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">Current Odometer (km) *</label>
+                      <label htmlFor="signout-odometer" className="block text-xs font-semibold text-slate-300 mb-1.5">Current Odometer (km) *</label>
                       <input
+                        id="signout-odometer"
                         type="number"
                         required
                         value={formData.odometer}
                         onChange={(e) => setFormData((p) => ({ ...p, odometer: parseFloat(e.target.value) || 0 }))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">Fuel Level</label>
+                      <label htmlFor="signout-fuel-level" className="block text-xs font-semibold text-slate-300 mb-1.5">Fuel Level</label>
                       <select
+                        id="signout-fuel-level"
                         value={formData.fuelLevelDescription || 'Full'}
                         onChange={(e) => setFormData((p) => ({ ...p, fuelLevelDescription: e.target.value }))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                       >
                         <option value="Full">Full (100%)</option>
                         <option value="3/4 Full">3/4 Full (75%)</option>
@@ -1163,11 +1281,12 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">Fuel Type</label>
+                      <label htmlFor="signout-fuel-type" className="block text-xs font-semibold text-slate-300 mb-1.5">Fuel Type</label>
                       <select
+                        id="signout-fuel-type"
                         value={formData.fuelTypeDescription || 'Diesel'}
                         onChange={(e) => setFormData((p) => ({ ...p, fuelTypeDescription: e.target.value }))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                       >
                         <option value="Diesel">Diesel</option>
                         <option value="Gasoline">Gasoline</option>
@@ -1188,7 +1307,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                     <button
                       type="button"
                       onClick={handleSelectAllPass}
-                      className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-semibold transition-colors"
+                      className="px-3 py-1.5 min-h-[28px] bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                     >
                       ✓ Select All Verified
                     </button>
@@ -1197,7 +1316,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                   {/* Section A: Document Pack Checklist */}
                   <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-3">
                     <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <FileText className="w-4 h-4" />
+                      <FileText className="w-4 h-4" aria-hidden="true" />
                       Vehicle Document Packet
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
@@ -1221,7 +1340,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                   {/* Section B: Safety Equipment Checklist */}
                   <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-3">
                     <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <ShieldCheck className="w-4 h-4" />
+                      <ShieldCheck className="w-4 h-4" aria-hidden="true" />
                       Safety Equipment Checklist
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
@@ -1249,49 +1368,52 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                   {/* Parking Address & Fire Hall */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">Designated Parking Address</label>
+                      <label htmlFor="signout-parking-address" className="block text-xs font-semibold text-slate-300 mb-1.5">Designated Parking Address</label>
                       <input
+                        id="signout-parking-address"
                         type="text"
                         placeholder="e.g. 123 Calgary Trail NW / Approved Yard"
                         value={formData.parkingAddress || ''}
                         onChange={(e) => setFormData((p) => ({ ...p, parkingAddress: e.target.value }))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">Nearest Fire Hall Location</label>
+                      <label htmlFor="signout-fire-hall" className="block text-xs font-semibold text-slate-300 mb-1.5">Nearest Fire Hall Location</label>
                       <input
+                        id="signout-fire-hall"
                         type="text"
                         placeholder="e.g. Fire Station 14 - 1100 McKnight"
                         value={formData.fireHallLocation || ''}
                         onChange={(e) => setFormData((p) => ({ ...p, fireHallLocation: e.target.value }))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                       />
                     </div>
                   </div>
 
                   {/* Condition Key & Comments */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    <label htmlFor="signout-condition-comments" className="block text-xs font-semibold text-slate-300 mb-1.5">
                       Condition Key & Observations (B: Broken, C: Chip, CR: Crack, D: Dent, H: Hole, M: Missing, S: Scrape)
                     </label>
                     <textarea
+                      id="signout-condition-comments"
                       rows={2}
                       placeholder="Note any pre-existing blemishes, scratches, interior cleanliness observations..."
                       value={formData.conditionComments || ''}
                       onChange={(e) => setFormData((p) => ({ ...p, conditionComments: e.target.value }))}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-base sm:text-sm text-slate-100 focus:outline-none focus:border-amber-500/50"
                     />
                   </div>
 
                   {/* Photo Attachments */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">Photo Attachments</label>
+                    <span className="block text-xs font-semibold text-slate-300 mb-1.5">Photo Attachments</span>
                     <div className="flex flex-wrap items-center gap-3">
                       {formData.attachments?.map((att, idx) => (
                         <div key={idx} className="relative group w-20 h-20 rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
-                          <img src={att.url} alt="attachment" className="w-full h-full object-cover" />
+                          <img src={att.url} alt={att.fileName || `Attachment ${idx + 1}`} className="w-full h-full object-cover" />
                           <button
                             type="button"
                             onClick={() => {
@@ -1300,25 +1422,27 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                                 attachments: p.attachments?.filter((_, i) => i !== idx)
                               }));
                             }}
-                            className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-label={`Remove attachment ${att.fileName || idx + 1}`}
+                            className="absolute top-1 right-1 p-1 min-w-[24px] min-h-[24px] flex items-center justify-center bg-red-600 text-white rounded-md opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                           >
-                            <X className="w-3 h-3" />
+                            <X className="w-3 h-3" aria-hidden="true" />
                           </button>
                         </div>
                       ))}
 
                       <label className="w-20 h-20 flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-amber-500/60 rounded-xl cursor-pointer text-slate-400 hover:text-amber-400 transition-colors bg-slate-950">
                         {uploadingPhoto ? (
-                          <RefreshCw className="w-5 h-5 animate-spin text-amber-500" />
+                          <RefreshCw className="w-5 h-5 animate-spin text-amber-500" aria-hidden="true" />
                         ) : (
                           <>
-                            <Upload className="w-5 h-5 mb-1" />
+                            <Upload className="w-5 h-5 mb-1" aria-hidden="true" />
                             <span className="text-[10px] font-medium">Add Photo</span>
                           </>
                         )}
                         <input
                           type="file"
                           accept="image/*"
+                          aria-label="Upload handover photo"
                           className="hidden"
                           onChange={handlePhotoUpload}
                           disabled={uploadingPhoto}
@@ -1344,29 +1468,37 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                   {/* Signatures */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Driver Digital Sign-off</label>
+                      <label htmlFor="signout-driver-signature" className="block text-xs font-semibold text-slate-300 mb-1">Driver Digital Sign-off</label>
                       <input
+                        id="signout-driver-signature"
                         type="text"
                         required
                         placeholder="Driver Signature Name"
                         value={formData.driverSignature || ''}
                         onChange={(e) => setFormData((p) => ({ ...p, driverSignature: e.target.value }))}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-serif focus:outline-none"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-sm text-slate-100 font-serif focus:outline-none"
                       />
                     </div>
 
                     <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Fleet Inspector Sign-off</label>
+                      <label htmlFor="signout-fleet-signature" className="block text-xs font-semibold text-slate-300 mb-1">Fleet Inspector Sign-off</label>
                       <input
+                        id="signout-fleet-signature"
                         type="text"
                         required
                         placeholder="Fleet Officer Name"
                         value={formData.fleetDepartmentSignature || ''}
                         onChange={(e) => setFormData((p) => ({ ...p, fleetDepartmentSignature: e.target.value }))}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-serif focus:outline-none"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-sm text-slate-100 font-serif focus:outline-none"
                       />
                     </div>
                   </div>
+                </div>
+              )}
+
+              {formError && (
+                <div role="alert" className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold">
+                  {formError}
                 </div>
               )}
 
@@ -1377,7 +1509,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setActiveTab(activeTab === 'signatures' ? 'checklist' : 'details')}
-                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors"
+                      className="px-4 py-2 min-h-[36px] bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                     >
                       ← Previous Step
                     </button>
@@ -1388,7 +1520,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsCreateOpen(false)}
-                    className="px-4 py-2 text-slate-400 hover:text-slate-200 text-xs font-semibold"
+                    className="px-4 py-2 min-h-[36px] text-slate-400 hover:text-slate-200 text-xs font-semibold rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                   >
                     Cancel
                   </button>
@@ -1397,7 +1529,7 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setActiveTab(activeTab === 'details' ? 'checklist' : 'signatures')}
-                      className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors"
+                      className="px-5 py-2.5 min-h-[36px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                     >
                       Continue →
                     </button>
@@ -1405,43 +1537,50 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                     <button
                       type="submit"
                       disabled={submitting}
-                      className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                      className="px-6 py-2.5 min-h-[36px] bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-lg shadow-emerald-500/20 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                     >
-                      <CheckCircle2 className="w-4 h-4" />
+                      <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
                       {submitting ? 'Submitting...' : 'Save Handover Record'}
                     </button>
                   )}
                 </div>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </SignoutModalDialog>
 
       {/* ── VIEW / PRINT DETAIL MODAL ────────────────────────────────────── */}
-      {selectedRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl my-8">
+      <SignoutModalDialog
+        open={Boolean(selectedRecord)}
+        onClose={() => setSelectedRecord(null)}
+        ariaLabelledBy="signout-detail-modal-title"
+        maxWidthClassName="max-w-2xl"
+      >
+        {selectedRecord && (
+          <>
             <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Truck className="w-5 h-5 text-amber-400" />
-                <h3 className="font-bold text-slate-100">
+                <Truck className="w-5 h-5 text-amber-400" aria-hidden="true" />
+                <h3 id="signout-detail-modal-title" className="font-bold text-slate-100">
                   Custody Record: Unit #{selectedRecord.unitNumber} ({selectedRecord.isSignIn ? 'Sign In / Return' : 'Sign Out / Handover'})
                 </h3>
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => window.print()}
-                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs flex items-center gap-1"
+                  className="px-2.5 py-1.5 min-h-[32px] bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs flex items-center gap-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                 >
-                  <Printer className="w-4 h-4" />
+                  <Printer className="w-4 h-4" aria-hidden="true" />
                   Print
                 </button>
                 <button
+                  type="button"
+                  autoFocus
                   onClick={() => setSelectedRecord(null)}
-                  className="p-1.5 text-slate-400 hover:text-slate-200 rounded-lg"
+                  aria-label="Close custody record modal"
+                  className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center text-slate-400 hover:text-slate-200 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-5 h-5" aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -1524,8 +1663,8 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Attached Photos</h4>
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                     {selectedRecord.attachments.map((att, idx) => (
-                      <a key={idx} href={att.url} target="_blank" rel="noreferrer" className="block rounded-xl overflow-hidden border border-slate-700 aspect-square">
-                        <img src={att.url} alt="attached" className="w-full h-full object-cover" />
+                      <a key={idx} href={att.url} target="_blank" rel="noreferrer" className="block rounded-xl overflow-hidden border border-slate-700 aspect-square focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400">
+                        <img src={att.url} alt={att.fileName || `Attached photo ${idx + 1}`} className="w-full h-full object-cover" />
                       </a>
                     ))}
                   </div>
@@ -1546,9 +1685,9 @@ export const VehicleSignoutView: React.FC<VehicleSignoutViewProps> = ({
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-    </div>
+          </>
+        )}
+      </SignoutModalDialog>
+    </PageShell>
   );
 };

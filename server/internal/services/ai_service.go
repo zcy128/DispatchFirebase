@@ -178,7 +178,7 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 
 	if actID != "" {
 		if confirmed {
-			if !CanModifyDispatchShifts(req.UserRole, req.PagePermissions) {
+			if !CanModifyDispatchShifts(req.UserRole, req.PagePermissions) && !CanModifyRoutes(req.UserRole, req.PagePermissions) {
 				failTitle := "Permission Denied"
 				if isZh {
 					failTitle = "权限不足"
@@ -265,6 +265,93 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 							Data: map[string]interface{}{
 								"actionType": action.ActionType,
 								"date":       action.Date,
+							},
+						},
+					},
+					SuggestedQuestions: suggested,
+				}, nil
+			}
+
+			if action.ActionType == "ASSIGN_ROUTE_CREW" {
+				if isZh {
+					reply = fmt.Sprintf(
+						"✅ **永久路线司机分配已成功执行并保存！**\n\n- **路线**：%s (%s)\n- **操作范围**：永久路线分配（Route Assignment）\n- **指派司机**：%s (%s)",
+						action.RouteNo, action.RouteName, action.DriverName, action.DriverID,
+					)
+					cardTitle = "永久路线已更新"
+					suggested = []string{"查看无司机的路线", "查看路线列表"}
+				} else if isFr {
+					reply = fmt.Sprintf(
+						"✅ **L'affectation permanente de la ligne a été enregistrée avec succès !**\n\n- **Ligne** : %s (%s)\n- **Portée** : Affectation permanente\n- **Chauffeur assigné** : %s (%s)",
+						action.RouteNo, action.RouteName, action.DriverName, action.DriverID,
+					)
+					cardTitle = "Ligne mise à jour"
+					suggested = []string{"Lignes sans chauffeur", "Voir les lignes"}
+				} else {
+					reply = fmt.Sprintf(
+						"✅ **Permanent route assignment successfully executed and saved!**\n\n- **Route**: %s (%s)\n- **Scope**: Permanent Route Assignment\n- **Assigned Driver**: %s (%s)",
+						action.RouteNo, action.RouteName, action.DriverName, action.DriverID,
+					)
+					cardTitle = "Route Assignment Updated"
+					suggested = []string{"Find routes without assigned driver", "View route list"}
+				}
+				return &models.AIChatResponse{
+					Reply: reply,
+					ActionCards: []models.AIActionCard{
+						{
+							Type:     "action_success",
+							Title:    cardTitle,
+							ActionID: action.ID,
+							Data: map[string]interface{}{
+								"actionType": action.ActionType,
+								"routeNo":    action.RouteNo,
+								"routeName":  action.RouteName,
+								"driverName": action.DriverName,
+								"driverId":   action.DriverID,
+							},
+						},
+					},
+					SuggestedQuestions: suggested,
+				}, nil
+			}
+
+			if action.ActionType == "ASSIGN_VEHICLE" {
+				if isZh {
+					reply = fmt.Sprintf(
+						"✅ **车辆调度指派已成功执行并保存！**\n\n- **路线**：%s (%s)\n- **日期**：%s (%s)\n- **指派车辆**：Unit %s\n\n该操作已记入调度变更审计日志 (`dispatch_change_logs`)。",
+						action.RouteNo, action.RouteName, action.Date, action.ShiftType, action.UnitNumber,
+					)
+					cardTitle = "车辆已指派"
+					suggested = []string{"今天有哪些班次缺车？", "查看今日调度总览"}
+				} else if isFr {
+					reply = fmt.Sprintf(
+						"✅ **L'affectation du véhicule a été exécutée et enregistrée avec succès !**\n\n- **Ligne** : %s (%s)\n- **Date** : %s (%s)\n- **Véhicule assigné** : Unité %s\n\nCette opération a été consignée dans le journal d'audit (`dispatch_change_logs`).",
+						action.RouteNo, action.RouteName, action.Date, action.ShiftType, action.UnitNumber,
+					)
+					cardTitle = "Véhicule assigné"
+					suggested = []string{"Quarts sans véhicule", "Voir la vue d'ensemble du dispatch"}
+				} else {
+					reply = fmt.Sprintf(
+						"✅ **Vehicle dispatch assignment successfully executed and saved!**\n\n- **Route**: %s (%s)\n- **Date**: %s (%s)\n- **Assigned Vehicle**: Unit %s\n\nThis operation has been recorded in the Dispatch Audit Log (`dispatch_change_logs`).",
+						action.RouteNo, action.RouteName, action.Date, action.ShiftType, action.UnitNumber,
+					)
+					cardTitle = "Vehicle Assigned"
+					suggested = []string{"Shifts without vehicle", "View today's dispatch overview"}
+				}
+				return &models.AIChatResponse{
+					Reply: reply,
+					ActionCards: []models.AIActionCard{
+						{
+							Type:     "action_success",
+							Title:    cardTitle,
+							ActionID: action.ID,
+							Data: map[string]interface{}{
+								"actionType": action.ActionType,
+								"routeNo":    action.RouteNo,
+								"routeName":  action.RouteName,
+								"date":       action.Date,
+								"shiftType":  action.ShiftType,
+								"unitNumber": action.UnitNumber,
 							},
 						},
 					},
@@ -505,6 +592,233 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 	}
 
 	lowerMsg := strings.ToLower(msg)
+
+	// Pattern A0: Shifts without vehicle query
+	isNoVehicleQuery := strings.Contains(lowerMsg, "without vehicle") ||
+		strings.Contains(lowerMsg, "without a vehicle") ||
+		strings.Contains(lowerMsg, "without bus") ||
+		strings.Contains(lowerMsg, "no vehicle") ||
+		strings.Contains(lowerMsg, "no bus") ||
+		strings.Contains(lowerMsg, "missing vehicle") ||
+		strings.Contains(lowerMsg, "missing bus") ||
+		strings.Contains(lowerMsg, "unassigned vehicle") ||
+		strings.Contains(lowerMsg, "sans véhicule") ||
+		strings.Contains(lowerMsg, "sans vehicule") ||
+		strings.Contains(lowerMsg, "aucun véhicule") ||
+		strings.Contains(lowerMsg, "pas de véhicule") ||
+		strings.Contains(msg, "没有车") ||
+		strings.Contains(msg, "缺车") ||
+		strings.Contains(msg, "未分配车辆")
+
+	if isNoVehicleQuery {
+		missingVehicles, err := s.toolService.GetShiftsWithoutVehicle(ctx, date, req.YardFilter)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(missingVehicles) == 0 {
+			if isZh {
+				return &models.AIChatResponse{
+					Reply: fmt.Sprintf("🎉 在 **%s**，所有班次均已分配车辆，没有缺车的班次！", date),
+					SuggestedQuestions: []string{"查看今日调度总览", "查看车队车辆状态"},
+				}, nil
+			}
+			if isFr {
+				return &models.AIChatResponse{
+					Reply: fmt.Sprintf("🎉 Pour le **%s**, tous les quarts ont un véhicule assigné !", date),
+					SuggestedQuestions: []string{"Voir la vue d'ensemble du dispatch", "Statut de la flotte de véhicules"},
+				}, nil
+			}
+			return &models.AIChatResponse{
+				Reply: fmt.Sprintf("🎉 On **%s**, all shifts have an assigned vehicle. No shifts are missing a bus!", date),
+				SuggestedQuestions: []string{"View today's dispatch overview", "Vehicle fleet status"},
+			}, nil
+		}
+
+		var lines []string
+		var cardList []map[string]interface{}
+		for _, sh := range missingVehicles {
+			cardList = append(cardList, map[string]interface{}{
+				"shiftId":       sh.ID,
+				"routeNo":       sh.RouteNo,
+				"routeName":     sh.RouteName,
+				"shiftType":     sh.ShiftType,
+				"firstStopTime": sh.FirstStopTime,
+				"yardName":      sh.YardName,
+				"driverName":    sh.DriverName,
+			})
+		}
+
+		if isZh {
+			lines = []string{fmt.Sprintf("⚠️ 在 **%s** 共有 **%d** 个班次尚未分配车辆：\n", date, len(missingVehicles))}
+			for i, sh := range missingVehicles {
+				driverLabel := sh.DriverName
+				if strings.TrimSpace(driverLabel) == "" {
+					driverLabel = "未分配司机"
+				}
+				lines = append(lines, fmt.Sprintf("%d. **路线 `%s`** (%s) · **%s** 班次 · 司机：%s · 发车：`%s`", i+1, sh.RouteNo, sh.RouteName, sh.ShiftType, driverLabel, sh.FirstStopTime))
+			}
+			return &models.AIChatResponse{
+				Reply: strings.Join(lines, "\n"),
+				ActionCards: []models.AIActionCard{
+					{
+						Type:  "unassigned_shifts",
+						Title: fmt.Sprintf("缺车班次 (%d)", len(missingVehicles)),
+						Data:  map[string]interface{}{"date": date, "missingType": "vehicle", "shifts": cardList},
+					},
+				},
+				SuggestedQuestions: []string{"查看车队车辆状态", "今天有哪些班次缺少司机？"},
+			}, nil
+		}
+
+		if isFr {
+			lines = []string{fmt.Sprintf("⚠️ Pour le **%s**, **%d** quart(s) n'ont pas de véhicule assigné :\n", date, len(missingVehicles))}
+			for i, sh := range missingVehicles {
+				driverLabel := sh.DriverName
+				if strings.TrimSpace(driverLabel) == "" {
+					driverLabel = "Sans chauffeur"
+				}
+				lines = append(lines, fmt.Sprintf("%d. **Ligne `%s`** (%s) · Quart **%s** · Chauffeur : %s · Premier arrêt : `%s`", i+1, sh.RouteNo, sh.RouteName, sh.ShiftType, driverLabel, sh.FirstStopTime))
+			}
+			return &models.AIChatResponse{
+				Reply: strings.Join(lines, "\n"),
+				ActionCards: []models.AIActionCard{
+					{
+						Type:  "unassigned_shifts",
+						Title: fmt.Sprintf("Quarts sans véhicule (%d)", len(missingVehicles)),
+						Data:  map[string]interface{}{"date": date, "missingType": "vehicle", "shifts": cardList},
+					},
+				},
+				SuggestedQuestions: []string{"Statut de la flotte de véhicules", "Quels quarts n'ont pas de chauffeur ?"},
+			}, nil
+		}
+
+		lines = []string{fmt.Sprintf("⚠️ On **%s**, found **%d** shift(s) without an assigned vehicle:\n", date, len(missingVehicles))}
+		for i, sh := range missingVehicles {
+			driverLabel := sh.DriverName
+			if strings.TrimSpace(driverLabel) == "" {
+				driverLabel = "Unassigned driver"
+			}
+			lines = append(lines, fmt.Sprintf("%d. **Route `%s`** (%s) · **%s** Shift · Driver: %s · First Stop: `%s`", i+1, sh.RouteNo, sh.RouteName, sh.ShiftType, driverLabel, sh.FirstStopTime))
+		}
+		return &models.AIChatResponse{
+			Reply: strings.Join(lines, "\n"),
+			ActionCards: []models.AIActionCard{
+				{
+					Type:  "unassigned_shifts",
+					Title: fmt.Sprintf("Shifts Without Vehicle (%d)", len(missingVehicles)),
+					Data:  map[string]interface{}{"date": date, "missingType": "vehicle", "shifts": cardList},
+				},
+			},
+			SuggestedQuestions: []string{"Vehicle fleet status", "Which shifts have no driver today?"},
+		}, nil
+	}
+
+	// Pattern A0b: Available / idle vehicles query
+	isAvailableVehiclesQuery := strings.Contains(lowerMsg, "available vehicle") ||
+		strings.Contains(lowerMsg, "idle vehicle") ||
+		strings.Contains(lowerMsg, "free vehicle") ||
+		strings.Contains(lowerMsg, "available bus") ||
+		strings.Contains(lowerMsg, "idle bus") ||
+		strings.Contains(lowerMsg, "véhicule disponible") ||
+		strings.Contains(lowerMsg, "vehicule disponible") ||
+		strings.Contains(lowerMsg, "véhicules disponibles") ||
+		strings.Contains(msg, "空闲车辆") ||
+		strings.Contains(msg, "可用车辆") ||
+		strings.Contains(msg, "空闲校车")
+
+	if isAvailableVehiclesQuery {
+		avail, err := s.toolService.FindAvailableVehicles(ctx, date, req.YardFilter)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(avail) == 0 {
+			if isZh {
+				return &models.AIChatResponse{
+					Reply: fmt.Sprintf("⚠️ 在 **%s** 暂未找到空闲可用的车辆（所有正常车辆均已排班或处于维护状态）。", date),
+					SuggestedQuestions: []string{"查看车队车辆状态", "今天有哪些班次缺车？"},
+				}, nil
+			}
+			if isFr {
+				return &models.AIChatResponse{
+					Reply: fmt.Sprintf("⚠️ Aucun véhicule disponible ou inactif trouvé pour le **%s**.", date),
+					SuggestedQuestions: []string{"Statut de la flotte de véhicules"},
+				}, nil
+			}
+			return &models.AIChatResponse{
+				Reply: fmt.Sprintf("⚠️ No idle/available vehicles found on **%s** (all active units are already assigned or in maintenance).", date),
+				SuggestedQuestions: []string{"Vehicle fleet status"},
+			}, nil
+		}
+
+		limit := len(avail)
+		if limit > 12 {
+			limit = 12
+		}
+		targetRoute := ""
+		routeHintRe := regexp.MustCompile(`(?i)(?:for\s+route|pour\s+la\s+ligne|route|ligne|线路)\s+([a-zA-Z0-9_\-]+)`)
+		if rm := routeHintRe.FindStringSubmatch(msg); len(rm) >= 2 {
+			targetRoute = strings.TrimSpace(rm[1])
+		}
+
+		var lines []string
+		if isZh {
+			lines = []string{fmt.Sprintf("🚌 在 **%s** 找到 **%d** 辆空闲可用车辆（优先展示前 %d 辆）：\n", date, len(avail), limit)}
+			for i := 0; i < limit; i++ {
+				v := avail[i]
+				lines = append(lines, fmt.Sprintf("%d. **Unit `%s`** · %s · %d座 · 车场：%s · 状态：%s", i+1, v.UnitNumber, v.UnitType, v.SeatCap, v.YardName, v.Status))
+			}
+			suggested := []string{"查看车队车辆状态", "今天有哪些班次缺车？"}
+			if targetRoute != "" {
+				lines = append(lines, fmt.Sprintf("\n💡 提示：可直接输入或点击 **Assign %s to %s**", avail[0].UnitNumber, targetRoute))
+				suggested = []string{fmt.Sprintf("Assign %s to %s", avail[0].UnitNumber, targetRoute)}
+				if len(avail) > 1 {
+					suggested = append(suggested, fmt.Sprintf("Assign %s to %s", avail[1].UnitNumber, targetRoute))
+				}
+			}
+			return &models.AIChatResponse{
+				Reply:              strings.Join(lines, "\n"),
+				SuggestedQuestions: suggested,
+			}, nil
+		}
+		if isFr {
+			lines = []string{fmt.Sprintf("🚌 **%d** véhicule(s) disponible(s) pour le **%s** (affichage de %d) :\n", len(avail), date, limit)}
+			for i := 0; i < limit; i++ {
+				v := avail[i]
+				lines = append(lines, fmt.Sprintf("%d. **Unité `%s`** · %s · %d places · Cour : %s · Statut : %s", i+1, v.UnitNumber, v.UnitType, v.SeatCap, v.YardName, v.Status))
+			}
+			suggested := []string{"Statut de la flotte de véhicules"}
+			if targetRoute != "" {
+				lines = append(lines, fmt.Sprintf("\n💡 Astuce : Cliquez ou tapez **Assign %s to %s**", avail[0].UnitNumber, targetRoute))
+				suggested = []string{fmt.Sprintf("Assign %s to %s", avail[0].UnitNumber, targetRoute)}
+				if len(avail) > 1 {
+					suggested = append(suggested, fmt.Sprintf("Assign %s to %s", avail[1].UnitNumber, targetRoute))
+				}
+			}
+			return &models.AIChatResponse{
+				Reply:              strings.Join(lines, "\n"),
+				SuggestedQuestions: suggested,
+			}, nil
+		}
+		lines = []string{fmt.Sprintf("🚌 Found **%d** idle/available vehicle(s) on **%s** (showing %d):\n", len(avail), date, limit)}
+		for i := 0; i < limit; i++ {
+			v := avail[i]
+			lines = append(lines, fmt.Sprintf("%d. **Unit `%s`** · %s · %d seats · Yard: %s · Status: %s", i+1, v.UnitNumber, v.UnitType, v.SeatCap, v.YardName, v.Status))
+		}
+		suggested := []string{"Vehicle fleet status", "Shifts without vehicle"}
+		if targetRoute != "" {
+			lines = append(lines, fmt.Sprintf("\n💡 Quick action: **Assign %s to %s**", avail[0].UnitNumber, targetRoute))
+			suggested = []string{fmt.Sprintf("Assign %s to %s", avail[0].UnitNumber, targetRoute)}
+			if len(avail) > 1 {
+				suggested = append(suggested, fmt.Sprintf("Assign %s to %s", avail[1].UnitNumber, targetRoute))
+			}
+		}
+		return &models.AIChatResponse{
+			Reply:              strings.Join(lines, "\n"),
+			SuggestedQuestions: suggested,
+		}, nil
+	}
 
 	// Pattern A: Unassigned shifts query
 	isUnassignedQuery := strings.Contains(lowerMsg, "unassigned") ||
@@ -968,6 +1282,116 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 	}
 
 	if driverQuery != "" && routeQuery != "" {
+		// Check if the target being assigned is a vehicle unit number (e.g. "Assign 1002 to CEPEO-021")
+		if matchedVeh, _ := s.toolService.FindVehicleByQuery(ctx, driverQuery); matchedVeh != nil && !strings.EqualFold(req.ActivePage, "routes") {
+			if !CanModifyDispatchShifts(req.UserRole, req.PagePermissions) {
+				denialMsg := BuildDispatchModificationDeniedMessage(req.UserRole, lang)
+				return &models.AIChatResponse{Reply: denialMsg}, nil
+			}
+			shiftType := "ALL"
+			if strings.Contains(strings.ToUpper(msg), "AM") {
+				shiftType = "AM"
+			} else if strings.Contains(strings.ToUpper(msg), "PM") {
+				shiftType = "PM"
+			}
+			action, summaryMsg, err := s.toolService.PrepareVehicleAssignment(ctx, date, routeQuery, matchedVeh, shiftType, req.OperatorName, req.UserRole, req.PagePermissions, lang)
+			if err != nil {
+				return &models.AIChatResponse{Reply: fmt.Sprintf("⚠️ %s", err.Error())}, nil
+			}
+			cardTitle := "Pending Vehicle Assignment Confirmation"
+			suggested := []string{"Confirm", "Cancel"}
+			if isFr {
+				cardTitle = "Affectation de véhicule en attente de confirmation"
+				suggested = []string{"Confirmer", "Annuler"}
+			} else if isZh {
+				cardTitle = "待确认车辆指派"
+				suggested = []string{"确认", "取消"}
+			}
+			return &models.AIChatResponse{
+				Reply: summaryMsg,
+				ActionCards: []models.AIActionCard{
+					{
+						Type:        "confirm_action",
+						Title:       cardTitle,
+						ActionID:    action.ID,
+						RequiresAck: true,
+						Data: map[string]interface{}{
+							"actionId":      action.ID,
+							"actionType":    action.ActionType,
+							"routeNo":       action.RouteNo,
+							"routeName":     action.RouteName,
+							"date":          action.Date,
+							"shiftType":     action.ShiftType,
+							"unitNumber":    action.UnitNumber,
+							"oldUnitNumber": action.OldUnitNumber,
+						},
+					},
+				},
+				SuggestedQuestions: suggested,
+			}, nil
+		}
+
+		isRouteScope := strings.EqualFold(req.ActivePage, "routes") ||
+			strings.Contains(lowerMsg, "permanent route") ||
+			strings.Contains(lowerMsg, "route assignment") ||
+			strings.Contains(lowerMsg, "永久路线")
+
+		if isRouteScope {
+			if !CanModifyRoutes(req.UserRole, req.PagePermissions) {
+				denialMsg := BuildDispatchModificationDeniedMessage(req.UserRole, lang)
+				return &models.AIChatResponse{
+					Reply: denialMsg,
+				}, nil
+			}
+
+			action, summaryMsg, err := s.toolService.PrepareRouteCrewAssignment(ctx, routeQuery, driverQuery, req.OperatorName, req.UserRole, req.PagePermissions, lang)
+			if err != nil {
+				errPrefix := "⚠️ Could not generate route assignment:"
+				if isFr {
+					errPrefix = "⚠️ Impossible de générer l'affectation de ligne :"
+				} else if isZh {
+					errPrefix = "⚠️ 无法生成永久路线分配："
+				}
+				return &models.AIChatResponse{
+					Reply: fmt.Sprintf("%s %s", errPrefix, err.Error()),
+				}, nil
+			}
+
+			cardTitle := "Pending Route Assignment Confirmation"
+			suggested := []string{"Confirm", "Cancel"}
+			if isFr {
+				cardTitle = "Affectation de ligne en attente de confirmation"
+				suggested = []string{"Confirmer", "Annuler"}
+			} else if isZh {
+				cardTitle = "待确认永久路线分配"
+				suggested = []string{"确认", "取消"}
+			}
+
+			return &models.AIChatResponse{
+				Reply: summaryMsg,
+				ActionCards: []models.AIActionCard{
+					{
+						Type:        "confirm_action",
+						Title:       cardTitle,
+						ActionID:    action.ID,
+						RequiresAck: true,
+						Data: map[string]interface{}{
+							"actionId":      action.ID,
+							"actionType":    action.ActionType,
+							"routeNo":       action.RouteNo,
+							"routeName":     action.RouteName,
+							"date":          action.Date,
+							"shiftType":     action.ShiftType,
+							"driverName":    action.DriverName,
+							"driverId":      action.DriverID,
+							"oldDriverName": action.OldDriverName,
+						},
+					},
+				},
+				SuggestedQuestions: suggested,
+			}, nil
+		}
+
 		if !CanModifyDispatchShifts(req.UserRole, req.PagePermissions) {
 			denialMsg := BuildDispatchModificationDeniedMessage(req.UserRole, lang)
 			return &models.AIChatResponse{
@@ -2225,36 +2649,46 @@ func (s *AIService) processWithGemini(ctx context.Context, req *models.AIChatReq
 	canAccessPayroll := CanAccessPayroll(req.UserRole, req.PagePermissions)
 	canAccessHR := CanAccessHR(req.UserRole, req.PagePermissions)
 
+	pageContextDesc := ""
+	if req.ActivePage != "" {
+		pageContextDesc = fmt.Sprintf(" The user is currently viewing page '%s'.", req.ActivePage)
+		if len(req.PageContext) > 0 {
+			if ctxBytes, err := json.Marshal(req.PageContext); err == nil {
+				pageContextDesc += fmt.Sprintf(" Active page context: %s.", string(ctxBytes))
+			}
+		}
+	}
+
 	var systemPrompt string
 	if isZh {
 		systemPrompt = fmt.Sprintf(
-			"You are the AI Dispatch Copilot for School Bus Fleet Management. Today's date is %s. "+
+			"You are the AI Dispatch Copilot for School Bus Fleet Management. Target context date is %s.%s "+
 				"The authenticated user has role '%s'. Permissions: can_modify_dispatch=%t, can_access_payroll=%t, can_access_hr=%t. "+
 				"You can answer questions about bus routes, drivers, shifts, fleet vehicles, students, staff, payroll, time off requests, expense claims, driver training courses, student incidents, hazard safety reports, and route safety assessments. "+
 				"If can_modify_dispatch is false and user asks to assign a driver or modify shifts, DO NOT call assignment tool; politely refuse in Chinese explaining that only Dispatchers and Admins can modify shifts. "+
 				"If can_access_payroll is false and user asks about payroll or compensation, politely refuse in Chinese stating insufficient permissions. "+
 				"ALWAYS answer politely, clearly, and fluently in Chinese (中文). When assigning drivers, important actions MUST be confirmed before actual execution.",
-			req.Date, normRole, canModifyDispatch, canAccessPayroll, canAccessHR,
+			req.Date, pageContextDesc, normRole, canModifyDispatch, canAccessPayroll, canAccessHR,
 		)
 	} else if isFr {
 		systemPrompt = fmt.Sprintf(
-			"You are the AI Dispatch Copilot for School Bus Fleet Management. Today's date is %s. "+
+			"You are the AI Dispatch Copilot for School Bus Fleet Management. Target context date is %s.%s "+
 				"The authenticated user has role '%s'. Permissions: can_modify_dispatch=%t, can_access_payroll=%t, can_access_hr=%t. "+
 				"You can answer questions about bus routes, drivers, shifts, fleet vehicles, students, staff, payroll, time off requests, expense claims, driver training courses, student incidents, hazard safety reports, and route safety assessments. "+
 				"If can_modify_dispatch is false and user asks to assign a driver or modify shifts, DO NOT call assignment tool; politely refuse in French explaining that only Dispatchers and Admins can modify shifts. "+
 				"If can_access_payroll is false and user asks about payroll or compensation, politely refuse in French stating insufficient permissions. "+
 				"ALWAYS answer in French (Français). When assigning drivers, important actions MUST be confirmed before actual execution.",
-			req.Date, normRole, canModifyDispatch, canAccessPayroll, canAccessHR,
+			req.Date, pageContextDesc, normRole, canModifyDispatch, canAccessPayroll, canAccessHR,
 		)
 	} else {
 		systemPrompt = fmt.Sprintf(
-			"You are the AI Dispatch Copilot for School Bus Fleet Management. Today's date is %s. "+
+			"You are the AI Dispatch Copilot for School Bus Fleet Management. Target context date is %s.%s "+
 				"The authenticated user has role '%s'. Permissions: can_modify_dispatch=%t, can_access_payroll=%t, can_access_hr=%t. "+
 				"You can answer questions about bus routes, drivers, shifts, fleet vehicles, students, staff, payroll, time off requests, expense claims, driver training courses, student incidents, hazard safety reports, and route safety assessments. "+
 				"If can_modify_dispatch is false and user asks to assign a driver or modify shifts, DO NOT call assignment tool; politely refuse in English explaining that only Dispatchers and Admins can modify shifts. "+
 				"If can_access_payroll is false and user asks about payroll or compensation, politely refuse in English stating insufficient permissions. "+
 				"ALWAYS answer in English. When assigning drivers, important actions MUST be confirmed before actual execution.",
-			req.Date, normRole, canModifyDispatch, canAccessPayroll, canAccessHR,
+			req.Date, pageContextDesc, normRole, canModifyDispatch, canAccessPayroll, canAccessHR,
 		)
 	}
 

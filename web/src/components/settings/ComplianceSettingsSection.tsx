@@ -25,11 +25,13 @@ const ProvinceModelCards = memo(function ProvinceModelCards({
   onSelect: (province: OperatingProvince) => void;
 }) {
   return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div role="group" aria-label={isFrench ? 'Modèle réglementaire provincial' : 'Provincial regulatory model'} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Ontario Card */}
-          <div
+          <button
+            type="button"
+            aria-pressed={province === 'ON'}
             onClick={() => onSelect('ON')}
-            className={`cursor-pointer rounded-xl p-4 border transition ${
+            className={`text-left cursor-pointer rounded-xl p-4 border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 ${
               province === 'ON'
                 ? 'bg-emerald-950/20 border-emerald-500/40 ring-1 ring-emerald-500/20'
                 : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'
@@ -37,7 +39,7 @@ const ProvinceModelCards = memo(function ProvinceModelCards({
           >
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-2">
-                <span className="text-lg">🇨🇦</span>
+                <span className="text-lg" aria-hidden="true">🇨🇦</span>
                 <span className="font-bold text-white text-sm">
                   {isFrench ? 'Modèle réglementaire de l\'Ontario' : 'Ontario Regulatory Model'}
                 </span>
@@ -88,12 +90,14 @@ const ProvinceModelCards = memo(function ProvinceModelCards({
                 <span>Safety Standards Certificate (PMVI) &amp; Punched Decal Sticker</span>
               </div>
             </div>
-          </div>
+          </button>
 
           {/* Quebec Card */}
-          <div
+          <button
+            type="button"
+            aria-pressed={province === 'QC'}
             onClick={() => onSelect('QC')}
-            className={`cursor-pointer rounded-xl p-4 border transition ${
+            className={`text-left cursor-pointer rounded-xl p-4 border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
               province === 'QC'
                 ? 'bg-sky-950/20 border-sky-500/40 ring-1 ring-sky-500/20'
                 : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'
@@ -101,7 +105,7 @@ const ProvinceModelCards = memo(function ProvinceModelCards({
           >
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-2">
-                <span className="text-lg">⚜️</span>
+                <span className="text-lg" aria-hidden="true">⚜️</span>
                 <span className="font-bold text-white text-sm">
                   {isFrench ? 'Modèle réglementaire du Québec' : 'Québec Regulatory Model'}
                 </span>
@@ -148,7 +152,7 @@ const ProvinceModelCards = memo(function ProvinceModelCards({
                 <span>Certificat de Vérification Mécanique (CVM) &amp; Vignette SAAQ</span>
               </div>
             </div>
-          </div>
+          </button>
         </div>
   );
 });
@@ -763,14 +767,14 @@ export const ComplianceSettingsSection = memo(function ComplianceSettingsSection
           </div>
 
           {provStatus && (
-            <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-xl">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <div role="status" className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-xl">
+              <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
               <span>{provStatus}</span>
             </div>
           )}
           {provError && (
-            <div className="flex items-center gap-2 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-2 rounded-xl">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+            <div role="alert" className="flex items-center gap-2 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-2 rounded-xl">
+              <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
               <span>{provError}</span>
             </div>
           )}
@@ -783,9 +787,9 @@ export const ComplianceSettingsSection = memo(function ComplianceSettingsSection
             <button
               type="submit"
               disabled={provSaving}
-              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow-md transition flex items-center space-x-1.5 disabled:opacity-50"
+              className="px-4 py-2 min-h-[36px] bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow-md transition flex items-center space-x-1.5 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
             >
-              <Save className="w-3.5 h-3.5" />
+              <Save className="w-3.5 h-3.5" aria-hidden="true" />
               <span>
                 {provSaving
                   ? isFrench

@@ -14,6 +14,8 @@ export interface AIChatRequest {
   operatorName?: string;
   userRole?: string;
   pagePermissions?: Record<string, string>;
+  activePage?: string;
+  pageContext?: Record<string, string>;
   actionId?: string;
   confirmed?: boolean;
   confirmActionId?: string;

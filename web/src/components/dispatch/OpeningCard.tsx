@@ -98,7 +98,7 @@ export const OpeningCard = memo(function OpeningCard({
 
         <div className="mt-2 space-y-1.5 text-xs text-slate-400">
           <div className="flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <Calendar aria-hidden="true" className="w-3.5 h-3.5 text-slate-500 shrink-0" />
             <span>
               {isPermanent ? (
                 <>
@@ -116,7 +116,7 @@ export const OpeningCard = memo(function OpeningCard({
           </div>
 
           <div className="flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <Clock aria-hidden="true" className="w-3.5 h-3.5 text-slate-500 shrink-0" />
             <span>
               Shift:{' '}
               <strong className="text-slate-200">
@@ -169,7 +169,7 @@ export const OpeningCard = memo(function OpeningCard({
           <div className="mt-3 p-2.5 bg-purple-950/40 border border-purple-800/40 rounded-xl text-xs text-purple-300 flex flex-col gap-1.5">
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-1.5">
-                <Award className="w-4 h-4 text-purple-400 shrink-0" />
+                <Award aria-hidden="true" className="w-4 h-4 text-purple-400 shrink-0" />
                 <span>
                   Awarded to:{' '}
                   <strong>
@@ -208,19 +208,23 @@ export const OpeningCard = memo(function OpeningCard({
       <div className="mt-4 pt-3 border-t border-slate-800/80 flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <button
+            type="button"
+            aria-label={`Inspect stops for ${op.routeNo}`}
             onClick={() => onInspect(op)}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className="min-h-[28px] px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
-            <Eye className="w-3.5 h-3.5 text-cyan-400" />
+            <Eye aria-hidden="true" className="w-3.5 h-3.5 text-cyan-400" />
             <span>Inspect Stops (Confidential)</span>
           </button>
 
           {canManage ? (
             <button
+              type="button"
+              aria-label={`Review ${applicantCount} candidates for ${op.routeNo}`}
               onClick={() => onReview(op)}
-              className="px-3 py-1.5 bg-purple-900/40 hover:bg-purple-800/50 text-purple-300 border border-purple-700/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
+              className="min-h-[28px] px-3 py-1.5 bg-purple-900/40 hover:bg-purple-800/50 text-purple-300 border border-purple-700/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
-              <Users className="w-3.5 h-3.5" />
+              <Users aria-hidden="true" className="w-3.5 h-3.5" />
               <span>Candidates ({applicantCount})</span>
             </button>
           ) : (
@@ -235,13 +239,15 @@ export const OpeningCard = memo(function OpeningCard({
             {hasApplied ? (
               <div className="flex items-center justify-between bg-emerald-950/40 border border-emerald-800/40 px-3 py-1.5 rounded-xl text-xs">
                 <span className="text-emerald-300 font-bold flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <Check aria-hidden="true" className="w-3.5 h-3.5 text-emerald-400" />
                   {labels.appliedBadge || 'Applied (Pending Review)'}
                 </span>
                 {!deadlineInfo.isPassed && (
                   <button
+                    type="button"
+                    aria-label={`Withdraw application for ${op.routeNo}`}
                     onClick={() => onWithdraw(op.id)}
-                    className="text-[11px] text-rose-400 hover:text-rose-300 underline"
+                    className="min-h-[24px] px-1 text-[11px] text-rose-400 hover:text-rose-300 underline rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                   >
                     Withdraw
                   </button>
@@ -249,6 +255,7 @@ export const OpeningCard = memo(function OpeningCard({
               </div>
             ) : deadlineInfo.isPassed ? (
               <button
+                type="button"
                 disabled
                 className="w-full py-2 bg-slate-800 text-slate-500 rounded-xl text-xs font-semibold cursor-not-allowed text-center"
               >
@@ -256,10 +263,12 @@ export const OpeningCard = memo(function OpeningCard({
               </button>
             ) : (
               <button
+                type="button"
+                aria-label={`${labels.applyBtn || 'Apply / Express Interest'} for ${op.routeNo}`}
                 onClick={() => onApply(op)}
-                className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow transition-all"
+                className="min-h-[32px] w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               >
-                <Send className="w-3.5 h-3.5" />
+                <Send aria-hidden="true" className="w-3.5 h-3.5" />
                 <span>{labels.applyBtn || 'Apply / Express Interest'}</span>
               </button>
             )}
@@ -269,8 +278,10 @@ export const OpeningCard = memo(function OpeningCard({
         {canManage && (
           <div className="flex justify-end pt-1">
             <button
+              type="button"
+              aria-label={`Delete bulletin for ${op.routeNo}`}
               onClick={() => onDelete(op.id)}
-              className="text-[11px] text-slate-500 hover:text-rose-400 transition-colors"
+              className="min-h-[28px] px-1.5 text-[11px] text-slate-500 hover:text-rose-400 transition-colors rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
               Delete Bulletin
             </button>

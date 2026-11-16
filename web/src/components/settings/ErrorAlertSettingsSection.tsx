@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from 'react';
+import React, { memo, useEffect, useId, useState } from 'react';
 import {
   getErrorAlertSettings,
   saveErrorAlertSettings,
@@ -44,6 +44,11 @@ function parseRecipients(raw: string): string[] {
 
 export const ErrorAlertSettingsSection = memo(function ErrorAlertSettingsSection() {
   const scheduleReset = useScheduledReset();
+  const baseId = useId();
+  const headingId = `${baseId}-heading`;
+  const recipientsId = `${baseId}-recipients`;
+  const recipientsHelpId = `${baseId}-recipients-help`;
+  const throttleId = `${baseId}-throttle`;
   const [recipientsText, setRecipientsText] = useState('');
   const [pages, setPages] = useState<Record<string, boolean>>({ ...DEFAULT_PAGES });
   const [throttleMinutes, setThrottleMinutes] = useState(5);
@@ -103,10 +108,10 @@ export const ErrorAlertSettingsSection = memo(function ErrorAlertSettingsSection
     <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
       <div className="flex items-start gap-3">
         <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center shrink-0">
-          <AlertTriangle className="w-5 h-5 text-rose-400" />
+          <AlertTriangle className="w-5 h-5 text-rose-400" aria-hidden="true" />
         </div>
         <div>
-          <h2 className="text-base font-bold text-white">Client Error Email Alerts</h2>
+          <h2 id={headingId} className="text-base font-bold text-white">Client Error Email Alerts</h2>
           <p className="text-xs text-slate-400 mt-0.5">
             Log every failed web read/write, and email selected pages to the recipients below.
             Matching errors are throttled so the same failure only emails once every few minutes.
@@ -115,30 +120,33 @@ export const ErrorAlertSettingsSection = memo(function ErrorAlertSettingsSection
       </div>
 
       {loading ? (
-        <p className="text-xs text-slate-500">Loading error alert settings...</p>
+        <p role="status" className="text-xs text-slate-500">Loading error alert settings...</p>
       ) : (
-        <form onSubmit={handleSave} className="space-y-4">
+        <form aria-labelledby={headingId} onSubmit={handleSave} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+            <label htmlFor={recipientsId} className="block text-xs font-semibold text-slate-300 mb-1.5">
               Alert recipients
             </label>
             <textarea
+              id={recipientsId}
+              name="recipients"
+              aria-describedby={recipientsHelpId}
               value={recipientsText}
               onChange={(e) => setRecipientsText(e.target.value)}
               rows={3}
               placeholder={'ops@example.com\ndispatch@example.com'}
-              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500/40"
+              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-base sm:text-sm text-slate-100 placeholder:text-slate-600 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-rose-500"
             />
-            <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-              <Mail className="w-3 h-3" />
+            <p id={recipientsHelpId} className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+              <Mail className="w-3 h-3" aria-hidden="true" />
               One email per line, or separate with commas.
             </p>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-2">
+          <fieldset>
+            <legend className="block text-xs font-semibold text-slate-300 mb-2">
               Pages that send email
-            </label>
+            </legend>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {ALERT_PAGES.map((page) => (
                 <label
@@ -156,31 +164,33 @@ export const ErrorAlertSettingsSection = memo(function ErrorAlertSettingsSection
                 </label>
               ))}
             </div>
-          </div>
+          </fieldset>
 
           <div className="max-w-[180px]">
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+            <label htmlFor={throttleId} className="block text-xs font-semibold text-slate-300 mb-1.5">
               Throttle (minutes)
             </label>
             <input
+              id={throttleId}
+              name="throttleMinutes"
               type="number"
               min={1}
               max={60}
               value={throttleMinutes}
               onChange={(e) => setThrottleMinutes(Number(e.target.value) || 5)}
-              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500/40"
+              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-base sm:text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-rose-500"
             />
           </div>
 
           {status && (
-            <div className="flex items-center gap-2 text-xs text-emerald-400">
-              <CheckCircle2 className="w-3.5 h-3.5" />
+            <div role="status" className="flex items-center gap-2 text-xs text-emerald-400">
+              <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
               <span>{status}</span>
             </div>
           )}
           {error && (
-            <div className="flex items-center gap-2 text-xs text-rose-400">
-              <AlertCircle className="w-3.5 h-3.5" />
+            <div role="alert" className="flex items-center gap-2 text-xs text-rose-400">
+              <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />
               <span>{error}</span>
             </div>
           )}
@@ -188,9 +198,9 @@ export const ErrorAlertSettingsSection = memo(function ErrorAlertSettingsSection
           <button
             type="submit"
             disabled={saving}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-500/20 text-rose-200 border border-rose-500/30 hover:bg-rose-500/30 text-sm font-semibold disabled:opacity-60"
+            className="inline-flex items-center gap-2 px-4 py-2 min-h-[36px] rounded-xl bg-rose-500/20 text-rose-200 border border-rose-500/30 hover:bg-rose-500/30 text-sm font-semibold disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
           >
-            <Save className="w-4 h-4" />
+            <Save className="w-4 h-4" aria-hidden="true" />
             {saving ? 'Saving...' : 'Save error alerts'}
           </button>
         </form>

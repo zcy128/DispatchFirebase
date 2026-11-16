@@ -1,5 +1,7 @@
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   Calendar,
   ChevronLeft,
@@ -389,44 +391,44 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
     switch (s) {
       case 'paid':
         return (
-          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full border">
             Paid
           </span>
         );
       case 'processed':
         return (
-          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
+          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full border">
             Processed
           </span>
         );
       case 'on_hold':
         return (
-          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full border">
             On Hold
           </span>
         );
       case 'pending_review':
       case 'pending':
         return (
-          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 border border-orange-300 dark:border-orange-700">
+          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full border">
             Pending Review
           </span>
         );
       case 'draft':
         return (
-          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-600">
+          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-slate-800 text-slate-300 border border-slate-600">
             Draft
           </span>
         );
       case 'rejected':
         return (
-          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-700">
+          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full border">
             Rejected
           </span>
         );
       default:
         return (
-          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700">
+          <span className="px-2.5 py-0.5 text-xs font-bold rounded-full border">
             Approved (Ready)
           </span>
         );
@@ -434,115 +436,123 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
   };
 
   return (
-    <div className="space-y-6">
+    <PageShell>
       {/* Header Info Banner */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-            <Receipt className="w-7 h-7" />
+      <PageHeader
+        title="Payroll Department Log"
+        subtitle="Finance & Payroll Department Records. Only approved dispatch shifts with rate greater than zero appear here."
+        icon={
+          <div aria-hidden="true" className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <Receipt className="w-5 h-5" />
           </div>
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-              Payroll Department Log
-            </h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Finance & Payroll Department Records. Only approved dispatch shifts with rate greater than zero appear here.
-            </p>
-          </div>
-        </div>
+        }
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSyncFromDailyDispatch}
+              disabled={syncing || loading}
+              className="min-h-[36px] inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-indigo-500/30 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 font-semibold text-xs transition-colors shadow-xs disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+              title="Sync routine and clean payroll records from daily dispatch for this date"
+            >
+              <RefreshCw aria-hidden="true" className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              <span>{syncing ? 'Syncing...' : 'Sync from Daily Dispatch'}</span>
+            </button>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleSyncFromDailyDispatch}
-            disabled={syncing || loading}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 font-semibold text-xs transition-colors shadow-xs disabled:opacity-50"
-            title="Sync routine and clean payroll records from daily dispatch for this date"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-            <span>{syncing ? 'Syncing...' : 'Sync from Daily Dispatch'}</span>
-          </button>
-
-          <button
-            onClick={handleRefresh}
-            disabled={loading}
-            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-xs disabled:opacity-50"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+            <button
+              type="button"
+              aria-label="Refresh payroll department log"
+              onClick={handleRefresh}
+              disabled={loading}
+              className="min-w-[36px] min-h-[36px] inline-flex items-center justify-center p-2 rounded-xl border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors shadow-xs disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+              title="Refresh"
+            >
+              <RefreshCw aria-hidden="true" className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
 
           <button
+            type="button"
             onClick={handleExportExcel}
             disabled={filteredLogs.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-xs transition-all hover:shadow"
+            className="min-h-[36px] inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-xs transition-all hover:shadow disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
             title="Export filtered records to Microsoft Excel format"
           >
-            <Download className="w-4 h-4" />
-            <FileSpreadsheet className="w-4 h-4" />
+            <Download aria-hidden="true" className="w-4 h-4" />
+            <FileSpreadsheet aria-hidden="true" className="w-4 h-4" />
             <span>Export to Excel</span>
           </button>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {/* Sync Feedback Message */}
       {syncFeedback && (
         <div
+          role={syncFeedback.type === 'error' ? 'alert' : 'status'}
           className={`p-4 rounded-xl border text-xs flex items-center justify-between gap-3 ${
             syncFeedback.type === 'success'
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
-              : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300'
+              ? '  '
+              : '  '
           }`}
         >
           <div className="flex items-center gap-2">
             {syncFeedback.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <CheckCircle2 aria-hidden="true" className="w-4 h-4 shrink-0" />
             ) : (
-              <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+              <AlertCircle aria-hidden="true" className="w-4 h-4 shrink-0" />
             )}
             <span>{syncFeedback.message}</span>
           </div>
           <button
+            type="button"
+            aria-label="Dismiss sync notice"
             onClick={() => setSyncFeedback(null)}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            className="min-w-[24px] min-h-[24px] inline-flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
           >
-            <X className="w-4 h-4" />
+            <X aria-hidden="true" className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {/* Date Navigation & Filters Toolbar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+      <search aria-label="Filter payroll department log" className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xs">
         {/* Date Selector */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700">
             <button
+              type="button"
+              aria-label="Previous day"
               onClick={handlePrevDay}
-              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:shadow-xs transition-all"
+              className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-200 hover:bg-white hover:bg-slate-700 hover:shadow-xs transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
               title="Previous Day"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft aria-hidden="true" className="w-4 h-4" />
             </button>
             <div className="flex items-center gap-2 px-2">
-              <Calendar className="w-4 h-4 text-emerald-500" />
+              <Calendar aria-hidden="true" className="w-4 h-4 text-emerald-500" />
               <input
                 type="date"
+                aria-label="Select payroll log date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-transparent text-sm font-semibold text-slate-800 dark:text-slate-100 focus:outline-hidden cursor-pointer"
+                className="bg-transparent text-base sm:text-sm font-semibold text-slate-200 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 cursor-pointer"
               />
             </div>
             <button
+              type="button"
+              aria-label="Next day"
               onClick={handleNextDay}
-              className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:shadow-xs transition-all"
+              className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-200 hover:bg-white hover:bg-slate-700 hover:shadow-xs transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
               title="Next Day"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight aria-hidden="true" className="w-4 h-4" />
             </button>
           </div>
 
           <button
+            type="button"
             onClick={handleToday}
-            className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-colors"
+            className="min-h-[32px] px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
           >
             Today
           </button>
@@ -551,22 +561,24 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
         {/* Search & Filters */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-[220px]">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search aria-hidden="true" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
-              type="text"
+              type="search"
+              aria-label="Search route, employee, unit, or notes"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search route, employee, unit, notes..."
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+              className="w-full pl-9 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-base sm:text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 text-slate-200 placeholder:text-slate-400"
             />
           </div>
 
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Filter className="w-3.5 h-3.5" />
+            <Filter aria-hidden="true" className="w-3.5 h-3.5" />
             <select
+              aria-label="Filter by source type"
               value={sourceTypeFilter}
               onChange={(e) => setSourceTypeFilter(e.target.value as 'all' | 'routes' | 'charter')}
-              className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
+              className="px-2.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-base sm:text-xs font-medium text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
             >
               <option value="all">All Shifts & Trips</option>
               <option value="routes">Route Shifts Only</option>
@@ -576,9 +588,10 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
 
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
             <select
+              aria-label="Filter by role"
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value as any)}
-              className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
+              className="px-2.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-base sm:text-xs font-medium text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
             >
               <option value="all">All Roles</option>
               <option value="driver">All Drivers</option>
@@ -589,9 +602,10 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
           </div>
 
           <select
+            aria-label="Filter by payroll status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-2.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
+            className="px-2.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-base sm:text-xs font-medium text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
           >
             <option value="all">All Statuses</option>
             <option value="approved">Approved (Ready)</option>
@@ -603,83 +617,84 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
             <option value="rejected">Rejected</option>
           </select>
         </div>
-      </div>
+      </search>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Finance Payroll</p>
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
+            <p className="text-xs font-medium text-slate-400">Total Finance Payroll</p>
+            <h3 className="text-2xl font-bold text-white mt-1">
               ${stats.totalPay.toFixed(2)}
             </h3>
-            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-medium flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" />
+            <p className="text-xs mt-1 font-medium flex items-center gap-1">
+              <CheckCircle2 aria-hidden="true" className="w-3.5 h-3.5" />
               <span>Synced Liabilities</span>
             </p>
           </div>
-          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <div aria-hidden="true" className="p-3 rounded-xl bg-emerald-500/10">
             <DollarSign className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Total EI Hours</p>
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
+            <p className="text-xs font-medium text-slate-400">Total EI Hours</p>
+            <h3 className="text-2xl font-bold text-white mt-1">
               {stats.totalEiHours.toFixed(1)} hrs
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            <p className="text-xs text-slate-400 mt-1">
               Employment Insurance
             </p>
           </div>
-          <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+          <div aria-hidden="true" className="p-3 rounded-xl bg-indigo-500/10">
             <Clock className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Approved & Ready</p>
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
+            <p className="text-xs font-medium text-slate-400">Approved & Ready</p>
+            <h3 className="text-2xl font-bold text-white mt-1">
               {stats.approvedCount}
             </h3>
-            <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+            <p className="text-xs mt-1">
               Awaiting payroll processing
             </p>
           </div>
-          <div className="p-3 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+          <div aria-hidden="true" className="p-3 rounded-xl bg-blue-500/10">
             <UserCheck className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Pending Review / Draft</p>
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
+            <p className="text-xs font-medium text-slate-400">Pending Review / Draft</p>
+            <h3 className="text-2xl font-bold text-white mt-1">
               {stats.pendingOrHoldCount}
             </h3>
-            <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
+            <p className="text-xs mt-1">
               {stats.processedCount} Processed • {stats.paidCount} Paid
             </p>
           </div>
-          <div className="p-3 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400">
+          <div aria-hidden="true" className="p-3 rounded-xl bg-purple-500/10">
             <ShieldCheck className="w-6 h-6" />
           </div>
         </div>
       </div>
 
       {error && (
-        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-sm flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 shrink-0" />
+        <div role="alert" className="p-4 rounded-xl border text-sm flex items-center gap-3">
+          <AlertCircle aria-hidden="true" className="w-5 h-5 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Main Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+      <div className="bg-slate-900 rounded-2xl border border-slate-800 shadow-xs overflow-hidden">
+        <div ref={tableContainerRef} tabIndex={0} role="region" aria-label="Payroll department log table" className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500">
           <table className="w-full text-left text-sm table-fixed min-w-[1470px] border-collapse">
+            <caption className="sr-only">Payroll department log records for {selectedDate}</caption>
             <colgroup>
               <col style={{ width: '150px' }} /> {/* Route & Shift */}
               <col style={{ width: '80px' }} />  {/* Role */}
@@ -695,24 +710,24 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
               <col style={{ width: '160px' }} /> {/* Modified By / At */}
               <col style={{ width: '70px' }} />  {/* Action */}
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800 shadow-2xs">
+            <thead className="sticky top-0 z-10 bg-slate-800 text-slate-400 font-semibold border-b border-slate-800 shadow-2xs">
               <tr>
-                <th className="py-3.5 px-4">Route & Shift</th>
-                <th className="py-3.5 px-4">Role</th>
-                <th className="py-3.5 px-4">Employee</th>
-                <th className="py-3.5 px-4">Unit #</th>
-                <th className="py-3.5 px-4">Check-in / Out</th>
-                <th className="py-3.5 px-4 text-right">Dispatch Rate</th>
-                <th className="py-3.5 px-4 text-right">Pay Amount ($)</th>
-                <th className="py-3.5 px-4 text-right">EI Hours</th>
-                <th className="py-3.5 px-4">Dispatch Comments</th>
-                <th className="py-3.5 px-4">Payroll Notes</th>
-                <th className="py-3.5 px-4 text-center">Status</th>
-                <th className="py-3.5 px-4 text-left">Modified By / At</th>
-                <th className="py-3.5 px-4 text-center">Action</th>
+                <th scope="col" className="py-3.5 px-4">Route & Shift</th>
+                <th scope="col" className="py-3.5 px-4">Role</th>
+                <th scope="col" className="py-3.5 px-4">Employee</th>
+                <th scope="col" className="py-3.5 px-4">Unit #</th>
+                <th scope="col" className="py-3.5 px-4">Check-in / Out</th>
+                <th scope="col" className="py-3.5 px-4 text-right">Dispatch Rate</th>
+                <th scope="col" className="py-3.5 px-4 text-right">Pay Amount ($)</th>
+                <th scope="col" className="py-3.5 px-4 text-right">EI Hours</th>
+                <th scope="col" className="py-3.5 px-4">Dispatch Comments</th>
+                <th scope="col" className="py-3.5 px-4">Payroll Notes</th>
+                <th scope="col" className="py-3.5 px-4 text-center">Status</th>
+                <th scope="col" className="py-3.5 px-4 text-left">Modified By / At</th>
+                <th scope="col" className="py-3.5 px-4 text-center">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            <tbody className="divide-y divide-slate-800">
               {loading ? (
                 <tr>
                   <td colSpan={13} className="py-12 text-center text-slate-500">
@@ -726,14 +741,14 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
                 <tr>
                   <td colSpan={13} className="py-12 text-center">
                     <div className="flex flex-col items-center justify-center gap-3 max-w-md mx-auto text-slate-500">
-                      <div className="p-3.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400">
+                      <div className="p-3.5 rounded-full bg-slate-800 text-slate-400">
                         <Receipt className="w-8 h-8" />
                       </div>
                       <div className="space-y-1">
-                        <h4 className="font-semibold text-slate-900 dark:text-white">
+                        <h4 className="font-semibold text-white">
                           No Payroll Records for this Date
                         </h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                        <p className="text-xs text-slate-400">
                           Shifts appear here automatically once checked out without comments (or after dispatcher approval) with pay rate greater than zero.
                         </p>
                       </div>
@@ -753,21 +768,21 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
                     return (
                       <tr
                         key={rec.id}
-                        className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                        className="hover:bg-slate-800/40 transition-colors"
                   >
                     {/* Route & Shift */}
                     <td className="py-3.5 px-4">
                       <div
-                        className="flex items-center gap-1.5 font-mono font-bold text-slate-900 dark:text-white truncate"
+                        className="flex items-center gap-1.5 font-mono font-bold text-white truncate"
                         title={[rec.routeNo, rec.routeName, rec.clientName].filter(Boolean).join(' · ')}
                       >
                         <span className="truncate">{rec.routeNo}</span>
                         {rec.isCharter || rec.shiftType === 'CHARTER' ? (
-                          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-extrabold bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-extrabold border">
                             CHARTER
                           </span>
                         ) : (
-                          <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-sans">
+                          <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-sans">
                             {rec.shiftType}
                           </span>
                         )}
@@ -777,12 +792,12 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
                     {/* Role */}
                     <td className="py-3.5 px-4">
                       {rec.role === 'driver' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border">
                           <Bus className="w-3 h-3" />
                           <span>Driver</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border">
                           <UserCheck className="w-3 h-3" />
                           <span>Attendant</span>
                         </span>
@@ -795,13 +810,13 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
                         <button
                           type="button"
                           onClick={() => onSelectEmployee(rec.employeeId, rec.employeeName)}
-                          className="font-medium text-slate-900 dark:text-slate-100 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left"
+                          className="font-medium text-slate-200 hover:text-amber-600 hover:text-amber-300 hover:underline transition text-left rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
                           title="View employee details"
                         >
                           {rec.employeeName}
                         </button>
                       ) : (
-                        <div className="font-medium text-slate-900 dark:text-slate-100">
+                        <div className="font-medium text-slate-100">
                           {rec.employeeName}
                         </div>
                       )}
@@ -813,13 +828,13 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
                     </td>
 
                     {/* Unit # */}
-                    <td className="py-3.5 px-4 font-mono text-xs text-slate-600 dark:text-slate-300">
+                    <td className="py-3.5 px-4 font-mono text-xs text-slate-300">
                       {rec.unitNumber || '-'}
                     </td>
 
                     {/* Check-in / Out Time */}
                     <td className="py-3.5 px-4 text-xs font-mono">
-                      <div className="text-slate-700 dark:text-slate-300">
+                      <div className="text-slate-300">
                         In: {rec.checkInTime || '-'}
                       </div>
                       <div className="text-slate-400">
@@ -834,13 +849,13 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
 
                     {/* Finance Pay Amount */}
                     <td className="py-3.5 px-4 text-right">
-                      <span className="font-mono font-bold text-base text-emerald-600 dark:text-emerald-400">
+                      <span className="font-mono font-bold text-base">
                         ${(rec.payAmount || 0).toFixed(2)}
                       </span>
                     </td>
 
                     {/* EI Hours */}
-                    <td className="py-3.5 px-4 text-right font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <td className="py-3.5 px-4 text-right font-mono text-xs font-semibold text-slate-300">
                       {(rec.eiHours || 0).toFixed(1)} hrs
                     </td>
 
@@ -850,9 +865,9 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
                     </td>
 
                     {/* Payroll Notes */}
-                    <td className="py-3.5 px-4 text-xs text-slate-700 dark:text-slate-300 max-w-[140px] truncate" title={rec.payrollNotes || ''}>
+                    <td className="py-3.5 px-4 text-xs text-slate-300 max-w-[140px] truncate" title={rec.payrollNotes || ''}>
                       {rec.payrollNotes ? (
-                        <span className="font-medium text-amber-600 dark:text-amber-400">
+                        <span className="font-medium">
                           {rec.payrollNotes}
                         </span>
                       ) : (
@@ -867,7 +882,7 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
 
                     {/* Last Modified */}
                     <td className="py-3.5 px-4 text-xs font-mono">
-                      <div className="font-semibold text-slate-800 dark:text-slate-200">
+                      <div className="font-semibold text-slate-200">
                         {rec.updatedBy || rec.approvedBy || 'System'}
                       </div>
                       <div className="text-[11px] text-slate-400">
@@ -879,7 +894,7 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
                     <td className="py-3.5 px-4 text-center">
                       <button
                         onClick={() => handleOpenEdit(rec)}
-                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium transition-colors shadow-xs"
+                        className="p-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-medium transition-colors shadow-xs"
                         title="Edit rate, hours, or internal notes"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -901,18 +916,18 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
 
         {/* Table Footer */}
         {!loading && filteredLogs.length > 0 && (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 bg-slate-50/75 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 bg-slate-800/40 border-t border-slate-800 text-xs text-slate-500">
             <div>
-              Showing <span className="font-bold text-slate-800 dark:text-slate-200">{filteredLogs.length}</span> of{' '}
-              <span className="font-bold text-slate-800 dark:text-slate-200">{logs.length}</span> records for{' '}
-              <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{selectedDate}</span>
+              Showing <span className="font-bold text-slate-200">{filteredLogs.length}</span> of{' '}
+              <span className="font-bold text-slate-200">{logs.length}</span> records for{' '}
+              <span className="font-mono font-semibold">{selectedDate}</span>
             </div>
             <div className="flex items-center gap-4 text-xs font-mono">
               <span>
-                Total Amount: <span className="font-bold text-emerald-600 dark:text-emerald-400">${filteredTotals.totalPay.toFixed(2)}</span>
+                Total Amount: <span className="font-bold">${filteredTotals.totalPay.toFixed(2)}</span>
               </span>
               <span>
-                Total Hours: <span className="font-bold text-slate-800 dark:text-slate-200">{filteredTotals.totalEiHours.toFixed(1)} hrs</span>
+                Total Hours: <span className="font-bold text-slate-200">{filteredTotals.totalEiHours.toFixed(1)} hrs</span>
               </span>
             </div>
           </div>
@@ -928,6 +943,8 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
           onUpdated={applyLogUpdate}
         />
       )}
-    </div>
+    </PageShell>
   );
 });
+
+

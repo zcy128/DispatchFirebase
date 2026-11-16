@@ -1,6 +1,8 @@
 import React, { useMemo, useRef, useState, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { School, SchoolBoard, SchoolStats } from '../types/school';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   Search,
   Filter,
@@ -146,61 +148,60 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
     : 0;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 text-slate-100">
+    <PageShell className="text-slate-100">
       {/* Top Header & Action Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+      <PageHeader
+        title="Schools & School Boards"
+        subtitle="District educational authorities, campus locations, and daily bell timetables"
+        badge={
+          <span className="px-2 py-0.5 text-xs font-bold bg-amber-500/20 text-amber-400 rounded-full border border-amber-500/30">
+            {schools.length} Campuses
+          </span>
+        }
+        actions={
           <div className="flex items-center space-x-3">
-            <h1 className="text-2xl font-black text-white tracking-tight">
-              Schools & School Boards
-            </h1>
-            <span className="px-2 py-0.5 text-xs font-bold bg-amber-500/20 text-amber-400 rounded-full border border-amber-500/30">
-              {schools.length} Campuses
-            </span>
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={() => void handleRefresh()}
+                disabled={refreshing || loading}
+                className="p-2.5 min-w-[36px] min-h-[36px] inline-flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition shadow-sm disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                title="Sync latest school database"
+                aria-label="Sync latest school database"
+              >
+                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-amber-400' : ''}`} aria-hidden="true" />
+              </button>
+            )}
+
+            {activeTab === 'schools' ? (
+              <button
+                type="button"
+                onClick={onCreateSchool}
+                className="flex items-center space-x-1.5 px-4 py-2.5 min-h-[36px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
+              >
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                <span>New School</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onCreateBoard}
+                className="flex items-center space-x-1.5 px-4 py-2.5 min-h-[36px] bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
+              >
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                <span>New School Board</span>
+              </button>
+            )}
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            District educational authorities, campus locations, and daily bell timetables
-          </p>
-        </div>
-
-        <div className="flex items-center space-x-3">
-          {onRefresh && (
-            <button
-              onClick={() => void handleRefresh()}
-              disabled={refreshing || loading}
-              className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition shadow-sm disabled:opacity-50"
-              title="Sync latest school database"
-            >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-amber-400' : ''}`} />
-            </button>
-          )}
-
-          {activeTab === 'schools' ? (
-            <button
-              onClick={onCreateSchool}
-              className="flex items-center space-x-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition"
-            >
-              <Plus className="w-4 h-4" />
-              <span>New School</span>
-            </button>
-          ) : (
-            <button
-              onClick={onCreateBoard}
-              className="flex items-center space-x-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition"
-            >
-              <Plus className="w-4 h-4" />
-              <span>New School Board</span>
-            </button>
-          )}
-        </div>
-      </div>
+        }
+      />
 
       {/* KPI Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Schools */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm flex items-center space-x-3">
           <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 flex-shrink-0">
-            <SchoolIcon className="w-6 h-6" />
+            <SchoolIcon className="w-6 h-6" aria-hidden="true" />
           </div>
           <div>
             <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
@@ -216,7 +217,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
         {/* School Boards */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm flex items-center space-x-3">
           <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 flex-shrink-0">
-            <Building2 className="w-6 h-6" />
+            <Building2 className="w-6 h-6" aria-hidden="true" />
           </div>
           <div>
             <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
@@ -232,7 +233,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
         {/* Total Enrolled Students */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm flex items-center space-x-3">
           <div className="w-12 h-12 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 flex-shrink-0">
-            <Users className="w-6 h-6" />
+            <Users className="w-6 h-6" aria-hidden="true" />
           </div>
           <div>
             <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
@@ -248,7 +249,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
         {/* Operating Coverage */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm flex items-center space-x-3">
           <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 flex-shrink-0">
-            <Clock className="w-6 h-6" />
+            <Clock className="w-6 h-6" aria-hidden="true" />
           </div>
           <div>
             <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
@@ -263,46 +264,56 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
       </div>
 
       {/* Sub-Tab Navigation Header */}
-      <div className="flex items-center space-x-2 border-b border-slate-800 pb-2">
+      <div role="tablist" aria-label="Schools and boards sections" className="flex items-center space-x-2 border-b border-slate-800 pb-2">
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'schools'}
           onClick={() => setActiveTab('schools')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+          className={`flex items-center space-x-2 px-4 py-2 min-h-[36px] rounded-xl text-xs font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeTab === 'schools'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
-          <SchoolIcon className="w-4 h-4" />
+          <SchoolIcon className="w-4 h-4" aria-hidden="true" />
           <span>Schools Directory ({schools.length})</span>
         </button>
 
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'boards'}
           onClick={() => setActiveTab('boards')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+          className={`flex items-center space-x-2 px-4 py-2 min-h-[36px] rounded-xl text-xs font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             activeTab === 'boards'
               ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
               : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
-          <Building2 className="w-4 h-4" />
+          <Building2 className="w-4 h-4" aria-hidden="true" />
           <span>School Boards ({boards.length})</span>
         </button>
       </div>
 
       {/* TAB CONTENT 1: SCHOOLS DIRECTORY */}
       {activeTab === 'schools' && (
-        <div className="space-y-4">
+        <div role="tabpanel" aria-label="Schools Directory" className="space-y-4">
           {/* Search & Filter Bar */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center">
+          <search
+            aria-label="Search and filter schools"
+            className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center"
+          >
             {/* Search Input */}
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" aria-hidden="true" />
               <input
-                type="text"
+                type="search"
+                aria-label="Search by school name, address, contact person, or board"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search by school name, address, contact person, or board..."
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500 transition placeholder:text-slate-500"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-base sm:text-sm text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500 transition placeholder:text-slate-500"
               />
             </div>
 
@@ -310,11 +321,12 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
             <div className="flex flex-wrap items-center gap-3">
               {/* Board Filter */}
               <div className="flex items-center space-x-2">
-                <Filter className="w-3.5 h-3.5 text-slate-400" />
+                <Filter className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
                 <select
                   value={selectedBoardId}
                   onChange={(e) => setSelectedBoardId(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                  aria-label="Filter by school board"
+                  className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-base sm:text-xs text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
                 >
                   <option value="ALL">All Boards ({schools.length})</option>
                   {boards.map((b) => (
@@ -328,37 +340,45 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
               {/* Status Filter */}
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                onChange={(e) => setStatusFilter(e.target.value as 'ALL' | 'ACTIVE' | 'INACTIVE')}
+                aria-label="Filter by school status"
+                className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-base sm:text-xs text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
               >
                 <option value="ALL">All Statuses</option>
                 <option value="ACTIVE">Active Only</option>
                 <option value="INACTIVE">Inactive</option>
               </select>
             </div>
-          </div>
+          </search>
 
           {/* Schools Table */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
             {/* Desktop Table View */}
-            <div ref={schoolTableRef} className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+            <div
+              ref={schoolTableRef}
+              tabIndex={0}
+              role="region"
+              aria-label="Schools directory table"
+              className="hidden md:block overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-500"
+            >
               <table className="w-full text-left text-xs text-slate-300">
+                <caption className="sr-only">Schools directory</caption>
                 <thead className="bg-slate-800/80 text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-700/60">
                   <tr>
-                    <th className="py-3.5 px-4">School & Code</th>
-                    <th className="py-3.5 px-4">School Board</th>
-                    <th className="py-3.5 px-4">Address & Location</th>
-                    <th className="py-3.5 px-4">Bell Times</th>
-                    <th className="py-3.5 px-4">Enrolled</th>
-                    <th className="py-3.5 px-4">Status</th>
-                    <th className="py-3.5 px-4 text-right">Actions</th>
+                    <th scope="col" className="py-3.5 px-4">School & Code</th>
+                    <th scope="col" className="py-3.5 px-4">School Board</th>
+                    <th scope="col" className="py-3.5 px-4">Address & Location</th>
+                    <th scope="col" className="py-3.5 px-4">Bell Times</th>
+                    <th scope="col" className="py-3.5 px-4">Enrolled</th>
+                    <th scope="col" className="py-3.5 px-4">Status</th>
+                    <th scope="col" className="py-3.5 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
                   {filteredSchools.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="py-12 text-center text-slate-500">
-                        <SchoolIcon className="w-8 h-8 mx-auto mb-2 opacity-40 text-slate-400" />
+                        <SchoolIcon className="w-8 h-8 mx-auto mb-2 opacity-40 text-slate-400" aria-hidden="true" />
                         <p className="text-sm font-semibold">No schools match your search or filter criteria</p>
                       </td>
                     </tr>
@@ -381,7 +401,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                         <td className="py-3.5 px-4">
                           <div className="flex items-center space-x-3">
                             <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold text-xs flex-shrink-0">
-                              <SchoolIcon className="w-4 h-4" />
+                              <SchoolIcon className="w-4 h-4" aria-hidden="true" />
                             </div>
                             <div>
                               <div className="font-bold text-white group-hover:text-amber-400 transition-colors">
@@ -408,7 +428,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                         {/* Address */}
                         <td className="py-3.5 px-4 max-w-xs truncate">
                           <div className="flex items-center space-x-1.5 text-slate-300">
-                            <MapPin className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                            <MapPin className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" aria-hidden="true" />
                             <span className="truncate">{s.schoolAddress || 'No address'}</span>
                           </div>
                         </td>
@@ -419,7 +439,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                             <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                               {s.startTime || '08:30'}
                             </span>
-                            <span className="text-slate-500">→</span>
+                            <span className="text-slate-500" aria-hidden="true">→</span>
                             <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
                               {s.dismissalTime || '15:00'}
                             </span>
@@ -434,10 +454,11 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                               e.stopPropagation();
                               if (onViewSchoolStudents) onViewSchoolStudents(s.schoolId);
                             }}
-                            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20 transition font-mono font-bold"
+                            className="inline-flex items-center space-x-1 px-2 py-0.5 min-h-[24px] rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20 transition font-mono font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
                             title="Click to view students attending this school"
+                            aria-label={`View ${s.studentNum || 0} students attending ${s.schoolName}`}
                           >
-                            <Users className="w-3 h-3" />
+                            <Users className="w-3 h-3" aria-hidden="true" />
                             <span>{s.studentNum || 0}</span>
                           </button>
                         </td>
@@ -465,10 +486,11 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                                   e.stopPropagation();
                                   onViewSchoolCalendar(s);
                                 }}
-                                className="p-1.5 text-slate-400 hover:text-teal-400 rounded-lg hover:bg-slate-800 transition"
+                                className="p-1.5 min-w-[28px] min-h-[28px] inline-flex items-center justify-center text-slate-400 hover:text-teal-400 rounded-lg hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
                                 title="View School Calendar"
+                                aria-label={`View calendar for ${s.schoolName}`}
                               >
-                                <CalendarDays className="w-3.5 h-3.5" />
+                                <CalendarDays className="w-3.5 h-3.5" aria-hidden="true" />
                               </button>
                             )}
                             <button
@@ -477,12 +499,13 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                                 e.stopPropagation();
                                 onEditSchool(s);
                               }}
-                              className="p-1.5 text-slate-400 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition"
+                              className="p-1.5 min-w-[28px] min-h-[28px] inline-flex items-center justify-center text-slate-400 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title="Edit school"
+                              aria-label={`Edit ${s.schoolName}`}
                             >
-                              <Edit2 className="w-3.5 h-3.5" />
+                              <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
-                            <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-amber-400 transition" />
+                            <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-amber-400 transition" aria-hidden="true" />
                           </div>
                         </td>
                       </tr>
@@ -503,7 +526,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
             <div ref={schoolMobileRef} className="md:hidden divide-y divide-slate-800/80 overflow-y-auto max-h-[calc(100vh-270px)]">
               {filteredSchools.length === 0 ? (
                 <div className="p-8 text-center text-slate-500 space-y-2">
-                  <SchoolIcon className="w-8 h-8 mx-auto opacity-40 text-slate-400" />
+                  <SchoolIcon className="w-8 h-8 mx-auto opacity-40 text-slate-400" aria-hidden="true" />
                   <p className="text-sm font-semibold">No schools match your filters</p>
                 </div>
               ) : (
@@ -521,7 +544,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center space-x-3">
                         <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold text-sm flex-shrink-0">
-                          <SchoolIcon className="w-5 h-5" />
+                          <SchoolIcon className="w-5 h-5" aria-hidden="true" />
                         </div>
                         <div>
                           <div className="font-bold text-white text-sm">
@@ -556,9 +579,9 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                     {/* Bell Times & Enrolled */}
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                       <div className="flex items-center space-x-1.5 font-mono text-[11px] bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/60">
-                        <Clock className="w-3 h-3 text-slate-400 mr-0.5" />
+                        <Clock className="w-3 h-3 text-slate-400 mr-0.5" aria-hidden="true" />
                         <span className="text-emerald-400 font-semibold">{s.startTime || '08:30'}</span>
-                        <span className="text-slate-500">→</span>
+                        <span className="text-slate-500" aria-hidden="true">→</span>
                         <span className="text-amber-400 font-semibold">{s.dismissalTime || '15:00'}</span>
                       </div>
 
@@ -568,9 +591,10 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                           e.stopPropagation();
                           if (onViewSchoolStudents) onViewSchoolStudents(s.schoolId);
                         }}
-                        className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20 transition font-mono text-xs font-semibold"
+                        aria-label={`View ${s.studentNum || 0} students attending ${s.schoolName}`}
+                        className="inline-flex items-center space-x-1.5 px-2.5 py-1 min-h-[28px] rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20 transition font-mono text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
                       >
-                        <Users className="w-3.5 h-3.5" />
+                        <Users className="w-3.5 h-3.5" aria-hidden="true" />
                         <span>{s.studentNum || 0} Students</span>
                       </button>
                     </div>
@@ -585,12 +609,12 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="flex items-center space-x-1 text-slate-400 hover:text-amber-400 truncate max-w-[200px]"
+                          className="flex items-center space-x-1 text-slate-400 hover:text-amber-400 truncate max-w-[200px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 rounded"
                           title="Open in Maps"
                         >
-                          <MapPin className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                          <MapPin className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" aria-hidden="true" />
                           <span className="truncate">{s.schoolAddress}</span>
-                          <ExternalLink className="w-3 h-3 text-slate-600 flex-shrink-0" />
+                          <ExternalLink className="w-3 h-3 text-slate-600 flex-shrink-0" aria-hidden="true" />
                         </a>
                       ) : (
                         <span className="text-slate-500 text-xs italic">No address specified</span>
@@ -604,27 +628,30 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                           <button
                             type="button"
                             onClick={() => onViewSchoolCalendar(s)}
-                            className="p-1.5 text-slate-400 hover:text-teal-400 rounded-lg hover:bg-slate-800 transition"
+                            className="p-1.5 min-w-[28px] min-h-[28px] inline-flex items-center justify-center text-slate-400 hover:text-teal-400 rounded-lg hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
                             title="View School Calendar"
+                            aria-label={`View calendar for ${s.schoolName}`}
                           >
-                            <CalendarDays className="w-3.5 h-3.5" />
+                            <CalendarDays className="w-3.5 h-3.5" aria-hidden="true" />
                           </button>
                         )}
                         <button
                           type="button"
                           onClick={() => onEditSchool(s)}
-                          className="p-1.5 text-slate-400 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition"
+                          className="p-1.5 min-w-[28px] min-h-[28px] inline-flex items-center justify-center text-slate-400 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                           title="Edit school"
+                          aria-label={`Edit ${s.schoolName}`}
                         >
-                          <Edit2 className="w-3.5 h-3.5" />
+                          <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>
                         <button
                           type="button"
                           onClick={() => onSelectSchool(s)}
-                          className="flex items-center space-x-1 text-slate-400 hover:text-amber-400 px-2 py-1 rounded-lg hover:bg-slate-800 transition text-xs font-semibold"
+                          aria-label={`View details for ${s.schoolName}`}
+                          className="flex items-center space-x-1 text-slate-400 hover:text-amber-400 px-2 py-1 min-h-[28px] rounded-lg hover:bg-slate-800 transition text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                         >
                           <span>Details</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
+                          <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>
                       </div>
                     </div>
@@ -641,7 +668,7 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
 
       {/* TAB CONTENT 2: SCHOOL BOARDS */}
       {activeTab === 'boards' && (
-        <div className="space-y-4">
+        <div role="tabpanel" aria-label="School Boards" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {boards.map((b) => {
               const count = boardMetrics[b.schoolBoardId]?.schoolCount || 0;
@@ -657,11 +684,13 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
                         {b.schoolBoardCode}
                       </span>
                       <button
+                        type="button"
                         onClick={() => onEditBoard(b)}
-                        className="p-1.5 text-slate-400 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition"
+                        className="p-1.5 min-w-[28px] min-h-[28px] inline-flex items-center justify-center text-slate-400 hover:text-amber-400 rounded-lg hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                         title="Edit Board"
+                        aria-label={`Edit ${b.schoolBoardName}`}
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
+                        <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                     </div>
 
@@ -698,6 +727,6 @@ export const SchoolListView: React.FC<SchoolListViewProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 };

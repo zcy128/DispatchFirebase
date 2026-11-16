@@ -51,11 +51,34 @@ func (m *mockDispatchRepo) ListDispatchPayrolls(ctx context.Context, date string
 
 type mockRouteRepo struct {
 	repository.RouteRepository
-	routes []*models.BusRoute
+	routes          []*models.BusRoute
+	assignedCrewReq *models.AssignRouteCrewRequest
 }
 
 func (m *mockRouteRepo) ListRoutes(ctx context.Context, filter repository.RouteFilter) ([]*models.BusRoute, error) {
 	return m.routes, nil
+}
+
+func (m *mockRouteRepo) GetRouteByID(ctx context.Context, id string) (*models.BusRoute, error) {
+	for _, r := range m.routes {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return nil, repository.ErrRouteNotFound
+}
+
+func (m *mockRouteRepo) AssignCrew(ctx context.Context, routeID string, req *models.AssignRouteCrewRequest) (*models.BusRoute, error) {
+	m.assignedCrewReq = req
+	for _, r := range m.routes {
+		if r.ID == routeID {
+			r.DriverID = req.DriverID
+			r.DriverName = req.DriverName
+			r.DriverPhone = req.DriverPhone
+			return r, nil
+		}
+	}
+	return nil, repository.ErrRouteNotFound
 }
 
 func (m *mockDispatchRepo) UpdateShift(ctx context.Context, id string, req *models.UpdateDispatchShiftRequest) (*models.DispatchShift, error) {
@@ -1502,6 +1525,154 @@ func TestAIService_VehicleFleetQueries(t *testing.T) {
 		t.Fatalf("expected vehicle_details card, got: %+v", respSpecific.ActionCards)
 	}
 }
+
+func TestAIService_PageScopedDriverAssignment(t *testing.T) {
+	ctx := context.Background()
+	tomorrow := "2026-11-17"
+
+	dispatchRepo := &mockDispatchRepo{
+		shifts: []*models.DispatchShift{
+			{
+				ID:           "SH-CEPEO021-AM",
+				DispatchDate: tomorrow,
+				RouteNo:      "CEPEO021",
+				RouteName:    "Ottawa East Run",
+				ShiftType:    "AM",
+				DriverID:     "EMP-OLD",
+				DriverName:   "Old Driver",
+			},
+		},
+	}
+	empRepo := repository.NewMemoryEmployeeRepository()
+	_ = empRepo.Create(ctx, &models.Employee{
+		ID:             "driver21",
+		EmployeeNumber: "driver21",
+		FullName:       "Driver 21",
+		MobilePhone:    "613-555-0021",
+		IsActive:       true,
+		JobPosition:    "Driver",
+	})
+	routeRepo := &mockRouteRepo{
+		routes: []*models.BusRoute{
+			{
+				ID:          "RT-CEPEO021",
+				RouteNo:     "CEPEO021",
+				RouteName:   "Ottawa East Run",
+				DriverID:    "EMP-OLD",
+				DriverName:  "Old Driver",
+				VehicleID:   105,
+				UnitNumber:  "1005",
+				PlateNumber: "BUS1005",
+			},
+		},
+	}
+
+	toolSvc := NewAIToolService(dispatchRepo, empRepo, routeRepo, nil, nil, nil)
+	aiSvc := NewAIService(toolSvc)
+
+	// 1. On 'dispatch' page viewing tomorrow's date -> prepares ASSIGN_DRIVER for tomorrow's Dispatch Sheet
+	respDispatch, err := aiSvc.ProcessChat(ctx, &models.AIChatRequest{
+		Message:      "assign driver21 to cepeo021",
+		Date:         tomorrow,
+		ActivePage:   "dispatch",
+		UserRole:     "dispatcher",
+		OperatorName: "Dispatcher Bob",
+		Lang:         "en",
+	})
+	if err != nil {
+		t.Fatalf("dispatch scoped chat failed: %v", err)
+	}
+	if len(respDispatch.ActionCards) == 0 || respDispatch.ActionCards[0].Type != "confirm_action" {
+		t.Fatalf("expected confirm_action card, got: %+v", respDispatch.ActionCards)
+	}
+	if gotDate, _ := respDispatch.ActionCards[0].Data["date"].(string); gotDate != tomorrow {
+		t.Errorf("expected dispatch target date %s, got %s", tomorrow, gotDate)
+	}
+
+	// 2. On 'routes' page -> prepares ASSIGN_ROUTE_CREW (Permanent Route Assignment)
+	respRoutes, err := aiSvc.ProcessChat(ctx, &models.AIChatRequest{
+		Message:      "assign driver21 to cepeo021",
+		Date:         tomorrow,
+		ActivePage:   "routes",
+		UserRole:     "dispatcher",
+		OperatorName: "Dispatcher Bob",
+		Lang:         "en",
+	})
+	if err != nil {
+		t.Fatalf("routes scoped chat failed: %v", err)
+	}
+	if len(respRoutes.ActionCards) == 0 || respRoutes.ActionCards[0].Type != "confirm_action" {
+		t.Fatalf("expected confirm_action card for routes, got: %+v", respRoutes.ActionCards)
+	}
+	if gotType, _ := respRoutes.ActionCards[0].Data["actionType"].(string); gotType != "ASSIGN_ROUTE_CREW" {
+		t.Errorf("expected ASSIGN_ROUTE_CREW, got %q", gotType)
+	}
+
+	// Confirm route assignment execution and ensure existing vehicle is preserved
+	confirmResp, err := aiSvc.ProcessChat(ctx, &models.AIChatRequest{
+		Message:      "Confirm",
+		ActionID:     respRoutes.ActionCards[0].ActionID,
+		Confirmed:    true,
+		ActivePage:   "routes",
+		UserRole:     "dispatcher",
+		OperatorName: "Dispatcher Bob",
+		Lang:         "en",
+	})
+	if err != nil {
+		t.Fatalf("route confirmation failed: %v", err)
+	}
+	if len(confirmResp.ActionCards) == 0 || confirmResp.ActionCards[0].Type != "action_success" {
+		t.Fatalf("expected action_success card, got: %+v", confirmResp.ActionCards)
+	}
+	if routeRepo.assignedCrewReq == nil || routeRepo.assignedCrewReq.DriverID != "driver21" {
+		t.Fatalf("expected AssignCrew with DriverID=driver21, got: %+v", routeRepo.assignedCrewReq)
+	}
+	if routeRepo.assignedCrewReq.VehicleID != 105 || routeRepo.assignedCrewReq.UnitNumber != "1005" {
+		t.Errorf("expected existing vehicle 105/1005 preserved, got: %+v", routeRepo.assignedCrewReq)
+	}
+
+	// 3. Unauthorized role (HR) cannot assign route crew
+	respDenied, err := aiSvc.ProcessChat(ctx, &models.AIChatRequest{
+		Message:      "assign driver21 to cepeo021",
+		ActivePage:   "routes",
+		UserRole:     "HR",
+		OperatorName: "HR User",
+		Lang:         "en",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error on denied chat: %v", err)
+	}
+	if len(respDenied.ActionCards) > 0 {
+		t.Errorf("expected no action cards for HR role, got: %+v", respDenied.ActionCards)
+	}
+
+	// 4. "shift without vehicle" on dispatch page returns shifts missing VehicleID/UnitNumber
+	dispatchRepo.shifts = append(dispatchRepo.shifts, &models.DispatchShift{
+		ID:            "SH-NOVEH-PM",
+		DispatchDate:  tomorrow,
+		RouteNo:       "OCDSB-900",
+		RouteName:     "West Run",
+		ShiftType:     "PM",
+		DriverID:      "driver21",
+		DriverName:    "Driver 21",
+		FirstStopTime: "14:45",
+	})
+	respNoVeh, err := aiSvc.ProcessChat(ctx, &models.AIChatRequest{
+		Message:      "shift without vehicle",
+		Date:         tomorrow,
+		ActivePage:   "dispatch",
+		UserRole:     "dispatcher",
+		OperatorName: "Dispatcher Bob",
+		Lang:         "en",
+	})
+	if err != nil {
+		t.Fatalf("shift without vehicle chat failed: %v", err)
+	}
+	if !strings.Contains(respNoVeh.Reply, "OCDSB-900") || len(respNoVeh.ActionCards) == 0 {
+		t.Fatalf("expected OCDSB-900 in shift without vehicle response, got reply=%q cards=%+v", respNoVeh.Reply, respNoVeh.ActionCards)
+	}
+}
+
 
 
 

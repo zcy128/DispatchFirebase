@@ -755,9 +755,11 @@ export async function syncRolePermissionsToCloud(): Promise<void> {
 
 export function initCloudRolePermissionsListener(): () => void {
   let unsub = () => {};
-  import('../services/firebase').then(({ db }) => {
-    if (!db) return;
+  let cancelled = false;
+  import('../services/firebase').then(({ auth, db }) => {
+    if (cancelled || !db || !auth?.currentUser) return;
     import('firebase/firestore').then(({ doc, onSnapshot }) => {
+      if (cancelled) return;
       unsub = onSnapshot(
         doc(db, 'system_config', 'role_permissions'),
         (snap) => {
@@ -782,7 +784,10 @@ export function initCloudRolePermissionsListener(): () => void {
       );
     });
   });
-  return () => unsub();
+  return () => {
+    cancelled = true;
+    unsub();
+  };
 }
 
 /**

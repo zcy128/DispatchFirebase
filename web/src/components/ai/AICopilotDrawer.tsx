@@ -39,6 +39,12 @@ import { aiService } from '../../services/aiService';
 import { AIChatMessage, AIActionCard, AICopilotStatus } from '../../types/ai';
 import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../contexts/I18nContext';
+import { getPageDisplayLabel, useAIOptional } from '../../contexts/AIContext';
+import {
+  appendPersistedCommandHistory,
+  loadPersistedCommandHistory,
+  navigateCommandHistory,
+} from './commandHistory';
 import { normalizeRole, ROLE_LABELS } from '../../utils/permissions';
 
 interface AICopilotDrawerProps {
@@ -58,6 +64,9 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const { isFrench, toggleLang } = useI18n();
+  const aiCtx = useAIOptional();
+  const activePage = aiCtx?.pageContext.activePage || 'dashboard';
+  const pageTitle = aiCtx?.pageContext.pageTitle || getPageDisplayLabel(activePage);
 
   const userRole = normalizeRole(currentUser?.role);
   const canModifyDispatch =
@@ -78,8 +87,31 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
   }, [currentDate]);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [status, setStatus] = useState<AICopilotStatus | null>(null);
-  const [messages, setMessages] = useState<AIChatMessage[]>([]);
+  const [messagesByPage, setMessagesByPage] = useState<Record<string, AIChatMessage[]>>({});
+  const messages = useMemo(() => messagesByPage[activePage] || [], [messagesByPage, activePage]);
+  const setMessages = React.useCallback(
+    (updater: AIChatMessage[] | ((prev: AIChatMessage[]) => AIChatMessage[])) => {
+      setMessagesByPage((prev) => {
+        const current = prev[activePage] || [];
+        const next = typeof updater === 'function' ? updater(current) : updater;
+        return { ...prev, [activePage]: next };
+      });
+    },
+    [activePage]
+  );
+  const userHistoryKey = currentUser?.uid || currentUser?.email || operatorName;
   const [inputText, setInputText] = useState('');
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const draftInputRef = useRef<string>('');
+  const [commandHistory, setCommandHistory] = useState<string[]>(() =>
+    loadPersistedCommandHistory(userHistoryKey, activePage)
+  );
+
+  useEffect(() => {
+    setCommandHistory(loadPersistedCommandHistory(userHistoryKey, activePage));
+    setHistoryIndex(-1);
+    draftInputRef.current = '';
+  }, [userHistoryKey, activePage]);
   const [loading, setLoading] = useState(false);
   const [actionProcessingId, setActionProcessingId] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
@@ -192,10 +224,12 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
   };
 
   useEffect(() => {
-    if (currentDate) {
+    if (aiCtx?.pageContext.selectedDate) {
+      setSelectedDate(aiCtx.pageContext.selectedDate);
+    } else if (currentDate) {
       setSelectedDate(currentDate);
     }
-  }, [currentDate]);
+  }, [aiCtx?.pageContext.selectedDate, currentDate]);
 
   // Load Copilot status & initialize greeting on open
   useEffect(() => {
@@ -219,7 +253,38 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
         let welcomeText = '';
         let welcomeQuestions: string[] = [];
 
-        if (userRole === 'HR') {
+        if (activePage === 'dispatch') {
+          welcomeText = isFrench
+            ? `Bonjour **${operatorName}** ! Contexte actif : **Dispatch Workbench (${selectedDate})**.\n\nLes commandes d'affectation (ex. \`assign driver21 to cepeo021\`) s'appliqueront directement à la **feuille de régulation du ${selectedDate}**.`
+            : `Hello **${operatorName}**! Active context: **Dispatch Workbench (${selectedDate})**.\n\nAssignment commands here (e.g. \`assign driver21 to cepeo021\`) apply directly to the **${selectedDate} Dispatch Sheet**.`;
+          welcomeQuestions = isFrench
+            ? [
+                'Quarts sans véhicule',
+                `Quels quarts n'ont pas de chauffeur le ${selectedDate} ?`,
+                `Vue d'ensemble du dispatch (${selectedDate})`,
+                'Statut de la flotte de véhicules',
+              ]
+            : [
+                'Shifts without vehicle',
+                `Which shifts have no driver on ${selectedDate}?`,
+                `Dispatch overview for ${selectedDate}`,
+              ];
+        } else if (activePage === 'routes') {
+          welcomeText = isFrench
+            ? `Bonjour **${operatorName}** ! Contexte actif : **Routes (Affectation permanente)**.\n\nLes commandes d'affectation (ex. \`assign driver21 to cepeo021\`) mettront à jour l'**affectation permanente de la ligne** (et non la feuille journalière).`
+            : `Hello **${operatorName}**! Active context: **Routes (Permanent Route Assignment)**.\n\nAssignment commands here (e.g. \`assign driver21 to cepeo021\`) update the **permanent Route Assignment** (not a single-day dispatch sheet).`;
+          welcomeQuestions = isFrench
+            ? [
+                'Lignes sans chauffeur assigné',
+                'Résumé des lignes actives',
+                'Statut de la flotte de véhicules',
+              ]
+            : [
+                'Find routes without an assigned driver',
+                'Active routes summary',
+                'Vehicle fleet status',
+              ];
+        } else if (userRole === 'HR') {
           welcomeText =  isFrench
             ? `Bonjour **${operatorName}** ! Je suis votre **Copilote IA d'opérations**.\n\nEn tant que membre **Ressources Humaines (RH)**, vous pouvez consulter le personnel actif, vérifier la conformité des permis de conduire et inspecter la flotte.\n\n*(Note : La modification des quarts de régulation est réservée aux régulateurs)* :`
             : `Hello **${operatorName}**! I am your **AI Operations Copilot**.\n\nIn your **Human Resources (HR)** role, you can inspect staff records, track CDL driver license compliance, and view fleet status.\n\n*(Note: Shift assignment modifications are restricted to Dispatchers)*:`;
@@ -291,7 +356,7 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
         inputRef.current?.focus();
       }, 100);
     }
-  }, [isOpen, operatorName, isFrench, userRole]);
+  }, [isOpen, activePage, selectedDate, messages.length, operatorName, isFrench, userRole]);
 
   // Auto scroll to bottom
   useEffect(() => {
@@ -310,15 +375,28 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
     };
 
     setMessages((prev) => [...prev, userMsg]);
+    setCommandHistory((prev) => appendPersistedCommandHistory(prev, text, userHistoryKey, activePage));
     if (!textToSend) {
       setInputText('');
+      setHistoryIndex(-1);
+      draftInputRef.current = '';
     }
     setLoading(true);
 
     try {
+      const pageContextPayload: Record<string, string> = {
+        ...(aiCtx?.pageContext.summaryHints || {}),
+        ...(aiCtx?.pageContext.selectedEntityId
+          ? { selectedEntityId: aiCtx.pageContext.selectedEntityId }
+          : {}),
+      };
+
       const resp = await aiService.chat({
         message: text,
         date: selectedDate,
+        yardFilter: aiCtx?.pageContext.yardFilter,
+        activePage,
+        pageContext: Object.keys(pageContextPayload).length > 0 ? pageContextPayload : undefined,
         operatorId: currentUser?.uid || currentUser?.employeeId || operatorName,
         operatorName,
         userRole,
@@ -388,6 +466,8 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
       const resp = await aiService.chat({
         message: confirmationText,
         date: selectedDate,
+        yardFilter: aiCtx?.pageContext.yardFilter,
+        activePage,
         operatorName,
         userRole,
         pagePermissions: currentUser?.pagePermissions as any,
@@ -412,6 +492,7 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
 
       if (accepted) {
         onShiftUpdated?.();
+        aiCtx?.triggerPageRefresh();
       }
     } catch (err: any) {
       const failText = isFrench
@@ -492,6 +573,7 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
     switch (card.type) {
       case 'unassigned_shifts': {
         const shifts = card.data?.shifts || [];
+        const isVehicleMissing = card.data?.missingType === 'vehicle';
         return (
           <div
             key={`${msgId}-unassigned`}
@@ -539,6 +621,13 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                   {canModifyDispatch ? (
                     <button
                       onClick={() => {
+                        if (isVehicleMissing) {
+                          const query = isFrench
+                            ? `Trouver un véhicule disponible pour la ligne ${sh.routeNo}`
+                            : `Find available vehicles for route ${sh.routeNo}`;
+                          void handleSendMessage(query);
+                          return;
+                        }
                         const template = isFrench
                           ? `Assigner Tom sur la ligne ${sh.routeNo}`
                           : `Assign Tom to route ${sh.routeNo}`;
@@ -547,8 +636,10 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                       }}
                       className="ml-2 px-2.5 py-1.5 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 font-semibold rounded-md border border-amber-500/40 text-[11px] flex items-center space-x-1 transition-all whitespace-nowrap"
                     >
-                      <UserCheck className="w-3.5 h-3.5" />
-                      <span>{isFrench ? 'Assigner' : 'Assign'}</span>
+                      {isVehicleMissing ? <Truck className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
+                      <span>
+                        {isFrench ? 'Assigner' : 'Assign'}
+                      </span>
                     </button>
                   ) : (
                     <span className="ml-2 px-2 py-1 text-[10px] text-slate-500 bg-slate-800/80 rounded border border-slate-700/60 whitespace-nowrap">
@@ -607,11 +698,24 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-slate-400">{isFrench ? 'Chauffeur :' : 'Driver:'}</span>
+                  <span className="text-slate-400">
+                    {d.actionType === 'ASSIGN_VEHICLE'
+                      ? (isFrench ? 'Véhicule :' : 'Vehicle:')
+                      : (isFrench ? 'Chauffeur :' : 'Driver:')}
+                  </span>
                   <span className="font-bold text-emerald-400 flex items-center space-x-1">
-                    <User className="w-3.5 h-3.5" />
-                    <span>{d.driverName}</span>
-                    {d.driverId && <span className="text-slate-500 font-mono">({d.driverId})</span>}
+                    {d.actionType === 'ASSIGN_VEHICLE' ? (
+                      <>
+                        <Truck className="w-3.5 h-3.5" />
+                        <span>Unit {d.unitNumber}</span>
+                      </>
+                    ) : (
+                      <>
+                        <User className="w-3.5 h-3.5" />
+                        <span>{d.driverName}</span>
+                        {d.driverId && <span className="text-slate-500 font-mono">({d.driverId})</span>}
+                      </>
+                    )}
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-0.5">
@@ -625,9 +729,15 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                   <span className="font-mono text-slate-300">{d.date}</span>
                 </div>
                 <div className="flex justify-between items-center py-0.5 border-t border-slate-700/60 pt-1">
-                  <span className="text-slate-400">{isFrench ? 'Ancien chauffeur :' : 'Previous Driver:'}</span>
+                  <span className="text-slate-400">
+                    {d.actionType === 'ASSIGN_VEHICLE'
+                      ? (isFrench ? 'Ancien véhicule :' : 'Previous Vehicle:')
+                      : (isFrench ? 'Ancien chauffeur :' : 'Previous Driver:')}
+                  </span>
                   <span className="text-slate-400 italic">
-                    {d.oldDriverName || (isFrench ? 'Non assigné' : 'Unassigned')}
+                    {d.actionType === 'ASSIGN_VEHICLE'
+                      ? (d.oldUnitNumber || (isFrench ? 'Non assigné' : 'Unassigned'))
+                      : (d.oldDriverName || (isFrench ? 'Non assigné' : 'Unassigned'))}
                   </span>
                 </div>
               </div>
@@ -711,12 +821,16 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
               ) : isFrench ? (
                 <>
                   La ligne <strong className="text-emerald-300">{d.routeNo}</strong> a été assignée avec succès à{' '}
-                  <strong className="text-white">{d.driverName}</strong>. Journal d'audit mis à jour.
+                  <strong className="text-white">
+                    {d.actionType === 'ASSIGN_VEHICLE' ? `Unité ${d.unitNumber}` : d.driverName}
+                  </strong>. Journal d'audit mis à jour.
                 </>
               ) : (
                 <>
                   Route <strong className="text-emerald-300">{d.routeNo}</strong> has been successfully assigned to{' '}
-                  <strong className="text-white">{d.driverName}</strong>. Audit log created.
+                  <strong className="text-white">
+                    {d.actionType === 'ASSIGN_VEHICLE' ? `Unit ${d.unitNumber}` : d.driverName}
+                  </strong>. Audit log created.
                 </>
               )}
             </div>
@@ -2023,16 +2137,15 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden pointer-events-none">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-opacity"
-        onClick={onClose}
-      />
-
-      <div className={`absolute inset-y-0 right-0 max-w-full flex ${isFullscreen ? 'pl-0 w-full' : 'pl-0 sm:pl-10'} pointer-events-auto`}>
-        <div className={`w-screen ${isFullscreen ? 'max-w-full' : 'max-w-full sm:max-w-md'} bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col h-full text-slate-100 animate-in slide-in-from-right duration-300`}>
-          {/* Header */}
+    <aside
+      aria-label={isFrench ? 'Assistant IA' : 'AI Assistant'}
+      className={
+        isFullscreen
+          ? 'fixed inset-0 z-50 w-full h-full bg-slate-900 flex flex-col text-slate-100'
+          : 'fixed inset-y-0 right-0 z-40 w-full max-w-md md:static md:z-auto md:w-[380px] lg:w-[420px] shrink-0 h-full bg-slate-900 border-l border-slate-800 shadow-2xl md:shadow-none flex flex-col text-slate-100 animate-in slide-in-from-right duration-200'
+      }
+    >
+      {/* Header */}
           <div className="p-4 border-b border-slate-800 bg-slate-900/90 backdrop-blur flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
@@ -2066,7 +2179,11 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                     AI: {quotaInfo.remaining}/{quotaInfo.limit}
                   </span>
                 </div>
-                <div className="flex items-center space-x-2 text-[11px] text-slate-400 mt-1">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 mt-1">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    {pageTitle}
+                    {activePage === 'routes' ? (isFrench ? ' · Permanent' : ' · Permanent') : ''}
+                  </span>
                   <div className="flex items-center space-x-1">
                     <Calendar className="w-3 h-3 text-slate-500" />
                     <span>{isFrench ? 'Date :' : 'Date:'}</span>
@@ -2385,7 +2502,26 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
                   ref={inputRef}
                   type="text"
                   value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
+                  onChange={(e) => {
+                    setInputText(e.target.value);
+                    setHistoryIndex(-1);
+                    draftInputRef.current = e.target.value;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                    const step = navigateCommandHistory(
+                      commandHistory,
+                      historyIndex,
+                      e.key === 'ArrowUp' ? 'up' : 'down',
+                      inputText,
+                      draftInputRef.current
+                    );
+                    if (!step) return;
+                    e.preventDefault();
+                    draftInputRef.current = step.nextDraft;
+                    setHistoryIndex(step.nextIndex);
+                    setInputText(step.nextValue);
+                  }}
                   placeholder={
                      isFrench
                       ? "Parlez (🎤) ou posez une question sur les quarts, lignes, véhicules..."
@@ -2417,8 +2553,6 @@ export const AICopilotDrawer: React.FC<AICopilotDrawerProps> = ({
               </span>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+    </aside>
   );
 };

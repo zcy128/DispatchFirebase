@@ -1,5 +1,7 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   Compass,
   Plus,
@@ -1750,44 +1752,47 @@ export const CharterManagementView = memo(function CharterManagementView({
   const reviewOpening = useCallback((openingId: string) => setReviewingOpeningId(openingId), []);
 
   return (
-    <div className="p-3.5 sm:p-4 w-full space-y-5">
+    <PageShell width="wide">
       {/* Header & Sub-Tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-            <Compass className="w-6 h-6" />
+      <PageHeader
+        title={isFrench ? 'Gestion des nolisés' : 'Charter Trip Management'}
+        subtitle={
+          isFrench
+            ? 'Réservations, affectation de flotte, pointage d\'équipage et intégration de la paie'
+            : 'Charter contracts, vehicle allocation, crew check-in and automated payroll'
+        }
+        icon={
+          <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" aria-hidden="true">
+            <Compass className="w-5 h-5" />
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-              {isFrench ? 'Gestion des nolisés' : 'Charter Trip Management'}
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {isFrench
-                ? 'Réservations, affectation de flotte, pointage d\'équipage et intégration de la paie'
-                : 'Charter contracts, vehicle allocation, crew check-in and automated payroll'}
-            </p>
-          </div>
-        </div>
-
-        {/* Sub-tab Pills */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+        }
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+          <div
+            role="group"
+            aria-label={isFrench ? 'Sections nolisés' : 'Charter sections'}
+            className="flex items-center p-1 rounded-xl bg-slate-800 border border-slate-700"
+          >
             <button
+              type="button"
+              aria-pressed={subTab === 'trips'}
               onClick={() => setSubTab('trips')}
-              className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 ${
                 subTab === 'trips'
-                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  ? 'bg-slate-700 text-indigo-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-200'
               }`}
             >
               {isFrench ? 'Voyages nolisés' : 'Charter Trips'} ({trips.length})
             </button>
             <button
+              type="button"
+              aria-pressed={subTab === 'clients'}
               onClick={() => setSubTab('clients')}
-              className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 ${
                 subTab === 'clients'
-                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  ? 'bg-slate-700 text-indigo-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-200'
               }`}
             >
               {isFrench ? 'Clients nolisés' : 'Charter Clients'} ({clients.length})
@@ -1796,96 +1801,106 @@ export const CharterManagementView = memo(function CharterManagementView({
 
           {subTab === 'trips' ? (
             <button
+              type="button"
               onClick={handleOpenCreateTrip}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4" aria-hidden="true" />
               <span>{isFrench ? 'Nouveau voyage' : 'New Charter Trip'}</span>
             </button>
           ) : (
             <button
+              type="button"
               onClick={() => handleOpenClientModal()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4" aria-hidden="true" />
               <span>{isFrench ? 'Nouveau client' : 'New Client'}</span>
             </button>
           )}
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {subTab === 'trips' ? (
         <>
           {/* KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xs">
               <span className="text-xs text-slate-500 font-medium">{isFrench ? 'Total voyages' : 'Total Trips'}</span>
-              <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{kpis.totalTrips}</p>
+              <p className="text-2xl font-bold text-white mt-1">{kpis.totalTrips}</p>
             </div>
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-              <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xs">
+              <span className="text-xs font-medium">
                 {isFrench ? 'Pointage en attente' : 'Pending Check-In'}
               </span>
-              <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">{kpis.pendingCheckIn}</p>
+              <p className="text-2xl font-bold mt-1">{kpis.pendingCheckIn}</p>
             </div>
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xs">
+              <span className="text-xs font-medium">
                 {isFrench ? 'Équipage pointé' : 'Crew Checked In'}
               </span>
-              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{kpis.checkedIn}</p>
+              <p className="text-2xl font-bold mt-1">{kpis.checkedIn}</p>
             </div>
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-              <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xs">
+              <span className="text-xs font-medium">
                 {isFrench ? 'Voyages terminés' : 'Completed Trips'}
               </span>
-              <p className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">{kpis.completed}</p>
+              <p className="text-2xl font-bold mt-1">{kpis.completed}</p>
             </div>
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-              <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xs">
+              <span className="text-xs font-medium">
                 {isFrench ? 'Revenu total devis' : 'Quoted Revenue'}
               </span>
-              <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+              <p className="text-2xl font-bold mt-1">
                 ${kpis.totalQuoted.toFixed(0)}
               </p>
             </div>
           </div>
 
           {/* Filters Bar */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <search className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-xs">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700">
                 <button
+                  type="button"
+                  aria-label={isFrench ? 'Jour précédent' : 'Previous Day'}
+                  title={isFrench ? 'Jour précédent' : 'Previous Day'}
                   onClick={() => setSelectedDate(addDaysToDateString(selectedDate, -1))}
-                  className="p-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition-all"
+                  className="min-w-[28px] min-h-[28px] flex items-center justify-center p-1 rounded-lg text-slate-200 hover:bg-white hover:bg-slate-700 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="w-4 h-4" aria-hidden="true" />
                 </button>
                 <div className="flex items-center gap-1.5 px-2">
-                  <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                  <Calendar className="w-3.5 h-3.5 text-indigo-500" aria-hidden="true" />
                   <input
                     type="date"
+                    aria-label={isFrench ? 'Date des voyages nolisés' : 'Charter dispatch date'}
                     value={selectedDate}
                     onChange={(e) => {
                       setSelectedDate(e.target.value);
                       setShowAllDates(false);
                     }}
-                    className="bg-transparent text-xs font-semibold text-slate-800 dark:text-slate-100 focus:outline-hidden cursor-pointer"
+                    className="bg-transparent text-base sm:text-xs font-semibold text-slate-200 focus:outline-hidden cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                   />
                 </div>
                 <button
+                  type="button"
+                  aria-label={isFrench ? 'Jour suivant' : 'Next Day'}
+                  title={isFrench ? 'Jour suivant' : 'Next Day'}
                   onClick={() => setSelectedDate(addDaysToDateString(selectedDate, 1))}
-                  className="p-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition-all"
+                  className="min-w-[28px] min-h-[28px] flex items-center justify-center p-1 rounded-lg text-slate-200 hover:bg-white hover:bg-slate-700 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                 >
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight className="w-4 h-4" aria-hidden="true" />
                 </button>
               </div>
 
-              <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer ml-2">
+              <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer ml-2">
                 <input
                   type="checkbox"
                   checked={showAllDates}
                   onChange={(e) => setShowAllDates(e.target.checked)}
-                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  className="rounded border-slate-300 text-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                 />
                 <span>{isFrench ? 'Tous les jours' : 'All Dates'}</span>
               </label>
@@ -1893,20 +1908,22 @@ export const CharterManagementView = memo(function CharterManagementView({
 
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative min-w-[200px]">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                 <input
                   type="text"
+                  aria-label={isFrench ? 'Rechercher voyage, client, chauffeur' : 'Search trip, client, driver'}
                   value={tripSearch}
                   onChange={(e) => setTripSearch(e.target.value)}
                   placeholder={isFrench ? 'Rechercher voyage, client, chauffeur...' : 'Search trip, client, driver...'}
-                  className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-hidden"
+                  className="w-full pl-9 pr-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-base sm:text-xs text-slate-200 placeholder:text-slate-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                 />
               </div>
 
               <select
+                aria-label={isFrench ? 'Filtrer par statut' : 'Filter by status'}
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
+                className="px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-base sm:text-xs font-medium text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
               >
                 <option value="all">{isFrench ? 'Tous les statuts' : 'All Statuses'}</option>
                 <option value="0">{isFrench ? 'Brouillon' : 'Draft'}</option>
@@ -1918,9 +1935,10 @@ export const CharterManagementView = memo(function CharterManagementView({
               </select>
 
               <select
+                aria-label={isFrench ? 'Filtrer par type' : 'Filter by type'}
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
-                className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-hidden"
+                className="px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-base sm:text-xs font-medium text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
               >
                 <option value="all">{isFrench ? 'Tous types' : 'All Types'}</option>
                 <option value="0">{isFrench ? 'Sortie éducative' : 'Field Trip'}</option>
@@ -1929,24 +1947,33 @@ export const CharterManagementView = memo(function CharterManagementView({
                 <option value="3">{isFrench ? 'Autre' : 'Other'}</option>
               </select>
             </div>
-          </div>
+          </search>
 
           {/* Trips Table */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-            <div ref={charterTableRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+          <div className="bg-slate-900 rounded-2xl border border-slate-800 shadow-xs overflow-hidden">
+            <div
+              ref={charterTableRef}
+              tabIndex={0}
+              role="region"
+              aria-label={isFrench ? 'Tableau des voyages nolisés' : 'Charter trips table'}
+              className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+            >
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50/75 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800">
+                <caption className="sr-only">
+                  {isFrench ? 'Liste des voyages nolisés' : 'Charter trips list'}
+                </caption>
+                <thead className="bg-slate-800/50 text-slate-400 font-semibold border-b border-slate-800">
                   <tr>
-                    <th className="py-3 px-4">{isFrench ? 'Voyage & Date' : 'Trip & Date'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'Client' : 'Client'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'Type & Statut' : 'Type & Status'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'Départ / Retour' : 'Schedule'}</th>
-                    <th className="py-3 px-4">{isFrench ? 'Équipage & Véhicules' : 'Fleet & Crew'}</th>
-                    <th className="py-3 px-4 text-right">{isFrench ? 'Facturation' : 'Quoted'}</th>
-                    <th className="py-3 px-4 text-center">{isFrench ? 'Actions' : 'Actions'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Voyage & Date' : 'Trip & Date'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Client' : 'Client'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Type & Statut' : 'Type & Status'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Départ / Retour' : 'Schedule'}</th>
+                    <th scope="col" className="py-3 px-4">{isFrench ? 'Équipage & Véhicules' : 'Fleet & Crew'}</th>
+                    <th scope="col" className="py-3 px-4 text-right">{isFrench ? 'Facturation' : 'Quoted'}</th>
+                    <th scope="col" className="py-3 px-4 text-center">{isFrench ? 'Actions' : 'Actions'}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                <tbody className="divide-y divide-slate-800">
                   {loading ? (
                     <tr>
                       <td colSpan={7} className="py-8 text-center text-slate-500">
@@ -2005,18 +2032,19 @@ export const CharterManagementView = memo(function CharterManagementView({
       ) : (
         /* Clients Sub-Tab */
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <search className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-xs">
             <div className="relative min-w-[260px]">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
               <input
                 type="text"
+                aria-label={isFrench ? 'Rechercher client, contact, téléphone' : 'Search client, contact, phone'}
                 value={clientSearch}
                 onChange={(e) => setClientSearch(e.target.value)}
                 placeholder={isFrench ? 'Rechercher client, contact, téléphone...' : 'Search client, contact, phone...'}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-hidden"
+                className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-base sm:text-xs text-slate-200 placeholder:text-slate-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
               />
             </div>
-          </div>
+          </search>
 
           <div ref={clientListRef} className="overflow-y-auto max-h-[70vh]">
             <div style={{ height: clientVirtualizer.getTotalSize(), position: 'relative' }}>
@@ -2033,13 +2061,13 @@ export const CharterManagementView = memo(function CharterManagementView({
                     {rowClients.map((client) => (
               <div
                 key={client.id}
-                className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3"
+                className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xs space-y-3"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <h3 className="font-bold text-slate-900 dark:text-white">{client.name}</h3>
+                    <h3 className="font-bold text-white">{client.name}</h3>
                     {client.contactName && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
+                      <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                         <Users className="w-3.5 h-3.5 text-indigo-500" />
                         <span>{client.contactName}</span>
                       </p>
@@ -2048,15 +2076,15 @@ export const CharterManagementView = memo(function CharterManagementView({
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                       client.active
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                        : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                        ? 'bg-emerald-500/15  text-emerald-300'
+                        : 'bg-slate-800 text-slate-500 '
                     }`}
                   >
                     {client.active ? (isFrench ? 'Actif' : 'Active') : (isFrench ? 'Inactif' : 'Inactive')}
                   </span>
                 </div>
 
-                <div className="text-xs text-slate-600 dark:text-slate-300 space-y-1.5 pt-1">
+                <div className="text-xs text-slate-300 space-y-1.5 pt-1">
                   {client.contactPhone && (
                     <div className="flex items-center gap-2">
                       <Phone className="w-3.5 h-3.5 text-slate-400" />
@@ -2078,25 +2106,25 @@ export const CharterManagementView = memo(function CharterManagementView({
                 </div>
 
                 {client.notes && (
-                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500">
+                  <div className="p-2.5 rounded-xl bg-slate-800/60 text-xs text-slate-500">
                     {client.notes}
                   </div>
                 )}
 
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800">
                   <span className="text-xs text-slate-400">
                     {client.tripCount || 0} {isFrench ? 'voyages' : 'trips'}
                   </span>
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleOpenClientModal(client)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all"
                     >
                       <Pencil className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleDeleteClient(client)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-500/15 hover:bg-rose-950/40 transition-all"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -2120,19 +2148,19 @@ export const CharterManagementView = memo(function CharterManagementView({
           role="presentation"
         >
           <div
-            className="w-full max-w-2xl bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200"
+            className="w-full max-w-2xl bg-slate-900 h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
           >
             {/* Drawer Header */}
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono font-bold text-lg text-indigo-600 dark:text-indigo-400">
+                  <span className="font-mono font-bold text-lg">
                     {selectedTrip.tripNumber}
                   </span>
-                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold">
                     {getCharterTripTypeLabel(selectedTrip.tripType, isFrench)}
                   </span>
                   {(Boolean(
@@ -2140,8 +2168,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                       charterOpeningsByTripId[selectedTrip.id].status !== 'cancelled'
                   ) ||
                     selectedTrip.isPublishedOpen) && (
-                    <span className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-bold bg-emerald-500/15 text-emerald-300 border">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>
                         {charterOpeningsByTripId[selectedTrip.id]?.status === 'awarded'
                           ? isFrench
@@ -2154,15 +2182,15 @@ export const CharterManagementView = memo(function CharterManagementView({
                     </span>
                   )}
                 </div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">
+                <h2 className="text-xl font-bold text-white mt-0.5">
                   {selectedTrip.title}
                 </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">{selectedTrip.clientName}</p>
+                <p className="text-xs text-slate-400">{selectedTrip.clientName}</p>
               </div>
 
               <button
                 onClick={() => setSelectedTripId(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2171,37 +2199,37 @@ export const CharterManagementView = memo(function CharterManagementView({
             {/* Drawer Body */}
             <div className="flex-1 overflow-y-auto p-5 space-y-6">
               {/* Status Action Pills */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+              <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700 space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-600 dark:text-slate-300">
+                  <span className="font-semibold text-slate-300">
                     {isFrench ? 'Statut du voyage :' : 'Trip Status:'}
                   </span>
-                  <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                  <span className="font-bold">
                     {getCharterTripStatusLabel(selectedTrip.status, isFrench)}
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
                   <button
                     onClick={() => handleUpdateTripStatus(selectedTrip, 1)}
-                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 transition-all"
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 transition-all"
                   >
                     {isFrench ? 'Confirmer' : 'Confirm'}
                   </button>
                   <button
                     onClick={() => handleUpdateTripStatus(selectedTrip, 3)}
-                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-100 hover:bg-amber-200 text-amber-800 dark:bg-amber-950 dark:text-amber-300 transition-all"
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 transition-all"
                   >
                     {isFrench ? 'En cours' : 'In Progress'}
                   </button>
                   <button
                     onClick={() => handleUpdateTripStatus(selectedTrip, 4)}
-                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-100 hover:bg-purple-200 text-purple-800 dark:bg-purple-950 dark:text-purple-300 transition-all"
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 transition-all"
                   >
                     {isFrench ? 'Terminé' : 'Complete'}
                   </button>
                   <button
                     onClick={() => handleUpdateTripStatus(selectedTrip, 5)}
-                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-950 dark:text-rose-300 transition-all"
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 transition-all"
                   >
                     {isFrench ? 'Annuler' : 'Cancel'}
                   </button>
@@ -2210,28 +2238,28 @@ export const CharterManagementView = memo(function CharterManagementView({
 
               {/* Trip Schedule & Pricing */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
+                <div className="p-3.5 rounded-xl border border-slate-800 space-y-1">
                   <span className="text-[11px] text-slate-400 uppercase font-bold">{isFrench ? 'Date & Heure' : 'Schedule'}</span>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  <p className="text-sm font-semibold text-slate-200">
                     {selectedTrip.departsAt?.replace('T', ' ')}
                   </p>
                   <p className="text-xs text-slate-500 font-mono">
                     {isFrench ? 'Retour :' : 'Returns:'} {selectedTrip.returnsAt?.replace('T', ' ')}
                   </p>
                 </div>
-                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
+                <div className="p-3.5 rounded-xl border border-slate-800 space-y-1">
                   <span className="text-[11px] text-slate-400 uppercase font-bold">{isFrench ? 'Facturation & Taux de paie' : 'Pricing & Payroll Rates'}</span>
-                  <p className="text-base font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  <p className="text-base font-mono font-bold">
                     ${(selectedTrip.quotedAmount || 0).toFixed(2)}{' '}
                     <span className="text-xs font-normal text-slate-500">
                       ({selectedTrip.billableHours || 0} {isFrench ? 'h fact.' : 'hrs'})
                     </span>
                   </p>
                   <div className="flex flex-wrap items-center gap-2 pt-0.5 text-xs font-mono">
-                    <span className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-semibold">
+                    <span className="px-2 py-0.5 rounded font-semibold">
                       {isFrench ? 'Chauffeur :' : 'Driver:'} ${(selectedTrip.driverPayRate ?? selectedTrip.assignments?.[0]?.driverPayRate ?? 150).toFixed(2)}
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold">
+                    <span className="px-2 py-0.5 rounded font-semibold">
                       {isFrench ? 'Accomp. :' : 'Attendant:'} ${(selectedTrip.attendantPayRate ?? selectedTrip.assignments?.[0]?.attendantPayRate ?? 100).toFixed(2)}
                     </span>
                   </div>
@@ -2248,7 +2276,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                     {isFrench ? 'Cliquer sur l\'heure pour modifier' : 'Click time to edit schedule'}
                   </span>
                 </div>
-                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+                <div className="p-3.5 rounded-xl border border-slate-800 divide-y divide-slate-800">
                   {normalizeCharterTripStops(selectedTrip, charterOpeningsByTripId[selectedTrip.id]).map((stop, idx) => {
                     const existingOp = charterOpeningsByTripId[selectedTrip.id];
                     const scheduledTimeStr =
@@ -2267,7 +2295,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                     return (
                       <div key={stop.id || idx} className="py-2.5 flex items-start justify-between gap-2.5 first:pt-0 last:pb-0">
                         <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                          <div className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                          <div className="w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
                             {idx + 1}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -2275,13 +2303,13 @@ export const CharterManagementView = memo(function CharterManagementView({
                               <span
                                 className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${
                                   isPickup
-                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300'
-                                    : 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300'
+                                    ? 'bg-emerald-500/15  text-emerald-300'
+                                    : 'bg-amber-500/15  text-amber-300'
                                 }`}
                               >
                                 {isPickup ? 'Pick Up' : 'Drop Off'}
                               </span>
-                              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                              <span className="text-xs font-bold text-slate-200">
                                 {stopTitle}
                               </span>
                             </div>
@@ -2291,7 +2319,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                         <button
                           type="button"
                           onClick={() => handleUpdateStopScheduledTime(stop, idx)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/70 dark:hover:bg-indigo-900/70 border border-indigo-200/70 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-mono text-xs font-bold shrink-0 transition-colors"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-900/70 border font-mono text-xs font-bold shrink-0 transition-colors"
                           title={isFrench ? 'Modifier l\'heure prévue à cet arrêt' : 'Edit scheduled stop time'}
                         >
                           <Clock className="w-3 h-3 text-indigo-500" />
@@ -2313,8 +2341,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                           (selectedTrip.assignments || []).filter((a) => Boolean(a.driverId || a.driverName)).length >=
                           Math.max(selectedTrip.vehiclesNeeded || 1, selectedTrip.assignments?.length || 0)
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300'
-                            : 'bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300'
+                            ? 'bg-emerald-500/15  text-emerald-300'
+                            : 'bg-amber-500/15  text-amber-300'
                         }`}
                       >
                         {(selectedTrip.assignments || []).filter((a) => Boolean(a.driverId || a.driverName)).length} /{' '}
@@ -2339,12 +2367,12 @@ export const CharterManagementView = memo(function CharterManagementView({
                           onClick={(e) => handleOpenPublishCharterModal(selectedTrip, e)}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold shadow-xs transition-all ${
                             isDrawerPublished
-                              ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                              ? 'bg-emerald-500/15 hover:bg-emerald-500/25  text-emerald-300 border '
                               : 'bg-indigo-600 hover:bg-indigo-700 text-white'
                           }`}
                         >
                           {isDrawerPublished ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <CheckCircle2 className="w-3.5 h-3.5" />
                           ) : (
                             <Megaphone className="w-3.5 h-3.5" />
                           )}
@@ -2388,7 +2416,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                 </div>
 
                 {(!selectedTrip.assignments || selectedTrip.assignments.length === 0) ? (
-                  <div className="p-6 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-center text-slate-500">
+                  <div className="p-6 rounded-2xl border border-dashed border-slate-700 text-center text-slate-500">
                     <Truck className="w-8 h-8 mx-auto text-slate-400 mb-1" />
                     <p className="text-xs font-semibold">{isFrench ? 'Aucun véhicule assigné' : 'No shifts / vehicles assigned yet'}</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">
@@ -2409,25 +2437,25 @@ export const CharterManagementView = memo(function CharterManagementView({
                       return (
                         <div
                           key={asg.id}
-                          className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs space-y-3"
+                          className="p-4 rounded-2xl border border-slate-800 bg-slate-900 shadow-xs space-y-3"
                         >
                           {/* Vehicle & Assignment Header */}
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300">
+                              <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg">
                                 {isFrench ? `Quart #${shiftNum}` : `Shift #${shiftNum}`}
                               </span>
                               {hasVehicle ? (
                                 <button
                                   type="button"
                                   onClick={() => onSelectVehicle?.(asg.vehicleId, asg.vehicleUnitNumber)}
-                                  className="font-mono font-bold text-sm text-slate-900 dark:text-white hover:text-amber-600 dark:hover:text-amber-300 transition"
+                                  className="font-mono font-bold text-sm text-white hover:text-amber-600 hover:text-amber-300 transition"
                                   title={isFrench ? 'Voir la fiche véhicule' : 'View vehicle details'}
                                 >
                                   Unit {asg.vehicleUnitNumber}
                                 </button>
                               ) : (
-                                <span className="font-mono font-bold text-sm text-slate-900 dark:text-white">
+                                <span className="font-mono font-bold text-sm text-white">
                                   {isFrench ? 'Véhicule à assigner (TBD)' : 'Vehicle TBD'}
                                 </span>
                               )}
@@ -2440,7 +2468,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                             <div className="flex items-center gap-1">
                               <button
                                 onClick={() => handleOpenAssignmentModal(asg)}
-                                className="px-2 py-1 rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 flex items-center gap-1"
+                                className="px-2 py-1 rounded-lg text-xs font-semibold hover:bg-indigo-500/15 hover:bg-indigo-950/50 flex items-center gap-1"
                                 title={isFrench ? 'Assigner / Modifier' : 'Assign / Edit Crew & Vehicle'}
                               >
                                 <Pencil className="w-3.5 h-3.5" />
@@ -2448,7 +2476,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                               </button>
                               <button
                                 onClick={() => handleDeleteAssignment(asg)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-500/15 hover:bg-rose-950/40"
                                 title={isFrench ? 'Supprimer' : 'Delete'}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -2457,23 +2485,23 @@ export const CharterManagementView = memo(function CharterManagementView({
                           </div>
 
                           {/* Driver Card & Check-in Controls */}
-                          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded font-bold">
                                   {isFrench ? 'Chauffeur' : 'Driver'}
                                 </span>
                                 {hasDriver ? (
                                   <button
                                     type="button"
                                     onClick={() => onSelectEmployee?.(asg.driverId, asg.driverName)}
-                                    className="font-semibold text-slate-900 dark:text-white text-xs hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                                    className="font-semibold text-white text-xs hover:text-amber-600 hover:text-amber-300 hover:underline transition"
                                     title={isFrench ? 'Voir la fiche chauffeur' : 'View driver details'}
                                   >
                                     {asg.driverName}
                                   </button>
                                 ) : (
-                                  <span className="text-xs italic text-amber-600 dark:text-amber-400 font-medium">
+                                  <span className="text-xs italic font-medium">
                                     {isFrench ? 'Quart ouvert — Aucun chauffeur' : 'Open Shift — Unassigned'}
                                   </span>
                                 )}
@@ -2510,7 +2538,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                   </button>
                                   <button
                                     onClick={() => handleUndoCheckIn(asg, 'driver')}
-                                    className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50"
+                                    className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-500/15"
                                     title="Undo check-in"
                                   >
                                     <RotateCcw className="w-3.5 h-3.5" />
@@ -2518,13 +2546,13 @@ export const CharterManagementView = memo(function CharterManagementView({
                                 </>
                               ) : (
                                 <div className="flex items-center gap-1">
-                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold">
                                     <CheckCircle2 className="w-3.5 h-3.5" />
                                     <span>{isFrench ? 'Complété' : 'Completed'}</span>
                                   </span>
                                   <button
                                     onClick={() => handleUndoCheckIn(asg, 'driver')}
-                                    className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 ml-1"
+                                    className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-500/15 ml-1"
                                     title="Revert check-out"
                                   >
                                     <RotateCcw className="w-3.5 h-3.5" />
@@ -2536,16 +2564,16 @@ export const CharterManagementView = memo(function CharterManagementView({
 
                           {/* Attendant Card & Check-in Controls (if assigned) */}
                           {asg.attendantName && (
-                            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                               <div>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-bold">
                                     {isFrench ? 'Accompagnateur' : 'Attendant'}
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => onSelectEmployee?.(asg.attendantId, asg.attendantName)}
-                                    className="font-semibold text-slate-900 dark:text-white text-xs hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                                    className="font-semibold text-white text-xs hover:text-amber-600 hover:text-amber-300 hover:underline transition"
                                     title={isFrench ? "Voir la fiche accompagnateur" : 'View attendant details'}
                                   >
                                     {asg.attendantName}
@@ -2576,7 +2604,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                     </button>
                                     <button
                                       onClick={() => handleUndoCheckIn(asg, 'attendant')}
-                                      className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50"
+                                      className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-500/15"
                                       title="Undo check-in"
                                     >
                                       <RotateCcw className="w-3.5 h-3.5" />
@@ -2584,13 +2612,13 @@ export const CharterManagementView = memo(function CharterManagementView({
                                   </>
                                 ) : (
                                   <div className="flex items-center gap-1">
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold">
                                       <CheckCircle2 className="w-3.5 h-3.5" />
                                       <span>{isFrench ? 'Complété' : 'Completed'}</span>
                                     </span>
                                     <button
                                       onClick={() => handleUndoCheckIn(asg, 'attendant')}
-                                      className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 ml-1"
+                                      className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-500/15 ml-1"
                                       title="Revert check-out"
                                     >
                                       <RotateCcw className="w-3.5 h-3.5" />
@@ -2603,7 +2631,7 @@ export const CharterManagementView = memo(function CharterManagementView({
 
                           {/* Per-Shift Stop Arrival & Departure Times */}
                           {shiftStops.length > 0 && (
-                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+                            <div className="pt-2 border-t border-slate-800 space-y-1.5">
                               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                                 {isFrench ? 'Heures aux arrêts (Ce quart)' : 'Stop Times (This Shift)'}
                               </div>
@@ -2623,13 +2651,13 @@ export const CharterManagementView = memo(function CharterManagementView({
                                   return (
                                     <div
                                       key={`${asg.id}-${stop.id || sIdx}`}
-                                      className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50/70 dark:bg-slate-800/40 text-xs"
+                                      className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/40 text-xs"
                                     >
                                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                        <span className="w-4 h-4 rounded-full bg-slate-200 dark:bg-slate-700 text-[10px] font-bold flex items-center justify-center shrink-0">
+                                        <span className="w-4 h-4 rounded-full bg-slate-700 text-[10px] font-bold flex items-center justify-center shrink-0">
                                           {sIdx + 1}
                                         </span>
-                                        <span className="font-medium text-slate-700 dark:text-slate-300 truncate">
+                                        <span className="font-medium text-slate-300 truncate">
                                           {stopLabel}:
                                         </span>
                                         <span className="text-slate-500 truncate">{stop.address}</span>
@@ -2640,8 +2668,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                                           onClick={() => handleUpdateShiftStopTime(asg, stop, 'arrivedAt')}
                                           className={`px-2 py-0.5 rounded border transition-colors ${
                                             stop.arrivedAt
-                                              ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-bold'
-                                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-400'
+                                              ? '   font-bold'
+                                              : 'bg-slate-800 border-slate-700 text-slate-500 hover:border-indigo-400'
                                           }`}
                                           title={isFrench ? 'Cliquer pour noter/modifier l\'arrivée' : 'Click to record/edit arrival time'}
                                         >
@@ -2652,8 +2680,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                                           onClick={() => handleUpdateShiftStopTime(asg, stop, 'departedAt')}
                                           className={`px-2 py-0.5 rounded border transition-colors ${
                                             stop.departedAt
-                                              ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold'
-                                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-400'
+                                              ? '   font-bold'
+                                              : 'bg-slate-800 border-slate-700 text-slate-500 hover:border-indigo-400'
                                           }`}
                                           title={isFrench ? 'Cliquer pour noter/modifier le départ' : 'Click to record/edit departure time'}
                                         >
@@ -2675,11 +2703,11 @@ export const CharterManagementView = memo(function CharterManagementView({
             </div>
 
             {/* Drawer Footer */}
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="p-4 border-t border-slate-800 flex items-center justify-between">
               {onNavigateToPayroll && (
                 <button
                   onClick={onNavigateToPayroll}
-                  className="inline-flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold hover:underline"
                 >
                   <span>{isFrench ? 'Voir dans la paie de répartition' : 'View in Dispatch Payroll'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -2687,7 +2715,7 @@ export const CharterManagementView = memo(function CharterManagementView({
               )}
               <button
                 onClick={() => setSelectedTripId(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold"
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold"
               >
                 {isFrench ? 'Fermer' : 'Close'}
               </button>
@@ -2699,16 +2727,16 @@ export const CharterManagementView = memo(function CharterManagementView({
       {/* CREATE / EDIT TRIP MODAL */}
       {isTripModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+          <div className="w-full max-w-xl bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 overflow-hidden">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-white">
                 {editingTripId
                   ? isFrench ? 'Modifier le voyage nolisé' : 'Edit Charter Trip'
                   : isFrench ? 'Nouveau voyage nolisé' : 'New Charter Trip'}
               </h3>
               <button
                 onClick={() => setIsTripModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2717,14 +2745,14 @@ export const CharterManagementView = memo(function CharterManagementView({
             <form onSubmit={handleSaveTrip} className="p-5 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Client nolisé *' : 'Charter Client *'}
                   </label>
                   <select
                     required
                     value={formClientId}
                     onChange={(e) => setFormClientId(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                   >
                     {clients.length === 0 && (
                       <option value="__general__">General Charter Client</option>
@@ -2738,13 +2766,13 @@ export const CharterManagementView = memo(function CharterManagementView({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Type de voyage' : 'Trip Type'}
                   </label>
                   <select
                     value={formTripType}
                     onChange={(e) => setFormTripType(Number(e.target.value) as CharterTripType)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                   >
                     <option value={0}>{isFrench ? 'Sortie éducative' : 'Field Trip'}</option>
                     <option value={1}>{isFrench ? 'Sportif' : 'Athletic'}</option>
@@ -2755,7 +2783,7 @@ export const CharterManagementView = memo(function CharterManagementView({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
                   {isFrench ? 'Titre du voyage / Objet *' : 'Trip Title / Description *'}
                 </label>
                 <input
@@ -2764,13 +2792,13 @@ export const CharterManagementView = memo(function CharterManagementView({
                   value={formTitle}
                   onChange={(e) => setFormTitle(e.target.value)}
                   placeholder="e.g. Science Center Field Trip - Grade 7"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Date et heure de départ *' : 'Departure Date & Time *'}
                   </label>
                   <input
@@ -2778,12 +2806,12 @@ export const CharterManagementView = memo(function CharterManagementView({
                     required
                     value={formDepartsAt}
                     onChange={(e) => handleDepartureTimeChange(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Date et heure de retour *' : 'Return Date & Time *'}
                   </label>
                   <input
@@ -2791,16 +2819,16 @@ export const CharterManagementView = memo(function CharterManagementView({
                     required
                     value={formReturnsAt}
                     onChange={(e) => setFormReturnsAt(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                   />
                 </div>
               </div>
 
               {/* Stop Schedule & Itinerary Editor (e.g. #1 Pickup School 08:00, #2 Dropoff Museum 08:30, #3 Return Pickup Library 15:00, #4 Return Dropoff School 15:30) */}
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
+              <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div>
-                    <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <label className="block text-xs font-bold text-slate-200">
                       {isFrench ? 'Itinéraire et horaires des arrêts (Stops)' : 'Stop Schedule & Itinerary'}
                     </label>
                     <p className="text-[10px] text-slate-500">
@@ -2845,10 +2873,10 @@ export const CharterManagementView = memo(function CharterManagementView({
                     return (
                       <div
                         key={st.id || idx}
-                        className="flex flex-col sm:flex-row sm:items-center gap-2 p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                        className="flex flex-col sm:flex-row sm:items-center gap-2 p-2.5 rounded-xl bg-slate-900 border border-slate-700"
                       >
                         <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[11px] font-bold flex items-center justify-center shrink-0">
+                          <span className="w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0">
                             {idx + 1}
                           </span>
                           <select
@@ -2871,8 +2899,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                             }}
                             className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border shrink-0 ${
                               st.stopType === 0 || st.stopType === 3
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
-                                : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800'
+                                ? 'bg-emerald-500/15 text-emerald-300  '
+                                : 'bg-amber-500/15 text-amber-300  '
                             }`}
                           >
                             <option value={0}>{isFrench ? 'Prise en charge (Pick Up)' : 'Pick Up (Outbound)'}</option>
@@ -2901,7 +2929,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                 ? 'e.g. Library'
                                 : 'e.g. School'
                             }
-                            className="flex-1 min-w-0 px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                            className="flex-1 min-w-0 px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs"
                           />
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
@@ -2924,7 +2952,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                 )
                               );
                             }}
-                            className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400"
+                            className="px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-xs font-mono font-bold text-indigo-400"
                           />
                           {formStops.length > 2 && (
                             <button
@@ -2951,7 +2979,7 @@ export const CharterManagementView = memo(function CharterManagementView({
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Nb passagers' : 'Passengers'}
                   </label>
                   <input
@@ -2959,11 +2987,11 @@ export const CharterManagementView = memo(function CharterManagementView({
                     min={1}
                     value={formPassengerCount}
                     onChange={(e) => setFormPassengerCount(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Véhicules requis' : 'Buses Needed'}
                   </label>
                   <input
@@ -2972,11 +3000,11 @@ export const CharterManagementView = memo(function CharterManagementView({
                     max={50}
                     value={formVehiclesNeeded}
                     onChange={(e) => setFormVehiclesNeeded(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Montant devis ($)' : 'Quoted Rate ($)'}
                   </label>
                   <input
@@ -2984,11 +3012,11 @@ export const CharterManagementView = memo(function CharterManagementView({
                     step="0.01"
                     value={formQuotedAmount}
                     onChange={(e) => setFormQuotedAmount(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Heures facturables' : 'Billable Hours'}
                   </label>
                   <input
@@ -2996,24 +3024,24 @@ export const CharterManagementView = memo(function CharterManagementView({
                     step="0.5"
                     value={formBillableHours}
                     onChange={(e) => setFormBillableHours(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono"
                   />
                 </div>
               </div>
 
               {/* Crew Payroll Rates (Shown to crew in Driver App after Check-In) */}
-              <div className="p-3.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200/70 dark:border-indigo-800/50 space-y-2.5">
+              <div className="p-3.5 rounded-xl border space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
+                  <span className="text-[11px] font-bold uppercase tracking-wider">
                     {isFrench ? 'Taux de paie de l\'équipage (Par quart)' : 'Crew Payroll Rates (Per Shift)'}
                   </span>
-                  <span className="text-[10px] text-indigo-600/80 dark:text-indigo-400/80">
+                  <span className="text-[10px]">
                     {isFrench ? 'Visible par le chauffeur/accompagnateur après le pointage' : 'Visible to driver/attendant after Check-In'}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
                       {isFrench ? 'Taux de paie Chauffeur ($)' : 'Driver Payroll Rate ($)'}
                     </label>
                     <input
@@ -3023,11 +3051,11 @@ export const CharterManagementView = memo(function CharterManagementView({
                       required
                       value={formDriverPayRate}
                       onChange={(e) => setFormDriverPayRate(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-blue-700 dark:text-blue-300"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono font-bold text-emerald-300"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
                       {isFrench ? 'Taux de paie Accompagnateur ($)' : 'Attendant Payroll Rate ($)'}
                     </label>
                     <input
@@ -3037,14 +3065,14 @@ export const CharterManagementView = memo(function CharterManagementView({
                       required
                       value={formAttendantPayRate}
                       onChange={(e) => setFormAttendantPayRate(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-emerald-700 dark:text-emerald-300"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono font-bold text-emerald-300"
                     />
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-6 pt-1">
-                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={formRoundTrip}
@@ -3083,7 +3111,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                   />
                   <span>{isFrench ? 'Aller-retour' : 'Round Trip'}</span>
                 </label>
-                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={formNeedsAttendant}
@@ -3095,7 +3123,7 @@ export const CharterManagementView = memo(function CharterManagementView({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
                   {isFrench ? 'Notes / Consignes particulières' : 'Special Instructions / Notes'}
                 </label>
                 <textarea
@@ -3103,15 +3131,15 @@ export const CharterManagementView = memo(function CharterManagementView({
                   value={formNotes}
                   onChange={(e) => setFormNotes(e.target.value)}
                   placeholder="Gate instructions, parking contact, special luggage..."
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsTripModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:bg-slate-800"
                 >
                   {isFrench ? 'Annuler' : 'Cancel'}
                 </button>
@@ -3130,16 +3158,16 @@ export const CharterManagementView = memo(function CharterManagementView({
       {/* ASSIGNMENT MODAL (Vehicle & Crew) */}
       {isAssignmentModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between rounded-t-2xl">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+          <div className="w-full max-w-lg bg-slate-900 rounded-2xl shadow-2xl border border-slate-800">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between rounded-t-2xl">
+              <h3 className="text-lg font-bold text-white">
                 {editingAssignment
                   ? isFrench ? 'Modifier l\'affectation (Équipage)' : 'Edit Crew Assignment'
                   : isFrench ? 'Assigner un véhicule et chauffeur' : 'Assign Vehicle & Crew'}
               </h3>
               <button
                 onClick={() => setIsAssignmentModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -3147,15 +3175,15 @@ export const CharterManagementView = memo(function CharterManagementView({
 
             <form onSubmit={handleSaveAssignment} className="p-5 space-y-4">
               {/* Driver Section */}
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
-                <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase">
+              <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700 space-y-3">
+                <span className="text-[11px] font-bold uppercase">
                   {isFrench ? 'Chauffeur' : 'Driver Assignment'}
                 </span>
 
                 {/* Driver Searchable Combobox */}
                 <div className="relative" ref={asgDriverDropdownRef}>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <label className="block text-xs font-semibold text-slate-300">
                       {isFrench ? 'Chauffeur assigné *' : 'Assigned Driver *'}
                     </label>
                     {asgDriverId && (
@@ -3173,15 +3201,15 @@ export const CharterManagementView = memo(function CharterManagementView({
                   <button
                     type="button"
                     onClick={() => setAsgDriverDropdownOpen((prev) => !prev)}
-                    className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border rounded-xl text-xs flex items-center justify-between cursor-pointer transition-colors text-left ${
+                    className={`w-full px-3 py-2 bg-slate-800 border rounded-xl text-xs flex items-center justify-between cursor-pointer transition-colors text-left ${
                       asgDriverDropdownOpen
                         ? 'border-indigo-500 ring-2 ring-indigo-500/20'
-                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        : 'border-slate-700 hover:border-slate-300 hover:border-slate-600'
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
-                      <Users className={`w-4 h-4 shrink-0 ${asgDriverId ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} />
-                      <span className={`truncate ${asgDriverId ? 'font-medium text-slate-900 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                      <Users className={`w-4 h-4 shrink-0 ${asgDriverId ? '' : 'text-slate-400'}`} />
+                      <span className={`truncate ${asgDriverId ? 'font-medium text-slate-100' : 'text-slate-400 text-slate-500'}`}>
                         {asgDriverId
                           ? `${asgDriverName} (${asgDriverId})`
                           : (isFrench ? '-- Sélectionner un chauffeur --' : '-- Select Driver --')}
@@ -3193,7 +3221,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                           role="button"
                           tabIndex={0}
                           onClick={handleClearDriver}
-                          className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"
+                          className="p-0.5 hover:bg-slate-700 rounded-full"
                           title={isFrench ? 'Effacer' : 'Clear'}
                         >
                           <X className="w-3.5 h-3.5" />
@@ -3204,8 +3232,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                   </button>
 
                   {asgDriverDropdownOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-                      <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50">
+                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                      <div className="p-2 border-b border-slate-800 bg-slate-800/50">
                         <div className="relative">
                           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                           <input
@@ -3214,7 +3242,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                             value={asgDriverSearchQuery}
                             onChange={(e) => setAsgDriverSearchQuery(e.target.value)}
                             placeholder={isFrench ? 'Rechercher chauffeur (nom, #)...' : 'Search driver (name, #)...'}
-                            className="w-full pl-8 pr-7 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                            className="w-full pl-8 pr-7 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                             onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => {
                               if (e.key === 'Escape') {
@@ -3230,7 +3258,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                 e.stopPropagation();
                                 setAsgDriverSearchQuery('');
                               }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 hover:text-slate-200 p-0.5"
                             >
                               <X className="w-3 h-3" />
                             </button>
@@ -3238,7 +3266,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                         </div>
                       </div>
 
-                      <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+                      <div className="max-h-56 overflow-y-auto divide-y divide-slate-800/60">
                         {filteredDrivers.length === 0 ? (
                           <div className="py-6 px-4 text-center text-xs text-slate-400">
                             {isFrench ? 'Aucun chauffeur trouvé' : 'No drivers found'}
@@ -3257,14 +3285,14 @@ export const CharterManagementView = memo(function CharterManagementView({
                                 onClick={() => handleSelectDriver(d)}
                                 className={`px-3 py-2 text-xs cursor-pointer flex items-center justify-between gap-2 transition-colors ${
                                   isSelected
-                                    ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-900 dark:text-blue-200 font-medium'
+                                    ? '  font-medium'
                                     : hasOverlapTask
-                                      ? 'bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/35 text-slate-700 dark:text-slate-300'
-                                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                                      ? 'bg-amber-950/20 hover:bg-amber-500/15 hover:bg-amber-950/35 text-slate-300'
+                                      : 'hover:bg-slate-800/60 text-slate-300'
                                 }`}
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="font-medium text-slate-900 dark:text-slate-100 truncate flex items-center gap-1.5 flex-wrap">
+                                  <div className="font-medium text-slate-100 truncate flex items-center gap-1.5 flex-wrap">
                                     <span>
                                       {d.firstName} {d.lastName}
                                       <span className="ml-1.5 text-[11px] text-slate-400 font-mono">
@@ -3275,8 +3303,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                                       <span
                                         className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
                                           hasOverlapTask
-                                            ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                                            : 'bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+                                            ? '  '
+                                            : '  '
                                         }`}
                                       >
                                         {hasOverlapTask
@@ -3286,7 +3314,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                     )}
                                   </div>
                                   {phone && (
-                                    <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                                    <div className="text-[10px] text-slate-400 text-slate-500 truncate mt-0.5">
                                       {phone}
                                     </div>
                                   )}
@@ -3300,10 +3328,10 @@ export const CharterManagementView = memo(function CharterManagementView({
                                           key={`${task.source}:${task.id}:${task.role}`}
                                           className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
                                             task.isOverlap
-                                              ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                              ? '  '
                                               : task.source === 'charter'
-                                                ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
-                                                : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                                ? '  '
+                                                : '  '
                                           }`}
                                         >
                                           <Clock className="w-2.5 h-2.5 shrink-0" />
@@ -3313,7 +3341,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                     </div>
                                   )}
                                 </div>
-                                {isSelected && <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />}
+                                {isSelected && <Check className="w-4 h-4 shrink-0" />}
                               </div>
                             );
                           })
@@ -3328,8 +3356,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                     data-testid="charter-selected-driver-tasks"
                     className={`p-2 rounded-lg border text-[11px] space-y-1 ${
                       selectedDriverDayTasks.some((task) => task.isOverlap)
-                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/70 text-rose-800 dark:text-rose-200'
-                        : 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800/70 text-sky-800 dark:text-sky-200'
+                        ? '  '
+                        : '  '
                     }`}
                   >
                     <div className="font-semibold flex items-center gap-1.5">
@@ -3346,8 +3374,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                           key={`${task.source}:${task.id}:${task.role}`}
                           className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
                             task.isOverlap
-                              ? 'bg-rose-100/80 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-700'
-                              : 'bg-white/80 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200 border-sky-200 dark:border-sky-800'
+                              ? '  '
+                              : 'bg-slate-900/60 text-slate-200 border-sky-800'
                           }`}
                         >
                           {formatEmployeeTaskShortLabel(task, isFrench)}
@@ -3359,7 +3387,7 @@ export const CharterManagementView = memo(function CharterManagementView({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
                       {isFrench ? 'Taux de paie chauffeur ($)' : 'Driver Pay Rate ($)'}
                     </label>
                     <input
@@ -3368,11 +3396,11 @@ export const CharterManagementView = memo(function CharterManagementView({
                       required
                       value={asgDriverPayRate}
                       onChange={(e) => setAsgDriverPayRate(Number(e.target.value))}
-                      className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                      className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
                       {isFrench ? 'Heures d\'assurance-emploi (EI)' : 'Driver EI Hours'}
                     </label>
                     <input
@@ -3381,16 +3409,16 @@ export const CharterManagementView = memo(function CharterManagementView({
                       required
                       value={asgDriverEiHours}
                       onChange={(e) => setAsgDriverEiHours(Number(e.target.value))}
-                      className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                      className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono"
                     />
                   </div>
                 </div>
               </div>
 
               {/* Vehicle Searchable Combobox */}
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
+              <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700 space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase">
+                  <span className="text-[11px] font-bold uppercase">
                     {isFrench ? 'Véhicule' : 'Vehicle Assignment'}
                   </span>
                   {asgVehicleId > 0 && (
@@ -3406,7 +3434,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                 </div>
 
                 <div className="relative" ref={asgVehicleDropdownRef}>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Sélectionner le véhicule' : 'Select Vehicle'}
                   </label>
 
@@ -3414,15 +3442,15 @@ export const CharterManagementView = memo(function CharterManagementView({
                     type="button"
                     data-testid="charter-vehicle-combobox-trigger"
                     onClick={() => setAsgVehicleDropdownOpen((prev) => !prev)}
-                    className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border rounded-xl text-xs flex items-center justify-between cursor-pointer transition-colors text-left ${
+                    className={`w-full px-3 py-2 bg-slate-800 border rounded-xl text-xs flex items-center justify-between cursor-pointer transition-colors text-left ${
                       asgVehicleDropdownOpen
                         ? 'border-indigo-500 ring-2 ring-indigo-500/20'
-                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        : 'border-slate-700 hover:border-slate-300 hover:border-slate-600'
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
-                      <Truck className={`w-4 h-4 shrink-0 ${asgVehicleId > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
-                      <span className={`truncate font-mono ${asgVehicleId > 0 ? 'font-medium text-slate-900 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                      <Truck className={`w-4 h-4 shrink-0 ${asgVehicleId > 0 ? '' : 'text-slate-400'}`} />
+                      <span className={`truncate font-mono ${asgVehicleId > 0 ? 'font-medium text-slate-100' : 'text-slate-400 text-slate-500'}`}>
                         {asgVehicleId > 0
                           ? selectedAsgVehicle
                             ? `Unit ${selectedAsgVehicle.unitNumber} - ${selectedAsgVehicle.manufacturer} ${selectedAsgVehicle.model} (${selectedAsgVehicle.seatCap} pass.)`
@@ -3436,7 +3464,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                           role="button"
                           tabIndex={0}
                           onClick={handleClearVehicle}
-                          className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"
+                          className="p-0.5 hover:bg-slate-700 rounded-full"
                           title={isFrench ? 'Effacer' : 'Clear'}
                         >
                           <X className="w-3.5 h-3.5" />
@@ -3447,8 +3475,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                   </button>
 
                   {asgVehicleDropdownOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-                      <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50">
+                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                      <div className="p-2 border-b border-slate-800 bg-slate-800/50">
                         <div className="relative">
                           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                           <input
@@ -3458,7 +3486,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                             value={asgVehicleSearchQuery}
                             onChange={(e) => setAsgVehicleSearchQuery(e.target.value)}
                             placeholder={isFrench ? 'Rechercher véhicule (unité, plaque, modèle, chauffeur)...' : 'Search vehicle (unit #, plate, model, driver)...'}
-                            className="w-full pl-8 pr-7 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                            className="w-full pl-8 pr-7 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                             onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => {
                               if (e.key === 'Escape') {
@@ -3474,7 +3502,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                 e.stopPropagation();
                                 setAsgVehicleSearchQuery('');
                               }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 hover:text-slate-200 p-0.5"
                             >
                               <X className="w-3 h-3" />
                             </button>
@@ -3482,17 +3510,17 @@ export const CharterManagementView = memo(function CharterManagementView({
                         </div>
                       </div>
 
-                      <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+                      <div className="max-h-56 overflow-y-auto divide-y divide-slate-800/60">
                         <div
                           onClick={() => handleSelectVehicle(null)}
                           className={`px-3 py-2 text-xs cursor-pointer flex items-center justify-between gap-2 transition-colors ${
                             asgVehicleId === 0
-                              ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 font-medium'
-                              : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-500 dark:text-slate-400 italic'
+                              ? '  font-medium'
+                              : 'hover:bg-slate-800/60 text-slate-400 italic'
                           }`}
                         >
                           <span>{isFrench ? '-- À assigner (TBD) --' : '-- TBD / Unassigned Vehicle --'}</span>
-                          {asgVehicleId === 0 && <Check className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />}
+                          {asgVehicleId === 0 && <Check className="w-4 h-4 shrink-0" />}
                         </div>
 
                         {filteredVehicles.length === 0 ? (
@@ -3510,34 +3538,34 @@ export const CharterManagementView = memo(function CharterManagementView({
                                 onClick={() => handleSelectVehicle(v)}
                                 className={`px-3 py-2 text-xs cursor-pointer flex items-center justify-between gap-2 transition-colors ${
                                   isSelected
-                                    ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 font-medium'
-                                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                                    ? '  font-medium'
+                                    : 'hover:bg-slate-800/60 text-slate-300'
                                 }`}
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-1.5 flex-wrap font-mono text-slate-900 dark:text-slate-100">
+                                  <div className="flex items-center gap-1.5 flex-wrap font-mono text-slate-100">
                                     <span className="font-semibold">Unit {v.unitNumber}</span>
-                                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-sans">
+                                    <span className="text-[11px] text-slate-400 font-sans">
                                       - {v.manufacturer} {v.model} ({v.seatCap} pass.)
                                     </span>
                                     {isDriverRegular && (
-                                      <span className="text-[10px] font-sans font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                      <span className="text-[10px] font-sans font-bold px-1.5 py-0.5 rounded border">
                                         {isFrench ? 'Véhicule du chauffeur' : "Driver's Regular"}
                                       </span>
                                     )}
                                     {v.active === false && (
-                                      <span className="text-[10px] font-sans font-semibold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                      <span className="text-[10px] font-sans font-semibold px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">
                                         {isFrench ? 'Inactif' : 'Inactive'}
                                       </span>
                                     )}
                                   </div>
-                                  <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5 flex items-center gap-2">
+                                  <div className="text-[10px] text-slate-400 text-slate-500 truncate mt-0.5 flex items-center gap-2">
                                     {v.plateNumber && <span>Plate: {v.plateNumber}</span>}
                                     {v.yardName && <span>• {v.yardName}</span>}
                                     {v.driverName && <span>• Driver: {v.driverName}</span>}
                                   </div>
                                 </div>
-                                {isSelected && <Check className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />}
+                                {isSelected && <Check className="w-4 h-4 shrink-0" />}
                               </div>
                             );
                           })
@@ -3550,24 +3578,24 @@ export const CharterManagementView = memo(function CharterManagementView({
                 {asgAutoMatchedVehicleNote && (
                   <div
                     data-testid="charter-vehicle-automatched-note"
-                    className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5"
+                    className="p-2 rounded-lg border text-[11px] flex items-center gap-1.5"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                     <span>{asgAutoMatchedVehicleNote}</span>
                   </div>
                 )}
               </div>
 
               {/* Attendant Section (Optional) */}
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
-                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">
+              <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700 space-y-3">
+                <span className="text-[11px] font-bold uppercase">
                   {isFrench ? 'Accompagnateur (Optionnel)' : 'Attendant (Optional)'}
                 </span>
 
                 {/* Attendant Searchable Combobox */}
                 <div className="relative" ref={asgAttendantDropdownRef}>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <label className="block text-xs font-semibold text-slate-300">
                       {isFrench ? 'Accompagnateur assigné' : 'Assigned Attendant'}
                     </label>
                     {asgAttendantId && (
@@ -3585,15 +3613,15 @@ export const CharterManagementView = memo(function CharterManagementView({
                   <button
                     type="button"
                     onClick={() => setAsgAttendantDropdownOpen((prev) => !prev)}
-                    className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border rounded-xl text-xs flex items-center justify-between cursor-pointer transition-colors text-left ${
+                    className={`w-full px-3 py-2 bg-slate-800 border rounded-xl text-xs flex items-center justify-between cursor-pointer transition-colors text-left ${
                       asgAttendantDropdownOpen
                         ? 'border-indigo-500 ring-2 ring-indigo-500/20'
-                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                        : 'border-slate-700 hover:border-slate-300 hover:border-slate-600'
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
-                      <Users className={`w-4 h-4 shrink-0 ${asgAttendantId ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
-                      <span className={`truncate ${asgAttendantId ? 'font-medium text-slate-900 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                      <Users className={`w-4 h-4 shrink-0 ${asgAttendantId ? '' : 'text-slate-400'}`} />
+                      <span className={`truncate ${asgAttendantId ? 'font-medium text-slate-100' : 'text-slate-400 text-slate-500'}`}>
                         {asgAttendantId
                           ? `${asgAttendantName} (${asgAttendantId})`
                           : (isFrench ? '-- Aucun accompagnateur --' : '-- None / No Attendant --')}
@@ -3605,7 +3633,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                           role="button"
                           tabIndex={0}
                           onClick={handleClearAttendant}
-                          className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"
+                          className="p-0.5 hover:bg-slate-700 rounded-full"
                           title={isFrench ? 'Effacer' : 'Clear'}
                         >
                           <X className="w-3.5 h-3.5" />
@@ -3616,8 +3644,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                   </button>
 
                   {asgAttendantDropdownOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-                      <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50">
+                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                      <div className="p-2 border-b border-slate-800 bg-slate-800/50">
                         <div className="relative">
                           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                           <input
@@ -3626,7 +3654,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                             value={asgAttendantSearchQuery}
                             onChange={(e) => setAsgAttendantSearchQuery(e.target.value)}
                             placeholder={isFrench ? 'Rechercher accompagnateur (nom, #)...' : 'Search attendant (name, #)...'}
-                            className="w-full pl-8 pr-7 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                            className="w-full pl-8 pr-7 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                             onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => {
                               if (e.key === 'Escape') {
@@ -3642,7 +3670,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                 e.stopPropagation();
                                 setAsgAttendantSearchQuery('');
                               }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 hover:text-slate-200 p-0.5"
                             >
                               <X className="w-3 h-3" />
                             </button>
@@ -3650,18 +3678,18 @@ export const CharterManagementView = memo(function CharterManagementView({
                         </div>
                       </div>
 
-                      <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+                      <div className="max-h-56 overflow-y-auto divide-y divide-slate-800/60">
                         {/* Option to select None */}
                         <div
                           onClick={() => handleSelectAttendant(null)}
                           className={`px-3 py-2 text-xs cursor-pointer flex items-center justify-between gap-2 transition-colors ${
                             !asgAttendantId
-                              ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-900 dark:text-emerald-200 font-medium'
-                              : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-500 dark:text-slate-400 italic'
+                              ? '  font-medium'
+                              : 'hover:bg-slate-800/60 text-slate-400 italic'
                           }`}
                         >
                           <span>{isFrench ? '-- Aucun accompagnateur --' : '-- None / No Attendant --'}</span>
-                          {!asgAttendantId && <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+                          {!asgAttendantId && <Check className="w-4 h-4 shrink-0" />}
                         </div>
 
                         {filteredAttendants.length === 0 && asgAttendantSearchQuery ? (
@@ -3682,14 +3710,14 @@ export const CharterManagementView = memo(function CharterManagementView({
                                 onClick={() => handleSelectAttendant(a)}
                                 className={`px-3 py-2 text-xs cursor-pointer flex items-center justify-between gap-2 transition-colors ${
                                   isSelected
-                                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-900 dark:text-emerald-200 font-medium'
+                                    ? '  font-medium'
                                     : hasOverlapTask
-                                      ? 'bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/35 text-slate-700 dark:text-slate-300'
-                                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                                      ? 'bg-amber-950/20 hover:bg-amber-500/15 hover:bg-amber-950/35 text-slate-300'
+                                      : 'hover:bg-slate-800/60 text-slate-300'
                                 }`}
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="font-medium text-slate-900 dark:text-slate-100 truncate flex items-center gap-1.5 flex-wrap">
+                                  <div className="font-medium text-slate-100 truncate flex items-center gap-1.5 flex-wrap">
                                     <span>
                                       {a.firstName} {a.lastName}
                                       <span className="ml-1.5 text-[11px] text-slate-400 font-mono">
@@ -3700,8 +3728,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                                       <span
                                         className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
                                           hasOverlapTask
-                                            ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                                            : 'bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+                                            ? '  '
+                                            : '  '
                                         }`}
                                       >
                                         {hasOverlapTask
@@ -3711,7 +3739,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                     )}
                                   </div>
                                   {phone && (
-                                    <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                                    <div className="text-[10px] text-slate-400 text-slate-500 truncate mt-0.5">
                                       {phone}
                                     </div>
                                   )}
@@ -3725,10 +3753,10 @@ export const CharterManagementView = memo(function CharterManagementView({
                                           key={`${task.source}:${task.id}:${task.role}`}
                                           className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
                                             task.isOverlap
-                                              ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                              ? '  '
                                               : task.source === 'charter'
-                                                ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
-                                                : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                                ? '  '
+                                                : '  '
                                           }`}
                                         >
                                           <Clock className="w-2.5 h-2.5 shrink-0" />
@@ -3738,7 +3766,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                     </div>
                                   )}
                                 </div>
-                                {isSelected && <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+                                {isSelected && <Check className="w-4 h-4 shrink-0" />}
                               </div>
                             );
                           })
@@ -3753,8 +3781,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                     data-testid="charter-selected-attendant-tasks"
                     className={`p-2 rounded-lg border text-[11px] space-y-1 ${
                       selectedAttendantDayTasks.some((task) => task.isOverlap)
-                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/70 text-rose-800 dark:text-rose-200'
-                        : 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800/70 text-sky-800 dark:text-sky-200'
+                        ? '  '
+                        : '  '
                     }`}
                   >
                     <div className="font-semibold flex items-center gap-1.5">
@@ -3771,8 +3799,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                           key={`${task.source}:${task.id}:${task.role}`}
                           className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${
                             task.isOverlap
-                              ? 'bg-rose-100/80 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-700'
-                              : 'bg-white/80 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200 border-sky-200 dark:border-sky-800'
+                              ? '  '
+                              : 'bg-slate-900/60 text-slate-200 border-sky-800'
                           }`}
                         >
                           {formatEmployeeTaskShortLabel(task, isFrench)}
@@ -3785,7 +3813,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                 {asgAttendantId && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
                         {isFrench ? 'Taux accompagnateur ($)' : 'Attendant Pay Rate ($)'}
                       </label>
                       <input
@@ -3793,11 +3821,11 @@ export const CharterManagementView = memo(function CharterManagementView({
                         step="0.01"
                         value={asgAttendantPayRate}
                         onChange={(e) => setAsgAttendantPayRate(Number(e.target.value))}
-                        className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
                         {isFrench ? 'Heures EI accompagnateur' : 'Attendant EI Hours'}
                       </label>
                       <input
@@ -3805,7 +3833,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                         step="0.5"
                         value={asgAttendantEiHours}
                         onChange={(e) => setAsgAttendantEiHours(Number(e.target.value))}
-                        className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono"
                       />
                     </div>
                   </div>
@@ -3813,7 +3841,7 @@ export const CharterManagementView = memo(function CharterManagementView({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
                   {isFrench ? 'Notes d\'affectation' : 'Assignment Notes'}
                 </label>
                 <input
@@ -3821,15 +3849,15 @@ export const CharterManagementView = memo(function CharterManagementView({
                   value={asgNotes}
                   onChange={(e) => setAsgNotes(e.target.value)}
                   placeholder="e.g. Equipped with underfloor luggage bay"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsAssignmentModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:bg-slate-800"
                 >
                   {isFrench ? 'Annuler' : 'Cancel'}
                 </button>
@@ -3848,16 +3876,16 @@ export const CharterManagementView = memo(function CharterManagementView({
       {/* CLIENT CREATE / EDIT MODAL */}
       {isClientModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between rounded-t-2xl">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+          <div className="w-full max-w-md bg-slate-900 rounded-2xl shadow-2xl border border-slate-800">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between rounded-t-2xl">
+              <h3 className="text-lg font-bold text-white">
                 {editingClient
                   ? isFrench ? 'Modifier le client' : 'Edit Charter Client'
                   : isFrench ? 'Nouveau client nolisé' : 'New Charter Client'}
               </h3>
               <button
                 onClick={() => setIsClientModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -3867,7 +3895,7 @@ export const CharterManagementView = memo(function CharterManagementView({
               {/* Optional school link - Searchable Combobox */}
               <div className="relative" ref={schoolDropdownRef}>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <label className="block text-xs font-semibold text-slate-300">
                     {isFrench ? 'Lier depuis une école (optionnel)' : 'Link from School Directory (optional)'}
                   </label>
                   {selectedSchool && (
@@ -3886,15 +3914,15 @@ export const CharterManagementView = memo(function CharterManagementView({
                 <button
                   type="button"
                   onClick={() => setSchoolDropdownOpen((prev) => !prev)}
-                  className={`w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl text-xs flex items-center justify-between cursor-pointer transition-colors text-left ${
+                  className={`w-full px-3 py-2 bg-slate-800 border rounded-xl text-xs flex items-center justify-between cursor-pointer transition-colors text-left ${
                     schoolDropdownOpen
                       ? 'border-indigo-500 ring-2 ring-indigo-500/20'
-                      : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                      : 'border-slate-700 hover:border-slate-300 hover:border-slate-600'
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
                     <GraduationCap className={`w-4 h-4 shrink-0 ${selectedSchool ? 'text-indigo-500' : 'text-slate-400'}`} />
-                    <span className={`truncate ${selectedSchool ? 'font-medium text-slate-900 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500'}`}>
+                    <span className={`truncate ${selectedSchool ? 'font-medium text-slate-100' : 'text-slate-400 text-slate-500'}`}>
                       {selectedSchool ? selectedSchool.schoolName : (isFrench ? '-- Sélectionner une école --' : '-- Choose a School --')}
                     </span>
                   </div>
@@ -3904,7 +3932,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                         role="button"
                         tabIndex={0}
                         onClick={handleClearSchool}
-                        className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"
+                        className="p-0.5 hover:bg-slate-700 rounded-full"
                         title={isFrench ? 'Effacer' : 'Clear'}
                       >
                         <X className="w-3.5 h-3.5" />
@@ -3916,9 +3944,9 @@ export const CharterManagementView = memo(function CharterManagementView({
 
                 {/* Dropdown Popover */}
                 {schoolDropdownOpen && (
-                  <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                  <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
                     {/* Search Input */}
-                    <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50">
+                    <div className="p-2 border-b border-slate-800 bg-slate-800/50">
                       <div className="relative">
                         <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input
@@ -3927,7 +3955,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                           value={schoolSearchQuery}
                           onChange={(e) => setSchoolSearchQuery(e.target.value)}
                           placeholder={isFrench ? 'Rechercher par nom, conseil, adresse...' : 'Search school, board, address...'}
-                          className="w-full pl-8 pr-7 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                          className="w-full pl-8 pr-7 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
                           onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => {
                             if (e.key === 'Escape') {
@@ -3943,7 +3971,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                               e.stopPropagation();
                               setSchoolSearchQuery('');
                             }}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 hover:text-slate-200 p-0.5"
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -3952,7 +3980,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                     </div>
 
                     {/* School List */}
-                    <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+                    <div className="max-h-56 overflow-y-auto divide-y divide-slate-800/60">
                       {filteredSchools.length === 0 ? (
                         <div className="py-6 px-4 text-center text-xs text-slate-400">
                           {isFrench ? 'Aucune école trouvée' : 'No matching schools found'}
@@ -3966,21 +3994,21 @@ export const CharterManagementView = memo(function CharterManagementView({
                               onClick={() => handleSelectSchool(s)}
                               className={`px-3 py-2 text-xs cursor-pointer flex items-start justify-between gap-2 transition-colors ${
                                 isSelected
-                                  ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-200 font-medium'
-                                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                                  ? '  font-medium'
+                                  : 'hover:bg-slate-800/60 text-slate-300'
                               }`}
                             >
                               <div className="min-w-0 flex-1">
-                                <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
+                                <div className="font-medium text-slate-100 truncate">
                                   {s.schoolName}
                                 </div>
                                 {(s.schoolBoardName || s.schoolAddress) && (
-                                  <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                                  <div className="text-[10px] text-slate-400 text-slate-500 truncate mt-0.5">
                                     {[s.schoolBoardName, s.schoolAddress].filter(Boolean).join(' • ')}
                                   </div>
                                 )}
                               </div>
-                              {isSelected && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />}
+                              {isSelected && <Check className="w-4 h-4 shrink-0 mt-0.5" />}
                             </div>
                           );
                         })
@@ -3991,7 +4019,7 @@ export const CharterManagementView = memo(function CharterManagementView({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
                   {isFrench ? 'Nom de l\'organisation / Client *' : 'Organization / Client Name *'}
                 </label>
                 <input
@@ -3999,68 +4027,68 @@ export const CharterManagementView = memo(function CharterManagementView({
                   required
                   value={clientName}
                   onChange={(e) => setClientName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Personne contact' : 'Contact Person'}
                   </label>
                   <input
                     type="text"
                     value={clientContactName}
                     onChange={(e) => setClientContactName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Téléphone' : 'Phone'}
                   </label>
                   <input
                     type="tel"
                     value={clientContactPhone}
                     onChange={(e) => setClientContactPhone(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
                   {isFrench ? 'Courriel' : 'Email'}
                 </label>
                 <input
                   type="email"
                   value={clientContactEmail}
                   onChange={(e) => setClientContactEmail(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
                   {isFrench ? 'Adresse de facturation' : 'Billing Address'}
                 </label>
                 <input
                   type="text"
                   value={clientBillingAddress}
                   onChange={(e) => setClientBillingAddress(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
                   {isFrench ? 'Remarques' : 'Notes'}
                 </label>
                 <textarea
                   rows={2}
                   value={clientNotes}
                   onChange={(e) => setClientNotes(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                 />
               </div>
 
@@ -4072,16 +4100,16 @@ export const CharterManagementView = memo(function CharterManagementView({
                   onChange={(e) => setClientActive(e.target.checked)}
                   className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                 />
-                <label htmlFor="clientActiveCheck" className="text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                <label htmlFor="clientActiveCheck" className="text-xs font-semibold text-slate-300 cursor-pointer">
                   {isFrench ? 'Client actif' : 'Active Client'}
                 </label>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsClientModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:bg-slate-800"
                 >
                   {isFrench ? 'Annuler' : 'Cancel'}
                 </button>
@@ -4100,14 +4128,14 @@ export const CharterManagementView = memo(function CharterManagementView({
       {/* PUBLISH CHARTER ASSIGNMENT OPEN MODAL */}
       {publishingTrip && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div className="w-full max-w-lg bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 overflow-hidden">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                <div className="p-2 rounded-xl bg-amber-500/15">
                   <Megaphone className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  <h3 className="text-base font-bold text-white">
                     {isFrench
                       ? 'Publier l\'offre de voyage nolisé (Route Openings)'
                       : 'Publish Charter Assignment Open'}
@@ -4119,14 +4147,14 @@ export const CharterManagementView = memo(function CharterManagementView({
               </div>
               <button
                 onClick={() => setPublishingTrip(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handlePublishCharterOpening} className="p-5 space-y-4">
-              <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-800/60 text-xs text-indigo-800 dark:text-indigo-200 space-y-1">
+              <div className="p-3 rounded-xl border text-xs space-y-1">
                 <div className="font-bold">
                   {isFrench
                     ? 'Comment cela fonctionne dans l\'application Chauffeur :'
@@ -4141,13 +4169,13 @@ export const CharterManagementView = memo(function CharterManagementView({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Rôle recherché' : 'Role Needed'}
                   </label>
                   <select
                     value={pubRoleNeeded}
                     onChange={(e) => setPubRoleNeeded(e.target.value as RouteOpeningRole)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                   >
                     <option value="driver">{isFrench ? 'Chauffeur seulement' : 'Driver Only'}</option>
                     <option value="attendant">{isFrench ? 'Accompagnateur seulement' : 'Attendant Only'}</option>
@@ -4158,7 +4186,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Date limite de candidature *' : 'Application Deadline *'}
                   </label>
                   <input
@@ -4166,14 +4194,14 @@ export const CharterManagementView = memo(function CharterManagementView({
                     required
                     value={pubDeadline}
                     onChange={(e) => setPubDeadline(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Taux de paie Chauffeur ($)' : 'Driver Payroll Rate ($)'}
                   </label>
                   <input
@@ -4193,11 +4221,11 @@ export const CharterManagementView = memo(function CharterManagementView({
                           : `Driver: $${val.toFixed(2)} / shift (${publishingTrip.billableHours || 5}h EI)`
                       );
                     }}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-blue-700 dark:text-blue-300"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono font-bold text-emerald-300"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
                     {isFrench ? 'Taux de paie Accompagnateur ($)' : 'Attendant Payroll Rate ($)'}
                   </label>
                   <input
@@ -4217,13 +4245,13 @@ export const CharterManagementView = memo(function CharterManagementView({
                           : `Driver: $${pubDriverPayRate.toFixed(2)} / shift (${publishingTrip.billableHours || 5}h EI)`
                       );
                     }}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-emerald-700 dark:text-emerald-300"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono font-bold text-emerald-300"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
                   {isFrench ? 'Rémunération / Taux affiché' : 'Compensation / Rate Note'}
                 </label>
                 <input
@@ -4231,7 +4259,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                   value={pubCompensation}
                   onChange={(e) => setPubCompensation(e.target.value)}
                   placeholder="e.g. $150.00 / shift (6h EI)"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                 />
               </div>
 
@@ -4239,7 +4267,7 @@ export const CharterManagementView = memo(function CharterManagementView({
               {pubStops.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <label className="block text-xs font-semibold text-slate-300">
                       {isFrench ? 'Horaire des arrêts publiés (Stop Time List)' : 'Published Stop Schedule & Time List'}
                     </label>
                     <button
@@ -4266,13 +4294,13 @@ export const CharterManagementView = memo(function CharterManagementView({
                         ]);
                         setPubStopTimes((prev) => ({ ...prev, [newKey]: nextTime }));
                       }}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/15 text-[10px] font-bold"
                     >
                       <Plus className="w-3 h-3" />
                       <span>{isFrench ? 'Ajouter arrêt' : 'Add Stop'}</span>
                     </button>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 divide-y divide-slate-200/70 dark:divide-slate-700/70 space-y-2">
+                  <div className="p-3 rounded-xl bg-slate-800/70 border border-slate-700 divide-y divide-slate-700/70 space-y-2">
                     {pubStops.map((st, idx) => {
                       const key = st.id || `stop-${idx}`;
                       const stopTimeVal =
@@ -4286,7 +4314,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                           className="pt-2 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                         >
                           <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[11px] font-bold flex items-center justify-center shrink-0">
+                            <span className="w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0">
                               {idx + 1}
                             </span>
                             <select
@@ -4309,8 +4337,8 @@ export const CharterManagementView = memo(function CharterManagementView({
                               }}
                               className={`px-1.5 py-1 rounded-lg text-[10px] font-bold border shrink-0 ${
                                 isPickup
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
-                                  : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800'
+                                  ? 'bg-emerald-500/15 text-emerald-300  '
+                                  : 'bg-amber-500/15 text-amber-300  '
                               }`}
                             >
                               <option value={0}>Pick Up</option>
@@ -4327,7 +4355,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                   prev.map((item, i) => (i === idx ? { ...item, address: val } : item))
                                 );
                               }}
-                              className="flex-1 min-w-0 px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                              className="flex-1 min-w-0 px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-xs"
                             />
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
@@ -4349,7 +4377,7 @@ export const CharterManagementView = memo(function CharterManagementView({
                                   )
                                 );
                               }}
-                              className="px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400"
+                              className="px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-xs font-mono font-bold text-indigo-400"
                             />
                             {pubStops.length > 2 && (
                               <button
@@ -4376,18 +4404,18 @@ export const CharterManagementView = memo(function CharterManagementView({
               )}
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
                   {isFrench ? 'Détails de l\'offre' : 'Bulletin Details & Instructions'}
                 </label>
                 <textarea
                   rows={3}
                   value={pubDescription}
                   onChange={(e) => setPubDescription(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs"
                 />
               </div>
 
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={pubPostToChat}
@@ -4401,11 +4429,11 @@ export const CharterManagementView = memo(function CharterManagementView({
                 </span>
               </label>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setPublishingTrip(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:bg-slate-800"
                 >
                   {isFrench ? 'Annuler' : 'Cancel'}
                 </button>
@@ -4442,6 +4470,8 @@ export const CharterManagementView = memo(function CharterManagementView({
           />
         </React.Suspense>
       )}
-    </div>
+    </PageShell>
   );
 });
+
+

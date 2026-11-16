@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   UserX,
   Calendar,
@@ -44,6 +46,59 @@ function isColdAbsenceRecord(rec: StudentAbsenceRecord): boolean {
   if (rec.isCold || rec.isArchivedToBigQuery) return true;
   return DispatchService.isColdAbsence(rec.date);
 }
+
+interface AbsenceModalDialogProps {
+  open: boolean;
+  onClose: () => void;
+  ariaLabelledBy: string;
+  children: React.ReactNode;
+}
+
+const AbsenceModalDialog: React.FC<AbsenceModalDialogProps> = ({
+  open,
+  onClose,
+  ariaLabelledBy,
+  children,
+}) => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    if (open && !el.open) {
+      el.showModal();
+    } else if (!open && el.open) {
+      el.close();
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={ariaLabelledBy}
+      onClose={onClose}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="m-0 max-w-none max-h-none w-screen h-screen bg-black/60 backdrop-blur-xs p-4 flex items-center justify-center overflow-y-auto overscroll-contain backdrop:overscroll-contain animate-in fade-in duration-150"
+    >
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-2xl p-5 max-w-md w-full shadow-2xl space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </dialog>
+  );
+};
 
 interface StudentAbsencesViewProps {
   onSelectStudent?: (ref: { id?: string; name?: string }) => void;
@@ -130,6 +185,7 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
   const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
   const [cancellingAbsence, setCancellingAbsence] = useState<StudentAbsenceRecord | null>(null);
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   // Load absences from backend (Hybrid Dual-Engine: Firestore <= 6mo, BigQuery > 6mo)
   const fetchAbsences = useCallback(
@@ -334,13 +390,14 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
   // Cancel / Revoke Absence Handler
   const handleConfirmCancel = async () => {
     if (!cancellingAbsence) return;
+    setCancelError(null);
     try {
       setIsCancelling(true);
       await DispatchService.cancelStudentAbsence(cancellingAbsence.id);
       setCancellingAbsence(null);
       await fetchAbsences();
     } catch (err: any) {
-      alert((isFrench ? 'Échec de l\'annulation : ' : 'Failed to cancel absence: ') + (err.message || 'Unknown error'));
+      setCancelError((isFrench ? 'Échec de l\'annulation : ' : 'Failed to cancel absence: ') + (err.message || 'Unknown error'));
     } finally {
       setIsCancelling(false);
     }
@@ -420,103 +477,108 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
   };
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+    <PageShell>
       {/* 1. Header & Primary Action Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-xl shadow-xs">
-              <UserX className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-xl md:text-2xl font-black text-white tracking-tight">
-                  {isFrench ? 'Registre des absences & congés des élèves' : 'Student Absences & Leave Log'}
-                </h1>
-                {timeRange === '6months' ? (
-                  <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>{isFrench ? 'En direct (≤6 mois)' : 'Live Data (≤6 Months)'}</span>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/30">
-                    <Database className="w-3.5 h-3.5 text-sky-400" />
-                    <span>{isFrench ? 'Archive BigQuery (>6 mois)' : 'BigQuery Archive (>6 Months)'}</span>
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {isFrench
-                  ? 'Consultez et suivez les absences au transport scolaire en direct (≤6 mois) ou dans les archives froides BigQuery par année scolaire'
-                  : 'Log and track student bus service leave requests across live schedules (≤6 months) or BigQuery archives by school year'}
-              </p>
-            </div>
+      <PageHeader
+        title={isFrench ? 'Registre des absences & congés des élèves' : 'Student Absences & Leave Log'}
+        subtitle={
+          isFrench
+            ? 'Consultez et suivez les absences au transport scolaire en direct (≤6 mois) ou dans les archives froides BigQuery par année scolaire'
+            : 'Log and track student bus service leave requests across live schedules (≤6 months) or BigQuery archives by school year'
+        }
+        icon={
+          <div className="p-2 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-xl shadow-xs">
+            <UserX className="w-5 h-5" aria-hidden="true" />
           </div>
-        </div>
+        }
+        badge={
+          timeRange === '6months' ? (
+            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
+              <span>{isFrench ? 'En direct (≤6 mois)' : 'Live Data (≤6 Months)'}</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/30">
+              <Database className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
+              <span>{isFrench ? 'Archive BigQuery (>6 mois)' : 'BigQuery Archive (>6 Months)'}</span>
+            </span>
+          )
+        }
+        actions={
+          <div className="flex items-center space-x-2.5 flex-wrap">
+            {/* Time Range Filter Toggle (6 Months Live vs All History BigQuery) */}
+            <div
+              role="group"
+              aria-label={isFrench ? 'Mode de plage temporelle' : 'Absence data range'}
+              className="flex items-center bg-slate-950/60 p-0.5 rounded-xl border border-slate-800"
+            >
+              <button
+                type="button"
+                aria-pressed={timeRange === '6months'}
+                onClick={() => handleTimeRangeToggle('6months')}
+                className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
+                  timeRange === '6months'
+                    ? 'bg-rose-500 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {isFrench ? 'En direct (≤6 mois)' : 'Live (≤6 Months)'}
+              </button>
+              <button
+                type="button"
+                aria-pressed={timeRange === 'all'}
+                onClick={() => handleTimeRangeToggle('all')}
+                className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-semibold transition flex items-center gap-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
+                  timeRange === 'all'
+                    ? 'bg-sky-500 text-slate-950 shadow-sm font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>🧊 {isFrench ? 'Tout l\'historique (Archive BigQuery)' : 'All History (BigQuery Archive)'}</span>
+              </button>
+            </div>
 
-        <div className="flex items-center space-x-2.5 flex-wrap">
-          {/* Time Range Filter Toggle (6 Months Live vs All History BigQuery) */}
-          <div className="flex items-center bg-slate-900 p-0.5 rounded-xl border border-slate-800">
             <button
               type="button"
-              onClick={() => handleTimeRangeToggle('6months')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                timeRange === '6months'
-                  ? 'bg-rose-500 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              onClick={() => void fetchAbsences()}
+              disabled={loading}
+              aria-label={isFrench ? 'Actualiser les absences' : 'Refresh absence records'}
+              className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+              title={isFrench ? 'Actualiser les absences' : 'Refresh absence records'}
             >
-              {isFrench ? 'En direct (≤6 mois)' : 'Live (≤6 Months)'}
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-sky-400' : ''}`} aria-hidden="true" />
             </button>
+
             <button
               type="button"
-              onClick={() => handleTimeRangeToggle('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
-                timeRange === 'all'
-                  ? 'bg-sky-500 text-slate-950 shadow-sm font-bold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              onClick={handleExportCSV}
+              disabled={filteredAbsences.length === 0}
+              className="px-3 py-2 min-h-[36px] bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-slate-700 text-xs font-bold rounded-xl transition flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+              title={isFrench ? 'Exporter CSV' : 'Export to CSV'}
             >
-              <span>🧊 {isFrench ? 'Tout l\'historique (Archive BigQuery)' : 'All History (BigQuery Archive)'}</span>
+              <Download className="w-3.5 h-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">{isFrench ? 'Exporter CSV' : 'Export CSV'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsLogModalOpen(true)}
+              className="px-4 py-2 min-h-[36px] bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-600/20 transition flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
+            >
+              <Plus className="w-4 h-4" aria-hidden="true" />
+              <span>{isFrench ? 'Enregistrer une absence' : 'Log Absence'}</span>
             </button>
           </div>
-
-          <button
-            onClick={() => void fetchAbsences()}
-            disabled={loading}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
-            title={isFrench ? 'Actualiser les absences' : 'Refresh absence records'}
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-sky-400' : ''}`} />
-          </button>
-
-          <button
-            onClick={handleExportCSV}
-            disabled={filteredAbsences.length === 0}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-slate-700 text-xs font-bold rounded-xl transition flex items-center space-x-1.5"
-            title={isFrench ? 'Exporter CSV' : 'Export to CSV'}
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{isFrench ? 'Exporter CSV' : 'Export CSV'}</span>
-          </button>
-
-          <button
-            onClick={() => setIsLogModalOpen(true)}
-            className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-600/20 transition flex items-center space-x-1.5"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{isFrench ? 'Enregistrer une absence' : 'Log Absence'}</span>
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* 2. Notice Banner when in BigQuery Historical Mode */}
       {timeRange === 'all' && (
-        <div className="p-3.5 bg-sky-500/10 border border-sky-500/30 rounded-2xl flex items-start gap-3 text-xs text-sky-300">
-          <Info className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+        <div role="status" className="p-3.5 bg-sky-500/10 border border-sky-500/30 rounded-2xl flex items-start gap-3 text-xs text-sky-300">
+          <Info className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="space-y-1">
             <div className="font-semibold text-sky-200 flex items-center gap-1.5">
-              <GraduationCap className="w-4 h-4 text-sky-400" />
+              <GraduationCap className="w-4 h-4 text-sky-400" aria-hidden="true" />
               <span>{isFrench ? 'Mode Tout l\'historique (Archive froide BigQuery par année scolaire)' : 'All History Mode (BigQuery Cold Archive by School Year)'}</span>
               <span className="text-[10px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded font-medium border border-sky-500/30">
                 {isFrench ? '5 années scolaires (août à juillet)' : '5 School Years (Aug - Jul)'}
@@ -536,7 +598,7 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
         <div className="p-4 bg-slate-900/80 border border-slate-800 rounded-2xl">
           <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
             <span>{isFrench ? 'Total de la période' : 'Range Total'}</span>
-            <Calendar className="w-4 h-4 text-sky-400" />
+            <Calendar className="w-4 h-4 text-sky-400" aria-hidden="true" />
           </div>
           <div className="text-2xl font-black text-white">{metrics.total}</div>
           <div className="text-[11px] text-slate-500 mt-0.5">
@@ -549,7 +611,7 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
         <div className="p-4 bg-slate-900/80 border border-slate-800 rounded-2xl">
           <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
             <span>{isFrench ? 'Absences à venir' : 'Upcoming Absences'}</span>
-            <Clock className="w-4 h-4 text-indigo-400" />
+            <Clock className="w-4 h-4 text-indigo-400" aria-hidden="true" />
           </div>
           <div className="text-2xl font-black text-indigo-400">{metrics.upcoming}</div>
           <div className="text-[11px] text-slate-500 mt-0.5">
@@ -560,7 +622,7 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
         <div className="p-4 bg-slate-900/80 border border-slate-800 rounded-2xl">
           <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
             <span>{isFrench ? 'Absences aujourd\'hui' : 'Today\'s Absences'}</span>
-            <AlertCircle className="w-4 h-4 text-amber-400" />
+            <AlertCircle className="w-4 h-4 text-amber-400" aria-hidden="true" />
           </div>
           <div className="text-2xl font-black text-amber-400">{metrics.todayCount}</div>
           <div className="text-[11px] text-slate-500 mt-0.5">
@@ -571,7 +633,7 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
         <div className="p-4 bg-slate-900/80 border border-slate-800 rounded-2xl">
           <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-1">
             <span>{isFrench ? 'Ligne la plus touchée' : 'Top Impact Route'}</span>
-            <Bus className="w-4 h-4 text-rose-400" />
+            <Bus className="w-4 h-4 text-rose-400" aria-hidden="true" />
           </div>
           <div className="text-lg font-black text-rose-300 truncate">{metrics.topRoute}</div>
           <div className="text-[11px] text-slate-500 mt-0.5">
@@ -581,21 +643,25 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
       </div>
 
       {/* 4. Filter Bar (Preset Range + Date Range Picker + Search + Route & Shift) */}
-      <div className="p-4 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-3.5">
+      <search
+        aria-label={isFrench ? 'Filtrer les absences' : 'Filter student absences'}
+        className="block p-4 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-3.5"
+      >
         {/* Preset Range Selector */}
         <div className="flex flex-wrap items-center justify-between gap-2.5">
           <div className="flex flex-wrap items-center gap-1.5">
             {timeRange === '6months' ? (
               <>
                 <span className="text-xs font-bold text-slate-400 mr-1 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-sky-400" />
+                  <Calendar className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
                   {isFrench ? 'Période :' : 'Range Preset:'}
                 </span>
 
                 <button
                   type="button"
+                  aria-pressed={activePreset === 'next2weeks'}
                   onClick={() => handleApplyPreset('next2weeks')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition ${
+                  className={`px-3 py-1.5 min-h-[32px] text-xs font-bold rounded-xl border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
                     activePreset === 'next2weeks'
                       ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
                       : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
@@ -606,8 +672,9 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
 
                 <button
                   type="button"
+                  aria-pressed={activePreset === 'thisweek'}
                   onClick={() => handleApplyPreset('thisweek')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition ${
+                  className={`px-3 py-1.5 min-h-[32px] text-xs font-bold rounded-xl border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
                     activePreset === 'thisweek'
                       ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
                       : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
@@ -618,8 +685,9 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
 
                 <button
                   type="button"
+                  aria-pressed={activePreset === 'nextweek'}
                   onClick={() => handleApplyPreset('nextweek')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition ${
+                  className={`px-3 py-1.5 min-h-[32px] text-xs font-bold rounded-xl border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
                     activePreset === 'nextweek'
                       ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
                       : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
@@ -630,8 +698,9 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
 
                 <button
                   type="button"
+                  aria-pressed={activePreset === 'past2weeks'}
                   onClick={() => handleApplyPreset('past2weeks')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition ${
+                  className={`px-3 py-1.5 min-h-[32px] text-xs font-bold rounded-xl border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
                     activePreset === 'past2weeks'
                       ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
                       : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
@@ -642,8 +711,9 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
 
                 <button
                   type="button"
+                  aria-pressed={activePreset === 'thismonth'}
                   onClick={() => handleApplyPreset('thismonth')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition ${
+                  className={`px-3 py-1.5 min-h-[32px] text-xs font-bold rounded-xl border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
                     activePreset === 'thismonth'
                       ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
                       : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
@@ -654,8 +724,9 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
 
                 <button
                   type="button"
+                  aria-pressed={activePreset === 'past6months'}
                   onClick={() => handleApplyPreset('past6months')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition ${
+                  className={`px-3 py-1.5 min-h-[32px] text-xs font-bold rounded-xl border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 ${
                     activePreset === 'past6months'
                       ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
                       : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
@@ -669,13 +740,14 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center space-x-1.5">
                   <span className="text-xs font-bold text-sky-400 flex items-center gap-1 shrink-0">
-                    <GraduationCap className="w-4 h-4 text-sky-400" />
+                    <GraduationCap className="w-4 h-4 text-sky-400" aria-hidden="true" />
                     <span>{isFrench ? 'Année scolaire :' : 'School Year:'}</span>
                   </span>
                   <select
                     value={activePreset}
+                    aria-label={isFrench ? 'Sélectionner l\'année scolaire' : 'Select school year'}
                     onChange={(e) => handleApplyPreset(e.target.value)}
-                    className="py-1 px-2.5 bg-slate-950 border border-sky-500/40 rounded-xl text-xs font-semibold text-sky-200 focus:outline-none focus:border-sky-400"
+                    className="py-1 px-2.5 bg-slate-950 border border-sky-500/40 rounded-xl text-base sm:text-xs font-semibold text-sky-200 focus:outline-none focus:border-sky-400"
                   >
                     <option value="all-5-years">
                       {isFrench
@@ -694,22 +766,24 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
                 <div className="flex flex-wrap items-center gap-1">
                   <button
                     type="button"
+                    aria-pressed={activePreset === 'all-5-years'}
                     onClick={() => handleApplyPreset('all-5-years')}
-                    className={`px-2 py-1 text-[11px] font-bold rounded-lg border transition flex items-center gap-1 ${
+                    className={`px-2 py-1 min-h-[28px] text-[11px] font-bold rounded-lg border transition flex items-center gap-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
                       activePreset === 'all-5-years'
                         ? 'bg-sky-500 text-slate-950 border-sky-500 shadow-sm'
                         : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    <Database className="w-3 h-3" />
+                    <Database className="w-3 h-3" aria-hidden="true" />
                     <span>{isFrench ? '5 ans' : '5y'}</span>
                   </button>
                   {schoolYears.map((sy) => (
                     <button
                       key={sy.key}
                       type="button"
+                      aria-pressed={activePreset === sy.key}
                       onClick={() => handleApplyPreset(sy.key)}
-                      className={`px-2 py-1 text-[11px] font-bold rounded-lg border transition ${
+                      className={`px-2 py-1 min-h-[28px] text-[11px] font-bold rounded-lg border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
                         activePreset === sy.key
                           ? 'bg-sky-500 text-slate-950 border-sky-500 shadow-sm'
                           : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
@@ -730,12 +804,13 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
               <span className="text-[11px] font-semibold text-slate-400">{isFrench ? 'De :' : 'From:'}</span>
               <input
                 type="date"
+                aria-label={isFrench ? 'Date de début' : 'Start date'}
                 value={startDate}
                 onChange={(e) => {
                   setStartDate(e.target.value);
                   setActivePreset('custom');
                 }}
-                className="bg-transparent text-xs font-mono text-white focus:outline-none"
+                className="bg-transparent text-base sm:text-xs font-mono text-white focus:outline-none"
               />
             </div>
 
@@ -745,12 +820,13 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
               <span className="text-[11px] font-semibold text-slate-400">{isFrench ? 'À :' : 'To:'}</span>
               <input
                 type="date"
+                aria-label={isFrench ? 'Date de fin' : 'End date'}
                 value={endDate}
                 onChange={(e) => {
                   setEndDate(e.target.value);
                   setActivePreset('custom');
                 }}
-                className="bg-transparent text-xs font-mono text-white focus:outline-none"
+                className="bg-transparent text-base sm:text-xs font-mono text-white focus:outline-none"
               />
             </div>
           </div>
@@ -759,13 +835,14 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
         {/* Search, Route & Shift Filters */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-1">
           <div className="relative sm:col-span-2">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" aria-hidden="true" />
             <input
-              type="text"
+              type="search"
+              aria-label={isFrench ? 'Rechercher des absences' : 'Search student absences'}
               placeholder={isFrench ? 'Rechercher un élève, matricule, école, route ou motif...' : 'Search student, ID, school, route, or reason...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500/50"
+              className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500/50"
             />
           </div>
 
@@ -773,8 +850,9 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
             <span className="text-xs font-bold text-slate-400 shrink-0">{isFrench ? 'Circuit :' : 'Route:'}</span>
             <select
               value={selectedRoute}
+              aria-label={isFrench ? 'Filtrer par circuit' : 'Filter by route'}
               onChange={(e) => setSelectedRoute(e.target.value)}
-              className="w-full py-2 px-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-rose-500/50"
+              className="w-full py-2 px-2.5 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-xs text-slate-200 focus:outline-none focus:border-rose-500/50"
             >
               <option value="ALL">{isFrench ? `Tous les circuits (${distinctRoutes.length})` : `All Routes (${distinctRoutes.length})`}</option>
               {distinctRoutes.map((r) => (
@@ -789,8 +867,9 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
             <span className="text-xs font-bold text-slate-400 shrink-0">{isFrench ? 'Service :' : 'Shift:'}</span>
             <select
               value={selectedShiftType}
+              aria-label={isFrench ? 'Filtrer par période de service' : 'Filter by shift type'}
               onChange={(e) => setSelectedShiftType(e.target.value)}
-              className="w-full py-2 px-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-rose-500/50"
+              className="w-full py-2 px-2.5 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-xs text-slate-200 focus:outline-none focus:border-rose-500/50"
             >
               <option value="ALL">{isFrench ? 'Tous les trajets (AM & PM)' : 'All Runs (AM & PM)'}</option>
               <option value="AM">{isFrench ? 'Matin (AM) seulement' : 'AM Pickup Only'}</option>
@@ -798,24 +877,25 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
             </select>
           </div>
         </div>
-      </div>
+      </search>
 
       {/* 5. Table / Content Container */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
         {loading ? (
-          <div className="p-16 flex flex-col items-center justify-center space-y-3">
-            <RefreshCw className="w-8 h-8 text-rose-500 animate-spin" />
+          <div role="status" className="p-16 flex flex-col items-center justify-center space-y-3">
+            <RefreshCw className="w-8 h-8 text-rose-500 animate-spin" aria-hidden="true" />
             <div className="text-sm font-semibold text-slate-300">
               {isFrench ? 'Chargement du registre des absences...' : 'Loading student absence log...'}
             </div>
           </div>
         ) : error ? (
-          <div className="p-8 text-center space-y-2">
-            <AlertCircle className="w-8 h-8 text-rose-400 mx-auto" />
+          <div role="alert" className="p-8 text-center space-y-2">
+            <AlertCircle className="w-8 h-8 text-rose-400 mx-auto" aria-hidden="true" />
             <div className="text-sm font-bold text-rose-300">{error}</div>
             <button
+              type="button"
               onClick={() => void fetchAbsences()}
-              className="px-4 py-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg"
+              className="px-4 py-1.5 min-h-[32px] text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
             >
               {isFrench ? 'Réessayer' : 'Retry'}
             </button>
@@ -824,9 +904,9 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
           <div className="p-16 text-center space-y-3">
             <div className="w-14 h-14 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center mx-auto text-slate-400">
               {timeRange === 'all' ? (
-                <Database className="w-7 h-7 text-sky-400" />
+                <Database className="w-7 h-7 text-sky-400" aria-hidden="true" />
               ) : (
-                <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+                <CheckCircle2 className="w-7 h-7 text-emerald-400" aria-hidden="true" />
               )}
             </div>
             <div className="text-base font-bold text-white">
@@ -845,16 +925,26 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
             </p>
             {timeRange === '6months' && (
               <button
+                type="button"
                 onClick={() => setIsLogModalOpen(true)}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg transition"
+                className="px-4 py-2 min-h-[36px] bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
               >
                 + {isFrench ? 'Enregistrer une absence' : 'Log Student Absence'}
               </button>
             )}
           </div>
         ) : (
-          <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+          <div
+            ref={tableContainerRef}
+            tabIndex={0}
+            role="region"
+            aria-label={isFrench ? 'Registre des absences des élèves' : 'Student absences table'}
+            className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-500"
+          >
             <table className="w-full text-left text-xs border-collapse table-fixed min-w-[960px]">
+              <caption className="sr-only">
+                {isFrench ? 'Registre des absences et congés des élèves' : 'Student absences and leave log'}
+              </caption>
               <colgroup>
                 <col style={{ width: '160px' }} />
                 <col style={{ width: '200px' }} />
@@ -866,26 +956,27 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
               </colgroup>
               <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900 text-slate-400 font-bold uppercase tracking-wider text-[11px] shadow-xs">
                 <tr>
-                  <th className="py-3 px-4">
+                  <th scope="col" className="py-3 px-4">
                     <button
                       type="button"
                       onClick={() => setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc')}
-                      className="flex items-center gap-1.5 hover:text-white transition group/sort"
+                      className="flex items-center gap-1.5 hover:text-white transition group/sort rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
                       title={isFrench ? 'Trier par date' : 'Sort by date'}
+                      aria-label={isFrench ? `Trier par date (${sortDirection})` : `Sort by date (${sortDirection})`}
                     >
                       <span>{isFrench ? 'Date d\'absence' : 'Absence Date'}</span>
-                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-500 group-hover/sort:text-white transition" />
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-500 group-hover/sort:text-white transition" aria-hidden="true" />
                       <span className="text-[10px] font-mono lowercase text-slate-500 font-normal">
                         ({sortDirection})
                       </span>
                     </button>
                   </th>
-                  <th className="py-3 px-4">{isFrench ? 'Élève passager' : 'Student Rider'}</th>
-                  <th className="py-3 px-4">{isFrench ? 'École & Circuit' : 'School & Route'}</th>
-                  <th className="py-3 px-4">{isFrench ? 'Période du service' : 'Shift Scope'}</th>
-                  <th className="py-3 px-4">{isFrench ? 'Motif / Remarques' : 'Reason / Notes'}</th>
-                  <th className="py-3 px-4">{isFrench ? 'Signalé par' : 'Reported By'}</th>
-                  <th className="py-3 px-4 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'Élève passager' : 'Student Rider'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'École & Circuit' : 'School & Route'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'Période du service' : 'Shift Scope'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'Motif / Remarques' : 'Reason / Notes'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'Signalé par' : 'Reported By'}</th>
+                  <th scope="col" className="py-3 px-4 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/70">
@@ -936,11 +1027,12 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
                                   name: rec.studentName,
                                 })
                               }
-                              className="font-bold text-white hover:text-sky-400 transition text-left flex items-center gap-1 group/btn"
+                              className="font-bold text-white hover:text-sky-400 transition text-left flex items-center gap-1 group/btn rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
                               title={isFrench ? "Voir la fiche élève" : 'View student details'}
+                              aria-label={isFrench ? `Voir le profil de ${rec.studentName}` : `View profile for ${rec.studentName}`}
                             >
                               <span>{rec.studentName}</span>
-                              <ChevronRight className="w-3 h-3 text-slate-500 group-hover/btn:translate-x-0.5 transition" />
+                              <ChevronRight className="w-3 h-3 text-slate-500 group-hover/btn:translate-x-0.5 transition" aria-hidden="true" />
                             </button>
                             <div className="text-[11px] text-slate-400 font-mono">
                               ID: {rec.studentNo || rec.studentId}
@@ -959,8 +1051,9 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
                               <button
                                 type="button"
                                 onClick={() => onSelectSchool(schoolId, schoolName)}
-                                className="text-slate-300 font-medium truncate max-w-[200px] hover:text-amber-300 hover:underline transition text-left block"
+                                className="text-slate-300 font-medium truncate max-w-[200px] hover:text-amber-300 hover:underline transition text-left block rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
                                 title={isFrench ? "Voir la fiche école" : 'View school details'}
+                                aria-label={isFrench ? `Voir l'école ${schoolName}` : `View school details for ${schoolName}`}
                               >
                                 {schoolName}
                               </button>
@@ -1037,28 +1130,33 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
                                   name: rec.studentName,
                                 })
                               }
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition"
+                              className="p-1.5 min-w-[28px] min-h-[28px] inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
                               title={isFrench ? 'Voir le profil de l\'élève' : 'View student profile details'}
+                              aria-label={isFrench ? `Voir le profil de ${rec.studentName}` : `View student profile for ${rec.studentName}`}
                             >
-                              <Eye className="w-4 h-4" />
+                              <Eye className="w-4 h-4" aria-hidden="true" />
                             </button>
                           )}
 
                           {isCold ? (
                             <span
                               title={isFrench ? 'Archive BigQuery historique (Lecture seule)' : 'Historical BigQuery archive (Read-only)'}
-                              className="p-1.5 rounded-lg text-slate-600 cursor-not-allowed"
+                              className="p-1.5 min-w-[28px] min-h-[28px] inline-flex items-center justify-center rounded-lg text-slate-600 cursor-not-allowed"
                             >
-                              <Lock className="w-4 h-4" />
+                              <Lock className="w-4 h-4" aria-hidden="true" />
                             </span>
                           ) : (
                             <button
                               type="button"
-                              onClick={() => setCancellingAbsence(rec)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
+                              onClick={() => {
+                                setCancelError(null);
+                                setCancellingAbsence(rec);
+                              }}
+                              className="p-1.5 min-w-[28px] min-h-[28px] inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
                               title={isFrench ? 'Annuler l\'absence et réintégrer l\'élève au circuit' : 'Cancel absence & restore student to bus roster'}
+                              aria-label={isFrench ? `Annuler l'absence de ${rec.studentName} le ${rec.date}` : `Cancel absence for ${rec.studentName} on ${rec.date}`}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-4 h-4" aria-hidden="true" />
                             </button>
                           )}
                         </div>
@@ -1092,15 +1190,22 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
       )}
 
       {/* 7. Cancel Absence Confirmation Dialog */}
-      {cancellingAbsence && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+      <AbsenceModalDialog
+        open={Boolean(cancellingAbsence)}
+        onClose={() => {
+          setCancelError(null);
+          setCancellingAbsence(null);
+        }}
+        ariaLabelledBy="cancel-absence-modal-title"
+      >
+        {cancellingAbsence && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 max-w-md w-full shadow-2xl space-y-4">
             <div className="flex items-start space-x-3">
               <div className="p-2.5 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20 shrink-0">
-                <Trash2 className="w-5 h-5" />
+                <Trash2 className="w-5 h-5" aria-hidden="true" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white">
+                <h3 id="cancel-absence-modal-title" className="text-sm font-bold text-white">
                   {isFrench ? 'Annuler l\'absence de l\'élève ?' : 'Cancel Student Absence?'}
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
@@ -1122,12 +1227,22 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
               </div>
             </div>
 
+            {cancelError && (
+              <div role="alert" className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300">
+                {cancelError}
+              </div>
+            )}
+
             <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
               <button
                 type="button"
-                onClick={() => setCancellingAbsence(null)}
+                autoFocus
+                onClick={() => {
+                  setCancelError(null);
+                  setCancellingAbsence(null);
+                }}
                 disabled={isCancelling}
-                className="px-3.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800 rounded-xl transition"
+                className="px-3.5 py-1.5 min-h-[32px] text-xs font-semibold text-slate-300 hover:bg-slate-800 rounded-xl transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
               >
                 {isFrench ? 'Garder l\'absence' : 'Keep Absence'}
               </button>
@@ -1135,11 +1250,11 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
                 type="button"
                 onClick={handleConfirmCancel}
                 disabled={isCancelling}
-                className="px-4 py-1.5 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md transition flex items-center space-x-1.5"
+                className="px-4 py-1.5 min-h-[32px] text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md transition flex items-center space-x-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
               >
                 {isCancelling ? (
                   <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
                     <span>{isFrench ? 'Annulation...' : 'Cancelling...'}</span>
                   </>
                 ) : (
@@ -1148,8 +1263,8 @@ export const StudentAbsencesView: React.FC<StudentAbsencesViewProps> = ({
               </button>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </AbsenceModalDialog>
+    </PageShell>
   );
 };

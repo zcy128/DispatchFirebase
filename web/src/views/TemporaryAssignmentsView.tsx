@@ -38,6 +38,8 @@ import {
 } from '../utils/routeOpeningDisplay';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 
 const TemporaryAssignmentModal = React.lazy(() =>
   import('../components/dispatch/TemporaryAssignmentModal').then((module) => ({
@@ -225,8 +227,9 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
         <button
           type="button"
+          aria-pressed={openingStatusFilter === 'all'}
           onClick={() => onOpeningStatusFilterChange('all')}
-          className={`text-left rounded-2xl p-4 shadow-sm transition-all cursor-pointer border ${
+          className={`text-left rounded-2xl p-4 shadow-sm transition-all cursor-pointer border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             openingStatusFilter === 'all'
               ? 'bg-slate-800/90 border-amber-500/60 ring-1 ring-amber-500/40'
               : 'bg-slate-900/80 border-slate-800/80 hover:bg-slate-800/60 hover:border-slate-700'
@@ -247,8 +250,9 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
 
         <button
           type="button"
+          aria-pressed={openingStatusFilter === 'open'}
           onClick={() => onOpeningStatusFilterChange((prev) => (prev === 'open' ? 'all' : 'open'))}
-          className={`text-left rounded-2xl p-4 shadow-sm transition-all cursor-pointer border ${
+          className={`text-left rounded-2xl p-4 shadow-sm transition-all cursor-pointer border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             openingStatusFilter === 'open'
               ? 'bg-emerald-950/30 border-emerald-500/60 ring-1 ring-emerald-500/40'
               : 'bg-slate-900/80 border-slate-800/80 hover:bg-slate-800/60 hover:border-emerald-500/30'
@@ -269,10 +273,11 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
 
         <button
           type="button"
+          aria-pressed={openingStatusFilter === 'reviewing'}
           onClick={() =>
             onOpeningStatusFilterChange((prev) => (prev === 'reviewing' ? 'all' : 'reviewing'))
           }
-          className={`text-left rounded-2xl p-4 shadow-sm transition-all cursor-pointer border ${
+          className={`text-left rounded-2xl p-4 shadow-sm transition-all cursor-pointer border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             openingStatusFilter === 'reviewing'
               ? 'bg-cyan-950/30 border-cyan-500/60 ring-1 ring-cyan-500/40'
               : 'bg-slate-900/80 border-slate-800/80 hover:bg-slate-800/60 hover:border-cyan-500/30'
@@ -293,10 +298,11 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
 
         <button
           type="button"
+          aria-pressed={openingStatusFilter === 'awarded'}
           onClick={() =>
             onOpeningStatusFilterChange((prev) => (prev === 'awarded' ? 'all' : 'awarded'))
           }
-          className={`text-left rounded-2xl p-4 shadow-sm transition-all cursor-pointer border ${
+          className={`text-left rounded-2xl p-4 shadow-sm transition-all cursor-pointer border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             openingStatusFilter === 'awarded'
               ? 'bg-purple-950/30 border-purple-500/60 ring-1 ring-purple-500/40'
               : 'bg-slate-900/80 border-slate-800/80 hover:bg-slate-800/60 hover:border-purple-500/30'
@@ -318,23 +324,25 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
 
       {/* Search, Filter & Dispatch Post Action */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
-        <div className="flex-1 flex flex-wrap items-center gap-2">
+        <search aria-label="Filter route openings" className="flex-1 flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1 max-w-sm">
-            <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search aria-hidden="true" className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
-              type="text"
+              type="search"
+              aria-label="Search route openings by route number, name, or board"
               placeholder="Search route number, name, board..."
               value={openingSearch}
               onChange={(e) => onOpeningSearchChange(e.target.value)}
-              className="w-full bg-slate-800/90 border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+              className="w-full bg-slate-800/90 border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-base sm:text-xs text-slate-100 placeholder-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             />
           </div>
 
           {/* Type Filter */}
           <select
+            aria-label="Filter by opening category"
             value={openingTypeFilter}
             onChange={(e) => onOpeningTypeFilterChange(e.target.value as OpeningTypeFilter)}
-            className="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+            className="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-base sm:text-xs text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             <option value="all">All Categories</option>
             <option value="permanent">Permanent Route</option>
@@ -344,9 +352,10 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
 
           {/* Status Filter */}
           <select
+            aria-label="Filter by opening status"
             value={openingStatusFilter}
             onChange={(e) => onOpeningStatusFilterChange(e.target.value as OpeningStatusFilter)}
-            className="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+            className="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-base sm:text-xs text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             <option value="all">All Statuses</option>
             <option value="open">Open for Bidding</option>
@@ -356,7 +365,7 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
 
           {/* Show Expired Toggle */}
           <label
-            className={`flex items-center gap-1.5 text-xs rounded-xl px-3 py-2 border cursor-pointer select-none transition shrink-0 ${
+            className={`min-h-[36px] flex items-center gap-1.5 text-xs rounded-xl px-3 py-2 border cursor-pointer select-none transition shrink-0 ${
               showExpired
                 ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
                 : 'bg-slate-800/90 border-slate-700/80 text-slate-300 hover:bg-slate-800'
@@ -367,7 +376,7 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
               type="checkbox"
               checked={showExpired}
               onChange={(e) => onShowExpiredChange(e.target.checked)}
-              className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500/40 cursor-pointer"
+              className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 cursor-pointer"
             />
             <span>{t.routeOpenings?.showExpired || 'Show Expired'}</span>
             {expiredCount > 0 && (
@@ -382,15 +391,16 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
               </span>
             )}
           </label>
-        </div>
+        </search>
 
         {/* Post Opening Button (Dispatcher / Manager / Admin) */}
         {canManage && (
           <button
+            type="button"
             onClick={onCreateOpening}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition-all shrink-0"
+            className="min-h-[36px] px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition-all shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
-            <Plus className="w-4 h-4" />
+            <Plus aria-hidden="true" className="w-4 h-4" />
             <span>{t.routeOpenings?.postNewOpening || 'Post Route Opening'}</span>
           </button>
         )}
@@ -403,14 +413,15 @@ const OpeningsBoardPanel = memo(function OpeningsBoardPanel({
         </div>
       ) : filteredOpenings.length === 0 ? (
         <div className="py-20 text-center text-slate-500 text-xs bg-slate-900/40 rounded-2xl border border-slate-800">
-          <Briefcase className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+          <Briefcase aria-hidden="true" className="w-10 h-10 text-slate-600 mx-auto mb-3" />
           <p>No route openings found matching your criteria.</p>
           {canManage && (
             <button
+              type="button"
               onClick={onCreateOpening}
-              className="mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-semibold rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors"
+              className="min-h-[28px] mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-semibold rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
-              <Plus className="w-3.5 h-3.5" /> Post First Opening
+              <Plus aria-hidden="true" className="w-3.5 h-3.5" /> Post First Opening
             </button>
           )}
         </div>
@@ -525,7 +536,7 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
   return (
     <div className="space-y-6">
       {error && (
-        <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs">
+        <div role="alert" className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs">
           {error}
         </div>
       )}
@@ -533,6 +544,7 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
         <button
           type="button"
+          aria-pressed={coverStatusFilter === 'active' && coverDateFilter === 'today' && coverRoleFilter === 'all'}
           onClick={() => {
             if (coverStatusFilter === 'active' && coverDateFilter === 'today' && coverRoleFilter === 'all') {
               onCoverDateFilterChange('all');
@@ -542,7 +554,7 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
               onCoverRoleFilterChange('all');
             }
           }}
-          className={`text-left bg-slate-900/80 border rounded-2xl p-4 shadow-sm transition-all cursor-pointer group ${
+          className={`text-left bg-slate-900/80 border rounded-2xl p-4 shadow-sm transition-all cursor-pointer group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             coverStatusFilter === 'active' && coverDateFilter === 'today' && coverRoleFilter === 'all'
               ? 'border-amber-500 ring-2 ring-amber-500/20 bg-amber-500/10'
               : 'border-slate-800/80 hover:border-amber-500/40 hover:bg-slate-800/50'
@@ -561,6 +573,7 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
 
         <button
           type="button"
+          aria-pressed={coverStatusFilter === 'active' && coverDateFilter === 'upcoming' && coverRoleFilter === 'all'}
           onClick={() => {
             if (coverStatusFilter === 'active' && coverDateFilter === 'upcoming' && coverRoleFilter === 'all') {
               onCoverDateFilterChange('all');
@@ -570,7 +583,7 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
               onCoverRoleFilterChange('all');
             }
           }}
-          className={`text-left bg-slate-900/80 border rounded-2xl p-4 shadow-sm transition-all cursor-pointer group ${
+          className={`text-left bg-slate-900/80 border rounded-2xl p-4 shadow-sm transition-all cursor-pointer group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             coverStatusFilter === 'active' && coverDateFilter === 'upcoming' && coverRoleFilter === 'all'
               ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-500/10'
               : 'border-slate-800/80 hover:border-blue-500/40 hover:bg-slate-800/50'
@@ -589,6 +602,7 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
 
         <button
           type="button"
+          aria-pressed={coverRoleFilter === 'driver'}
           onClick={() => {
             if (coverRoleFilter === 'driver') {
               onCoverRoleFilterChange('all');
@@ -598,7 +612,7 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
               onCoverRoleFilterChange('driver');
             }
           }}
-          className={`text-left bg-slate-900/80 border rounded-2xl p-4 shadow-sm transition-all cursor-pointer group ${
+          className={`text-left bg-slate-900/80 border rounded-2xl p-4 shadow-sm transition-all cursor-pointer group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             coverRoleFilter === 'driver'
               ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-500/10'
               : 'border-slate-800/80 hover:border-emerald-500/40 hover:bg-slate-800/50'
@@ -617,6 +631,7 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
 
         <button
           type="button"
+          aria-pressed={coverRoleFilter === 'attendant'}
           onClick={() => {
             if (coverRoleFilter === 'attendant') {
               onCoverRoleFilterChange('all');
@@ -626,7 +641,7 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
               onCoverRoleFilterChange('attendant');
             }
           }}
-          className={`text-left bg-slate-900/80 border rounded-2xl p-4 shadow-sm transition-all cursor-pointer group ${
+          className={`text-left bg-slate-900/80 border rounded-2xl p-4 shadow-sm transition-all cursor-pointer group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
             coverRoleFilter === 'attendant'
               ? 'border-purple-500 ring-2 ring-purple-500/20 bg-purple-500/10'
               : 'border-slate-800/80 hover:border-purple-500/40 hover:bg-slate-800/50'
@@ -646,23 +661,25 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
 
       {/* Action Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
-        <div className="flex-1 flex flex-wrap items-center gap-2">
+        <search aria-label="Filter shift coverage assignments" className="flex-1 flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1 max-w-sm">
-            <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search aria-hidden="true" className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
-              type="text"
+              type="search"
+              aria-label="Search shift covers by route, staff, bus, or reason"
               placeholder="Search route, staff, bus, reason..."
               value={coverSearchTerm}
               onChange={(e) => onCoverSearchTermChange(e.target.value)}
-              className="w-full bg-slate-800/90 border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+              className="w-full bg-slate-800/90 border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-base sm:text-xs text-slate-100 placeholder-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             />
           </div>
 
           {/* Status Filter */}
           <select
+            aria-label="Filter by cover status"
             value={coverStatusFilter}
             onChange={(e) => onCoverStatusFilterChange(e.target.value as CoverStatusFilter)}
-            className="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+            className="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-base sm:text-xs text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             <option value="all">All Statuses</option>
             <option value="active">Active Only</option>
@@ -672,9 +689,10 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
 
           {/* Date Filter */}
           <select
+            aria-label="Filter by cover date"
             value={coverDateFilter}
             onChange={(e) => onCoverDateFilterChange(e.target.value as CoverDateFilter)}
-            className="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+            className="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-base sm:text-xs text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             <option value="all">All Dates</option>
             <option value="today">Active Today</option>
@@ -684,31 +702,35 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
 
           {/* Role Filter */}
           <select
+            aria-label="Filter by cover role"
             value={coverRoleFilter}
             onChange={(e) => onCoverRoleFilterChange(e.target.value as CoverRoleFilter)}
-            className="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+            className="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-base sm:text-xs text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             <option value="all">All Roles</option>
             <option value="driver">Driver Covers</option>
             <option value="attendant">Attendant Covers</option>
           </select>
-        </div>
+        </search>
 
         <div className="flex items-center gap-2 shrink-0">
           <button
+            type="button"
             onClick={onRefresh}
-            className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-xl transition"
+            aria-label="Refresh shift covers"
+            className="min-w-[36px] min-h-[36px] inline-flex items-center justify-center p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-xl transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             title="Refresh"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw aria-hidden="true" className="w-4 h-4" />
           </button>
 
           {canManage && (
             <button
+              type="button"
               onClick={onCreateCover}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-amber-500/20 transition-all"
+              className="min-h-[36px] px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-amber-500/20 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
-              <Plus className="w-4 h-4" />
+              <Plus aria-hidden="true" className="w-4 h-4" />
               <span>Assign Shift Cover</span>
             </button>
           )}
@@ -722,31 +744,33 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
         </div>
       ) : filteredAssignments.length === 0 ? (
         <div className="py-20 text-center text-slate-500 text-xs bg-slate-900/40 rounded-2xl border border-slate-800">
-          <UserCheck className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+          <UserCheck aria-hidden="true" className="w-10 h-10 text-slate-600 mx-auto mb-3" />
           <p>No shift coverage assignments found matching filters.</p>
           {canManage && (
             <button
+              type="button"
               onClick={onCreateCover}
-              className="mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-semibold rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors"
+              className="min-h-[28px] mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-semibold rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
-              <Plus className="w-3.5 h-3.5" /> New Shift Cover
+              <Plus aria-hidden="true" className="w-3.5 h-3.5" /> New Shift Cover
             </button>
           )}
         </div>
       ) : (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
+          <div tabIndex={0} role="region" aria-label="Shift coverage assignments table" className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400">
             <table className="w-full text-left text-xs text-slate-300">
+              <caption className="sr-only">Active shift coverage assignments</caption>
               <thead className="bg-slate-950/60 text-slate-400 border-b border-slate-800 font-semibold">
                 <tr>
-                  <th className="py-3 px-4">Route</th>
-                  <th className="py-3 px-4">Coverage Dates</th>
-                  <th className="py-3 px-4">Shifts</th>
-                  <th className="py-3 px-4">Cover Crew</th>
-                  <th className="py-3 px-4">Vehicle</th>
-                  <th className="py-3 px-4">Reason / Notes</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                  <th scope="col" className="py-3 px-4">Route</th>
+                  <th scope="col" className="py-3 px-4">Coverage Dates</th>
+                  <th scope="col" className="py-3 px-4">Shifts</th>
+                  <th scope="col" className="py-3 px-4">Cover Crew</th>
+                  <th scope="col" className="py-3 px-4">Vehicle</th>
+                  <th scope="col" className="py-3 px-4">Reason / Notes</th>
+                  <th scope="col" className="py-3 px-4">Status</th>
+                  <th scope="col" className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -826,35 +850,43 @@ const ShiftCoversPanel = memo(function ShiftCoversPanel({
                         {canManage && (
                           <div className="flex items-center justify-end gap-1">
                             <button
+                              type="button"
                               onClick={() => onEditCover(a)}
-                              className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition"
+                              aria-label={`Edit shift cover for ${a.routeNo}`}
+                              className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title="Edit"
                             >
-                              <Edit className="w-4 h-4" />
+                              <Edit aria-hidden="true" className="w-4 h-4" />
                             </button>
                             {a.status === 'active' ? (
                               <button
+                                type="button"
                                 onClick={() => onToggleCoverStatus(a, 'completed')}
-                                className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded transition"
+                                aria-label={`Mark shift cover completed for ${a.routeNo}`}
+                                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                 title="Mark Completed"
                               >
-                                <CheckCircle2 className="w-4 h-4" />
+                                <CheckCircle2 aria-hidden="true" className="w-4 h-4" />
                               </button>
                             ) : (
                               <button
+                                type="button"
                                 onClick={() => onToggleCoverStatus(a, 'active')}
-                                className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded transition"
+                                aria-label={`Reactivate shift cover for ${a.routeNo}`}
+                                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                 title="Reactivate"
                               >
-                                <Clock className="w-4 h-4" />
+                                <Clock aria-hidden="true" className="w-4 h-4" />
                               </button>
                             )}
                             <button
+                              type="button"
                               onClick={() => onDeleteCover(a.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded transition"
+                              aria-label={`Delete shift cover for ${a.routeNo}`}
+                              className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                               title="Delete"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 aria-hidden="true" className="w-4 h-4" />
                             </button>
                           </div>
                         )}
@@ -1137,67 +1169,65 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
   }, [assignments, todayStr]);
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+    <PageShell>
       {/* Top Header & Tab Switcher */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-              <Briefcase className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl md:text-2xl font-bold text-slate-100 flex items-center gap-2">
-                {t.routeOpenings?.tabTitle || 'Route Openings & Shift Coverage'}
-              </h1>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {t.routeOpenings?.tabSub ||
-                  'Open bidding board for standing route vacancies and temporary coverage shifts'}
-              </p>
-            </div>
+      <PageHeader
+        title={t.routeOpenings?.tabTitle || 'Route Openings & Shift Coverage'}
+        subtitle={
+          t.routeOpenings?.tabSub ||
+          'Open bidding board for standing route vacancies and temporary coverage shifts'
+        }
+        icon={
+          <div aria-hidden="true" className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+            <Briefcase className="w-4 h-4" />
           </div>
-        </div>
-
-        {/* Tab switcher: Openings Board vs Active Shift Covers */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-xl">
-          <button
-            onClick={() => setActiveTab('openings')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === 'openings'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Radio className="w-4 h-4" />
-            <span>{t.routeOpenings?.openingsTab || 'Openings & Bidding Board'}</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                activeTab === 'openings' ? 'bg-slate-950/30 text-slate-950' : 'bg-slate-800 text-slate-400'
+        }
+        actions={
+          <div role="group" aria-label="Route openings and shift coverage sections" className="flex items-center gap-1.5 p-1 bg-slate-950/60 border border-slate-800 rounded-xl">
+            <button
+              type="button"
+              aria-pressed={activeTab === 'openings'}
+              onClick={() => setActiveTab('openings')}
+              className={`min-h-[34px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
+                activeTab === 'openings'
+                  ? 'bg-amber-500 text-slate-950 shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              {openingsKpi.total}
-            </span>
-          </button>
+              <Radio aria-hidden="true" className="w-3.5 h-3.5" />
+              <span>{t.routeOpenings?.openingsTab || 'Openings & Bidding Board'}</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === 'openings' ? 'bg-slate-950/30 text-slate-950' : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {openingsKpi.total}
+              </span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('covers')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === 'covers'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <UserCheck className="w-4 h-4" />
-            <span>{t.routeOpenings?.coversTab || 'Active Shift Covers'}</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                activeTab === 'covers' ? 'bg-slate-950/30 text-slate-950' : 'bg-slate-800 text-slate-400'
+            <button
+              type="button"
+              aria-pressed={activeTab === 'covers'}
+              onClick={() => setActiveTab('covers')}
+              className={`min-h-[34px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
+                activeTab === 'covers'
+                  ? 'bg-amber-500 text-slate-950 shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              {coversKpis.activeTotal}
-            </span>
-          </button>
-        </div>
-      </div>
+              <UserCheck aria-hidden="true" className="w-3.5 h-3.5" />
+              <span>{t.routeOpenings?.coversTab || 'Active Shift Covers'}</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === 'covers' ? 'bg-slate-950/30 text-slate-950' : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {coversKpis.activeTotal}
+              </span>
+            </button>
+          </div>
+        }
+      />
 
       {activeTab === 'openings' ? (
         <OpeningsBoardPanel
@@ -1325,6 +1355,6 @@ export const TemporaryAssignmentsView: React.FC<TemporaryAssignmentsViewProps> =
           />
         </React.Suspense>
       )}
-    </div>
+    </PageShell>
   );
 };

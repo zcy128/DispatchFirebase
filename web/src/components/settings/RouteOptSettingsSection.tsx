@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from 'react';
+import React, { memo, useEffect, useId, useState } from 'react';
 import { useI18n } from '../../contexts/I18nContext';
 import { RouteOptimizationSettings, RouteSettingsService } from '../../services/routeSettingsService';
 import { useScheduledReset } from './useScheduledReset';
@@ -13,6 +13,12 @@ import {
 export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
   const { t } = useI18n();
   const scheduleReset = useScheduledReset();
+  const baseId = useId();
+  const headingId = `${baseId}-heading`;
+  const dwellInputId = `${baseId}-dwell-minutes`;
+  const speedInputId = `${baseId}-avg-speed`;
+  const recalcId = `${baseId}-recalc-times`;
+  const driverHomeId = `${baseId}-driver-home`;
   const [routeOptSettings, setRouteOptSettings] = useState<RouteOptimizationSettings>({
     defaultStopDwellMinutes: 3,
     averageSpeedKmH: 30,
@@ -50,31 +56,32 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
         <div className="flex items-center space-x-3 border-b border-slate-800 pb-3">
           <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg">
-            <Navigation className="w-5 h-5" />
+            <Navigation className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-white">{t.stops.routeSettingsTitle}</h2>
+            <h2 id={headingId} className="text-sm font-bold text-white">{t.stops.routeSettingsTitle}</h2>
             <p className="text-xs text-slate-400">
               Configure default stop dwell duration for boarding/alighting, urban transit speed, and sequence optimization options.
             </p>
           </div>
         </div>
 
-        <form onSubmit={handleSaveRouteOptSettings} className="space-y-4 pt-1">
+        <form aria-labelledby={headingId} onSubmit={handleSaveRouteOptSettings} className="space-y-4 pt-1">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Default Stop Dwell Minutes */}
             <div className="p-4 rounded-xl border border-slate-800 bg-slate-800/40 space-y-2">
-              <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+              <label htmlFor={dwellInputId} className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                 <span>{t.stops.defaultDwellMinutesLabel}</span>
                 <span className="font-mono text-emerald-400 font-bold">{routeOptSettings.defaultStopDwellMinutes} min</span>
               </label>
-              <div className="flex items-center gap-2">
+              <div role="group" aria-label="Default stop dwell presets" className="flex items-center gap-2">
                 {[1, 2, 3, 4, 5, 8].map((m) => (
                   <button
                     key={m}
                     type="button"
+                    aria-pressed={routeOptSettings.defaultStopDwellMinutes === m}
                     onClick={() => setRouteOptSettings((prev) => ({ ...prev, defaultStopDwellMinutes: m }))}
-                    className={`px-2.5 py-1 text-xs rounded-lg font-medium transition cursor-pointer ${
+                    className={`px-2.5 py-1 min-h-[28px] text-xs rounded-lg font-medium transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 ${
                       routeOptSettings.defaultStopDwellMinutes === m
                         ? 'bg-emerald-500 text-slate-950 font-bold'
                         : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
@@ -85,6 +92,8 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
                 ))}
               </div>
               <input
+                id={dwellInputId}
+                name="defaultStopDwellMinutes"
                 type="number"
                 min={1}
                 max={15}
@@ -95,7 +104,7 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
                     defaultStopDwellMinutes: Math.max(1, Math.min(15, parseInt(e.target.value) || 3))
                   }))
                 }
-                className="w-full mt-2 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+                className="w-full mt-2 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-base sm:text-xs text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-emerald-500 font-mono"
               />
               <p className="text-[11px] text-slate-500">
                 Scheduled boarding and alighting delay allocated per stop during automatic time recomputation.
@@ -104,17 +113,18 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
 
             {/* Average Transit Speed */}
             <div className="p-4 rounded-xl border border-slate-800 bg-slate-800/40 space-y-2">
-              <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+              <label htmlFor={speedInputId} className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                 <span>{t.stops.avgSpeedLabel}</span>
                 <span className="font-mono text-emerald-400 font-bold">{routeOptSettings.averageSpeedKmH} km/h</span>
               </label>
-              <div className="flex items-center gap-2">
+              <div role="group" aria-label="Average transit speed presets" className="flex items-center gap-2">
                 {[25, 30, 35, 40, 50].map((s) => (
                   <button
                     key={s}
                     type="button"
+                    aria-pressed={routeOptSettings.averageSpeedKmH === s}
                     onClick={() => setRouteOptSettings((prev) => ({ ...prev, averageSpeedKmH: s }))}
-                    className={`px-2.5 py-1 text-xs rounded-lg font-medium transition cursor-pointer ${
+                    className={`px-2.5 py-1 min-h-[28px] text-xs rounded-lg font-medium transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 ${
                       routeOptSettings.averageSpeedKmH === s
                         ? 'bg-emerald-500 text-slate-950 font-bold'
                         : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
@@ -125,6 +135,8 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
                 ))}
               </div>
               <input
+                id={speedInputId}
+                name="averageSpeedKmH"
                 type="number"
                 min={15}
                 max={80}
@@ -135,7 +147,7 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
                     averageSpeedKmH: Math.max(15, Math.min(80, parseInt(e.target.value) || 30))
                   }))
                 }
-                className="w-full mt-2 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+                className="w-full mt-2 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-base sm:text-xs text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-emerald-500 font-mono"
               />
               <p className="text-[11px] text-slate-500">
                 Estimated average driving speed in suburban/urban areas used for leg travel time estimations.
@@ -148,7 +160,8 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
             <div className="p-4 rounded-xl border border-slate-800 bg-slate-800/40 flex items-start space-x-3">
               <input
                 type="checkbox"
-                id="recalcTimesDefault"
+                id={recalcId}
+                name="recalculateTimesDefault"
                 checked={routeOptSettings.recalculateTimesDefault}
                 onChange={(e) =>
                   setRouteOptSettings((prev) => ({
@@ -158,7 +171,7 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
                 }
                 className="mt-0.5 rounded border-slate-700 text-emerald-500 focus:ring-emerald-500/20 bg-slate-900 w-4 h-4 cursor-pointer"
               />
-              <label htmlFor="recalcTimesDefault" className="text-xs cursor-pointer select-none">
+              <label htmlFor={recalcId} className="text-xs cursor-pointer select-none">
                 <span className="font-bold text-slate-200 block">{t.stops.recalculateTimesLabel}</span>
                 <span className="text-slate-400 text-[11px]">
                   Automatically recompute pullaway and arrival times whenever stops are reordered or moved.
@@ -170,7 +183,8 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
             <div className="p-4 rounded-xl border border-slate-800 bg-slate-800/40 flex items-start space-x-3">
               <input
                 type="checkbox"
-                id="driverHomeDefault"
+                id={driverHomeId}
+                name="includeDriverHomeDefault"
                 checked={routeOptSettings.includeDriverHomeDefault}
                 onChange={(e) =>
                   setRouteOptSettings((prev) => ({
@@ -180,7 +194,7 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
                 }
                 className="mt-0.5 rounded border-slate-700 text-emerald-500 focus:ring-emerald-500/20 bg-slate-900 w-4 h-4 cursor-pointer"
               />
-              <label htmlFor="driverHomeDefault" className="text-xs cursor-pointer select-none">
+              <label htmlFor={driverHomeId} className="text-xs cursor-pointer select-none">
                 <span className="font-bold text-slate-200 block">{t.stops.includeDriverHomeLabel}</span>
                 <span className="text-slate-400 text-[11px]">
                   {t.stops.includeDriverHomeHelp}
@@ -195,9 +209,9 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
               <button
                 type="submit"
                 disabled={routeOptSaving}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-xl transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-lg shadow-emerald-950/20"
+                className="px-4 py-2 min-h-[36px] bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-xl transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-lg shadow-emerald-950/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
-                <Save className="w-3.5 h-3.5" />
+                <Save className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>{routeOptSaving ? 'Saving...' : 'Save Configuration'}</span>
               </button>
               <button
@@ -213,22 +227,22 @@ export const RouteOptSettingsSection = memo(function RouteOptSettingsSection() {
                   setRouteOptError(null);
                 }}
                 disabled={routeOptSaving}
-                className="px-3 py-2 border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                className="px-3 py-2 min-h-[36px] border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
-                <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                <RotateCcw className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
                 <span>Reset Defaults</span>
               </button>
             </div>
 
             {routeOptStatus && (
-              <span className="text-xs text-emerald-400 flex items-center space-x-1">
-                <CheckCircle2 className="w-4 h-4" />
+              <span role="status" className="text-xs text-emerald-400 flex items-center space-x-1">
+                <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
                 <span>{routeOptStatus}</span>
               </span>
             )}
             {routeOptError && (
-              <span className="text-xs text-rose-400 flex items-center space-x-1">
-                <AlertCircle className="w-4 h-4" />
+              <span role="alert" className="text-xs text-rose-400 flex items-center space-x-1">
+                <AlertCircle className="w-4 h-4" aria-hidden="true" />
                 <span>{routeOptError}</span>
               </span>
             )}

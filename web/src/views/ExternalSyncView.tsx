@@ -1,11 +1,36 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { useI18n } from '../contexts/I18nContext';
 import { BambooHRService, BambooHRTestReport, BambooWebhookEvent } from '../services/bamboohrService';
 import { ZonarService, ZonarSerialReport, ZonarRouteWriteReport, ZonarTestReport } from '../services/zonarService';
 import { BusPlannerService, BusPlannerSyncReport } from '../services/busplannerService';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 
 export const ExternalSyncView: React.FC = () => {
   const { isFrench } = useI18n();
+  const baseId = useId();
+  const bambooHeadingId = `${baseId}-bamboo-heading`;
+  const bambooDomainId = `${baseId}-bamboo-domain`;
+  const bambooKeyId = `${baseId}-bamboo-key`;
+  const bambooKeyHelpId = `${baseId}-bamboo-key-help`;
+  const bambooDailyTimeId = `${baseId}-bamboo-daily-time`;
+  const bambooDailyTimeHelpId = `${baseId}-bamboo-daily-time-help`;
+  const bambooWebhookKeyId = `${baseId}-bamboo-webhook-key`;
+  const bambooWebhookHelpId = `${baseId}-bamboo-webhook-help`;
+
+  const zonarHeadingId = `${baseId}-zonar-heading`;
+  const zonarCustomerId = `${baseId}-zonar-customer`;
+  const zonarUsernameId = `${baseId}-zonar-username`;
+  const zonarPasswordId = `${baseId}-zonar-password`;
+  const zonarPasswordHelpId = `${baseId}-zonar-password-help`;
+  const zonarBusyId = `${baseId}-zonar-busy`;
+  const zonarBusyHelpId = `${baseId}-zonar-busy-help`;
+  const zonarIdleId = `${baseId}-zonar-idle`;
+  const zonarIdleHelpId = `${baseId}-zonar-idle-help`;
+  const zonarSerialTimeId = `${baseId}-zonar-serial-time`;
+  const zonarSerialHelpId = `${baseId}-zonar-serial-help`;
+
+  const plannerHeadingId = `${baseId}-planner-heading`;
 
   const [bambooEnabled, setBambooEnabled] = useState(false);
   const [bambooDomain, setBambooDomain] = useState('');
@@ -347,25 +372,24 @@ export const ExternalSyncView: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-black text-white tracking-tight">
-          {isFrench ? 'Synchronisation des données externes' : 'External Data Sync'}
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-400 mt-1">
-          {isFrench
+    <PageShell>
+      <PageHeader
+        title={isFrench ? 'Synchronisation des données externes' : 'External Data Sync'}
+        subtitle={
+          isFrench
             ? 'BambooHR, Zonar et BusPlanner. Les clés restent sur le serveur. BusPlanner est enregistré dans staging seulement.'
-            : 'BambooHR, Zonar, and BusPlanner. Keys stay on the server. BusPlanner is saved to staging only.'}
-        </p>
-      </div>
+            : 'BambooHR, Zonar, and BusPlanner. Keys stay on the server. BusPlanner is saved to staging only.'
+        }
+      />
 
       <form
+        aria-labelledby={bambooHeadingId}
         onSubmit={handleSaveBamboo}
         className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4"
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
           <div>
-            <h2 className="text-base font-bold text-white">
+            <h2 id={bambooHeadingId} className="text-base font-bold text-white">
               {isFrench ? 'Synchronisation BambooHR' : 'BambooHR Sync'}
             </h2>
             <p className="text-xs text-slate-400 mt-1">
@@ -377,11 +401,13 @@ export const ExternalSyncView: React.FC = () => {
           <label className="relative inline-flex items-center cursor-pointer shrink-0">
             <input
               type="checkbox"
+              role="switch"
+              aria-checked={bambooEnabled}
               checked={bambooEnabled}
               onChange={(e) => setBambooEnabled(e.target.checked)}
               className="sr-only peer"
             />
-            <div className="w-12 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+            <div className="w-12 h-6 bg-slate-700 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-amber-400 rounded-full peer peer-checked:after:translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
             <span className="ml-2.5 text-xs font-bold text-white">
               {bambooEnabled
                 ? isFrench
@@ -396,25 +422,30 @@ export const ExternalSyncView: React.FC = () => {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+            <label htmlFor={bambooDomainId} className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
               {isFrench ? 'Sous-domaine BambooHR' : 'BambooHR subdomain'}
             </label>
             <input
+              id={bambooDomainId}
+              name="companyDomain"
               type="text"
               value={bambooDomain}
               autoComplete="off"
               spellCheck={false}
               onChange={(e) => setBambooDomain(e.target.value)}
               placeholder="company"
-              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base sm:text-xs font-mono text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+            <label htmlFor={bambooKeyId} className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
               {isFrench ? 'Clé API' : 'API key'}
             </label>
             <input
+              id={bambooKeyId}
+              name="apiKey"
               type="password"
+              aria-describedby={bambooKeyHelpId}
               value={bambooKey}
               autoComplete="new-password"
               spellCheck={false}
@@ -428,9 +459,9 @@ export const ExternalSyncView: React.FC = () => {
                   ? 'Coller la clé API'
                   : 'Paste the API key'
               }
-              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base sm:text-xs font-mono text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p id={bambooKeyHelpId} className="text-[11px] text-slate-500 mt-1">
               {bambooKeySet
                 ? isFrench
                   ? 'Une clé est enregistrée sur le serveur. Elle n\'est pas renvoyée au navigateur.'
@@ -443,16 +474,19 @@ export const ExternalSyncView: React.FC = () => {
         </div>
 
         <div className="max-w-xs">
-          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+          <label htmlFor={bambooDailyTimeId} className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
             {isFrench ? 'Heure de synchronisation quotidienne' : 'Daily sync time'}
           </label>
           <input
+            id={bambooDailyTimeId}
+            name="dailySyncTime"
             type="time"
+            aria-describedby={bambooDailyTimeHelpId}
             value={bambooDailyTime}
             onChange={(e) => setBambooDailyTime(e.target.value)}
-            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base sm:text-xs font-mono text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
           />
-          <p className="text-[11px] text-slate-500 mt-1">
+          <p id={bambooDailyTimeHelpId} className="text-[11px] text-slate-500 mt-1">
             {isFrench
               ? 'Heure d\'Ottawa. Tous les employés sont lus, sans filtre de poste, et ne sont pas écrits dans la base de dispatch.'
               : 'Ottawa time. Every employee is read, with no job-title filter, and none are written to the dispatch database.'}
@@ -463,11 +497,14 @@ export const ExternalSyncView: React.FC = () => {
         </div>
 
         <div>
-          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+          <label htmlFor={bambooWebhookKeyId} className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
             {isFrench ? 'Clé du webhook' : 'Webhook key'}
           </label>
           <input
+            id={bambooWebhookKeyId}
+            name="webhookKey"
             type="password"
+            aria-describedby={bambooWebhookHelpId}
             value={bambooWebhookKey}
             autoComplete="new-password"
             spellCheck={false}
@@ -481,9 +518,9 @@ export const ExternalSyncView: React.FC = () => {
                 ? '12 caracteres ou plus, lettres et chiffres'
                 : '12 or more letters, numbers, _ or -'
             }
-            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base sm:text-xs font-mono text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
           />
-          <p className="text-[11px] text-slate-500 mt-1">
+          <p id={bambooWebhookHelpId} className="text-[11px] text-slate-500 mt-1">
             {bambooWebhookKeySet
               ? isFrench
                 ? 'Une clé de webhook est enregistrée sur le serveur.'
@@ -502,7 +539,7 @@ export const ExternalSyncView: React.FC = () => {
           <button
             type="submit"
             disabled={bambooSaving}
-            className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
+            className="px-4 py-2 min-h-[36px] bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
           >
             {bambooSaving
               ? isFrench
@@ -516,7 +553,7 @@ export const ExternalSyncView: React.FC = () => {
             type="button"
             onClick={handleTestBamboo}
             disabled={bambooTesting || !bambooEnabled}
-            className="px-4 py-2 rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50"
+            className="px-4 py-2 min-h-[36px] rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             {bambooTesting
               ? isFrench
@@ -530,7 +567,7 @@ export const ExternalSyncView: React.FC = () => {
             type="button"
             onClick={handleSyncBamboo}
             disabled={bambooSyncing || !bambooEnabled}
-            className="px-4 py-2 rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50"
+            className="px-4 py-2 min-h-[36px] rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             {bambooSyncing
               ? isFrench
@@ -542,8 +579,8 @@ export const ExternalSyncView: React.FC = () => {
           </button>
         </div>
 
-        {bambooStatus && <p className="text-xs text-emerald-400">{bambooStatus}</p>}
-        {bambooError && <p className="text-xs text-rose-400">{bambooError}</p>}
+        {bambooStatus && <p role="status" className="text-xs text-emerald-400">{bambooStatus}</p>}
+        {bambooError && <p role="alert" className="text-xs text-rose-400">{bambooError}</p>}
 
         {bambooEvents.length > 0 && (
           <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 space-y-1 text-xs text-slate-300">
@@ -587,12 +624,13 @@ export const ExternalSyncView: React.FC = () => {
       </form>
 
       <form
+        aria-labelledby={zonarHeadingId}
         onSubmit={handleSaveZonar}
         className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4"
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
           <div>
-            <h2 className="text-base font-bold text-white">
+            <h2 id={zonarHeadingId} className="text-base font-bold text-white">
               {isFrench ? 'Synchronisation GPS Zonar' : 'Zonar GPS Sync'}
             </h2>
             <p className="text-xs text-slate-400 mt-1">
@@ -604,11 +642,13 @@ export const ExternalSyncView: React.FC = () => {
           <label className="relative inline-flex items-center cursor-pointer shrink-0">
             <input
               type="checkbox"
+              role="switch"
+              aria-checked={zonarEnabled}
               checked={zonarEnabled}
               onChange={(e) => setZonarEnabled(e.target.checked)}
               className="sr-only peer"
             />
-            <div className="w-12 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+            <div className="w-12 h-6 bg-slate-700 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-amber-400 rounded-full peer peer-checked:after:translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
             <span className="ml-2.5 text-xs font-bold text-white">
               {zonarEnabled
                 ? isFrench
@@ -623,39 +663,46 @@ export const ExternalSyncView: React.FC = () => {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+            <label htmlFor={zonarCustomerId} className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
               {isFrench ? 'Client Zonar' : 'Zonar customer'}
             </label>
             <input
+              id={zonarCustomerId}
+              name="customer"
               type="text"
               value={zonarCustomer}
               autoComplete="off"
               spellCheck={false}
               onChange={(e) => setZonarCustomer(e.target.value)}
               placeholder="customer"
-              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base sm:text-xs font-mono text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+            <label htmlFor={zonarUsernameId} className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
               {isFrench ? 'Nom d\'utilisateur' : 'Username'}
             </label>
             <input
+              id={zonarUsernameId}
+              name="username"
               type="text"
               value={zonarUsername}
               autoComplete="off"
               spellCheck={false}
               onChange={(e) => setZonarUsername(e.target.value)}
               placeholder="username"
-              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base sm:text-xs font-mono text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+            <label htmlFor={zonarPasswordId} className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
               {isFrench ? 'Mot de passe' : 'Password'}
             </label>
             <input
+              id={zonarPasswordId}
+              name="password"
               type="password"
+              aria-describedby={zonarPasswordHelpId}
               value={zonarPassword}
               autoComplete="new-password"
               spellCheck={false}
@@ -669,9 +716,9 @@ export const ExternalSyncView: React.FC = () => {
                   ? 'Mot de passe Zonar'
                   : 'Zonar password'
               }
-              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base sm:text-xs font-mono text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p id={zonarPasswordHelpId} className="text-[11px] text-slate-500 mt-1">
               {zonarPasswordSet
                 ? isFrench
                   ? 'Un mot de passe est enregistré sur le serveur. Il n\'est pas renvoyé au navigateur.'
@@ -685,36 +732,42 @@ export const ExternalSyncView: React.FC = () => {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+            <label htmlFor={zonarBusyId} className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
               {isFrench ? 'Intervalle chargé (minutes)' : 'Busy interval (minutes)'}
             </label>
             <input
+              id={zonarBusyId}
+              name="busyIntervalMinutes"
               type="number"
+              aria-describedby={zonarBusyHelpId}
               min={1}
               max={60}
               value={zonarBusyMinutes}
               onChange={(e) => setZonarBusyMinutes(Number(e.target.value))}
-              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base sm:text-xs font-mono text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p id={zonarBusyHelpId} className="text-[11px] text-slate-500 mt-1">
               {isFrench
                 ? 'Jours de semaine, 6 h à 18 h, heure d\'Ottawa. Par défaut 1 minute.'
                 : 'Weekdays 6:00-18:00 Ottawa time. Default is 1 minute.'}
             </p>
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+            <label htmlFor={zonarIdleId} className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
               {isFrench ? 'Intervalle calme (minutes)' : 'Idle interval (minutes)'}
             </label>
             <input
+              id={zonarIdleId}
+              name="idleIntervalMinutes"
               type="number"
+              aria-describedby={zonarIdleHelpId}
               min={1}
               max={180}
               value={zonarIdleMinutes}
               onChange={(e) => setZonarIdleMinutes(Number(e.target.value))}
-              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base sm:text-xs font-mono text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p id={zonarIdleHelpId} className="text-[11px] text-slate-500 mt-1">
               {isFrench
                 ? 'Soirs et fins de semaine. Par défaut 10 minutes.'
                 : 'Evenings and weekends. Default is 10 minutes.'}
@@ -723,16 +776,19 @@ export const ExternalSyncView: React.FC = () => {
         </div>
 
         <div className="max-w-xs">
-          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+          <label htmlFor={zonarSerialTimeId} className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
             {isFrench ? 'Heure du numero de serie GPS' : 'GPS serial sync time'}
           </label>
           <input
+            id={zonarSerialTimeId}
+            name="gpsSerialSyncTime"
             type="time"
+            aria-describedby={zonarSerialHelpId}
             value={zonarSerialTime}
             onChange={(e) => setZonarSerialTime(e.target.value)}
-            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:border-amber-500 focus:outline-none"
+            className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-base sm:text-xs font-mono text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
           />
-          <p className="text-[11px] text-slate-500 mt-1">
+          <p id={zonarSerialHelpId} className="text-[11px] text-slate-500 mt-1">
             {isFrench
               ? 'Une fois par jour, heure d\'Ottawa. Les numeros GPS sont copies sur les vehicules.'
               : 'Once per day, Ottawa time. GPS serials are copied onto vehicles.'}
@@ -747,6 +803,7 @@ export const ExternalSyncView: React.FC = () => {
 
         <label className="flex items-start gap-2.5 max-w-xl cursor-pointer">
           <input
+            name="routeSyncEnabled"
             type="checkbox"
             checked={zonarRouteSyncEnabled}
             onChange={(e) => setZonarRouteSyncEnabled(e.target.checked)}
@@ -775,7 +832,7 @@ export const ExternalSyncView: React.FC = () => {
           <button
             type="submit"
             disabled={zonarSaving}
-            className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50"
+            className="px-4 py-2 min-h-[36px] bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
           >
             {zonarSaving
               ? isFrench
@@ -789,7 +846,7 @@ export const ExternalSyncView: React.FC = () => {
             type="button"
             onClick={handleTestZonar}
             disabled={zonarTesting || !zonarEnabled}
-            className="px-4 py-2 rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50"
+            className="px-4 py-2 min-h-[36px] rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             {zonarTesting
               ? isFrench
@@ -803,7 +860,7 @@ export const ExternalSyncView: React.FC = () => {
             type="button"
             onClick={handleSyncZonarSerials}
             disabled={zonarSerialRunning || (!zonarEnabled && !zonarPasswordSet)}
-            className="px-4 py-2 rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50"
+            className="px-4 py-2 min-h-[36px] rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             {zonarSerialRunning
               ? isFrench
@@ -817,7 +874,7 @@ export const ExternalSyncView: React.FC = () => {
             type="button"
             onClick={handlePreviewZonarRoutes}
             disabled={zonarRouteRunning || !zonarRouteSyncSaved}
-            className="px-4 py-2 rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50"
+            className="px-4 py-2 min-h-[36px] rounded-xl border border-slate-600 text-xs font-bold text-slate-200 hover:bg-slate-800 transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             {zonarRouteRunning
               ? isFrench
@@ -829,8 +886,8 @@ export const ExternalSyncView: React.FC = () => {
           </button>
         </div>
 
-        {zonarStatus && <p className="text-xs text-emerald-400">{zonarStatus}</p>}
-        {zonarError && <p className="text-xs text-rose-400">{zonarError}</p>}
+        {zonarStatus && <p role="status" className="text-xs text-emerald-400">{zonarStatus}</p>}
+        {zonarError && <p role="alert" className="text-xs text-rose-400">{zonarError}</p>}
 
         {zonarSerialReport && (
           <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 space-y-2 text-xs text-slate-300">
@@ -883,12 +940,13 @@ export const ExternalSyncView: React.FC = () => {
       </form>
 
       <form
+        aria-labelledby={plannerHeadingId}
         onSubmit={handleSavePlanner}
         className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4"
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
           <div>
-            <h2 className="text-base font-bold text-white">
+            <h2 id={plannerHeadingId} className="text-base font-bold text-white">
               {isFrench ? 'Synchronisation BusPlanner' : 'BusPlanner Sync'}
             </h2>
             <p className="text-xs text-slate-400 mt-1">
@@ -900,11 +958,13 @@ export const ExternalSyncView: React.FC = () => {
           <label className="relative inline-flex items-center cursor-pointer shrink-0">
             <input
               type="checkbox"
+              role="switch"
+              aria-checked={plannerEnabled}
               checked={plannerEnabled}
               onChange={(e) => setPlannerEnabled(e.target.checked)}
               className="sr-only peer"
             />
-            <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:bg-amber-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+            <div className="w-11 h-6 bg-slate-700 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-amber-400 rounded-full peer peer-checked:bg-amber-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
             <span className="ml-3 text-xs font-semibold text-slate-300">
               {plannerEnabled ? (isFrench ? 'Sync activé' : 'Sync enabled') : (isFrench ? 'Sync désactivé' : 'Sync disabled')}
             </span>
@@ -915,23 +975,28 @@ export const ExternalSyncView: React.FC = () => {
           <label className="block text-xs text-slate-400 sm:col-span-2">
             {isFrench ? 'Adresse BusPlanner' : 'BusPlanner address'}
             <input
+              name="baseUrl"
+              type="url"
               value={plannerBaseUrl}
               onChange={(e) => setPlannerBaseUrl(e.target.value)}
-              className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white"
+              className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-base sm:text-sm text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
           </label>
           <label className="block text-xs text-slate-400">
             {isFrench ? 'Nom d\'utilisateur' : 'Username'}
             <input
+              name="username"
+              type="text"
               value={plannerUsername}
               onChange={(e) => setPlannerUsername(e.target.value)}
               autoComplete="off"
-              className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white"
+              className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-base sm:text-sm text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
           </label>
           <label className="block text-xs text-slate-400">
             {isFrench ? 'Mot de passe' : 'Password'}
             <input
+              name="password"
               type="password"
               value={plannerPassword}
               onChange={(e) => setPlannerPassword(e.target.value)}
@@ -939,7 +1004,7 @@ export const ExternalSyncView: React.FC = () => {
               placeholder={plannerPasswordSet
                 ? (isFrench ? 'Laisser vide pour garder le mot de passe' : 'Leave blank to keep the saved password')
                 : (isFrench ? 'Mot de passe BusPlanner' : 'BusPlanner password')}
-              className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white"
+              className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-base sm:text-sm text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
             <span className="block mt-1 text-[11px] text-slate-500">
               {isFrench ? 'Le mot de passe reste sur le serveur.' : 'The password stays on the server.'}
@@ -948,9 +1013,11 @@ export const ExternalSyncView: React.FC = () => {
           <label className="block text-xs text-slate-400">
             {isFrench ? 'Opérateur' : 'Operator'}
             <input
+              name="operatorId"
+              type="text"
               value={plannerOperator}
               onChange={(e) => setPlannerOperator(e.target.value)}
-              className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white"
+              className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-base sm:text-sm text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
             />
             <span className="block mt-1 text-[11px] text-slate-500">
               {isFrench ? 'Seules les lignes de cet opérateur sont enregistrées. Défaut : 4S.' : 'Only routes for this operator are saved. Default is 4S.'}
@@ -958,10 +1025,10 @@ export const ExternalSyncView: React.FC = () => {
           </label>
         </div>
 
-        <div className="space-y-2">
-          <div className="text-xs text-slate-400">
+        <fieldset className="space-y-2">
+          <legend className="text-xs text-slate-400">
             {isFrench ? 'Heures de synchronisation (Ottawa)' : 'Sync times (Ottawa)'}
-          </div>
+          </legend>
           <p className="text-[11px] text-slate-500">
             {isFrench
               ? 'Chaque heure est exécutée une fois par jour. Ajoutez plusieurs heures pour synchroniser plusieurs fois dans la journée. Maximum 8.'
@@ -971,19 +1038,21 @@ export const ExternalSyncView: React.FC = () => {
             <div key={`planner-time-${index}`} className="flex items-center gap-2">
               <input
                 type="time"
+                aria-label={`${isFrench ? 'Heure de synchronisation' : 'Sync time'} ${index + 1}`}
                 value={value}
                 onChange={(e) => {
                   const next = [...plannerTimes];
                   next[index] = e.target.value;
                   setPlannerTimes(next);
                 }}
-                className="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white"
+                className="rounded-xl bg-slate-950 border border-slate-700 px-3 py-2 text-base sm:text-sm text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
               />
               {plannerTimes.length > 1 && (
                 <button
                   type="button"
+                  aria-label={`${isFrench ? 'Retirer l\'heure' : 'Remove sync time'} ${index + 1}`}
                   onClick={() => setPlannerTimes(plannerTimes.filter((_, i) => i !== index))}
-                  className="px-3 py-2 text-xs font-semibold text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800"
+                  className="px-3 py-2 min-h-[36px] text-xs font-semibold text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                 >
                   {isFrench ? 'Retirer' : 'Remove'}
                 </button>
@@ -994,19 +1063,19 @@ export const ExternalSyncView: React.FC = () => {
             type="button"
             disabled={plannerTimes.length >= 8}
             onClick={() => setPlannerTimes([...plannerTimes, '12:00'])}
-            className="px-3 py-2 text-xs font-semibold text-amber-200 border border-amber-500/40 rounded-xl hover:bg-amber-500/10 disabled:opacity-40"
+            className="px-3 py-2 min-h-[36px] text-xs font-semibold text-amber-200 border border-amber-500/40 rounded-xl hover:bg-amber-500/10 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             {isFrench ? 'Ajouter une heure' : 'Add a time'}
           </button>
-        </div>
+        </fieldset>
 
         {plannerLastSyncAt && (
           <p className="text-[11px] text-slate-500">
             {isFrench ? 'Dernière synchronisation' : 'Last sync'}: {plannerLastSyncAt}
           </p>
         )}
-        {plannerStatus && <p className="text-xs text-emerald-300">{plannerStatus}</p>}
-        {plannerError && <p className="text-xs text-rose-300">{plannerError}</p>}
+        {plannerStatus && <p role="status" className="text-xs text-emerald-300">{plannerStatus}</p>}
+        {plannerError && <p role="alert" className="text-xs text-rose-300">{plannerError}</p>}
         {plannerReport && (
           <div className="text-xs text-slate-300 space-y-1">
             <p>
@@ -1032,7 +1101,7 @@ export const ExternalSyncView: React.FC = () => {
           <button
             type="submit"
             disabled={plannerSaving}
-            className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-bold disabled:opacity-50"
+            className="px-4 py-2 min-h-[36px] rounded-xl bg-amber-500 text-slate-950 text-xs font-bold disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
           >
             {plannerSaving
               ? (isFrench ? 'Enregistrement...' : 'Saving...')
@@ -1042,7 +1111,7 @@ export const ExternalSyncView: React.FC = () => {
             type="button"
             disabled={plannerRunning || !plannerEnabledSaved}
             onClick={handleSyncPlanner}
-            className="px-4 py-2 rounded-xl border border-slate-600 text-xs font-semibold text-slate-200 disabled:opacity-40"
+            className="px-4 py-2 min-h-[36px] rounded-xl border border-slate-600 text-xs font-semibold text-slate-200 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             {plannerRunning
               ? (isFrench ? 'Synchronisation...' : 'Syncing...')
@@ -1050,6 +1119,6 @@ export const ExternalSyncView: React.FC = () => {
           </button>
         </div>
       </form>
-    </div>
+    </PageShell>
   );
 };

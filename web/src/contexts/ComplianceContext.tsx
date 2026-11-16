@@ -5,6 +5,7 @@ import {
   ONTARIO_COMPLIANCE_DEFAULTS
 } from '../types/compliance';
 import { ComplianceSettingsService } from '../services/complianceSettingsService';
+import { auth } from '../services/firebase';
 
 interface ComplianceContextType {
   province: OperatingProvince;
@@ -41,7 +42,18 @@ export const ComplianceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const unsub = ComplianceSettingsService.subscribe((updated) => {
       setConfig(updated);
     });
-    return () => unsub();
+    let unsubAuth = () => {};
+    if (auth) {
+      unsubAuth = auth.onAuthStateChanged((user) => {
+        if (user) {
+          refreshConfig();
+        }
+      });
+    }
+    return () => {
+      unsub();
+      unsubAuth();
+    };
   }, [refreshConfig]);
 
   const setProvince = useCallback(async (newProvince: OperatingProvince) => {

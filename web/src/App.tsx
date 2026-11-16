@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
 import { useAuth } from './contexts/AuthContext';
+import { AIProvider } from './contexts/AIContext';
 import { Header } from './components/common/Header';
 import { Sidebar, NavTab } from './components/common/Sidebar';
 import { DashboardView } from './views/DashboardView';
@@ -114,9 +115,9 @@ export const AppContent: React.FC = () => {
   const [isAICopilotOpen, setIsAICopilotOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      return params.get('mode') === 'ai' || params.get('ai') === '1';
+      return window.innerWidth >= 768 || params.get('mode') === 'ai' || params.get('ai') === '1';
     }
-    return false;
+    return true;
   });
   const [aiCopilotMounted, setAiCopilotMounted] = useState<boolean>(isAICopilotOpen);
   const [chatInitialTargetUserId, setChatInitialTargetUserId] = useState<string | null>(null);
@@ -762,9 +763,10 @@ export const AppContent: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!currentUser) return;
     const unsub = initCloudRolePermissionsListener();
     return () => unsub();
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     if (currentUser) {
@@ -1357,6 +1359,14 @@ export const AppContent: React.FC = () => {
   };
 
   return (
+    <AIProvider
+      activeTab={currentTab}
+      isAIOpen={isAICopilotOpen}
+      setIsAIOpen={(open) => {
+        if (open) setAiCopilotMounted(true);
+        setIsAICopilotOpen(open);
+      }}
+    >
     <div className="h-screen overflow-hidden bg-slate-950 flex flex-col text-slate-100 font-sans">
       <Header
         currentTab={currentTab}
@@ -1667,9 +1677,7 @@ export const AppContent: React.FC = () => {
           )}
 
           {currentTab === 'payroll_dept_log' && (
-            <div className="p-3 md:p-4 w-full">
-              <PayrollDepartmentLogView onSelectEmployee={openEmployeeDetails} />
-            </div>
+            <PayrollDepartmentLogView onSelectEmployee={openEmployeeDetails} />
           )}
 
           {currentTab === 'yards' && (
@@ -1711,6 +1719,26 @@ export const AppContent: React.FC = () => {
           {currentTab === 'settings' && <SettingsView />}
           </Suspense>
         </main>
+
+        {aiCopilotMounted && (
+          <Suspense fallback={null}>
+            <AICopilotDrawer
+              isOpen={isAICopilotOpen}
+              onClose={() => setIsAICopilotOpen(false)}
+              currentDate={dispatchLogDate}
+              onShiftUpdated={() => {
+                handleRouteRefresh();
+              }}
+              onNavigateToChangeLog={(date) => {
+                if (date) setDispatchLogDate(date);
+                setCurrentTab('dispatch_log');
+                if (typeof window !== 'undefined' && window.innerWidth < 768) {
+                  setIsAICopilotOpen(false);
+                }
+              }}
+            />
+          </Suspense>
+        )}
       </div>
 
       {/* Slide-over Drawer for employee details */}
@@ -1905,24 +1933,8 @@ export const AppContent: React.FC = () => {
         onClearInitialParentMetadata={() => setChatInitialParent(null)}
       />
 
-      {aiCopilotMounted && (
-        <Suspense fallback={null}>
-          <AICopilotDrawer
-            isOpen={isAICopilotOpen}
-            onClose={() => setIsAICopilotOpen(false)}
-            currentDate={dispatchLogDate}
-            onShiftUpdated={() => {
-              handleRouteRefresh();
-            }}
-            onNavigateToChangeLog={(date) => {
-              if (date) setDispatchLogDate(date);
-              setCurrentTab('dispatch_log');
-              setIsAICopilotOpen(false);
-            }}
-          />
-        </Suspense>
-      )}
     </div>
+    </AIProvider>
   );
 };
 

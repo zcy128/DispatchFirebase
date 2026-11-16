@@ -108,6 +108,25 @@ func CanModifyDispatchShifts(userRole string, pagePermissions map[string]string)
 	return norm == "dispatcher"
 }
 
+// CanModifyRoutes checks if the role is allowed to update permanent route crew assignments.
+func CanModifyRoutes(userRole string, pagePermissions map[string]string) bool {
+	norm := NormalizeRole(userRole)
+	if norm == "admin" {
+		return true
+	}
+
+	if pagePermissions != nil {
+		if val, exists := pagePermissions["routes"]; exists {
+			return strings.EqualFold(val, "readwrite")
+		}
+		if val, exists := pagePermissions["dispatch"]; exists {
+			return strings.EqualFold(val, "readwrite")
+		}
+	}
+
+	return norm == "dispatcher"
+}
+
 // CanAccessPayroll checks if the role is allowed to query payroll and compensation rates.
 // Restricted to "admin", "payroll", and "manager" (read-only).
 // Dispatcher, HR, Fleet, etc. do NOT have access to Payroll.

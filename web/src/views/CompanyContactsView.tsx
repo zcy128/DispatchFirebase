@@ -1,6 +1,8 @@
-import React, { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useDeferredValue, useId } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { canEditPage } from '../utils/permissions';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   PhoneCall,
   Search,
@@ -61,6 +63,58 @@ interface CompanyContactsViewProps {
   contacts?: CompanyContact[];
 }
 
+interface ContactModalDialogProps {
+  open: boolean;
+  onClose: () => void;
+  ariaLabelledBy: string;
+  maxWidthClass?: string;
+  children: React.ReactNode;
+}
+
+const ContactModalDialog: React.FC<ContactModalDialogProps> = ({
+  open,
+  onClose,
+  ariaLabelledBy,
+  maxWidthClass = 'max-w-lg',
+  children,
+}) => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open) {
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={ariaLabelledBy}
+      onClose={onClose}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === dialogRef.current) {
+          onClose();
+        }
+      }}
+      className={`fixed inset-0 z-50 m-auto ${maxWidthClass} w-[calc(100%-2rem)] bg-transparent p-0 border-0 backdrop:bg-slate-950/80 backdrop:backdrop-blur-sm [&:modal]:overscroll-contain [&::backdrop]:overflow-hidden [&::backdrop]:overscroll-contain`}
+    >
+      {children}
+    </dialog>
+  );
+};
+
 export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contacts: initialPropsContacts }) => {
   const { currentUser } = useAuth();
   const contactsSynced = useRef(false);
@@ -94,6 +148,21 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
   const [formNotes, setFormNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingContact, setDeletingContact] = useState<CompanyContact | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const baseId = useId();
+  const nameId = `${baseId}-name`;
+  const titleId = `${baseId}-title`;
+  const deptId = `${baseId}-dept`;
+  const phoneId = `${baseId}-phone`;
+  const extId = `${baseId}-ext`;
+  const emailId = `${baseId}-email`;
+  const hoursId = `${baseId}-hours`;
+  const check24x7Id = `${baseId}-24x7`;
+  const notesId = `${baseId}-notes`;
+  const formErrorId = `${baseId}-error`;
 
   useEffect(() => {
     if (!initialPropsContacts) return;
@@ -167,16 +236,20 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this company contact?')) {
-      try {
-        await CompanyContactsService.deleteContact(id);
-        setContacts((prev) => prev.filter((c) => c.id !== id));
-      } catch (err: unknown) {
-        console.error('Failed to delete contact from Firestore:', err);
-        const errMsg = err instanceof Error ? err.message : 'Network or permission error';
-        alert(`Failed to delete contact from database: ${errMsg}`);
-      }
+  const handleConfirmDelete = async () => {
+    if (!deletingContact) return;
+    setDeleteError(null);
+    setIsDeleting(true);
+    try {
+      await CompanyContactsService.deleteContact(deletingContact.id);
+      setContacts((prev) => prev.filter((c) => c.id !== deletingContact.id));
+      setDeletingContact(null);
+    } catch (err: unknown) {
+      console.error('Failed to delete contact from Firestore:', err);
+      const errMsg = err instanceof Error ? err.message : 'Network or permission error';
+      setDeleteError(`Failed to delete contact from database: ${errMsg}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -234,67 +307,67 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto p-4 md:p-6 text-slate-100">
+    <PageShell className="text-slate-100">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div className="flex items-center space-x-3.5">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-            <PhoneCall className="w-5 h-5" />
+      <PageHeader
+        title="Company Contacts Directory"
+        subtitle="Corporate emergency hotlines, operations desks, and departmental extensions."
+        icon={
+          <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+            <PhoneCall className="w-4 h-4" aria-hidden="true" />
           </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">
-                Company Contacts Directory
-              </h1>
-              {canEdit ? (
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
-                  <ShieldCheck className="w-3 h-3" />
-                  <span>Editor (HR / Admin)</span>
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30 flex items-center space-x-1">
-                  <span>Read-Only Access</span>
-                </span>
-              )}
-            </div>
-            <p className="text-xs md:text-sm text-slate-400 mt-0.5">
-              Corporate emergency hotlines, operations desks, and departmental extensions.
-            </p>
-          </div>
-        </div>
-
-        {canEdit && (
-          <button
-            onClick={handleOpenCreate}
-            className="flex items-center space-x-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-bold text-xs transition shadow-lg shadow-amber-500/20 self-start md:self-auto cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add New Contact</span>
-          </button>
-        )}
-      </div>
+        }
+        badge={
+          canEdit ? (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+              <ShieldCheck className="w-3 h-3" aria-hidden="true" />
+              <span>Editor (HR / Admin)</span>
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30 flex items-center space-x-1">
+              <span>Read-Only Access</span>
+            </span>
+          )
+        }
+        actions={
+          canEdit ? (
+            <button
+              type="button"
+              onClick={handleOpenCreate}
+              className="flex items-center space-x-2 px-4 py-2 min-h-[36px] bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-bold text-xs transition shadow-lg shadow-amber-500/20 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
+            >
+              <Plus className="w-4 h-4" aria-hidden="true" />
+              <span>Add New Contact</span>
+            </button>
+          ) : undefined
+        }
+      />
 
       {/* Filter and Search Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      <search
+        aria-label="Search and filter company contacts"
+        className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3"
+      >
         <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
           <input
-            type="text"
+            type="search"
             aria-label="Search contacts by name, department, phone, or title"
             placeholder="Search contacts by name, department, phone, or title..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs md:text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-amber-500"
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-base md:text-sm text-slate-100 placeholder-slate-400 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
           />
         </div>
 
-        <div className="flex items-center space-x-2 overflow-x-auto pb-1 md:pb-0">
+        <div role="group" aria-label="Filter by department" className="flex items-center space-x-2 overflow-x-auto pb-1 md:pb-0">
           {FILTER_DEPARTMENTS.map((dept) => (
             <button
               key={dept}
               type="button"
+              aria-pressed={selectedDept === dept}
               onClick={() => setSelectedDept(dept)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+              className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                 selectedDept === dept
                   ? 'bg-amber-500 text-slate-950 font-bold'
                   : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
@@ -304,7 +377,7 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
             </button>
           ))}
         </div>
-      </div>
+      </search>
 
       {/* Contacts Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -326,15 +399,15 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
 
                 {c.is24x7 && (
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center space-x-1">
-                    <Radio className="w-2.5 h-2.5 animate-pulse" />
+                    <Radio className="w-2.5 h-2.5 animate-pulse" aria-hidden="true" />
                     <span>24/7 Active</span>
                   </span>
                 )}
               </div>
 
-              <h3 className="text-base font-bold text-white tracking-tight">
+              <h2 className="text-base font-bold text-white tracking-tight">
                 {c.name}
-              </h3>
+              </h2>
               <p className="text-xs text-slate-400 mt-0.5">
                 {c.title}
               </p>
@@ -349,10 +422,10 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
             <div className="space-y-2 pt-3 border-t border-slate-800 text-xs">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2 text-slate-300">
-                  <Phone className="w-3.5 h-3.5 text-amber-400" />
+                  <Phone className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
                   <a
                     href={`tel:${c.phone}`}
-                    className="font-bold text-white hover:text-amber-400 transition"
+                    className="font-bold text-white hover:text-amber-400 transition rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                   >
                     {c.phone}
                   </a>
@@ -365,10 +438,10 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
               </div>
 
               <div className="flex items-center space-x-2 text-slate-400 truncate">
-                <Mail className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                <Mail className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" aria-hidden="true" />
                 <a
                   href={`mailto:${c.email}`}
-                  className="hover:text-amber-400 transition truncate"
+                  className="hover:text-amber-400 transition truncate rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                   title={c.email}
                 >
                   {c.email}
@@ -376,7 +449,7 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
               </div>
 
               <div className="flex items-center space-x-2 text-slate-500 text-[11px]">
-                <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                <Clock className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
                 <span>{c.hours}</span>
               </div>
             </div>
@@ -387,17 +460,22 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
                 <button
                   type="button"
                   onClick={() => handleOpenEdit(c)}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition flex items-center space-x-1"
+                  aria-label={`Edit ${c.name}`}
+                  className="px-2.5 py-1.5 min-h-[32px] rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition flex items-center space-x-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                 >
-                  <Edit2 className="w-3 h-3" />
+                  <Edit2 className="w-3 h-3" aria-hidden="true" />
                   <span>Edit</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDelete(c.id)}
-                  className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold border border-rose-500/20 transition flex items-center space-x-1"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeletingContact(c);
+                  }}
+                  aria-label={`Delete ${c.name}`}
+                  className="px-2.5 py-1.5 min-h-[32px] rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-semibold border border-rose-500/20 transition flex items-center space-x-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
                 >
-                  <Trash2 className="w-3 h-3" />
+                  <Trash2 className="w-3 h-3" aria-hidden="true" />
                   <span>Delete</span>
                 </button>
               </div>
@@ -407,181 +485,263 @@ export const CompanyContactsView: React.FC<CompanyContactsViewProps> = ({ contac
       </div>
 
       {/* Modal for Adding / Editing Contact */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-              <h3 className="text-base font-bold text-white">
-                {editingContact ? 'Edit Company Contact' : 'Add New Company Contact'}
-              </h3>
+      <ContactModalDialog
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        ariaLabelledBy="contact-modal-title"
+        maxWidthClass="max-w-lg"
+      >
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full shadow-2xl overflow-hidden">
+          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            <h2 id="contact-modal-title" className="text-base font-bold text-white">
+              {editingContact ? 'Edit Company Contact' : 'Add New Company Contact'}
+            </h2>
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              aria-label="Close dialog"
+              className="p-1 min-w-[32px] min-h-[32px] inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+            >
+              <X className="w-5 h-5" aria-hidden="true" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSaveModal} className="p-5 space-y-3.5 text-xs">
+            <div>
+              <label htmlFor={nameId} className="block text-slate-300 font-semibold mb-1">
+                Contact / Line Name <span aria-hidden="true">*</span>
+              </label>
+              <input
+                id={nameId}
+                name="name"
+                type="text"
+                autoFocus
+                required
+                aria-invalid={Boolean(formError && !formName.trim())}
+                aria-describedby={formError ? formErrorId : undefined}
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder="e.g. 24/7 Operations Desk"
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor={titleId} className="block text-slate-300 font-semibold mb-1">
+                  Title / Role
+                </label>
+                <input
+                  id={titleId}
+                  name="title"
+                  type="text"
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  placeholder="e.g. Operations Coordinator"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
+                />
+              </div>
+
+              <div>
+                <label htmlFor={deptId} className="block text-slate-300 font-semibold mb-1">
+                  Department <span aria-hidden="true">*</span>
+                </label>
+                <select
+                  id={deptId}
+                  name="department"
+                  value={formDept}
+                  onChange={(e) => setFormDept(e.target.value as CompanyContact['department'])}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500 cursor-pointer"
+                >
+                  {CONTACT_DEPARTMENTS.map((dept) => (
+                    <option key={dept} value={dept}>
+                      {dept}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor={phoneId} className="block text-slate-300 font-semibold mb-1">
+                  Phone Number <span aria-hidden="true">*</span>
+                </label>
+                <input
+                  id={phoneId}
+                  name="phone"
+                  type="tel"
+                  required
+                  aria-invalid={Boolean(formError && !formPhone.trim())}
+                  aria-describedby={formError ? formErrorId : undefined}
+                  value={formPhone}
+                  onChange={(e) => setFormPhone(e.target.value)}
+                  placeholder="613-555-0100"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
+                />
+              </div>
+
+              <div>
+                <label htmlFor={extId} className="block text-slate-300 font-semibold mb-1">
+                  Extension / Radio
+                </label>
+                <input
+                  id={extId}
+                  name="extension"
+                  type="text"
+                  value={formExt}
+                  onChange={(e) => setFormExt(e.target.value)}
+                  placeholder="Ext. 101"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor={emailId} className="block text-slate-300 font-semibold mb-1">
+                  Email Address
+                </label>
+                <input
+                  id={emailId}
+                  name="email"
+                  type="email"
+                  aria-invalid={Boolean(formError && formEmail.trim() && !formEmail.includes('@'))}
+                  aria-describedby={formError ? formErrorId : undefined}
+                  value={formEmail}
+                  onChange={(e) => setFormEmail(e.target.value)}
+                  placeholder="contact@dispatch.local"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
+                />
+              </div>
+
+              <div>
+                <label htmlFor={hoursId} className="block text-slate-300 font-semibold mb-1">
+                  Hours of Operation
+                </label>
+                <input
+                  id={hoursId}
+                  name="hours"
+                  type="text"
+                  value={formHours}
+                  onChange={(e) => setFormHours(e.target.value)}
+                  placeholder="08:00 AM - 05:00 PM"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 pt-1">
+              <input
+                type="checkbox"
+                id={check24x7Id}
+                name="is24x7"
+                checked={formIs24x7}
+                onChange={(e) => setFormIs24x7(e.target.checked)}
+                className="rounded bg-slate-800 border-slate-700 text-amber-500 focus:ring-amber-500"
+              />
+              <label htmlFor={check24x7Id} className="text-slate-300 font-semibold cursor-pointer">
+                Available 24 Hours / 7 Days Hotline
+              </label>
+            </div>
+
+            <div>
+              <label htmlFor={notesId} className="block text-slate-300 font-semibold mb-1">
+                Notes & Instructions
+              </label>
+              <textarea
+                id={notesId}
+                name="notes"
+                rows={2}
+                value={formNotes}
+                onChange={(e) => setFormNotes(e.target.value)}
+                placeholder="Escalation procedures, dispatch channel notes..."
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-base sm:text-xs text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-amber-500"
+              />
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-end space-x-2">
+              {formError && (
+                <span id={formErrorId} role="alert" className="mr-auto text-xs font-semibold text-rose-400">
+                  {formError}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                className="px-3 py-2 min-h-[36px] rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
               >
-                <X className="w-5 h-5" />
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 min-h-[36px] rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
+              >
+                {saving ? 'Saving...' : 'Save Contact'}
               </button>
             </div>
-
-            <form onSubmit={handleSaveModal} className="p-5 space-y-3.5 text-xs">
-              <div>
-                <label htmlFor="contact-name" className="block text-slate-300 font-semibold mb-1">
-                  Contact / Line Name *
-                </label>
-                <input
-                  id="contact-name"
-                  type="text"
-                  required
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  placeholder="e.g. 24/7 Operations Desk"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="contact-title" className="block text-slate-300 font-semibold mb-1">
-                    Title / Role
-                  </label>
-                  <input
-                    id="contact-title"
-                    type="text"
-                    value={formTitle}
-                    onChange={(e) => setFormTitle(e.target.value)}
-                    placeholder="e.g. Operations Coordinator"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="contact-dept" className="block text-slate-300 font-semibold mb-1">
-                    Department *
-                  </label>
-                  <select
-                    id="contact-dept"
-                    value={formDept}
-                    onChange={(e) => setFormDept(e.target.value as CompanyContact['department'])}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500 cursor-pointer"
-                  >
-                    {CONTACT_DEPARTMENTS.map((dept) => (
-                      <option key={dept} value={dept}>
-                        {dept}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="contact-phone" className="block text-slate-300 font-semibold mb-1">
-                    Phone Number *
-                  </label>
-                  <input
-                    id="contact-phone"
-                    type="tel"
-                    required
-                    value={formPhone}
-                    onChange={(e) => setFormPhone(e.target.value)}
-                    placeholder="613-555-0100"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="contact-ext" className="block text-slate-300 font-semibold mb-1">
-                    Extension / Radio
-                  </label>
-                  <input
-                    id="contact-ext"
-                    type="text"
-                    value={formExt}
-                    onChange={(e) => setFormExt(e.target.value)}
-                    placeholder="Ext. 101"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="contact-email" className="block text-slate-300 font-semibold mb-1">
-                    Email Address
-                  </label>
-                  <input
-                    id="contact-email"
-                    type="email"
-                    value={formEmail}
-                    onChange={(e) => setFormEmail(e.target.value)}
-                    placeholder="contact@dispatch.local"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="contact-hours" className="block text-slate-300 font-semibold mb-1">
-                    Hours of Operation
-                  </label>
-                  <input
-                    id="contact-hours"
-                    type="text"
-                    value={formHours}
-                    onChange={(e) => setFormHours(e.target.value)}
-                    placeholder="08:00 AM - 05:00 PM"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="check24x7"
-                  checked={formIs24x7}
-                  onChange={(e) => setFormIs24x7(e.target.checked)}
-                  className="rounded bg-slate-800 border-slate-700 text-amber-500 focus:ring-amber-500"
-                />
-                <label htmlFor="check24x7" className="text-slate-300 font-semibold cursor-pointer">
-                  Available 24 Hours / 7 Days Hotline
-                </label>
-              </div>
-
-              <div>
-                <label htmlFor="contact-notes" className="block text-slate-300 font-semibold mb-1">
-                  Notes & Instructions
-                </label>
-                <textarea
-                  id="contact-notes"
-                  rows={2}
-                  value={formNotes}
-                  onChange={(e) => setFormNotes(e.target.value)}
-                  placeholder="Escalation procedures, dispatch channel notes..."
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-slate-800 flex items-center justify-end space-x-2">
-                {formError && <span className="mr-auto text-xs font-semibold text-rose-400">{formError}</span>}
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold cursor-pointer"
-                >
-                  {saving ? 'Saving...' : 'Save Contact'}
-                </button>
-              </div>
-            </form>
-          </div>
+          </form>
         </div>
-      )}
-    </div>
+      </ContactModalDialog>
+
+      {/* Delete Contact Confirmation Dialog */}
+      <ContactModalDialog
+        open={Boolean(deletingContact)}
+        onClose={() => {
+          setDeleteError(null);
+          setDeletingContact(null);
+        }}
+        ariaLabelledBy="delete-contact-modal-title"
+        maxWidthClass="max-w-md"
+      >
+        {deletingContact && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full shadow-2xl space-y-4">
+            <div className="flex items-start space-x-3">
+              <div className="p-2.5 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20 shrink-0">
+                <Trash2 className="w-5 h-5" aria-hidden="true" />
+              </div>
+              <div>
+                <h2 id="delete-contact-modal-title" className="text-sm font-bold text-white">
+                  Delete Company Contact?
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Are you sure you want to delete <strong className="text-white">{deletingContact.name}</strong> from the directory?
+                </p>
+              </div>
+            </div>
+
+            {deleteError && (
+              <div role="alert" className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeletingContact(null);
+                }}
+                disabled={isDeleting}
+                className="px-3.5 py-1.5 min-h-[32px] text-xs font-semibold text-slate-300 hover:bg-slate-800 rounded-xl transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmDelete()}
+                disabled={isDeleting}
+                className="px-4 py-1.5 min-h-[32px] text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Contact'}
+              </button>
+            </div>
+          </div>
+        )}
+      </ContactModalDialog>
+    </PageShell>
   );
 };

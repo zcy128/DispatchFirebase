@@ -291,8 +291,9 @@ export const CharterTripTableRow = memo(function CharterTripTableRow({
                                 <div className="flex flex-col items-center gap-1.5">
                                   <div className="flex items-center justify-center gap-1 flex-wrap">
                                     <button
+                                      type="button"
                                       onClick={(e) => onPublish(trip, e)}
-                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 ${
                                         isPublished
                                           ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 shadow-2xs'
                                           : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900/60'
@@ -308,9 +309,9 @@ export const CharterTripTableRow = memo(function CharterTripTableRow({
                                       }
                                     >
                                       {isPublished ? (
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" aria-hidden="true" />
                                       ) : (
-                                        <Megaphone className="w-3 h-3 shrink-0" />
+                                        <Megaphone className="w-3 h-3 shrink-0" aria-hidden="true" />
                                       )}
                                       <span>
                                         {isPublished
@@ -324,6 +325,7 @@ export const CharterTripTableRow = memo(function CharterTripTableRow({
                                     </button>
                                     {(charterOp || isPublished) && (
                                       <button
+                                        type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           if (charterOp) {
@@ -332,35 +334,50 @@ export const CharterTripTableRow = memo(function CharterTripTableRow({
                                             onPublish(trip, e);
                                           }
                                         }}
-                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-950/70 dark:text-purple-300 transition-all"
+                                        aria-label={
+                                          isFrench
+                                            ? `Voir les candidats pour ${trip.tripNumber} (${applicantCount})`
+                                            : `Review applicants for ${trip.tripNumber} (${applicantCount})`
+                                        }
+                                        className="inline-flex items-center gap-1 px-2 py-1 min-h-[28px] rounded-lg text-[11px] font-bold bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-950/70 dark:text-purple-300 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                                         title={isFrench ? 'Voir les candidats' : 'Review Applicants'}
                                       >
-                                        <Users className="w-3 h-3" />
+                                        <Users className="w-3 h-3" aria-hidden="true" />
                                         <span>{applicantCount}</span>
                                       </button>
                                     )}
                                   </div>
                                   <div className="flex items-center justify-center gap-1">
                                     <button
+                                      type="button"
                                       onClick={() => onOpen(trip.id)}
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                                      aria-label={
+                                        isFrench
+                                          ? `Détails et affectation pour ${trip.tripNumber}`
+                                          : `Details and crew for ${trip.tripNumber}`
+                                      }
+                                      className="min-w-[28px] min-h-[28px] flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                                       title={isFrench ? 'Détails & affectation' : 'Details & Crew'}
                                     >
-                                      <ArrowRight className="w-4 h-4" />
+                                      <ArrowRight className="w-4 h-4" aria-hidden="true" />
                                     </button>
                                     <button
+                                      type="button"
                                       onClick={() => onEdit(trip)}
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                                      aria-label={isFrench ? `Modifier ${trip.tripNumber}` : `Edit ${trip.tripNumber}`}
+                                      className="min-w-[28px] min-h-[28px] flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                                       title={isFrench ? 'Modifier' : 'Edit'}
                                     >
-                                      <Pencil className="w-4 h-4" />
+                                      <Pencil className="w-4 h-4" aria-hidden="true" />
                                     </button>
                                     <button
+                                      type="button"
                                       onClick={() => onDelete(trip)}
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all"
+                                      aria-label={isFrench ? `Supprimer ${trip.tripNumber}` : `Delete ${trip.tripNumber}`}
+                                      className="min-w-[28px] min-h-[28px] flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
                                       title={isFrench ? 'Supprimer' : 'Delete'}
                                     >
-                                      <Trash2 className="w-4 h-4" />
+                                      <Trash2 className="w-4 h-4" aria-hidden="true" />
                                     </button>
                                   </div>
                                 </div>

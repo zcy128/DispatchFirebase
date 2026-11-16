@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue, useRef, useId } from 'react';
 import { School, SchoolBoard } from '../types/school';
+import { PageShell } from '../components/common/PageShell';
 import type {
   CalendarEvent,
   SchoolCalendar
@@ -116,8 +117,27 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
   // 4. Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPdfExportOpen, setIsPdfExportOpen] = useState(false);
+  const [isRevertConfirmOpen, setIsRevertConfirmOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [modalInitialDate, setModalInitialDate] = useState<string | undefined>(undefined);
+
+  const baseId = useId();
+  const boardSelectId = `${baseId}-board-select`;
+  const scopeSelectId = `${baseId}-scope-select`;
+  const schoolYearSelectId = `${baseId}-school-year-select`;
+  const revertDialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = revertDialogRef.current;
+    if (!dialog) return;
+    if (isRevertConfirmOpen) {
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [isRevertConfirmOpen]);
 
   // 5. Bottom Table Search & Type Filter State
   const [tableSearch, setTableSearch] = useState('');
@@ -250,11 +270,9 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
   };
 
   // Handler: Revert School Custom Calendar to Board Master
-  const handleRevertSchoolToBoard = async () => {
+  const handleConfirmRevertSchoolToBoard = async () => {
     if (!currentSchool) return;
-    if (!window.confirm(t.calendar?.confirmRevert || 'Revert this school to the School Board Master calendar? All custom changes will be discarded.')) {
-      return;
-    }
+    setIsRevertConfirmOpen(false);
     setLoading(true);
     try {
       await CalendarService.revertSchoolCalendar(currentSchool.schoolId, schoolYear);
@@ -529,13 +547,13 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
   }, [calendar]);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-150">
+    <PageShell className="animate-in fade-in duration-150">
       {/* 1. Header & Scope Control Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center space-x-3">
             <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 shadow-inner">
-              <CalendarIcon className="w-6 h-6" />
+              <CalendarIcon className="w-6 h-6" aria-hidden="true" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
@@ -555,34 +573,38 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center gap-2.5">
             <button
+              type="button"
               onClick={() => {
                 setEditingEvent(null);
                 setModalInitialDate(new Date().toISOString().split('T')[0]);
                 setIsModalOpen(true);
               }}
-              className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold shadow-lg shadow-teal-900/30 flex items-center space-x-1.5 transition"
+              className="px-3.5 py-2 min-h-[36px] rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold shadow-lg shadow-teal-900/30 flex items-center space-x-1.5 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4" aria-hidden="true" />
               <span>{t.calendar?.addEvent || 'Add Event'}</span>
             </button>
 
             <button
+              type="button"
               onClick={() => setIsPdfExportOpen(true)}
               disabled={!calendar}
-              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-400 border border-teal-500/30 text-xs font-semibold shadow-md flex items-center space-x-1.5 transition disabled:opacity-50"
+              className="px-3.5 py-2 min-h-[36px] rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-400 border border-teal-500/30 text-xs font-semibold shadow-md flex items-center space-x-1.5 transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
               title={t.calendar?.exportPdf || 'Export PDF / Print'}
             >
-              <FileDown className="w-4 h-4" />
+              <FileDown className="w-4 h-4" aria-hidden="true" />
               <span>{t.calendar?.exportPdf || 'Export PDF'}</span>
             </button>
 
             <button
+              type="button"
               onClick={() => void loadCalendar(true)}
               disabled={refreshing}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+              className="p-2 min-w-[36px] min-h-[36px] inline-flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
               title="Refresh Calendar"
+              aria-label="Refresh Calendar"
             >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-teal-400' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-teal-400' : ''}`} aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -591,11 +613,12 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
         <div className="pt-3 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-3 gap-3">
           {/* School Board Selector */}
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center space-x-1.5">
-              <Building2 className="w-3.5 h-3.5 text-teal-400" />
+            <label htmlFor={boardSelectId} className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center space-x-1.5">
+              <Building2 className="w-3.5 h-3.5 text-teal-400" aria-hidden="true" />
               <span>School Board</span>
             </label>
             <select
+              id={boardSelectId}
               value={selectedBoardId}
               onChange={(e) => {
                 const bId = Number(e.target.value);
@@ -603,7 +626,7 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
                 setSelectedScope('board');
                 setCurrentSchoolId(null);
               }}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-base sm:text-xs text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-teal-500 transition"
             >
               {boards.map((b) => (
                 <option key={b.schoolBoardId} value={b.schoolBoardId}>
@@ -615,12 +638,13 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
 
           {/* Scope Selector: Board Master vs Specific School */}
           <div className="md:col-span-2">
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center space-x-1.5">
-              <SchoolIcon className="w-3.5 h-3.5 text-amber-400" />
+            <label htmlFor={scopeSelectId} className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center space-x-1.5">
+              <SchoolIcon className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
               <span>{t.calendar?.calendarScope || 'Calendar Target (Board or School)'}</span>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <select
+                id={scopeSelectId}
                 value={selectedScope === 'board' ? 'board' : String(currentSchoolId || '')}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -636,15 +660,15 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
                     if (onSelectSchool && sch) onSelectSchool(sch);
                   }
                 }}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-base sm:text-xs text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-teal-500 transition"
               >
                 <option value="board">
-                  🏛️ {currentBoard.schoolBoardCode} Master Calendar (Default for all schools)
+                  {currentBoard.schoolBoardCode} Master Calendar (Default for all schools)
                 </option>
                 <optgroup label={`Schools in ${currentBoard.schoolBoardCode}`}>
                   {boardSchools.map((s) => (
                     <option key={s.schoolId} value={s.schoolId}>
-                      🏫 {s.schoolName}
+                      {s.schoolName}
                     </option>
                   ))}
                 </optgroup>
@@ -653,19 +677,23 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
               {/* School Year Selector */}
               <div className="flex items-center space-x-2">
                 <select
+                  id={schoolYearSelectId}
+                  aria-label="School Year"
                   value={schoolYear}
                   onChange={(e) => setSchoolYear(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500 transition flex-1"
+                  className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-base sm:text-xs text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-teal-500 transition flex-1"
                 >
                   <option value="2026-2027">2026-2027 School Year</option>
                   <option value="2025-2026">2025-2026 School Year</option>
                   <option value="2027-2028">2027-2028 School Year</option>
                 </select>
 
-                <div className="flex bg-slate-950 p-0.5 rounded-xl border border-slate-800">
+                <div role="group" aria-label="Calendar view mode" className="flex bg-slate-950 p-0.5 rounded-xl border border-slate-800">
                   <button
+                    type="button"
+                    aria-pressed={viewMode === 'month'}
                     onClick={() => setViewMode('month')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                    className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-teal-400 ${
                       viewMode === 'month'
                         ? 'bg-teal-600 text-white font-semibold'
                         : 'text-slate-400 hover:text-white'
@@ -674,8 +702,10 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
                     Month
                   </button>
                   <button
+                    type="button"
+                    aria-pressed={viewMode === 'list'}
                     onClick={() => setViewMode('list')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                    className={`px-3 py-1.5 min-h-[32px] rounded-lg text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-teal-400 ${
                       viewMode === 'list'
                         ? 'bg-teal-600 text-white font-semibold'
                         : 'text-slate-400 hover:text-white'
@@ -700,7 +730,7 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
                     : 'bg-teal-500/15 text-teal-400 border border-teal-500/30'
                 }`}
               >
-                {calendar?.isCustom ? <Sparkles className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                {calendar?.isCustom ? <Sparkles className="w-4 h-4" aria-hidden="true" /> : <CheckCircle2 className="w-4 h-4" aria-hidden="true" />}
               </div>
               <div>
                 <div className="flex items-center space-x-2">
@@ -731,20 +761,22 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
             <div className="flex items-center space-x-2">
               {!calendar?.isCustom ? (
                 <button
+                  type="button"
                   onClick={handleCreateCustomSchoolCalendar}
                   disabled={loading}
-                  className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-lg shadow-purple-900/30 flex items-center space-x-1.5 transition"
+                  className="px-3 py-1.5 min-h-[32px] rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-lg shadow-purple-900/30 flex items-center space-x-1.5 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-400"
                 >
-                  <Copy className="w-3.5 h-3.5" />
+                  <Copy className="w-3.5 h-3.5" aria-hidden="true" />
                   <span>{t.calendar?.createCustom || 'Create Custom Calendar'}</span>
                 </button>
               ) : (
                 <button
-                  onClick={handleRevertSchoolToBoard}
+                  type="button"
+                  onClick={() => setIsRevertConfirmOpen(true)}
                   disabled={loading}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 flex items-center space-x-1.5 transition"
+                  className="px-3 py-1.5 min-h-[32px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 flex items-center space-x-1.5 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                 >
-                  <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
                   <span>{t.calendar?.revertToBoard || 'Revert to Board Defaults'}</span>
                 </button>
               )}
@@ -755,6 +787,7 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
         {/* Feedback Alert */}
         {feedback && (
           <div
+            role={feedback.type === 'error' ? 'alert' : 'status'}
             className={`p-3 rounded-xl border text-xs flex items-center space-x-2 animate-in fade-in duration-150 ${
               feedback.type === 'success'
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
@@ -762,9 +795,9 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
             }`}
           >
             {feedback.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
             ) : (
-              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
             )}
             <span>{feedback.message}</span>
           </div>
@@ -777,25 +810,30 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
           {/* Month Selector Buttons */}
           <div className="flex items-center space-x-2">
             <button
+              type="button"
               onClick={handlePrevMonth}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+              className="p-1.5 min-w-[32px] min-h-[32px] inline-flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
               title="Previous Month"
+              aria-label="Previous Month"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-4 h-4" aria-hidden="true" />
             </button>
             <h2 className="text-lg font-bold text-white min-w-[180px] text-center">
               {MONTH_NAMES[currentMonthDate.getMonth()]} {currentMonthDate.getFullYear()}
             </h2>
             <button
+              type="button"
               onClick={handleNextMonth}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+              className="p-1.5 min-w-[32px] min-h-[32px] inline-flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
               title="Next Month"
+              aria-label="Next Month"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-4 h-4" aria-hidden="true" />
             </button>
             <button
+              type="button"
               onClick={handleCurrentMonth}
-              className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white bg-slate-800 border border-slate-700 transition"
+              className="px-2.5 py-1 min-h-[32px] rounded-lg text-xs font-medium text-slate-400 hover:text-white bg-slate-800 border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
             >
               Today
             </button>
@@ -804,31 +842,31 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
           {/* OCSB Color Legend */}
           <div className="flex flex-wrap items-center gap-3 text-xs">
             <div className="flex items-center space-x-1.5">
-              <span style={{ color: EVENT_TYPE_CONFIGS.pd_day.dotColor }} className="text-sm font-bold leading-none">
+              <span aria-hidden="true" style={{ color: EVENT_TYPE_CONFIGS.pd_day.dotColor }} className="text-sm font-bold leading-none">
                 ■
               </span>
               <span className="text-slate-300 font-medium">PD Days</span>
             </div>
             <div className="flex items-center space-x-1.5">
-              <span style={{ color: EVENT_TYPE_CONFIGS.holiday.dotColor }} className="text-sm font-bold leading-none">
+              <span aria-hidden="true" style={{ color: EVENT_TYPE_CONFIGS.holiday.dotColor }} className="text-sm font-bold leading-none">
                 ■
               </span>
               <span className="text-slate-300 font-medium">Statutory Holidays</span>
             </div>
             <div className="flex items-center space-x-1.5">
-              <span style={{ color: EVENT_TYPE_CONFIGS.school_event.dotColor }} className="text-sm font-bold leading-none">
+              <span aria-hidden="true" style={{ color: EVENT_TYPE_CONFIGS.school_event.dotColor }} className="text-sm font-bold leading-none">
                 ●
               </span>
               <span className="text-slate-300 font-medium">School Milestones</span>
             </div>
             <div className="flex items-center space-x-1.5">
-              <span style={{ color: EVENT_TYPE_CONFIGS.exam.dotColor }} className="text-sm font-bold leading-none">
+              <span aria-hidden="true" style={{ color: EVENT_TYPE_CONFIGS.exam.dotColor }} className="text-sm font-bold leading-none">
                 ▲
               </span>
               <span className="text-slate-300 font-medium">Exams</span>
             </div>
             <div className="flex items-center space-x-1.5">
-              <span style={{ color: EVENT_TYPE_CONFIGS.break.dotColor }} className="text-sm font-bold leading-none">
+              <span aria-hidden="true" style={{ color: EVENT_TYPE_CONFIGS.break.dotColor }} className="text-sm font-bold leading-none">
                 ☀️
               </span>
               <span className="text-slate-300 font-medium">Breaks</span>
@@ -884,16 +922,18 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
                         {cell.dayNumber}
                       </span>
 
-                      {/* Quick Add Button on Hover */}
+                      {/* Quick Add Button on Hover / Focus */}
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleCellClick(cell.dateStr);
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                        aria-label={`Add event on ${cell.dateStr}`}
+                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 min-w-[24px] min-h-[24px] inline-flex items-center justify-center rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-teal-400"
                         title="Add event on this date"
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                     </div>
 
@@ -902,17 +942,19 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
                       {dayEvents.map((ev) => {
                         const conf = EVENT_TYPE_CONFIGS[ev.type] || EVENT_TYPE_CONFIGS.school_event;
                         return (
-                          <div
+                          <button
                             key={ev.id}
+                            type="button"
                             onClick={(e) => handleEventClick(ev, e)}
-                            className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium border truncate transition flex items-center space-x-1 cursor-pointer hover:brightness-110 shadow-sm ${conf.badgeBg} ${conf.badgeText} ${conf.badgeBorder}`}
+                            aria-label={`${ev.title} (${conf.defaultLabel}) on ${cell.dateStr}`}
+                            className={`w-full text-left px-1.5 py-0.5 rounded-md text-[10px] font-medium border truncate transition flex items-center space-x-1 cursor-pointer hover:brightness-110 shadow-sm focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-teal-400 ${conf.badgeBg} ${conf.badgeText} ${conf.badgeBorder}`}
                             title={`${ev.title} (${conf.defaultLabel})${ev.grades ? ` • ${ev.grades}` : ''}`}
                           >
-                            <span style={{ color: conf.dotColor }} className="text-[11px] font-bold leading-none flex-shrink-0">
+                            <span aria-hidden="true" style={{ color: conf.dotColor }} className="text-[11px] font-bold leading-none flex-shrink-0">
                               {conf.symbol}
                             </span>
                             <span className="truncate">{ev.title}</span>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -929,7 +971,7 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800">
           <div>
             <h3 className="text-base font-bold text-white flex items-center space-x-2">
-              <CalendarDays className="w-5 h-5 text-teal-400" />
+              <CalendarDays className="w-5 h-5 text-teal-400" aria-hidden="true" />
               <span>Key Dates for {schoolYear} Calendar</span>
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -938,24 +980,26 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
           </div>
 
           {/* Table Search & Type Filter */}
-          <div className="flex flex-wrap items-center gap-2">
+          <search aria-label="Search and filter key dates" className="flex flex-wrap items-center gap-2">
             {/* Search Input */}
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
               <input
-                type="text"
+                type="search"
+                aria-label="Search dates and events"
                 value={tableSearch}
                 onChange={(e) => setTableSearch(e.target.value)}
                 placeholder="Search dates & events..."
-                className="bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 transition w-48 sm:w-56"
+                className="bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-base sm:text-xs text-white placeholder-slate-500 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-teal-500 transition w-48 sm:w-56"
               />
             </div>
 
             {/* Type Filter */}
             <select
+              aria-label="Filter by event type"
               value={tableTypeFilter}
               onChange={(e) => setTableTypeFilter(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500 transition"
+              className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-base sm:text-xs text-white focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-teal-500 transition"
             >
               <option value="ALL">All Event Types ({calendar?.events?.length || 0})</option>
               <option value="pd_day">PD Days ({stats.pdDays})</option>
@@ -965,18 +1009,24 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
               <option value="break">School Breaks ({stats.breaks})</option>
               <option value="custom">Custom Events ({stats.custom})</option>
             </select>
-          </div>
+          </search>
         </div>
 
         {/* Structured Table matching OCSB TablePress Format */}
-        <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950">
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label={`Key dates for ${schoolYear} calendar`}
+          className="border border-slate-800 rounded-xl overflow-x-auto bg-slate-950 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-teal-400"
+        >
           <table className="w-full text-left border-collapse">
+            <caption className="sr-only">Key dates for {schoolYear} calendar</caption>
             <thead>
               <tr className="border-b border-slate-800 bg-slate-900/80 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                <th className="py-3 px-4 w-1/3">Date</th>
-                <th className="py-3 px-4 w-1/3">Event</th>
-                <th className="py-3 px-4">Applicable Scope / Grades</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+                <th scope="col" className="py-3 px-4 w-1/3">Date</th>
+                <th scope="col" className="py-3 px-4 w-1/3">Event</th>
+                <th scope="col" className="py-3 px-4">Applicable Scope / Grades</th>
+                <th scope="col" className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80 text-xs text-slate-300">
@@ -1005,6 +1055,7 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
                       <td className="py-3 px-4">
                         <div className="flex items-center space-x-2">
                           <span
+                            aria-hidden="true"
                             style={{ color: conf.dotColor }}
                             className="text-sm font-bold leading-none flex-shrink-0"
                           >
@@ -1043,13 +1094,15 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
                       {/* Quick Edit/Delete */}
                       <td className="py-3 px-4 text-right">
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditingEvent(ev);
                             setModalInitialDate(ev.startDate);
                             setIsModalOpen(true);
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
+                          aria-label={`Edit ${ev.title} on ${ev.startDate}`}
+                          className="px-2.5 py-1 min-h-[28px] rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
                         >
                           Edit
                         </button>
@@ -1062,6 +1115,60 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Revert School Calendar Confirmation Dialog */}
+      {isRevertConfirmOpen && currentSchool && (
+        <dialog
+          ref={revertDialogRef}
+          aria-labelledby="revert-calendar-modal-title"
+          onClose={() => setIsRevertConfirmOpen(false)}
+          onCancel={(e) => {
+            e.preventDefault();
+            setIsRevertConfirmOpen(false);
+          }}
+          onClick={(e) => {
+            if (e.target === revertDialogRef.current) {
+              setIsRevertConfirmOpen(false);
+            }
+          }}
+          className="fixed inset-0 z-50 m-auto max-w-md w-[calc(100%-2rem)] bg-transparent p-0 border-0 backdrop:bg-black/60 backdrop:backdrop-blur-xs [&:modal]:overscroll-contain [&::backdrop]:overflow-hidden [&::backdrop]:overscroll-contain"
+        >
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full shadow-2xl space-y-4">
+            <div className="flex items-start space-x-3">
+              <div className="p-2.5 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20 shrink-0">
+                <RotateCcw className="w-5 h-5" aria-hidden="true" />
+              </div>
+              <div>
+                <h2 id="revert-calendar-modal-title" className="text-sm font-bold text-white">
+                  Revert to Board Master Calendar?
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  {t.calendar?.confirmRevert ||
+                    `Revert ${currentSchool.schoolName} to the School Board Master calendar? All custom changes will be discarded.`}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setIsRevertConfirmOpen(false)}
+                className="px-3.5 py-1.5 min-h-[32px] text-xs font-semibold text-slate-300 hover:bg-slate-800 rounded-xl transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmRevertSchoolToBoard()}
+                className="px-4 py-1.5 min-h-[32px] text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white rounded-xl shadow-md transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+              >
+                Revert to Board
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
 
       {/* 6. Event Creation & Edit Modal */}
       {isModalOpen && (
@@ -1090,6 +1197,6 @@ export const SchoolCalendarView: React.FC<SchoolCalendarViewProps> = ({
           />
         </React.Suspense>
       )}
-    </div>
+    </PageShell>
   );
 };

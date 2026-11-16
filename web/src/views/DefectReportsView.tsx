@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useI18n } from '../contexts/I18nContext';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   AlertTriangle,
   Wrench,
@@ -65,6 +67,59 @@ const LIFECYCLE_STATUS_OPTIONS = [
   { id: 'resolved', label: 'Resolved' },
 ] as const;
 
+interface DefectModalDialogProps {
+  open: boolean;
+  onClose: () => void;
+  ariaLabelledBy: string;
+  children: React.ReactNode;
+}
+
+const DefectModalDialog: React.FC<DefectModalDialogProps> = ({
+  open,
+  onClose,
+  ariaLabelledBy,
+  children,
+}) => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    if (open && !el.open) {
+      el.showModal();
+    } else if (!open && el.open) {
+      el.close();
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={ariaLabelledBy}
+      onClose={onClose}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="m-0 max-w-none max-h-none w-screen h-screen bg-slate-900/60 backdrop-blur-sm p-4 flex items-center justify-center overflow-y-auto overscroll-contain backdrop:overscroll-contain"
+    >
+      <div
+        className="bg-slate-800 border border-slate-700 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </dialog>
+  );
+};
+
 interface DefectReportsViewProps {
   onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
   onSelectVehicle?: (vehicleId?: number, unitNumber?: string) => void;
@@ -83,6 +138,7 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
   const [selectedReport, setSelectedReport] = useState<VehicleDefectReport | null>(null);
   const [isAssessmentModalOpen, setIsAssessmentModalOpen] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
+  const [assessmentError, setAssessmentError] = useState<string | null>(null);
 
   // PDF & Print Modals State
   const [pdfModalOpen, setPdfModalOpen] = useState<boolean>(false);
@@ -255,6 +311,7 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
     setAssessmentNotes(report.assessment?.assessmentNotes || '');
     setMechanicNotes(report.assessment?.mechanicNotes || '');
     setResolvedBy(report.assessment?.resolvedBy || currentUser?.displayName || '');
+    setAssessmentError(null);
     setIsAssessmentModalOpen(true);
   };
 
@@ -270,6 +327,7 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
   const handleSaveAssessment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedReport) return;
+    setAssessmentError(null);
     setSaving(true);
     try {
       const payload: UpdateDefectAssessmentPayload = {
@@ -342,7 +400,7 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
       refreshData();
     } catch (err) {
       console.error('Failed to update defect assessment:', err);
-      alert('Failed to save assessment. Please try again.');
+      setAssessmentError('Failed to save assessment. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -499,116 +557,124 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <PageShell>
       {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Wrench className="w-6 h-6 text-amber-500" />
-            Vehicle Defect Reports & Fleet Assessment
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Review driver defect reports, manage repair schedules, and maintain fleet vehicle safety compliance.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Export CSV */}
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            disabled={filteredReports.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white dark:bg-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition shadow-sm disabled:opacity-40 cursor-pointer"
-            title="Download CSV spreadsheet of defect reports"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
-            Export CSV
-          </button>
+      <PageHeader
+        title="Vehicle Defect Reports & Fleet Assessment"
+        subtitle="Review driver defect reports, manage repair schedules, and maintain fleet vehicle safety compliance."
+        icon={<Wrench className="w-5 h-5 text-amber-400" aria-hidden="true" />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Export CSV */}
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={filteredReports.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[36px] text-xs font-semibold text-slate-200 bg-slate-800 border border-slate-700 rounded-lg hover:bg-slate-700 transition shadow-sm disabled:opacity-40 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+              title="Download CSV spreadsheet of defect reports"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-400" aria-hidden="true" />
+              Export CSV
+            </button>
 
-          {/* Print Summary */}
-          <button
-            type="button"
-            onClick={() => setSummaryModalOpen(true)}
-            disabled={filteredReports.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white dark:bg-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition shadow-sm disabled:opacity-40 cursor-pointer"
-            title="Print or export A4 landscape summary report"
-          >
-            <Printer className="w-4 h-4 text-amber-500" />
-            Print Summary
-          </button>
+            {/* Print Summary */}
+            <button
+              type="button"
+              onClick={() => setSummaryModalOpen(true)}
+              disabled={filteredReports.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[36px] text-xs font-semibold text-slate-200 bg-slate-800 border border-slate-700 rounded-lg hover:bg-slate-700 transition shadow-sm disabled:opacity-40 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+              title="Print or export A4 landscape summary report"
+            >
+              <Printer className="w-4 h-4 text-amber-400" aria-hidden="true" />
+              Print Summary
+            </button>
 
-          {/* Refresh */}
-          <button
-            onClick={refreshData}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 bg-white dark:bg-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition cursor-pointer"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        </div>
-      </div>
+            {/* Refresh */}
+            <button
+              type="button"
+              onClick={refreshData}
+              disabled={loading}
+              aria-label="Refresh defect reports"
+              className="inline-flex items-center gap-2 px-3 py-2 min-h-[36px] text-xs font-semibold text-slate-200 bg-slate-800 border border-slate-700 rounded-lg hover:bg-slate-700 transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+              Refresh
+            </button>
+          </div>
+        }
+      />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+        <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total</span>
-            <FileText className="w-4 h-4 text-slate-400" />
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total</span>
+            <FileText className="w-4 h-4 text-slate-400" aria-hidden="true" />
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{stats.total}</div>
+          <div className="text-2xl font-bold text-white mt-1">{stats.total}</div>
           <div className="text-xs text-slate-400 mt-0.5">All defect reports</div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-amber-200 dark:border-amber-900/50 shadow-sm">
+        <div className="bg-slate-800 rounded-xl p-4 border border-purple-900/50 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Submitted</span>
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
+            <span className="text-xs font-semibold uppercase tracking-wider">Submitted</span>
+            <AlertTriangle className="w-4 h-4 text-amber-500" aria-hidden="true" />
           </div>
-          <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">{stats.submitted}</div>
+          <div className="text-2xl font-bold mt-1">{stats.submitted}</div>
           <div className="text-xs text-slate-400 mt-0.5">Awaiting assessment</div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-blue-200 dark:border-blue-900/50 shadow-sm">
+        <div className="bg-slate-800 rounded-xl p-4 border border-purple-900/50 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Assessment</span>
-            <ShieldAlert className="w-4 h-4 text-blue-500" />
+            <span className="text-xs font-semibold uppercase tracking-wider">Assessment</span>
+            <ShieldAlert className="w-4 h-4 text-blue-500" aria-hidden="true" />
           </div>
-          <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{stats.underAssessment}</div>
+          <div className="text-2xl font-bold mt-1">{stats.underAssessment}</div>
           <div className="text-xs text-slate-400 mt-0.5">Under evaluation</div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-purple-200 dark:border-purple-900/50 shadow-sm">
+        <div className="bg-slate-800 rounded-xl p-4 border border-purple-900/50 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider">In Repair</span>
-            <Hammer className="w-4 h-4 text-purple-500" />
+            <span className="text-xs font-semibold uppercase tracking-wider">In Repair</span>
+            <Hammer className="w-4 h-4 text-purple-500" aria-hidden="true" />
           </div>
-          <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">{stats.underRepair}</div>
+          <div className="text-2xl font-bold mt-1">{stats.underRepair}</div>
           <div className="text-xs text-slate-400 mt-0.5">Shop work in progress</div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-emerald-200 dark:border-emerald-900/50 shadow-sm col-span-2 sm:col-span-1">
+        <div className="bg-slate-800 rounded-xl p-4 border border-emerald-900/50 shadow-sm col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Resolved</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <span className="text-xs font-semibold uppercase tracking-wider">Resolved</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" aria-hidden="true" />
           </div>
-          <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{stats.resolved}</div>
+          <div className="text-2xl font-bold mt-1">{stats.resolved}</div>
           <div className="text-xs text-slate-400 mt-0.5">Repaired & cleared</div>
         </div>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+      <search
+        aria-label="Filter defect reports"
+        className="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4"
+      >
         {/* Status Tabs & Time Range Tabs */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          <div
+            role="tablist"
+            aria-label="Defect status filters"
+            className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0"
+          >
             {STATUS_TABS.map((tab) => (
               <button
                 key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={statusFilter === tab.id}
                 onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition cursor-pointer ${
+                className={`px-3 py-1.5 min-h-[32px] text-xs font-semibold rounded-lg whitespace-nowrap transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
                   statusFilter === tab.id
-                    ? 'bg-amber-500 text-slate-900 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    ? 'bg-amber-500 text-slate-200 shadow-sm'
+                    : 'text-slate-400 hover:bg-slate-700'
                 }`}
               >
                 {tab.label}
@@ -617,19 +683,25 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
           </div>
 
           {/* Time Range Selector */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-900/80 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
-            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 px-2 flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-blue-500" />
+          <div
+            role="group"
+            aria-label="Defect report time range"
+            className="flex items-center bg-slate-800 p-1 rounded-lg border border-slate-700"
+          >
+            <span className="text-[11px] font-semibold text-slate-400 px-2 flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-blue-500" aria-hidden="true" />
               Range:
             </span>
             {TIME_RANGE_OPTIONS.map((r) => (
               <button
                 key={r.id}
+                type="button"
+                aria-pressed={timeRange === r.id}
                 onClick={() => setTimeRange(r.id as any)}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
+                className={`px-2.5 py-1 min-h-[28px] text-xs font-semibold rounded-md transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
                   timeRange === r.id
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'bg-slate-800 text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-200'
                 }`}
               >
                 {r.label}
@@ -641,9 +713,10 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
         {/* Search Input */}
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <div className="relative w-full sm:w-72">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input
-              type="text"
+              type="search"
+              aria-label="Search defect reports"
               placeholder={
                 timeRange === 'all'
                   ? 'Vehicle Unit # (e.g. 1016)...'
@@ -656,7 +729,7 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                   loadDefects(searchQuery.trim());
                 }
               }}
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+              className="w-full pl-9 pr-3 py-1.5 text-base sm:text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
             />
           </div>
           {timeRange === 'all' && (
@@ -664,25 +737,25 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
               type="button"
               onClick={() => loadDefects(searchQuery.trim())}
               disabled={loading || !searchQuery.trim()}
-              className="px-3 py-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-900 rounded-lg transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5"
+              className="px-3 py-1.5 min-h-[32px] text-xs font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-200 rounded-lg transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
             >
-              <Search className="w-3.5 h-3.5" />
+              <Search className="w-3.5 h-3.5" aria-hidden="true" />
               Search Archive
             </button>
           )}
         </div>
-      </div>
+      </search>
 
       {/* 5-Year Safe Scan Notice Banner */}
       {timeRange === 'all' && (
-        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl flex items-start gap-3 text-xs text-amber-800 dark:text-amber-200">
-          <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+        <div role="status" className="p-3.5 border rounded-xl flex items-start gap-3 text-xs">
+          <Info className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="space-y-1">
-            <div className="font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
+            <div className="font-semibold flex items-center gap-1.5">
               <span>All History Mode (BigQuery Cold Archive)</span>
-              <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-medium">5-Year Safe Scan</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-medium">5-Year Safe Scan</span>
             </div>
-            <p className="text-amber-700 dark:text-amber-300">
+            <p className="">
               To protect system performance and avoid full-table scans across 5 years of fleet data, full browsing is restricted. Please enter a <strong>Vehicle Unit #</strong> (e.g. <code>1016</code>) to query historical defects and maintenance records for that vehicle.
             </p>
           </div>
@@ -690,26 +763,26 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
       )}
 
       {/* Reports Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-sm overflow-hidden">
         {loading ? (
-          <div className="flex flex-col items-center justify-center p-12 text-slate-400">
-            <RefreshCw className="w-8 h-8 animate-spin mb-2" />
+          <div className="flex flex-col items-center justify-center p-12 text-slate-400" role="status">
+            <RefreshCw className="w-8 h-8 animate-spin mb-2" aria-hidden="true" />
             <span className="text-sm">Loading defect reports...</span>
           </div>
         ) : filteredReports.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-12 text-slate-400">
             {timeRange === 'all' && !searchQuery.trim() ? (
               <>
-                <Search className="w-12 h-12 text-amber-500/60 mb-3" />
-                <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300">Enter a Vehicle Unit # to Search All History</h3>
+                <Search className="w-12 h-12 text-amber-500/60 mb-3" aria-hidden="true" />
+                <h3 className="text-base font-semibold text-slate-300">Enter a Vehicle Unit # to Search All History</h3>
                 <p className="text-xs text-slate-500 mt-1 max-w-md text-center">
                   Search across 10 years of BigQuery archives for a specific vehicle by entering its unit number above (e.g. 1016) and clicking Search Archive.
                 </p>
               </>
             ) : (
               <>
-                <CheckCircle2 className="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3" />
-                <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300">No defect reports found</h3>
+                <CheckCircle2 className="w-12 h-12 mb-3" aria-hidden="true" />
+                <h3 className="text-base font-semibold text-slate-300">No defect reports found</h3>
                 <p className="text-xs text-slate-500 mt-1">
                   {timeRange === 'all'
                     ? `No defect records found for vehicle "${searchQuery}" in the historical archive.`
@@ -719,8 +792,15 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
             )}
           </div>
         ) : (
-          <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+          <div
+            ref={tableContainerRef}
+            tabIndex={0}
+            role="region"
+            aria-label="Vehicle defect reports table"
+            className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-500"
+          >
             <table className="w-full text-left text-xs">
+              <caption className="sr-only">Vehicle defect reports and fleet assessment</caption>
               <colgroup>
                 <col style={{ width: '11%' }} />
                 <col style={{ width: '15%' }} />
@@ -731,19 +811,19 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                 <col style={{ width: '11%' }} />
                 <col style={{ width: '20%' }} />
               </colgroup>
-              <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider">
+              <thead className="sticky top-0 z-10 bg-slate-900 border-b border-slate-700 text-slate-400 font-semibold uppercase tracking-wider">
                 <tr>
-                  <th className="py-3 px-4">{isFrench ? 'Unité Véhicule' : 'Vehicle Unit'}</th>
-                  <th className="py-3 px-4">{isFrench ? 'Signalé Par / Date' : 'Reported By / Date'}</th>
-                  <th className="py-3 px-4">{isFrench ? 'Odomètre' : 'Odometer'}</th>
-                  <th className="py-3 px-4">{isFrench ? 'Éléments Défectueux' : 'Flagged Items'}</th>
-                  <th className="py-3 px-4">{isFrench ? 'Notes Chauffeur' : 'Driver Notes'}</th>
-                  <th className="py-3 px-4">{isFrench ? 'Statut' : 'Status'}</th>
-                  <th className="py-3 px-4">{isFrench ? 'Affectation Parc' : 'Fleet Assignment'}</th>
-                  <th className="py-3 px-4 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'Unité Véhicule' : 'Vehicle Unit'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'Signalé Par / Date' : 'Reported By / Date'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'Odomètre' : 'Odometer'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'Éléments Défectueux' : 'Flagged Items'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'Notes Chauffeur' : 'Driver Notes'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'Statut' : 'Status'}</th>
+                  <th scope="col" className="py-3 px-4">{isFrench ? 'Affectation Parc' : 'Fleet Assignment'}</th>
+                  <th scope="col" className="py-3 px-4 text-right">{isFrench ? 'Actions' : 'Actions'}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60 text-slate-700 dark:text-slate-300">
+              <tbody className="divide-y divide-slate-700/60 text-slate-300">
                 {paddingTop > 0 && (
                   <tr>
                     <td style={{ height: `${paddingTop}px`, padding: 0, border: 0 }} colSpan={8} />
@@ -756,24 +836,25 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                   const statusColors = DEFECT_STATUS_COLORS[report.status];
 
                   return (
-                    <tr key={report.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-700/30 transition">
+                    <tr key={report.id} className="hover:bg-slate-700/30 transition">
                       {/* Unit Number */}
                       <td className="py-3 px-4 font-medium">
                         <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
-                            <Car className="w-4 h-4" />
+                          <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center font-bold">
+                            <Car className="w-4 h-4" aria-hidden="true" />
                           </div>
                           {onSelectVehicle ? (
                             <button
                               type="button"
                               onClick={() => onSelectVehicle(report.vehicleId, report.vehicleUnitNumber)}
-                              className="font-bold text-slate-900 dark:text-white text-sm font-mono hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                              aria-label={isFrench ? `Voir la fiche véhicule Unité #${report.vehicleUnitNumber}` : `View vehicle details for Unit #${report.vehicleUnitNumber}`}
+                              className="font-bold text-slate-200 text-sm font-mono hover:text-amber-600 hover:text-amber-300 hover:underline transition rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                               title={isFrench ? 'Voir la fiche véhicule' : 'View vehicle details'}
                             >
                               #{report.vehicleUnitNumber}
                             </button>
                           ) : (
-                            <span className="font-bold text-slate-900 dark:text-white text-sm font-mono">
+                            <span className="font-bold text-white text-sm font-mono">
                               #{report.vehicleUnitNumber}
                             </span>
                           )}
@@ -787,25 +868,26 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                             <button
                               type="button"
                               onClick={() => onSelectEmployee(report.reportedByUserId, report.reportedByName)}
-                              className="font-medium text-slate-900 dark:text-white flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition text-left"
+                              aria-label={isFrench ? `Voir la fiche chauffeur ${report.reportedByName}` : `View employee details for ${report.reportedByName}`}
+                              className="font-medium text-slate-200 flex items-center gap-1 hover:text-amber-600 hover:text-amber-300 hover:underline transition text-left rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                               title={isFrench ? 'Voir la fiche chauffeur' : 'View employee details'}
                             >
-                              <User className="w-3 h-3 text-slate-400" />
+                              <User className="w-3 h-3 text-slate-400" aria-hidden="true" />
                               {report.reportedByName}
                             </button>
                           ) : (
-                            <span className="font-medium text-slate-900 dark:text-white flex items-center gap-1">
-                              <User className="w-3 h-3 text-slate-400" />
+                            <span className="font-medium text-white flex items-center gap-1">
+                              <User className="w-3 h-3 text-slate-400" aria-hidden="true" />
                               {report.reportedByName}
                             </span>
                           )}
                           <span className="text-slate-400 text-[11px] flex items-center gap-1 mt-0.5">
-                            <Calendar className="w-3 h-3" />
+                            <Calendar className="w-3 h-3" aria-hidden="true" />
                             {report.reportDate} {report.reportTime}
                             {isArchivedDate(report.reportDate) && (
                               <span
                                 title="Record is older than 6 months and retrieved from BigQuery cold archive"
-                                className="ml-1 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800"
+                                className="ml-1 px-1 py-0.2 rounded text-[10px] font-semibold border"
                               >
                                 BigQuery
                               </span>
@@ -822,15 +904,15 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                       {/* Flagged Defect Items */}
                       <td className="py-3 px-4">
                         {defectItems.length === 0 ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
-                            <CheckCircle2 className="w-3 h-3" /> {isFrench ? 'Aucun défaut' : 'No Defects'}
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                            <CheckCircle2 className="w-3 h-3" aria-hidden="true" /> {isFrench ? 'Aucun défaut' : 'No Defects'}
                           </span>
                         ) : (
                           <div className="flex flex-wrap gap-1 max-w-xs">
                             {defectItems.map((item) => (
                               <span
                                 key={item.id}
-                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800"
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border"
                               >
                                 {item.name}
                               </span>
@@ -842,7 +924,7 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                       {/* Driver Notes */}
                       <td className="py-3 px-4 max-w-xs truncate" title={report.defectNotes}>
                         {report.defectNotes ? (
-                          <span className="text-slate-600 dark:text-slate-300">{report.defectNotes}</span>
+                          <span className="text-slate-300">{report.defectNotes}</span>
                         ) : (
                           <span className="text-slate-400 italic">{isFrench ? 'Aucune' : 'None'}</span>
                         )}
@@ -853,7 +935,7 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${statusColors.badge}`}
                         >
-                          <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-current" aria-hidden="true" />
                           {DEFECT_STATUS_LABELS[report.status]}
                         </span>
                       </td>
@@ -862,8 +944,8 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                       <td className="py-3 px-4">
                         {report.assessment?.repairLocation ? (
                           <div className="flex flex-col">
-                            <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                              <MapPin className="w-3 h-3 text-slate-400" />
+                            <span className="font-semibold text-slate-200 flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-slate-400" aria-hidden="true" />
                               {report.assessment.repairLocation}
                             </span>
                             {(report.assessment.estimatedRepairDays ?? 0) > 0 && (
@@ -883,19 +965,29 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleOpenPdf(report)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700/60 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md transition cursor-pointer"
+                            aria-label={
+                              isFrench
+                                ? `Imprimer ou télécharger le bon de travail PDF pour Unité #${report.vehicleUnitNumber} du ${report.reportDate}`
+                                : `Print or download PDF work order for Unit #${report.vehicleUnitNumber} on ${report.reportDate}`
+                            }
+                            className="inline-flex items-center gap-1 px-2.5 py-1 min-h-[28px] text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                             title={isFrench ? 'Imprimer ou télécharger PDF' : 'Print or Download Work Order PDF'}
                           >
-                            <Printer className="w-3.5 h-3.5 text-amber-500" />
+                            <Printer className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
                             <span>{isFrench ? 'Imprimer / PDF' : 'Print / PDF'}</span>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => openAssessmentModal(report)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 border border-amber-200 dark:border-amber-800/60 rounded-md transition cursor-pointer"
+                            aria-label={
+                              isFrench
+                                ? `Évaluer ou réparer le défaut de l'Unité #${report.vehicleUnitNumber} du ${report.reportDate}`
+                                : `Assess or repair defect for Unit #${report.vehicleUnitNumber} on ${report.reportDate}`
+                            }
+                            className="inline-flex items-center gap-1 px-2.5 py-1 min-h-[28px] text-xs font-semibold hover:bg-amber-500/15 hover:bg-amber-900/50 border rounded-md transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                           >
-                            <Wrench className="w-3.5 h-3.5" />
+                            <Wrench className="w-3.5 h-3.5" aria-hidden="true" />
                             <span>{isFrench ? 'Évaluer / Réparer' : 'Assess / Repair'}</span>
                           </button>
                         </div>
@@ -915,22 +1007,27 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
       </div>
 
       {/* Fleet Assessment & Repair Modal */}
-      {isAssessmentModalOpen && selectedReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <DefectModalDialog
+        open={Boolean(isAssessmentModalOpen && selectedReport)}
+        onClose={() => setIsAssessmentModalOpen(false)}
+        ariaLabelledBy="defect-assessment-modal-title"
+      >
+        {selectedReport && (
+          <>
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <Wrench className="w-5 h-5 text-amber-500" />
+                <h2 id="defect-assessment-modal-title" className="text-lg font-bold text-slate-200 flex items-center gap-2">
+                  <Wrench className="w-5 h-5 text-amber-500" aria-hidden="true" />
                   Fleet Assessment & Repair Dispatch
                 </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-1">
+                <p className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-1">
                   {onSelectVehicle ? (
                     <button
                       type="button"
                       onClick={() => onSelectVehicle(selectedReport.vehicleId, selectedReport.vehicleUnitNumber)}
-                      className="font-mono font-semibold hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                      aria-label={`View vehicle details for Unit #${selectedReport.vehicleUnitNumber}`}
+                      className="font-mono font-semibold hover:text-amber-600 hover:text-amber-300 hover:underline transition rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                       title="View vehicle details"
                     >
                       #{selectedReport.vehicleUnitNumber}
@@ -946,7 +1043,8 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                       onClick={() =>
                         onSelectEmployee(selectedReport.reportedByUserId, selectedReport.reportedByName)
                       }
-                      className="font-semibold hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
+                      aria-label={`View employee details for ${selectedReport.reportedByName}`}
+                      className="font-semibold hover:text-amber-600 hover:text-amber-300 hover:underline transition rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                       title="View employee details"
                     >
                       {selectedReport.reportedByName}
@@ -963,17 +1061,20 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => handleOpenPdf(selectedReport)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 rounded-lg transition cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                   title="Print Official Work Order"
                 >
-                  <Printer className="w-3.5 h-3.5 text-amber-500" />
+                  <Printer className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" />
                   <span>Print Work Order</span>
                 </button>
                 <button
+                  type="button"
+                  autoFocus
                   onClick={() => setIsAssessmentModalOpen(false)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+                  aria-label="Close assessment modal"
+                  className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:text-slate-200 hover:bg-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-5 h-5" aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -981,8 +1082,8 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
             {/* Modal Body */}
             <form onSubmit={handleSaveAssessment} className="p-6 overflow-y-auto space-y-5">
               {/* Flagged Items Summary */}
-              <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                <div className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-700">
+                <div className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
                   Inspection Checklist Results
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -994,20 +1095,20 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                         key={item.id}
                         className={`flex items-start justify-between p-2 rounded-lg text-xs border ${
                           isDefect
-                            ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 font-semibold'
+                            ? '   font-semibold'
                             : isNA
-                            ? 'bg-slate-100/50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 text-slate-400'
-                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                            ? 'bg-slate-800/40 border-slate-700 text-slate-400'
+                            : 'bg-slate-800 border-slate-700 text-slate-300'
                         }`}
                       >
                         <span className="truncate pr-2">{item.name}</span>
                         <span
                           className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                             isDefect
-                              ? 'bg-red-200 dark:bg-red-900 text-red-800 dark:text-red-200'
+                              ? ' '
                               : isNA
-                              ? 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                              : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                              ? 'bg-slate-700 text-slate-300'
+                              : ' '
                           }`}
                         >
                           {item.status.toUpperCase()}
@@ -1017,28 +1118,29 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
                   })}
                 </div>
                 {selectedReport.defectNotes && (
-                  <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 text-xs">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Driver Notes: </span>
-                    <span className="text-slate-600 dark:text-slate-400 italic">{selectedReport.defectNotes}</span>
+                  <div className="mt-3 pt-3 border-t border-slate-700 text-xs">
+                    <span className="font-semibold text-slate-300">Driver Notes: </span>
+                    <span className="text-slate-400 italic">{selectedReport.defectNotes}</span>
                   </div>
                 )}
               </div>
 
               {/* Status Transition Selector */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
+                <span className="block text-xs font-bold text-slate-200 uppercase tracking-wider mb-2">
                   Update Lifecycle Status
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="group" aria-label="Defect lifecycle status">
                   {LIFECYCLE_STATUS_OPTIONS.map((s) => (
                     <button
                       key={s.id}
                       type="button"
+                      aria-pressed={assessmentStatus === s.id}
                       onClick={() => setAssessmentStatus(s.id as DefectStatus)}
-                      className={`py-2 px-3 rounded-lg text-xs font-bold border transition text-center ${
+                      className={`py-2 px-3 min-h-[36px] rounded-lg text-xs font-bold border transition text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
                         assessmentStatus === s.id
-                          ? 'bg-amber-500 text-slate-900 border-amber-600 shadow-sm'
-                          : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
+                          ? 'bg-amber-500 text-slate-200 border-amber-600 shadow-sm'
+                          : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'
                       }`}
                     >
                       {s.label}
@@ -1050,80 +1152,86 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
               {/* Fleet Assessment & Repair Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="defect-assessed-by" className="block text-xs font-semibold text-slate-200 mb-1">
                     Assessed By
                   </label>
                   <input
+                    id="defect-assessed-by"
                     type="text"
                     required
                     value={assessedBy}
                     onChange={(e) => setAssessedBy(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 text-base sm:text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="defect-repair-location" className="block text-xs font-semibold text-slate-200 mb-1">
                     Repair Location / Workshop
                   </label>
                   <input
+                    id="defect-repair-location"
                     type="text"
                     placeholder="e.g. Main Depot Bay 1, Vendor Service"
                     value={repairLocation}
                     onChange={(e) => setRepairLocation(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 text-base sm:text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="defect-estimated-days" className="block text-xs font-semibold text-slate-200 mb-1">
                     Estimated Repair Days
                   </label>
                   <input
+                    id="defect-estimated-days"
                     type="number"
                     min="0"
                     value={estimatedRepairDays}
                     onChange={(e) => handleDaysChange(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 text-base sm:text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="defect-estimated-completion" className="block text-xs font-semibold text-slate-200 mb-1">
                     Estimated Completion Date
                   </label>
                   <input
+                    id="defect-estimated-completion"
                     type="date"
                     value={estimatedCompletionDate}
                     onChange={(e) => setEstimatedCompletionDate(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 text-base sm:text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label htmlFor="defect-repair-cost" className="block text-xs font-semibold text-slate-200 mb-1">
                     Estimated Repair Cost ($)
                   </label>
                   <input
+                    id="defect-repair-cost"
                     type="number"
                     step="0.01"
                     min="0"
                     value={repairCost}
                     onChange={(e) => setRepairCost(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 text-base sm:text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200"
                   />
                 </div>
 
                 {assessmentStatus === 'resolved' && (
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    <label htmlFor="defect-resolved-by" className="block text-xs font-semibold text-slate-200 mb-1">
                       Resolved By
                     </label>
                     <input
+                      id="defect-resolved-by"
                       type="text"
                       value={resolvedBy}
                       onChange={(e) => setResolvedBy(e.target.value)}
-                      className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                      className="w-full px-3 py-2 text-base sm:text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200"
                     />
                   </div>
                 )}
@@ -1131,63 +1239,70 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
 
               {/* Assessment Notes */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label htmlFor="defect-assessment-notes" className="block text-xs font-semibold text-slate-200 mb-1">
                   Assessment / Triage Notes
                 </label>
                 <textarea
+                  id="defect-assessment-notes"
                   rows={2}
                   value={assessmentNotes}
                   onChange={(e) => setAssessmentNotes(e.target.value)}
                   placeholder="Notes from initial inspection triage or required parts..."
-                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                  className="w-full px-3 py-2 text-base sm:text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200"
                 />
               </div>
 
               {/* Mechanic Notes */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label htmlFor="defect-mechanic-notes" className="block text-xs font-semibold text-slate-200 mb-1">
                   Mechanic / Repair Completion Notes
                 </label>
                 <textarea
+                  id="defect-mechanic-notes"
                   rows={2}
                   value={mechanicNotes}
                   onChange={(e) => setMechanicNotes(e.target.value)}
                   placeholder="Details of parts replaced, repairs conducted, and sign-off..."
-                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                  className="w-full px-3 py-2 text-base sm:text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200"
                 />
               </div>
 
               {/* Footer Buttons */}
-              <div className="pt-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
+              <div className="pt-4 border-t border-slate-700 flex items-center justify-end gap-3">
+                {assessmentError && (
+                  <span role="alert" className="mr-auto text-xs font-semibold text-rose-500">
+                    {assessmentError}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsAssessmentModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
+                  className="px-4 py-2 min-h-[36px] text-xs font-semibold text-slate-200 hover:bg-slate-700 rounded-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-slate-900 bg-amber-500 hover:bg-amber-400 rounded-lg shadow-sm transition disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 min-h-[36px] text-xs font-bold text-slate-200 bg-amber-500 hover:bg-amber-400 rounded-lg shadow-sm transition disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 >
                   {saving ? (
                     <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
                       Saving...
                     </>
                   ) : (
                     <>
-                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
                       Save Assessment & Repair
                     </>
                   )}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </DefectModalDialog>
 
       {pdfModalOpen && (
         <React.Suspense fallback={<ExportLoadingOverlay />}>
@@ -1211,6 +1326,8 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
           />
         </React.Suspense>
       )}
-    </div>
+    </PageShell>
   );
 };
+
+

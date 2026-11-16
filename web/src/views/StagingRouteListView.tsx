@@ -7,6 +7,8 @@ import { BusPlannerService, StagingRoute, StagingShift } from '../services/buspl
 import { getShiftBadgeStyle } from '../types/route';
 import { getPagePermission } from '../utils/permissions';
 import { downloadStagingRouteSheet } from '../utils/stagingRouteSheet';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 
 interface StagingRouteListViewProps {
   onSelectStudent?: (ref: { id?: string; name?: string }) => void;
@@ -138,51 +140,51 @@ export const StagingRouteListView: React.FC<StagingRouteListViewProps> = ({ onSe
   };
 
   return (
-    <div className="p-3.5 sm:p-4 space-y-4 sm:space-y-5 w-full">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-black text-white">
-              {isFrench ? 'Circuits staging' : 'Staging Routes'}
-            </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              {isFrench
-                ? 'Lignes, quarts, arrêts et élèves lus depuis staging. Si la synchronisation est désactivée, cinq circuits d\'exemple sont recréés chaque lundi à 9 h (Ottawa). Si elle est activée, la copie automatique a lieu à 9 h la veille de la date d\'effet, ou le vendredi à 9 h si cette veille tombe un week-end. Les affectations ne sont pas modifiées.'
-                : 'Routes, shifts, stops, and students from staging. While BusPlanner sync is off, five sample routes are recreated each Monday at 9:00 AM Ottawa time. While sync is on, the automatic copy runs at 9:00 AM on the day before the effective date, or Friday at 9:00 AM when that day is a weekend. Crew assignments are not changed.'}
-            </p>
-          </div>
+    <PageShell>
+      <PageHeader
+        title={isFrench ? 'Circuits staging' : 'Staging Routes'}
+        subtitle={
+          isFrench
+            ? 'Lignes, quarts, arrêts et élèves lus depuis staging. Si la synchronisation est désactivée, cinq circuits d\'exemple sont recréés chaque lundi à 9 h (Ottawa). Si elle est activée, la copie automatique a lieu à 9 h la veille de la date d\'effet, ou le vendredi à 9 h si cette veille tombe un week-end. Les affectations ne sont pas modifiées.'
+            : 'Routes, shifts, stops, and students from staging. While BusPlanner sync is off, five sample routes are recreated each Monday at 9:00 AM Ottawa time. While sync is on, the automatic copy runs at 9:00 AM on the day before the effective date, or Friday at 9:00 AM when that day is a weekend. Crew assignments are not changed.'
+        }
+        actions={
           <button
             type="button"
             onClick={load}
             disabled={loading}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center gap-1.5 self-start"
+            className="min-h-[28px] px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center gap-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw aria-hidden="true" className={`w-3.5 h-3.5 text-amber-400 ${loading ? 'animate-spin' : ''}`} />
             {isFrench ? 'Actualiser' : 'Refresh'}
           </button>
-        </div>
-        <div className="flex flex-col md:flex-row gap-2">
+        }
+      >
+        <search aria-label={isFrench ? 'Filtrer les circuits staging' : 'Filter staging routes'} className="flex flex-col md:flex-row gap-2">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
+              type="search"
+              aria-label={isFrench ? 'Rechercher par ligne, école, arrêt ou élève' : 'Search by route, school, stop, or student'}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={isFrench ? 'Ligne, école, arrêt ou élève' : 'Route, school, stop, or student'}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-base sm:text-sm text-white focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             />
           </div>
           <select
+            aria-label={isFrench ? 'Filtrer par quart' : 'Filter by shift'}
             value={shiftFilter}
             onChange={(e) => setShiftFilter(e.target.value)}
-            className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200"
+            className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-base sm:text-xs text-slate-200 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
           >
             <option value="ALL">{isFrench ? 'Tous les quarts' : 'All shifts'}</option>
             <option value="AM">AM</option>
             <option value="Midday">{isFrench ? 'Midi' : 'Midday'}</option>
             <option value="PM">PM</option>
           </select>
-        </div>
-      </div>
+        </search>
+      </PageHeader>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         <Metric icon={<Bus className="w-4 h-4 sm:w-5 sm:h-5" />} tone="text-amber-400 bg-amber-500/10 border-amber-500/20" value={totals.routes} label={isFrench ? 'Lignes staging' : 'Staging routes'} />
@@ -191,7 +193,7 @@ export const StagingRouteListView: React.FC<StagingRouteListViewProps> = ({ onSe
         <Metric icon={<Users className="w-4 h-4 sm:w-5 sm:h-5" />} tone="text-emerald-400 bg-emerald-500/10 border-emerald-500/20" value={totals.students} label={isFrench ? 'Élèves' : 'Students'} />
       </div>
 
-      {error && <p className="text-sm text-rose-300">{error}</p>}
+      {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
         <div className="p-3.5 sm:p-4 border-b border-slate-800 text-sm font-bold text-white">
@@ -201,7 +203,7 @@ export const StagingRouteListView: React.FC<StagingRouteListViewProps> = ({ onSe
           <div className="p-12 text-center text-slate-400 text-sm">{isFrench ? 'Chargement...' : 'Loading...'}</div>
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center text-slate-500 space-y-2">
-            <Bus className="w-8 h-8 mx-auto text-slate-600" />
+            <Bus aria-hidden="true" className="w-8 h-8 mx-auto text-slate-600" />
             <div className="font-semibold text-sm">{isFrench ? 'Aucune ligne staging' : 'No staging routes'}</div>
             <p className="text-xs max-w-md mx-auto">
               {isFrench
@@ -210,7 +212,7 @@ export const StagingRouteListView: React.FC<StagingRouteListViewProps> = ({ onSe
             </p>
           </div>
         ) : (
-          <div ref={stagingContainerRef} className="overflow-y-auto max-h-[calc(100vh-270px)]">
+          <div ref={stagingContainerRef} tabIndex={0} role="region" aria-label={isFrench ? 'Liste des circuits staging' : 'Staging routes list'} className="overflow-y-auto max-h-[calc(100vh-270px)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400">
             <div
               style={{
                 height: `${stagingVirtualizer.getTotalSize()}px`,
@@ -257,7 +259,7 @@ export const StagingRouteListView: React.FC<StagingRouteListViewProps> = ({ onSe
           </div>
         )}
       </div>
-    </div>
+    </PageShell>
   );
 };
 
@@ -301,12 +303,13 @@ const StagingRouteRow = memo(function StagingRouteRow({
         <button
           type="button"
           onClick={() => onToggle(route.id)}
-          className="min-w-0 flex-1 text-left flex items-center gap-3"
+          aria-expanded={isOpen}
+          className="min-w-0 flex-1 text-left flex items-center gap-3 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
         >
-                      <span className={`p-1 rounded-lg border ${isOpen ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
+                      <span aria-hidden="true" className={`p-1 rounded-lg border ${isOpen ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
                         {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                       </span>
-                      <span className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                      <span aria-hidden="true" className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
                         <Bus className="w-5 h-5" />
                       </span>
                       <span className="min-w-0 flex-1">
@@ -325,7 +328,7 @@ const StagingRouteRow = memo(function StagingRouteRow({
                           </span>
                         ))}
                         {copyNote && (
-                          <span className={`block text-[11px] mt-1 ${copyNote.error ? 'text-rose-300' : 'text-emerald-300'}`}>
+                          <span role={copyNote.error ? 'alert' : 'status'} className={`block text-[11px] mt-1 ${copyNote.error ? 'text-rose-300' : 'text-emerald-300'}`}>
                             {copyNote.text}
                           </span>
                         )}
@@ -348,20 +351,22 @@ const StagingRouteRow = memo(function StagingRouteRow({
                       type="button"
                       onClick={() => onExportPdf(route)}
                       disabled={route.shifts.length === 0}
+                      aria-label={isFrench ? `Exporter la feuille de route PDF pour ${route.routeNo}` : `Export route sheet PDF for ${route.routeNo}`}
                       title={isFrench ? 'Exporter la feuille de route' : 'Export a route sheet PDF'}
-                      className="shrink-0 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-[11px] font-bold hover:bg-slate-700 disabled:opacity-50 flex items-center gap-1"
+                      className="min-h-[28px] shrink-0 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 text-[11px] font-bold hover:bg-slate-700 disabled:opacity-50 flex items-center gap-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                     >
-                      <Download className="w-3.5 h-3.5 text-amber-400" />
+                      <Download aria-hidden="true" className="w-3.5 h-3.5 text-amber-400" />
                       {isFrench ? 'Exporter PDF' : 'Export PDF'}
                     </button>
                     {canCopy && (
                       <button
                         type="button"
                         onClick={() => onCopy(route)}
+                        aria-label={isFrench ? `Copier ${route.routeNo} en service` : `Copy ${route.routeNo} to live`}
                         disabled={isCopying || route.shifts.length === 0}
-                        className="shrink-0 px-2.5 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-200 text-[11px] font-bold hover:bg-amber-500/20 disabled:opacity-50 flex items-center gap-1"
+                        className="min-h-[28px] shrink-0 px-2.5 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-200 text-[11px] font-bold hover:bg-amber-500/20 disabled:opacity-50 flex items-center gap-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                       >
-                        <Copy className="w-3.5 h-3.5" />
+                        <Copy aria-hidden="true" className="w-3.5 h-3.5" />
                         {isCopying
                           ? (isFrench ? 'Copie...' : 'Copying...')
                           : (isFrench ? 'Copier en service' : 'Copy to live')}
@@ -370,13 +375,14 @@ const StagingRouteRow = memo(function StagingRouteRow({
                   </div>
                   {isOpen && shift && (
                     <div className="px-4 pb-4 space-y-3">
-                      <div className="flex flex-wrap gap-1.5">
+                      <div role="group" aria-label={isFrench ? `Quarts pour ${route.routeNo}` : `Shifts for ${route.routeNo}`} className="flex flex-wrap gap-1.5">
                         {route.shifts.map((item) => (
                           <button
                             key={item.id}
                             type="button"
                             onClick={() => onSelectShift(route.id, item.id)}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border ${
+                            aria-pressed={shift.id === item.id}
+                            className={`min-h-[28px] px-2 py-1 rounded-lg text-[11px] font-bold border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
                               shift.id === item.id
                                 ? 'bg-amber-500 text-slate-950 border-amber-400'
                                 : 'bg-slate-800 text-slate-300 border-slate-700'
@@ -397,15 +403,16 @@ const StagingRouteRow = memo(function StagingRouteRow({
                           </span>
                         )}
                       </div>
-                      <div className="overflow-x-auto border border-slate-800 rounded-xl">
+                      <div tabIndex={0} role="region" aria-label={isFrench ? `Arrêts pour ${route.routeNo} (${shift.shiftType})` : `Stops for ${route.routeNo} (${shift.shiftType})`} className="overflow-x-auto border border-slate-800 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400">
                         <table className="w-full text-left text-xs">
+                          <caption className="sr-only">{isFrench ? `Arrêts du circuit ${route.routeNo}` : `Stops for route ${route.routeNo}`}</caption>
                           <thead className="bg-slate-950/50 text-slate-400 uppercase tracking-wider">
                             <tr>
-                              <th className="py-2 px-3">#</th>
-                              <th className="py-2 px-3">{isFrench ? 'Heure' : 'Time'}</th>
-                              <th className="py-2 px-3">{isFrench ? 'Arrêt' : 'Stop'}</th>
-                              <th className="py-2 px-3">{isFrench ? 'Type' : 'Type'}</th>
-                              <th className="py-2 px-3">{isFrench ? 'Élèves' : 'Students'}</th>
+                              <th scope="col" className="py-2 px-3">#</th>
+                              <th scope="col" className="py-2 px-3">{isFrench ? 'Heure' : 'Time'}</th>
+                              <th scope="col" className="py-2 px-3">{isFrench ? 'Arrêt' : 'Stop'}</th>
+                              <th scope="col" className="py-2 px-3">{isFrench ? 'Type' : 'Type'}</th>
+                              <th scope="col" className="py-2 px-3">{isFrench ? 'Élèves' : 'Students'}</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/70 text-slate-200">
@@ -432,7 +439,7 @@ const StagingRouteRow = memo(function StagingRouteRow({
                                           key={`${stop.id}-${student.id}-${student.name}`}
                                           type="button"
                                           onClick={() => onSelectStudent?.({ id: student.id, name: student.name })}
-                                          className="block w-full text-left rounded-lg px-1 py-0.5 hover:bg-slate-800/80 transition"
+                                          className="min-h-[24px] block w-full text-left rounded-lg px-1 py-1 hover:bg-slate-800/80 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                                           title={isFrench ? 'Voir la fiche élève' : 'View student details'}
                                         >
                                           <span className="text-white hover:text-amber-300">{student.name}</span>
@@ -460,7 +467,7 @@ const StagingRouteRow = memo(function StagingRouteRow({
 function Metric({ icon, tone, value, label }: { icon: React.ReactNode; tone: string; value: number; label: string }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 flex items-center gap-3">
-      <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl border flex items-center justify-center shrink-0 ${tone}`}>
+      <div aria-hidden="true" className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl border flex items-center justify-center shrink-0 ${tone}`}>
         {icon}
       </div>
       <div>

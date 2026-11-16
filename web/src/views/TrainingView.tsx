@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useDeferredValue, Suspense } from 'react';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   GraduationCap,
   Plus,
@@ -271,54 +273,53 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
   };
 
   return (
-    <div className="space-y-6">
+    <PageShell>
       {/* Header with Title and Global Action Buttons */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shadow-inner">
-              <GraduationCap className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">Driver & Crew Training</h1>
-              <p className="text-xs text-slate-400">
-                Continuing education, compliance certifications, and scheduled curriculum workshops
-              </p>
-            </div>
+      <PageHeader
+        title="Driver & Crew Training"
+        subtitle="Continuing education, compliance certifications, and scheduled curriculum workshops"
+        icon={
+          <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shadow-inner">
+            <GraduationCap className="w-4 h-4" />
           </div>
-        </div>
-
-        <div className="flex items-center space-x-2.5">
-          <button
-            onClick={() => void loadData()}
-            disabled={loading}
-            className="p-2 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 rounded-lg border border-slate-700 transition"
-            title="Refresh Courses"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-
-          {isHR && (
+        }
+        actions={
+          <div className="flex items-center space-x-2.5">
             <button
-              onClick={handleCreateType}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 flex items-center space-x-1.5 transition"
+              type="button"
+              onClick={() => void loadData()}
+              disabled={loading}
+              aria-label="Refresh courses"
+              className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 rounded-lg border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              title="Refresh Courses"
             >
-              <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Catalog Templates</span>
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
             </button>
-          )}
 
-          {isManagement && (
-            <button
-              onClick={handleCreateCourse}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-indigo-600/20 flex items-center space-x-2 transition"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Schedule Course</span>
-            </button>
-          )}
-        </div>
-      </div>
+            {isHR && (
+              <button
+                type="button"
+                onClick={handleCreateType}
+                className="px-3 py-2 min-h-[36px] bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 flex items-center space-x-1.5 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+                <span>Catalog Templates</span>
+              </button>
+            )}
+
+            {isManagement && (
+              <button
+                type="button"
+                onClick={handleCreateCourse}
+                className="px-4 py-2 min-h-[36px] bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-indigo-600/20 flex items-center space-x-2 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              >
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                <span>Schedule Course</span>
+              </button>
+            )}
+          </div>
+        }
+      />
 
       {/* KPI Metric Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -326,7 +327,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400">Active Sessions</span>
             <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-              <CheckCircle2 className="w-4 h-4" />
+              <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
             </div>
           </div>
           <div className="mt-2 flex items-baseline space-x-2">
@@ -339,7 +340,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400">Upcoming Next 7 Days</span>
             <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-              <Calendar className="w-4 h-4" />
+              <Calendar className="w-4 h-4" aria-hidden="true" />
             </div>
           </div>
           <div className="mt-2 flex items-baseline space-x-2">
@@ -352,7 +353,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400">Total Enrolled Crew</span>
             <div className="w-8 h-8 rounded-lg bg-sky-500/10 flex items-center justify-center text-sky-400">
-              <Users className="w-4 h-4" />
+              <Users className="w-4 h-4" aria-hidden="true" />
             </div>
           </div>
           <div className="mt-2 flex items-baseline space-x-2">
@@ -365,7 +366,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400">Curriculum Types</span>
             <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
-              <Award className="w-4 h-4" />
+              <Award className="w-4 h-4" aria-hidden="true" />
             </div>
           </div>
           <div className="mt-2 flex items-baseline space-x-2">
@@ -379,10 +380,19 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
       <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 space-y-4 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
           {/* View Tab Switcher */}
-          <div className="flex items-center space-x-1 bg-slate-950/60 p-1 rounded-lg border border-slate-800/80 max-w-fit">
+          <div
+            role="tablist"
+            aria-label="Training views"
+            className="flex items-center space-x-1 bg-slate-950/60 p-1 rounded-lg border border-slate-800/80 max-w-fit"
+          >
             <button
+              id="training-tab-sessions"
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'sessions'}
+              aria-controls="training-panel-sessions"
               onClick={() => setActiveTab('sessions')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+              className={`px-3 py-1.5 min-h-[32px] rounded-md text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
                 activeTab === 'sessions'
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
@@ -391,8 +401,13 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
               Scheduled Sessions ({courses.length})
             </button>
             <button
+              id="training-tab-catalog"
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'catalog'}
+              aria-controls="training-panel-catalog"
               onClick={() => setActiveTab('catalog')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+              className={`px-3 py-1.5 min-h-[32px] rounded-md text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
                 activeTab === 'catalog'
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
@@ -404,10 +419,16 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
 
           {/* Scope Filter for regular users */}
           {activeTab === 'sessions' && (
-            <div className="flex items-center space-x-1 bg-slate-950/60 p-1 rounded-lg border border-slate-800/80 max-w-fit">
+            <div
+              role="group"
+              aria-label="Course visibility scope"
+              className="flex items-center space-x-1 bg-slate-950/60 p-1 rounded-lg border border-slate-800/80 max-w-fit"
+            >
               <button
+                type="button"
+                aria-pressed={viewScope === 'all'}
                 onClick={() => setViewScope('all')}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                className={`px-3 py-1.5 min-h-[32px] rounded-md text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
                   viewScope === 'all'
                     ? 'bg-slate-800 text-slate-100 shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
@@ -416,8 +437,10 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
                 All Courses
               </button>
               <button
+                type="button"
+                aria-pressed={viewScope === 'mine'}
                 onClick={() => setViewScope('mine')}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                className={`px-3 py-1.5 min-h-[32px] rounded-md text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
                   viewScope === 'mine'
                     ? 'bg-slate-800 text-slate-100 shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
@@ -431,16 +454,20 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
 
         {/* Filter Controls for Sessions */}
         {activeTab === 'sessions' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          <search
+            aria-label="Filter training courses"
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3"
+          >
             {/* Search Input */}
             <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
               <input
-                type="text"
+                type="search"
+                aria-label="Search training courses"
                 placeholder="Search title, instructor..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-slate-800/80 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-800/80 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-base sm:text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
               />
             </div>
 
@@ -448,8 +475,9 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
             <div>
               <select
                 value={statusFilter}
+                aria-label="Filter by course status"
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-base sm:text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
               >
                 <option value="all">All Statuses</option>
                 <option value="published">Published</option>
@@ -463,8 +491,9 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
             <div>
               <select
                 value={categoryFilter}
+                aria-label="Filter by course category"
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-base sm:text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
               >
                 <option value="all">All Categories</option>
                 {Object.entries(TRAINING_CATEGORY_LABELS).map(([k, label]) => (
@@ -479,8 +508,9 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
             <div>
               <select
                 value={dateFilter}
+                aria-label="Filter by course date"
                 onChange={(e) => setDateFilter(e.target.value as any)}
-                className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-base sm:text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
               >
                 <option value="all">All Dates</option>
                 <option value="upcoming">Upcoming & Today</option>
@@ -488,29 +518,29 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
                 <option value="past">Past Sessions</option>
               </select>
             </div>
-          </div>
+          </search>
         )}
       </div>
 
       {/* Error Notice */}
       {error && (
-        <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center space-x-3 text-rose-400 text-sm">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+        <div role="alert" className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center space-x-3 text-rose-400 text-sm">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Sessions View */}
       {activeTab === 'sessions' && (
-        <>
+        <div id="training-panel-sessions" role="tabpanel" aria-labelledby="training-tab-sessions">
           {loading ? (
-            <div className="p-12 text-center text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800/80">
-              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-indigo-400" />
+            <div role="status" className="p-12 text-center text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800/80">
+              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-indigo-400" aria-hidden="true" />
               <p className="text-sm">Loading training sessions...</p>
             </div>
           ) : filteredCourses.length === 0 ? (
             <div className="p-12 text-center text-slate-500 bg-slate-900/40 rounded-xl border border-slate-800/80">
-              <GraduationCap className="w-10 h-10 mx-auto mb-3 text-slate-600" />
+              <GraduationCap className="w-10 h-10 mx-auto mb-3 text-slate-600" aria-hidden="true" />
               <p className="text-sm font-medium text-slate-400">No training courses found</p>
               <p className="text-xs text-slate-500 mt-1">
                 {searchTerm || statusFilter !== 'all' || categoryFilter !== 'all'
@@ -555,7 +585,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
                       <div className="mt-4 space-y-2 text-xs text-slate-300 bg-slate-950/40 p-3 rounded-lg border border-slate-800/80">
                         <div className="flex items-center justify-between">
                           <span className="text-slate-400 flex items-center space-x-1">
-                            <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                            <Calendar className="w-3.5 h-3.5 text-indigo-400" aria-hidden="true" />
                             <span>Schedule:</span>
                           </span>
                           <span className="font-medium text-white">
@@ -565,7 +595,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
 
                         <div className="flex items-center justify-between">
                           <span className="text-slate-400 flex items-center space-x-1">
-                            <Clock className="w-3.5 h-3.5 text-sky-400" />
+                            <Clock className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
                             <span>Duration:</span>
                           </span>
                           <span className="font-medium">{c.hours || 0} Hours</span>
@@ -573,7 +603,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
 
                         <div className="flex items-center justify-between">
                           <span className="text-slate-400 flex items-center space-x-1">
-                            <User className="w-3.5 h-3.5 text-emerald-400" />
+                            <User className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
                             <span>Instructor:</span>
                           </span>
                           <span className="font-medium truncate max-w-[140px]">{c.instructorName || 'TBD'}</span>
@@ -582,9 +612,9 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
                         <div className="flex items-center justify-between">
                           <span className="text-slate-400 flex items-center space-x-1">
                             {c.isOnline ? (
-                              <Video className="w-3.5 h-3.5 text-sky-400" />
+                              <Video className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
                             ) : (
-                              <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                              <MapPin className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
                             )}
                             <span>Type:</span>
                           </span>
@@ -596,7 +626,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
                         {c.payAmount && c.payAmount > 0 ? (
                           <div className="flex items-center justify-between">
                             <span className="text-slate-400 flex items-center space-x-1">
-                              <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+                              <DollarSign className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
                               <span>Paid Session:</span>
                             </span>
                             <span className="font-medium text-emerald-400">${c.payAmount.toFixed(2)}</span>
@@ -627,11 +657,13 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
                     <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between">
                       <span className="text-[11px] text-slate-500">ID: {c.id.slice(0, 8)}</span>
                       <button
+                        type="button"
                         onClick={() => handleOpenDetail(c)}
-                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 hover:text-indigo-300 text-xs font-medium rounded-lg border border-slate-700/80 flex items-center space-x-1 transition shadow-sm"
+                        aria-label={`View details for ${c.title}`}
+                        className="px-3 py-1.5 min-h-[32px] bg-slate-800 hover:bg-slate-700 text-indigo-400 hover:text-indigo-300 text-xs font-medium rounded-lg border border-slate-700/80 flex items-center space-x-1 transition shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
                       >
                         <span>View Details</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
+                        <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -639,22 +671,28 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
               })}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* Catalog Templates View */}
       {activeTab === 'catalog' && (
-        <div className="space-y-4">
+        <div
+          id="training-panel-catalog"
+          role="tabpanel"
+          aria-labelledby="training-tab-catalog"
+          className="space-y-4"
+        >
           <div className="flex items-center justify-between">
             <p className="text-xs text-slate-400">
               Standardized training curricula templates available for scheduling new course sessions
             </p>
             {isHR && (
               <button
+                type="button"
                 onClick={handleCreateType}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow flex items-center space-x-1.5 transition"
+                className="px-3 py-1.5 min-h-[32px] bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow flex items-center space-x-1.5 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Add Curriculum Template</span>
               </button>
             )}
@@ -707,8 +745,10 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
                   </span>
                   {isHR && (
                     <button
+                      type="button"
                       onClick={() => handleEditType(t)}
-                      className="px-2.5 py-1 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 transition"
+                      aria-label={`Edit ${t.name}`}
+                      className="px-2.5 py-1 min-h-[28px] text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                     >
                       Edit
                     </button>
@@ -767,6 +807,6 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
           />
         </Suspense>
       )}
-    </div>
+    </PageShell>
   );
 };

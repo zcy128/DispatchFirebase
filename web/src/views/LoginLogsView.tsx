@@ -4,6 +4,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { LoginLogService } from '../services/loginLogService';
 import { LoginLogEntry, LoginStatus } from '../types/loginLog';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
+import { useRegisterPageAIContext } from '../contexts/AIContext';
 import {
   History,
   Search,
@@ -219,6 +222,7 @@ export const LoginLogsView: React.FC = () => {
   // Date Selection: default to today (daily logs ~1,000 records)
   const [todayStr, setTodayStr] = useState(getTodayStr);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  useRegisterPageAIContext('login_logs', { selectedDate });
   const dateSeqRef = useRef(0);
   const refreshSeqRef = useRef(0);
 
@@ -415,55 +419,54 @@ export const LoginLogsView: React.FC = () => {
   const isToday = selectedDate === todayStr;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+    <PageShell>
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-md">
-              <History className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                Login Audit Logs
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  Admin Exclusive
-                </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center gap-1">
-                  <Zap className="w-3 h-3" />
-                  Virtual Scrolling
-                </span>
-              </h1>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {isFrench
-                  ? 'Audit de connexion pour le Web Hub et l\'application conducteur'
-                  : 'Daily user and driver authentication audit trail across Web Hub and Driver App'}
-              </p>
-            </div>
+      <PageHeader
+        title="Login Audit Logs"
+        subtitle={
+          isFrench
+            ? 'Audit de connexion pour le Web Hub et l\'application conducteur'
+            : 'Daily user and driver authentication audit trail across Web Hub and Driver App'
+        }
+        icon={
+          <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-md">
+            <History className="w-4 h-4" />
           </div>
-        </div>
+        }
+        badge={
+          <div className="flex items-center gap-1.5">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              Admin Exclusive
+            </span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center gap-1">
+              <Zap className="w-3 h-3" />
+              Virtual Scrolling
+            </span>
+          </div>
+        }
+        actions={
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleManualRefresh}
+              disabled={refreshing}
+              className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
+              title={isFrench ? 'Actualiser les journaux du jour sélectionné' : 'Refresh current day logs'}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              <span>{isFrench ? 'Actualiser' : 'Refresh'}</span>
+            </button>
 
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={handleManualRefresh}
-            disabled={refreshing}
-            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
-            title={isFrench ? 'Actualiser les journaux du jour sélectionné' : 'Refresh current day logs'}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>{isFrench ? 'Actualiser' : 'Refresh'}</span>
-          </button>
-
-          <button
-            onClick={handleExportCSV}
-            disabled={filteredLogs.length === 0}
-            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition disabled:opacity-50"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>{isFrench ? 'Exporter CSV' : 'Export CSV'}</span>
-          </button>
-        </div>
-      </div>
+            <button
+              onClick={handleExportCSV}
+              disabled={filteredLogs.length === 0}
+              className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition disabled:opacity-50"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{isFrench ? 'Exporter CSV' : 'Export CSV'}</span>
+            </button>
+          </div>
+        }
+      />
 
       {/* Date Navigation & Selector */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-lg">
@@ -717,6 +720,6 @@ export const LoginLogsView: React.FC = () => {
           <LoginLogTable logs={filteredLogs} selectedDate={selectedDate} />
         )}
       </div>
-    </div>
+    </PageShell>
   );
 };

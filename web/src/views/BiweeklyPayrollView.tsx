@@ -1,5 +1,7 @@
-import React, { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { PageShell } from '../components/common/PageShell';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   Calendar,
   ChevronDown,
@@ -61,6 +63,38 @@ const EMPTY_BOARDS: SchoolBoard[] = [];
 const EMPTY_EMPLOYEES: Employee[] = [];
 const EMPTY_ROUTES: BusRoute[] = [];
 
+function BiweeklyModalDialog({
+  ariaLabelledBy,
+  onClose,
+  className,
+  children,
+}: {
+  ariaLabelledBy: string;
+  onClose: () => void;
+  className: string;
+  children: React.ReactNode;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) {
+      dialog.showModal();
+    }
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={ariaLabelledBy}
+      onClose={onClose}
+      className={`m-auto p-0 backdrop:bg-slate-950/60 backdrop:backdrop-blur-xs [overscroll-behavior:contain] backdrop:[overflow:hidden] backdrop:[overscroll-behavior:contain] ${className}`}
+    >
+      {children}
+    </dialog>
+  );
+}
+
 interface BiweeklyPayrollViewProps {
   boards?: SchoolBoard[];
   employees?: Employee[];
@@ -102,6 +136,9 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
   const [detailWeekFilter, setDetailWeekFilter] = useState<'all' | 'week1' | 'week2'>('all');
   const [qbExportTarget, setQbExportTarget] = useState<BiweeklyEmployeeGroup[] | null>(null);
   const [qbExportSingleSuffix, setQbExportSingleSuffix] = useState<string>('');
+  const holidayTitleId = useId();
+  const detailTitleId = useId();
+  const qbTitleId = useId();
 
   const holidaysInPeriod = useMemo(
     () => PREDEFINED_HOLIDAYS.filter((holiday) => holiday.date >= startDate && holiday.date <= endDate),
@@ -636,17 +673,17 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
   const getExpenseCategoryBadge = (code: string) => {
     switch (code) {
       case 'fuel':
-        return { icon: Fuel, color: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-300' };
+        return { icon: Fuel, color: 'bg-amber-500/10  border-amber-300' };
       case 'parking':
-        return { icon: ParkingSquare, color: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-300' };
+        return { icon: ParkingSquare, color: 'bg-blue-500/10  border-blue-300' };
       case 'maintenance':
-        return { icon: Wrench, color: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-300' };
+        return { icon: Wrench, color: 'bg-orange-500/10  border-orange-300' };
       case 'cleaning':
-        return { icon: Sparkles, color: 'bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-300' };
+        return { icon: Sparkles, color: 'bg-teal-500/10  border-teal-300' };
       case 'meals':
-        return { icon: Coffee, color: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-300' };
+        return { icon: Coffee, color: 'bg-purple-500/10  border-purple-300' };
       default:
-        return { icon: Package, color: 'bg-slate-500/10 text-slate-700 dark:text-slate-400 border-slate-300' };
+        return { icon: Package, color: 'bg-slate-500/10 text-slate-400 border-slate-300' };
     }
   };
 
@@ -978,41 +1015,48 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
   };
 
   return (
-    <div className="space-y-4 max-w-[1920px] mx-auto p-2 sm:p-4 text-slate-800 dark:text-slate-100 font-sans">
+    <PageShell width="wide" className="text-slate-100 font-sans">
+      <PageHeader
+        title="Bi-Weekly Payroll"
+        subtitle="14-day driver payroll summary, daily shift breakdown, adjustments, and QuickBooks export."
+      />
       {/* Top Filter & Action Bar */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3 sm:p-4 shadow-xs">
+      <search aria-label="Filter bi-weekly payroll" className="block bg-slate-900 rounded-2xl border border-slate-800 p-3 sm:p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Left section: Date picker, range display, board and employee dropdowns, Read button */}
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Start Date Picker Input */}
-            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 shadow-2xs">
-              <Calendar className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+            <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 shadow-2xs">
+              <Calendar aria-hidden="true" className="w-4 h-4 text-slate-200" />
               <input
                 type="date"
+                aria-label="Bi-weekly period start date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="bg-transparent text-sm font-medium text-slate-800 dark:text-slate-200 focus:outline-hidden"
+                className="bg-transparent text-base sm:text-sm font-medium text-slate-200 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 title="Select bi-weekly start date"
               />
             </div>
 
             {/* Quick Prev/Next Period Buttons */}
-            <div className="inline-flex rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xs overflow-hidden">
+            <div className="inline-flex rounded-lg border border-slate-700 bg-slate-800 shadow-2xs overflow-hidden">
               <button
                 type="button"
+                aria-label="Previous 2 weeks"
                 onClick={() => handleShiftPeriod(-14)}
-                className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 text-slate-200 hover:bg-slate-700 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 title="Previous 2 Weeks"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft aria-hidden="true" className="w-4 h-4" />
               </button>
               <button
                 type="button"
+                aria-label="Next 2 weeks"
                 onClick={() => handleShiftPeriod(14)}
-                className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border-l border-slate-200 dark:border-slate-700 transition-colors"
+                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 text-slate-200 hover:bg-slate-700 border-l border-slate-700 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 title="Next 2 Weeks"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight aria-hidden="true" className="w-4 h-4" />
               </button>
             </div>
 
@@ -1020,22 +1064,23 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
             <button
               type="button"
               onClick={() => setStartDate(getTodayDateString())}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-2xs transition-colors"
+              className="min-h-[32px] px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 shadow-2xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               title="Jump to Current Bi-Weekly Period"
             >
               Current Period
             </button>
             {/* Formatted Date Range Pill */}
-            <div className="text-base font-bold tracking-tight text-slate-900 dark:text-white px-2">
+            <div className="text-base font-bold tracking-tight text-white px-2">
               {startDate} - {endDate}
             </div>
 
             {/* Select School Board Dropdown */}
             <div className="relative">
               <select
+                aria-label="Filter by school board"
                 value={selectedBoard}
                 onChange={(e) => setSelectedBoard(e.target.value)}
-                className="h-9 px-3 pr-8 text-sm font-normal rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 appearance-none shadow-2xs cursor-pointer min-w-[170px]"
+                className="h-9 px-3 pr-8 text-base sm:text-sm font-normal rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 appearance-none shadow-2xs cursor-pointer min-w-[170px]"
               >
                 <option value="all">Select A School Board</option>
                 {availableBoards.map((b) => (
@@ -1044,28 +1089,30 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+              <ChevronDown aria-hidden="true" className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
             </div>
 
             {/* Select Role Dropdown */}
             <div className="relative">
               <select
+                aria-label="Filter by role"
                 value={selectedRole}
                 onChange={(e) => setSelectedRole(e.target.value as 'all' | 'driver' | 'attendant')}
-                className="h-9 px-3 pr-8 text-sm font-normal rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 appearance-none shadow-2xs cursor-pointer min-w-[130px]"
+                className="h-9 px-3 pr-8 text-base sm:text-sm font-normal rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 appearance-none shadow-2xs cursor-pointer min-w-[130px]"
               >
                 <option value="all">All Roles</option>
                 <option value="driver">Drivers Only</option>
                 <option value="attendant">Attendants Only</option>
               </select>
-              <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+              <ChevronDown aria-hidden="true" className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
             </div>
             {/* Select Employee Dropdown */}
             <div className="relative">
               <select
+                aria-label="Filter by employee"
                 value={selectedEmployee}
                 onChange={(e) => setSelectedEmployee(e.target.value)}
-                className="h-9 px-3 pr-8 text-sm font-normal rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 appearance-none shadow-2xs cursor-pointer min-w-[170px]"
+                className="h-9 px-3 pr-8 text-base sm:text-sm font-normal rounded-lg border border-slate-700 bg-slate-800 text-slate-200 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 appearance-none shadow-2xs cursor-pointer min-w-[170px]"
               >
                 <option value="all">Select A Employee</option>
                 {availableEmployees.map((emp) => (
@@ -1074,7 +1121,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+              <ChevronDown aria-hidden="true" className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
             </div>
 
             {/* Read Button */}
@@ -1082,7 +1129,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
               type="button"
               onClick={loadBiweeklyData}
               disabled={loading}
-              className="h-9 px-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium transition-colors shadow-2xs disabled:opacity-50"
+              className="h-9 px-4 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 text-sm font-medium transition-colors shadow-2xs disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
             >
               Read
             </button>
@@ -1092,10 +1139,10 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
               type="button"
               onClick={handleExportExcel}
               disabled={isExportingExcel || groupedData.length === 0}
-              className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-sm font-semibold transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+              className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-sm font-semibold transition-colors shadow-xs disabled:opacity-50 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
               title="Download Microsoft Excel workbook (.xlsx) matching official template"
             >
-              <FileSpreadsheet className={`w-4 h-4 ${isExportingExcel ? 'animate-spin' : ''}`} />
+              <FileSpreadsheet aria-hidden="true" className={`w-4 h-4 ${isExportingExcel ? 'animate-spin' : ''}`} />
               <span>{isExportingExcel ? 'Exporting...' : 'Export Excel (.xlsx)'}</span>
             </button>
 
@@ -1104,10 +1151,10 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
               type="button"
               onClick={handleExportCSV}
               disabled={groupedData.length === 0}
-              className="h-9 px-2.5 inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium transition-colors shadow-2xs disabled:opacity-50 cursor-pointer"
+              className="h-9 px-2.5 inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 text-sm font-medium transition-colors shadow-2xs disabled:opacity-50 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               title="Download raw CSV file"
             >
-              <Download className="w-3.5 h-3.5 text-slate-500" />
+              <Download aria-hidden="true" className="w-3.5 h-3.5 text-slate-500" />
               <span>CSV</span>
             </button>
 
@@ -1119,10 +1166,10 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                 setQbExportTarget(groupedData);
               }}
               disabled={groupedData.length === 0}
-              className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+              className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold transition-colors shadow-xs disabled:opacity-50 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
               title="Export payroll for QuickBooks Online, QuickBooks Desktop (.IIF), Wagepoint, ADP, or Ceridian"
             >
-              <Download className="w-4 h-4" />
+              <Download aria-hidden="true" className="w-4 h-4" />
               <span>QuickBooks Export</span>
             </button>
 
@@ -1130,7 +1177,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
             <button
               type="button"
               onClick={() => setIsHolidayModalOpen(true)}
-              className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium transition-colors shadow-2xs"
+              className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 text-sm font-medium transition-colors shadow-2xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
             >
               <span>Holidays</span>
               {holidaysInPeriod.length > 0 && (
@@ -1144,77 +1191,80 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
           {/* Right section: Holiday & Expense toggles, Refresh button & Search input */}
           <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
             {/* Include Route Holiday Pay Toggle */}
-            <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 cursor-pointer select-none">
+            <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-300 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={includeHolidayEntitlements}
                 onChange={(e) => setIncludeHolidayEntitlements(e.target.checked)}
-                className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500"
+                className="w-4 h-4 text-amber-600 rounded border-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               />
               <span>🏖️ Route Holiday Pay</span>
             </label>
 
             {/* Include Expenses Toggle */}
-            <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 cursor-pointer select-none">
+            <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-300 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={includeExpenses}
                 onChange={(e) => setIncludeExpenses(e.target.checked)}
-                className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+                className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
               />
-              <Receipt className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <Receipt aria-hidden="true" className="w-3.5 h-3.5" />
               <span>Approved Expenses</span>
             </label>
 
             <button
               type="button"
+              aria-label="Refresh bi-weekly calculation"
               onClick={loadBiweeklyData}
               disabled={loading}
-              className="p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-2xs disabled:opacity-50"
+              className="min-w-[36px] min-h-[36px] inline-flex items-center justify-center p-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 transition-colors shadow-2xs disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               title="Refresh Bi-Weekly Calculation"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-amber-500' : ''}`} />
+              <RefreshCw aria-hidden="true" className={`w-4 h-4 ${loading ? 'animate-spin text-amber-500' : ''}`} />
             </button>
 
             <div className="relative w-full sm:w-56">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
-                type="text"
+                type="search"
+                aria-label="Search bi-weekly payroll by employee, ID, or route"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search..."
-                className="w-full h-9 pl-9 pr-3 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
+                className="w-full h-9 pl-9 pr-3 text-base sm:text-sm rounded-lg border border-slate-700 bg-slate-800 text-slate-200 placeholder-slate-400 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 shadow-2xs"
               />
               {searchQuery && (
                 <button
                   type="button"
+                  aria-label="Clear search"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  className="min-w-[24px] min-h-[24px] inline-flex items-center justify-center absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 hover:text-slate-200 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X aria-hidden="true" className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
           </div>
         </div>
-      </div>
+      </search>
 
       {/* Error Alert */}
       {error && (
-        <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-sm flex items-center gap-2.5">
-          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+        <div role="alert" className="p-3.5 rounded-xl border text-sm flex items-center gap-2.5">
+          <AlertCircle aria-hidden="true" className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Four biweekly payroll KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+        <div className="p-4 rounded-xl border border-slate-800 bg-slate-900 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
             <span>Total Gross Wages</span>
-            <DollarSign className="w-4 h-4 text-emerald-500" />
+            <DollarSign aria-hidden="true" className="w-4 h-4 text-emerald-500" />
           </div>
-          <div className="text-2xl font-extrabold font-mono text-slate-900 dark:text-white mt-1">
+          <div className="text-2xl font-extrabold font-mono text-white mt-1">
             ${grandSummary.totalPay.toFixed(2)}
           </div>
           <div className="text-xs text-slate-500 mt-0.5">
@@ -1222,12 +1272,12 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
           </div>
         </div>
 
-        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+        <div className="p-4 rounded-xl border border-slate-800 bg-slate-900 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
             <span>Insurable EI Hours</span>
-            <Clock className="w-4 h-4 text-blue-500" />
+            <Clock aria-hidden="true" className="w-4 h-4 text-blue-500" />
           </div>
-          <div className="text-2xl font-extrabold font-mono text-blue-600 dark:text-blue-400 mt-1">
+          <div className="text-2xl font-extrabold font-mono mt-1">
             {grandSummary.totalHours.toFixed(2)} hrs
           </div>
           <div className="text-xs text-slate-500 mt-0.5">
@@ -1235,12 +1285,12 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
           </div>
         </div>
 
-        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+        <div className="p-4 rounded-xl border border-slate-800 bg-slate-900 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
             <span>Approved Expenses</span>
-            <Receipt className="w-4 h-4 text-amber-500" />
+            <Receipt aria-hidden="true" className="w-4 h-4 text-amber-500" />
           </div>
-          <div className="text-2xl font-extrabold font-mono text-amber-600 dark:text-amber-400 mt-1">
+          <div className="text-2xl font-extrabold font-mono mt-1">
             ${grandSummary.totalExpenses.toFixed(2)}
           </div>
           <div className="text-xs text-slate-500 mt-0.5">
@@ -1248,12 +1298,12 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
           </div>
         </div>
 
-        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
+        <div className="p-4 rounded-xl border border-slate-800 bg-slate-900 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
             <span>Active Staff Count</span>
-            <Users className="w-4 h-4 text-purple-500" />
+            <Users aria-hidden="true" className="w-4 h-4 text-purple-500" />
           </div>
-          <div className="text-2xl font-extrabold font-mono text-purple-600 dark:text-purple-400 mt-1">
+          <div className="text-2xl font-extrabold font-mono mt-1">
             {grandSummary.employeeCount}
           </div>
           <div className="text-xs text-slate-500 mt-0.5">
@@ -1263,9 +1313,10 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
       </div>
 
       {/* Main Payroll Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+      <div className="bg-slate-900 rounded-xl border border-slate-800 shadow-sm overflow-hidden">
+        <div ref={tableContainerRef} tabIndex={0} role="region" aria-label="Bi-weekly payroll summary table" className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500">
           <table className="w-full border-collapse text-left text-sm table-fixed min-w-[1360px]">
+            <caption className="sr-only">Bi-weekly payroll summary from {startDate} to {endDate}</caption>
             <colgroup>
               <col style={{ width: '150px' }} /> {/* Route */}
               <col style={{ width: '90px' }} />  {/* Rate */}
@@ -1281,29 +1332,29 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
               <col style={{ width: '105px' }} /> {/* Week 2 Hours */}
               <col style={{ width: '115px' }} /> {/* Sub Total */}
             </colgroup>
-            <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800 shadow-2xs">
-              <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 text-xs font-semibold select-none">
-                <th className="py-3 px-4 min-w-[150px]">Route</th>
-                <th className="py-3 px-3 min-w-[90px]">Rate</th>
-                <th className="py-3 px-3 min-w-[95px] text-center">Week 1 Runs</th>
-                <th className="py-3 px-3 min-w-[105px] text-right">Week 1 Pay</th>
-                <th className="py-3 px-3 min-w-[95px] text-center">Week 2 Runs</th>
-                <th className="py-3 px-3 min-w-[105px] text-right">Week 2 Pay</th>
-                <th className="py-3 px-3 min-w-[95px] text-center">Total Runs</th>
-                <th className="py-3 px-3 min-w-[110px] text-right">Sub Total</th>
-                <th className="py-3 px-3 min-w-[95px] text-right">Hourly Rate</th>
-                <th className="py-3 px-3 min-w-[95px] text-right">Hours</th>
-                <th className="py-3 px-3 min-w-[105px] text-right">Week 1 Hours</th>
-                <th className="py-3 px-3 min-w-[105px] text-right">Week 2 Hours</th>
-                <th className="py-3 px-4 min-w-[110px] text-right">Sub Total</th>
+            <thead className="sticky top-0 z-20 bg-slate-800 shadow-2xs">
+              <tr className="border-b border-slate-800 bg-slate-800/60 text-slate-300 text-xs font-semibold select-none">
+                <th scope="col" className="py-3 px-4 min-w-[150px]">Route</th>
+                <th scope="col" className="py-3 px-3 min-w-[90px]">Rate</th>
+                <th scope="col" className="py-3 px-3 min-w-[95px] text-center">Week 1 Runs</th>
+                <th scope="col" className="py-3 px-3 min-w-[105px] text-right">Week 1 Pay</th>
+                <th scope="col" className="py-3 px-3 min-w-[95px] text-center">Week 2 Runs</th>
+                <th scope="col" className="py-3 px-3 min-w-[105px] text-right">Week 2 Pay</th>
+                <th scope="col" className="py-3 px-3 min-w-[95px] text-center">Total Runs</th>
+                <th scope="col" className="py-3 px-3 min-w-[110px] text-right">Sub Total</th>
+                <th scope="col" className="py-3 px-3 min-w-[95px] text-right">Hourly Rate</th>
+                <th scope="col" className="py-3 px-3 min-w-[95px] text-right">Hours</th>
+                <th scope="col" className="py-3 px-3 min-w-[105px] text-right">Week 1 Hours</th>
+                <th scope="col" className="py-3 px-3 min-w-[105px] text-right">Week 2 Hours</th>
+                <th scope="col" className="py-3 px-4 min-w-[110px] text-right">Sub Total</th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+            <tbody className="divide-y divide-slate-800/80">
               {/* Grand Total Summary Row */}
               {groupedData.length > 0 && (
-                <tr className="sticky top-[41px] z-10 bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700 shadow-2xs">
-                  <td className="py-2.5 px-4 text-xs tracking-wider uppercase text-slate-600 dark:text-slate-400">
+                <tr className="sticky top-[41px] z-10 bg-slate-800 font-bold text-slate-200 border-b border-slate-700 shadow-2xs">
+                  <td className="py-2.5 px-4 text-xs tracking-wider uppercase text-slate-400">
                     Grand Summary
                   </td>
                   <td className="py-2.5 px-3"></td>
@@ -1318,7 +1369,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                   <td className="py-2.5 px-3 text-center">
                     {grandSummary.totalRuns}
                   </td>
-                  <td className="py-2.5 px-3 text-right text-slate-900 dark:text-white font-extrabold">
+                  <td className="py-2.5 px-3 text-right text-white font-extrabold">
                     Total : ${grandSummary.totalPay.toFixed(2)}
                   </td>
                   <td className="py-2.5 px-3"></td>
@@ -1329,7 +1380,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                   <td className="py-2.5 px-3 text-right">
                     {grandSummary.w2Hours.toFixed(2)}
                   </td>
-                  <td className="py-2.5 px-4 text-right text-slate-900 dark:text-white font-extrabold">
+                  <td className="py-2.5 px-4 text-right text-white font-extrabold">
                     Total : {grandSummary.totalHours.toFixed(2)}
                   </td>
                 </tr>
@@ -1351,10 +1402,10 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                 return (
                   <React.Fragment key={empGroup.employeeId}>
                     {/* Employee Group Header Row */}
-                    <tr className="bg-slate-50/80 dark:bg-slate-800/50 hover:bg-slate-100/70 dark:hover:bg-slate-800/80 transition-colors border-t border-slate-200 dark:border-slate-700">
+                    <tr className="bg-slate-800/50 hover:bg-slate-800/80 transition-colors border-t border-slate-700">
                       <td colSpan={13} className="py-2.5 px-3">
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 text-left font-bold text-slate-900 dark:text-white">
+                          <div className="flex items-center gap-2 text-left font-bold text-white">
                             <button
                               type="button"
                               onClick={() => toggleEmployee(empGroup.employeeId)}
@@ -1371,11 +1422,11 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                               <button
                                 type="button"
                                 onClick={() => onSelectEmployee(empGroup.employeeId, empGroup.employeeName)}
-                                className="text-sm hover:text-amber-600 dark:hover:text-amber-400 hover:underline transition-colors"
+                                className="text-sm hover:text-amber-600 hover:text-amber-400 hover:underline transition-colors"
                                 title="View employee details"
                               >
                                 {empGroup.employeeName}{' '}
-                                <span className="font-mono font-semibold text-slate-500 dark:text-slate-400">
+                                <span className="font-mono font-semibold text-slate-400">
                                   ({empGroup.employeeId})
                                 </span>
                               </button>
@@ -1383,13 +1434,13 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                               <button
                                 type="button"
                                 onClick={() => toggleEmployee(empGroup.employeeId)}
-                                className="text-sm hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+                                className="text-sm hover:text-amber-600 hover:text-amber-400 transition-colors"
                               >
                                 {empGroup.employeeName} ({empGroup.employeeId})
                               </button>
                             )}
                             {empGroup.schoolBoardCode && (
-                              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 uppercase">
+                              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-700 text-slate-300 uppercase">
                                 {empGroup.schoolBoardCode}
                               </span>
                             )}
@@ -1398,21 +1449,21 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                           {/* Quick summary badges on right of header */}
                           <div className="flex items-center gap-2 text-xs">
                             {hasHolidayPay && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[11px] font-medium">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium">
                                 <span>🏖️ Holiday:</span>
                                 <b>+{empGroup.totalHolidayRuns} Shifts (${empGroup.totalHolidayPay.toFixed(2)})</b>
                               </span>
                             )}
 
                             {hasExpenses && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[11px] font-medium">
-                                <Receipt className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium">
+                                <Receipt className="w-3 h-3" />
                                 <span>Expenses:</span>
                                 <b>+${empGroup.expenses.totalAmount.toFixed(2)}</b>
                               </span>
                             )}
 
-                            <span className="font-mono font-bold text-slate-900 dark:text-white px-2 py-0.5 rounded bg-slate-200/60 dark:bg-slate-700/60">
+                            <span className="font-mono font-bold text-white px-2 py-0.5 rounded bg-slate-700/60">
                               Payout: ${empGroup.totalPayout.toFixed(2)}
                             </span>
 
@@ -1423,7 +1474,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                                 setDetailWeekFilter('all');
                                 setDetailEmployeeId(empGroup.employeeId);
                               }}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
                               title={`View bi-weekly timesheet & daily shift details for ${empGroup.employeeName}`}
                             >
                               <FileText className="w-3.5 h-3.5" />
@@ -1439,7 +1490,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                       empGroup.rows.map((row, idx) => (
                         <tr
                           key={`${empGroup.employeeId}-${row.routeNo}-${row.payRate}-${idx}`}
-                          className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 text-slate-700 dark:text-slate-300 transition-colors"
+                          className="hover:bg-slate-800/20 text-slate-300 transition-colors"
                         >
                           {/* Route */}
                           <td className="py-2.5 px-4 font-mono text-xs pl-8">
@@ -1447,7 +1498,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                               <span>{row.routeNo}</span>
                               {row.holidayRuns > 0 && (
                                 <span
-                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-sans font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-sans font-semibold border"
                                   title={row.holidayNote || 'Holiday Entitlement Run'}
                                 >
                                   <span>🏖️ +{row.holidayRuns} Holiday</span>
@@ -1487,17 +1538,17 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                           </td>
 
                           {/* Sub Total Pay */}
-                          <td className="py-2.5 px-3 text-right font-mono text-xs font-semibold text-slate-900 dark:text-white">
+                          <td className="py-2.5 px-3 text-right font-mono text-xs font-semibold text-white">
                             ${row.subTotalPay.toFixed(2)}
                           </td>
 
                           {/* Hourly Rate */}
-                          <td className="py-2.5 px-3 text-right font-mono text-xs text-slate-600 dark:text-slate-400">
+                          <td className="py-2.5 px-3 text-right font-mono text-xs text-slate-400">
                             {row.hourlyRate > 0 ? row.hourlyRate.toFixed(2) : '-'}
                           </td>
 
                           {/* Hours (per run) */}
-                          <td className="py-2.5 px-3 text-right font-mono text-xs text-slate-600 dark:text-slate-400">
+                          <td className="py-2.5 px-3 text-right font-mono text-xs text-slate-400">
                             {row.eiHours.toFixed(5)}
                           </td>
 
@@ -1512,7 +1563,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                           </td>
 
                           {/* Sub Total Hours */}
-                          <td className="py-2.5 px-4 text-right font-mono text-xs font-semibold text-slate-900 dark:text-white">
+                          <td className="py-2.5 px-4 text-right font-mono text-xs font-semibold text-white">
                             {row.subTotalHours.toFixed(2)}
                           </td>
                         </tr>
@@ -1520,10 +1571,10 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
 
                     {/* EXPENSES BREAKDOWN SECTION (Shown when employee has approved expenses) */}
                     {isExpanded && hasExpenses && (
-                      <tr className="bg-emerald-50/30 dark:bg-emerald-950/10 border-t border-b border-emerald-100 dark:border-emerald-900/40">
+                      <tr className="border-t border-b">
                         <td colSpan={13} className="py-2 px-8">
                           <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-                            <div className="flex items-center gap-2 font-semibold text-emerald-800 dark:text-emerald-300">
+                            <div className="flex items-center gap-2 font-semibold">
                               <Receipt className="w-4 h-4 text-emerald-600" />
                               <span>Approved Expense Reimbursements (Categorized):</span>
                             </div>
@@ -1558,7 +1609,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
 
                     {/* Employee Subtotal / Footer Row */}
                     {isExpanded && (
-                      <tr className="bg-slate-50/50 dark:bg-slate-800/30 font-semibold text-slate-800 dark:text-slate-200 border-b border-slate-200/80 dark:border-slate-800">
+                      <tr className="bg-slate-800/30 font-semibold text-slate-200 border-b border-slate-800">
                         <td className="py-2.5 px-4 pl-8" colSpan={2}>
                           <button
                             type="button"
@@ -1566,7 +1617,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                               setDetailWeekFilter('all');
                               setDetailEmployeeId(empGroup.employeeId);
                             }}
-                            className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                            className="inline-flex items-center gap-1.5 text-xs font-medium hover:underline cursor-pointer"
                           >
                             <Clock className="w-3.5 h-3.5" />
                             <span>View Daily Timesheet ({empGroup.dailyRecords.length} shifts)</span>
@@ -1584,10 +1635,10 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                         </td>
                         <td className="py-2.5 px-3 text-center"></td>
                         {/* Sub Total Pay (Formatted as 'Total : $1285.00') */}
-                        <td className="py-2.5 px-3 text-right font-mono text-xs text-slate-900 dark:text-white font-bold whitespace-nowrap">
+                        <td className="py-2.5 px-3 text-right font-mono text-xs text-white font-bold whitespace-nowrap">
                           <div>Total : ${empGroup.grandTotalPay.toFixed(2)}</div>
                           {hasExpenses && (
-                            <div className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-400">
+                            <div className="text-[11px] font-extrabold">
                               Payout: ${empGroup.totalPayout.toFixed(2)}
                             </div>
                           )}
@@ -1603,7 +1654,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                           {empGroup.totalWeek2Hours.toFixed(2)}
                         </td>
                         {/* Sub Total Hours */}
-                        <td className="py-2.5 px-4 text-right font-mono text-xs text-slate-900 dark:text-white font-bold whitespace-nowrap">
+                        <td className="py-2.5 px-4 text-right font-mono text-xs text-white font-bold whitespace-nowrap">
                           Total : {empGroup.grandTotalHours.toFixed(2)}
                         </td>
                       </tr>
@@ -1621,12 +1672,12 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
               {groupedData.length === 0 && !loading && (
                 <tr>
                   <td colSpan={13} className="py-12 px-4 text-center">
-                    <div className="flex flex-col items-center justify-center max-w-md mx-auto text-slate-500 dark:text-slate-400">
+                    <div className="flex flex-col items-center justify-center max-w-md mx-auto text-slate-400">
                       <AlertCircle className="w-10 h-10 text-amber-500 mb-3" />
-                      <p className="font-semibold text-base text-slate-800 dark:text-slate-200">
+                      <p className="font-semibold text-base text-slate-200">
                         No bi-weekly payroll records found for this period
                       </p>
-                      <p className="text-sm mt-1 text-slate-500 dark:text-slate-400">
+                      <p className="text-sm mt-1 text-slate-400">
                         Date Range: {startDate} to {endDate}
                       </p>
                       <div className="flex flex-wrap gap-2 mt-4">
@@ -1650,7 +1701,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                             setSelectedEmployee('all');
                             setSearchQuery('');
                           }}
-                          className="px-4 py-2 rounded-lg bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white font-medium text-sm transition-colors shadow-2xs"
+                          className="px-4 py-2 rounded-lg hover:bg-slate-900 text-white font-medium text-sm transition-colors shadow-2xs"
                         >
                           Load 10-12 Holiday Period (Oct 5 - Oct 18, 2026)
                         </button>
@@ -1665,12 +1716,12 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
 
         {/* Bottom Expand / Collapse All & Summary Bar */}
         {groupedData.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs text-slate-500 dark:text-slate-400 gap-2">
+          <div className="flex flex-wrap items-center justify-between p-3 border-t border-slate-800 bg-slate-900/40 text-xs text-slate-400 gap-2">
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setAllExpanded(true)}
-                className="hover:text-amber-600 dark:hover:text-amber-400 underline font-medium"
+                className="hover:text-amber-600 hover:text-amber-400 underline font-medium"
               >
                 Expand All
               </button>
@@ -1678,7 +1729,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
               <button
                 type="button"
                 onClick={() => setAllExpanded(false)}
-                className="hover:text-amber-600 dark:hover:text-amber-400 underline font-medium"
+                className="hover:text-amber-600 hover:text-amber-400 underline font-medium"
               >
                 Collapse All
               </button>
@@ -1686,16 +1737,16 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
 
             <div className="flex items-center gap-4 font-medium">
               {grandSummary.totalHolidayRuns > 0 && (
-                <span className="text-amber-700 dark:text-amber-400 font-semibold">
+                <span className="font-semibold">
                   🏖️ Holiday Entitlements: {grandSummary.totalHolidayRuns} Shifts (${grandSummary.totalHolidayPay.toFixed(2)})
                 </span>
               )}
               {grandSummary.totalExpenses > 0 && (
-                <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
+                <span className="font-semibold">
                   🧾 Approved Expenses: +${grandSummary.totalExpenses.toFixed(2)}
                 </span>
               )}
-              <span className="text-slate-900 dark:text-white font-bold">
+              <span className="text-white font-bold">
                 Net Grand Payout: ${grandSummary.totalPayout.toFixed(2)}
               </span>
             </div>
@@ -1705,27 +1756,33 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
 
       {/* Statutory Holidays & Route Assignment Entitlements Modal */}
       {isHolidayModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-w-xl w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+        <BiweeklyModalDialog
+          ariaLabelledBy={holidayTitleId}
+          onClose={() => setIsHolidayModalOpen(false)}
+          className="w-[calc(100%-2rem)] max-w-xl rounded-2xl border border-slate-700 bg-slate-800 shadow-2xl"
+        >
+          <div className="p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-amber-500" />
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                <Calendar aria-hidden="true" className="w-5 h-5 text-amber-500" />
+                <h3 id={holidayTitleId} className="text-lg font-bold text-slate-200">
                   Statutory Holidays & Route Assignments
                 </h3>
               </div>
               <button
                 type="button"
+                autoFocus
+                aria-label="Close modal"
                 onClick={() => setIsHolidayModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
-                <X className="w-5 h-5" />
+                <X aria-hidden="true" className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-sm text-slate-400">
               Statutory holidays and driver route assignment shift credits during (
-              <span className="font-semibold text-slate-700 dark:text-slate-300">
+              <span className="font-semibold text-slate-300">
                 {startDate} to {endDate}
               </span>
               ):
@@ -1739,14 +1796,14 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                   return (
                     <div
                       key={i}
-                      className="p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/50 dark:bg-amber-950/20 space-y-2"
+                      className="p-3.5 rounded-xl border space-y-2"
                     >
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-bold text-sm text-slate-900 dark:text-white">
+                          <div className="font-bold text-sm text-white">
                             {h.name}
                           </div>
-                          <div className="text-xs text-amber-700 dark:text-amber-400 font-mono">
+                          <div className="text-xs font-mono">
                             {h.date} (Weekday Holiday)
                           </div>
                         </div>
@@ -1757,27 +1814,27 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
 
                       {/* Credited Route Assignments */}
                       {matchingCredits.length > 0 ? (
-                        <div className="mt-2 pt-2 border-t border-amber-200/60 dark:border-amber-800/60 text-xs space-y-1">
-                          <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                        <div className="mt-2 pt-2 border-t text-xs space-y-1">
+                          <div className="font-semibold text-slate-200 flex items-center gap-1">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                             <span>Route Assignment Shift Credits:</span>
                           </div>
                           {matchingCredits.map((cs, cIdx) => (
                             <div
                               key={cIdx}
-                              className="flex items-center justify-between p-1.5 rounded bg-white/70 dark:bg-slate-800/70 border border-amber-200/40 dark:border-amber-800/40 font-mono text-[11px]"
+                              className="flex items-center justify-between p-1.5 rounded bg-slate-800/70 border border-amber-800/40 font-mono text-[11px]"
                             >
                               <span>
                                 <b>{cs.routeNo}</b>: {cs.driverName} ({cs.driverId})
                               </span>
-                              <span className="font-semibold text-amber-700 dark:text-amber-400">
+                              <span className="font-semibold">
                                 +{cs.shiftsCount} Shifts (${(cs.shiftsCount * cs.rate).toFixed(2)})
                               </span>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                        <p className="text-[11px] text-slate-400 italic">
                           No uncredited regular weekday route shifts found for this holiday date.
                         </p>
                       )}
@@ -1785,14 +1842,14 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                   );
                 })
               ) : (
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-center text-sm text-slate-500 dark:text-slate-400">
+                <div className="p-4 rounded-xl border border-slate-800 bg-slate-800/40 text-center text-sm text-slate-400">
                   No statutory holidays fall within this 2-week period ({startDate} - {endDate}).
                 </div>
               )}
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-400 space-y-1">
-              <div className="font-semibold text-slate-700 dark:text-slate-300">
+            <div className="p-3 rounded-xl bg-slate-800 text-xs text-slate-400 space-y-1">
+              <div className="font-semibold text-slate-300">
                 Route Assignment Holiday Policy:
               </div>
               <p>
@@ -1804,13 +1861,13 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
               <button
                 type="button"
                 onClick={() => setIsHolidayModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-sm transition-colors"
+                className="min-h-[32px] px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-300 hover:bg-slate-700 text-slate-200 font-medium text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
                 Close
               </button>
             </div>
           </div>
-        </div>
+        </BiweeklyModalDialog>
       )}
 
       {/* Driver Bi-Weekly Timesheet Details Modal */}
@@ -1838,42 +1895,46 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
         );
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/60 backdrop-blur-xs">
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+          <BiweeklyModalDialog
+            ariaLabelledBy={detailTitleId}
+            onClose={() => setDetailEmployeeId(null)}
+            className="w-[calc(100%-1.5rem)] max-w-5xl max-h-[90vh] rounded-2xl border border-slate-700 bg-slate-800 shadow-2xl overflow-hidden"
+          >
+            <div className="max-h-[90vh] flex flex-col overflow-hidden">
               {/* Modal Header */}
-              <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-slate-800 bg-slate-800/40">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 font-bold text-base">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center font-bold text-base">
                     {selectedDetailGroup.employeeName.charAt(0).toUpperCase()}
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {onSelectEmployee ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onSelectEmployee(selectedDetailGroup.employeeId, selectedDetailGroup.employeeName)
-                          }
-                          className="text-lg font-bold text-slate-900 dark:text-white hover:text-amber-600 dark:hover:text-amber-300 hover:underline transition"
-                          title="View employee details"
-                        >
-                          {selectedDetailGroup.employeeName}
-                        </button>
-                      ) : (
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                          {selectedDetailGroup.employeeName}
-                        </h3>
-                      )}
-                      <span className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                      <h3 id={detailTitleId} className="text-lg font-bold text-slate-200">
+                        {onSelectEmployee ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onSelectEmployee(selectedDetailGroup.employeeId, selectedDetailGroup.employeeName)
+                            }
+                            className="hover:text-amber-600 hover:text-amber-300 hover:underline transition rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+                            title="View employee details"
+                          >
+                            {selectedDetailGroup.employeeName}
+                          </button>
+                        ) : (
+                          selectedDetailGroup.employeeName
+                        )}
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold bg-slate-700 text-slate-300">
                         ID: {selectedDetailGroup.employeeId}
                       </span>
                       {selectedDetailGroup.schoolBoardCode && (
-                        <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 uppercase">
+                        <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-500/15 border border-amber-500/30 uppercase">
                           {selectedDetailGroup.schoolBoardCode}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5">
+                    <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-amber-500" />
                       <span>
                         Bi-Weekly Timesheet & Payroll Breakdown: <b>{startDate}</b> to <b>{endDate}</b>
@@ -1916,17 +1977,19 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                   <button
                     type="button"
                     onClick={() => handleExportDriverTimesheetCSV(selectedDetailGroup)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-medium transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium transition-colors cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Export CSV</span>
                   </button>
                   <button
                     type="button"
+                    autoFocus
+                    aria-label="Close modal"
                     onClick={() => setDetailEmployeeId(null)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                   >
-                    <X className="w-5 h-5" />
+                    <X aria-hidden="true" className="w-5 h-5" />
                   </button>
                 </div>
               </div>
@@ -1935,62 +1998,62 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
               <div className="p-6 overflow-y-auto space-y-5 flex-1">
                 {/* 2-Week Summary KPI Cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="p-3.5 rounded-xl border border-slate-800 bg-slate-800/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                       2-Week Route Wages
                     </div>
-                    <div className="text-xl font-extrabold font-mono text-slate-900 dark:text-white mt-1">
+                    <div className="text-xl font-extrabold font-mono text-white mt-1">
                       ${selectedDetailGroup.grandTotalPay.toFixed(2)}
                     </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    <div className="text-[11px] text-slate-400 mt-0.5">
                       {selectedDetailGroup.grandTotalRuns} total shifts
                     </div>
                   </div>
 
-                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="p-3.5 rounded-xl border border-slate-800 bg-slate-800/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                       2-Week Total Hours
                     </div>
-                    <div className="text-xl font-extrabold font-mono text-blue-600 dark:text-blue-400 mt-1">
+                    <div className="text-xl font-extrabold font-mono mt-1">
                       {selectedDetailGroup.grandTotalHours.toFixed(2)} hrs
                     </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    <div className="text-[11px] text-slate-400 mt-0.5">
                       Insurable EI hours
                     </div>
                   </div>
 
-                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="p-3.5 rounded-xl border border-slate-800 bg-slate-800/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                       Week 1 ({startDate.slice(5)}–{week1EndDate.slice(5)})
                     </div>
-                    <div className="text-base font-bold font-mono text-slate-900 dark:text-white mt-1">
+                    <div className="text-base font-bold font-mono text-white mt-1">
                       ${selectedDetailGroup.totalWeek1Pay.toFixed(2)}
                     </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
+                    <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
                       {selectedDetailGroup.totalWeek1Runs} shifts · {selectedDetailGroup.totalWeek1Hours.toFixed(2)} hrs
                     </div>
                   </div>
 
-                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <div className="p-3.5 rounded-xl border border-slate-800 bg-slate-800/40">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                       Week 2 ({week2StartDate.slice(5)}–{endDate.slice(5)})
                     </div>
-                    <div className="text-base font-bold font-mono text-slate-900 dark:text-white mt-1">
+                    <div className="text-base font-bold font-mono text-white mt-1">
                       ${selectedDetailGroup.totalWeek2Pay.toFixed(2)}
                     </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
+                    <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
                       {selectedDetailGroup.totalWeek2Runs} shifts · {selectedDetailGroup.totalWeek2Hours.toFixed(2)} hrs
                     </div>
                   </div>
 
                   <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider">
                       Net Total Payout
                     </div>
-                    <div className="text-xl font-extrabold font-mono text-amber-700 dark:text-amber-300 mt-1">
+                    <div className="text-xl font-extrabold font-mono mt-1">
                       ${selectedDetailGroup.totalPayout.toFixed(2)}
                     </div>
-                    <div className="text-[11px] text-amber-700/80 dark:text-amber-300/80 mt-0.5">
+                    <div className="text-[11px] mt-0.5">
                       {selectedDetailGroup.expenses.totalAmount > 0
                         ? `Incl. +$${selectedDetailGroup.expenses.totalAmount.toFixed(2)} expenses`
                         : 'Wages + Reimbursements'}
@@ -2000,67 +2063,71 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
 
                 {/* Week Filter Tabs */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <div role="group" aria-label="Filter timesheet by week" className="inline-flex rounded-xl p-1 bg-slate-800 border border-slate-700">
                     <button
                       type="button"
+                      aria-pressed={detailWeekFilter === 'all'}
                       onClick={() => setDetailWeekFilter('all')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                         detailWeekFilter === 'all'
-                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          ? 'bg-slate-900 text-white shadow-2xs'
+                          : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       All 2 Weeks ({selectedDetailGroup.dailyRecords.length})
                     </button>
                     <button
                       type="button"
+                      aria-pressed={detailWeekFilter === 'week1'}
                       onClick={() => setDetailWeekFilter('week1')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                         detailWeekFilter === 'week1'
-                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          ? 'bg-slate-900 text-white shadow-2xs'
+                          : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       Week 1 ({w1Records.length})
                     </button>
                     <button
                       type="button"
+                      aria-pressed={detailWeekFilter === 'week2'}
                       onClick={() => setDetailWeekFilter('week2')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                         detailWeekFilter === 'week2'
-                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                          ? 'bg-slate-900 text-white shadow-2xs'
+                          : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       Week 2 ({w2Records.length})
                     </button>
                   </div>
 
-                  <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  <div className="text-xs text-slate-400 font-medium">
                     Showing <b>{displayedRecords.length}</b> dispatch shifts · Subtotal:{' '}
-                    <b className="font-mono text-slate-900 dark:text-white">${displayedPay.toFixed(2)}</b> (
-                    <b className="font-mono text-blue-600 dark:text-blue-400">{displayedHours.toFixed(2)} hrs</b>)
+                    <b className="font-mono text-white">${displayedPay.toFixed(2)}</b> (
+                    <b className="font-mono">{displayedHours.toFixed(2)} hrs</b>)
                   </div>
                 </div>
 
                 {/* Daily Dispatch Shifts Table */}
-                <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-                  <div className="overflow-x-auto">
+                <div className="border border-slate-800 rounded-xl overflow-hidden">
+                  <div tabIndex={0} role="region" aria-label="Daily dispatch shifts table" className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500">
                     <table className="w-full text-left border-collapse">
+                      <caption className="sr-only">Daily dispatch shifts for {selectedDetailGroup.employeeName}</caption>
                       <thead>
-                        <tr className="bg-slate-100/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
-                          <th className="py-2.5 px-3">Date / Day</th>
-                          <th className="py-2.5 px-3">Week</th>
-                          <th className="py-2.5 px-3">Route</th>
-                          <th className="py-2.5 px-3 text-center">Shift</th>
-                          <th className="py-2.5 px-3">Check-In / Out</th>
-                          <th className="py-2.5 px-3">Pay Option / Source</th>
-                          <th className="py-2.5 px-3 text-right">Hours</th>
-                          <th className="py-2.5 px-3 text-right">Payroll Amount</th>
-                          <th className="py-2.5 px-3 text-center">Status</th>
+                        <tr className="bg-slate-800/80 text-slate-300 text-[11px] font-bold uppercase tracking-wider border-b border-slate-700">
+                          <th scope="col" className="py-2.5 px-3">Date / Day</th>
+                          <th scope="col" className="py-2.5 px-3">Week</th>
+                          <th scope="col" className="py-2.5 px-3">Route</th>
+                          <th scope="col" className="py-2.5 px-3 text-center">Shift</th>
+                          <th scope="col" className="py-2.5 px-3">Check-In / Out</th>
+                          <th scope="col" className="py-2.5 px-3">Pay Option / Source</th>
+                          <th scope="col" className="py-2.5 px-3 text-right">Hours</th>
+                          <th scope="col" className="py-2.5 px-3 text-right">Payroll Amount</th>
+                          <th scope="col" className="py-2.5 px-3 text-center">Status</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800 text-xs">
+                      <tbody className="divide-y divide-slate-800 text-xs">
                         {displayedRecords.length > 0 ? (
                           displayedRecords.map((rec, idx) => {
                             const d = rec.dispatchDate || '';
@@ -2073,28 +2140,28 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                             const shiftUpper = (rec.shiftType || 'AM').toUpperCase();
 
                             let shiftBadgeClass =
-                              'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30';
+                              'bg-blue-500/10  border-blue-500/30';
                             if (shiftUpper === 'PM') {
                               shiftBadgeClass =
-                                'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30';
+                                'bg-indigo-500/10  border-indigo-500/30';
                             } else if (shiftUpper === 'MIDDAY' || shiftUpper === 'EXTRA') {
                               shiftBadgeClass =
-                                'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30';
+                                'bg-purple-500/10  border-purple-500/30';
                             } else if (shiftUpper === 'CHARTER' || rec.isCharter) {
                               shiftBadgeClass =
-                                'bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/30';
+                                'bg-orange-500/10  border-orange-500/30';
                             }
 
                             return (
                               <tr
                                 key={`${rec.id}-${idx}`}
-                                className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                                className="hover:bg-slate-800/40 transition-colors"
                               >
                                 <td className="py-2.5 px-3 whitespace-nowrap">
-                                  <div className="font-mono font-semibold text-slate-900 dark:text-white">
+                                  <div className="font-mono font-semibold text-white">
                                     {d}
                                   </div>
-                                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                  <div className="text-[11px] text-slate-400">
                                     {formatWeekdayShort(d)}
                                   </div>
                                 </td>
@@ -2102,19 +2169,19 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                                   <span
                                     className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold ${
                                       isWeek1
-                                        ? 'bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                                        : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                                        ? 'bg-slate-700 text-slate-300'
+                                        : 'bg-amber-500/15 '
                                     }`}
                                   >
                                     {isWeek1 ? 'Week 1' : 'Week 2'}
                                   </span>
                                 </td>
                                 <td className="py-2.5 px-3">
-                                  <div className="font-mono font-bold text-slate-900 dark:text-white">
+                                  <div className="font-mono font-bold text-white">
                                     {rec.routeNo}
                                   </div>
                                   {rec.routeName && (
-                                    <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[200px]">
+                                    <div className="text-[11px] text-slate-400 truncate max-w-[200px]">
                                       {rec.routeName}
                                     </div>
                                   )}
@@ -2126,9 +2193,9 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                                     {shiftUpper}
                                   </span>
                                 </td>
-                                <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400 whitespace-nowrap">
                                   {isHol ? (
-                                    <span className="text-amber-600 dark:text-amber-400 font-sans">
+                                    <span className="font-sans">
                                       🏖️ Statutory Holiday
                                     </span>
                                   ) : rec.checkInTime || rec.checkOutTime ? (
@@ -2137,32 +2204,32 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                                     <span className="text-slate-400">Standard Shift</span>
                                   )}
                                 </td>
-                                <td className="py-2.5 px-3 text-[11px] text-slate-600 dark:text-slate-400">
-                                  <div className="font-semibold text-slate-700 dark:text-slate-300">
+                                <td className="py-2.5 px-3 text-[11px] text-slate-400">
+                                  <div className="font-semibold text-slate-300">
                                     {rec.payOption || 'STANDARD'}
                                   </div>
                                   {rec.rateDescription && (
-                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[180px]">
+                                    <div className="text-[10px] text-slate-400 truncate max-w-[180px]">
                                       {rec.rateDescription}
                                     </div>
                                   )}
                                 </td>
                                 <td
-                                  className="py-2.5 px-3 text-right font-mono font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap"
+                                  className="py-2.5 px-3 text-right font-mono font-semibold text-slate-200 whitespace-nowrap"
                                   title={`${hrs.toFixed(5)} EI hrs`}
                                 >
                                   {hrs.toFixed(2)} hrs
                                 </td>
-                                <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                                <td className="py-2.5 px-3 text-right font-mono font-bold text-white whitespace-nowrap">
                                   ${payAmt.toFixed(2)}
                                 </td>
                                 <td className="py-2.5 px-3 text-center whitespace-nowrap">
                                   {isHol ? (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border">
                                       Holiday Credit
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border">
                                       {rec.status === 'pending_approval' ? 'Pending' : 'Approved'}
                                     </span>
                                   )}
@@ -2172,7 +2239,7 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                           })
                         ) : (
                           <tr>
-                            <td colSpan={9} className="py-8 text-center text-slate-500 dark:text-slate-400">
+                            <td colSpan={9} className="py-8 text-center text-slate-400">
                               No dispatch shifts recorded for this filter.
                             </td>
                           </tr>
@@ -2180,11 +2247,11 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                       </tbody>
                       {displayedRecords.length > 0 && (
                         <tfoot>
-                          <tr className="bg-slate-100/90 dark:bg-slate-800/90 font-bold text-xs text-slate-900 dark:text-white border-t border-slate-200 dark:border-slate-700">
+                          <tr className="bg-slate-800/90 font-bold text-xs text-white border-t border-slate-700">
                             <td colSpan={6} className="py-2.5 px-3 text-right">
                               Subtotal ({displayedRecords.length} shifts):
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono text-blue-600 dark:text-blue-400">
+                            <td className="py-2.5 px-3 text-right font-mono">
                               {displayedHours.toFixed(2)} hrs
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono">
@@ -2200,13 +2267,13 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
 
                 {/* Approved Expense Reimbursements in Modal (if any) */}
                 {selectedDetailGroup.expenses.totalAmount > 0 && (
-                  <div className="p-4 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-2">
+                  <div className="p-4 rounded-xl border space-y-2">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                      <div className="flex items-center gap-2 text-xs font-bold">
                         <Receipt className="w-4 h-4 text-emerald-600" />
                         <span>Approved Expense Reimbursements ({selectedDetailGroup.expenses.claimsCount})</span>
                       </div>
-                      <span className="font-mono font-bold text-sm text-emerald-700 dark:text-emerald-300">
+                      <span className="font-mono font-bold text-sm">
                         +${selectedDetailGroup.expenses.totalAmount.toFixed(2)}
                       </span>
                     </div>
@@ -2231,34 +2298,38 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
               </div>
 
               {/* Modal Footer */}
-              <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-                <div className="text-xs text-slate-500 dark:text-slate-400">
+              <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-800 bg-slate-800/50">
+                <div className="text-xs text-slate-400">
                   Synchronized with Driver App Timesheet & Bi-Weekly Payroll Log
                 </div>
                 <button
                   type="button"
                   onClick={() => setDetailEmployeeId(null)}
-                  className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-300 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition-colors cursor-pointer"
                 >
                   Close
                 </button>
               </div>
             </div>
-          </div>
+          </BiweeklyModalDialog>
         );
       })()}
 
       {/* QuickBooks & Canadian Payroll Export Modal */}
       {qbExportTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-w-xl w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+        <BiweeklyModalDialog
+          ariaLabelledBy={qbTitleId}
+          onClose={() => setQbExportTarget(null)}
+          className="w-[calc(100%-2rem)] max-w-xl rounded-2xl border border-slate-700 bg-slate-800 shadow-2xl"
+        >
+          <div className="p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <Download className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h3 id={qbTitleId} className="text-lg font-bold text-slate-200 flex items-center gap-2">
+                  <Download aria-hidden="true" className="w-5 h-5" />
                   <span>Export for QuickBooks & Canadian Payroll</span>
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-400 mt-0.5">
                   Period: <b>{startDate}</b> to <b>{endDate}</b> ·{' '}
                   <b>
                     {qbExportTarget.length === 1
@@ -2269,10 +2340,12 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
               </div>
               <button
                 type="button"
+                autoFocus
+                aria-label="Close modal"
                 onClick={() => setQbExportTarget(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                className="min-w-[28px] min-h-[28px] inline-flex items-center justify-center p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:text-slate-200 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
-                <X className="w-5 h-5" />
+                <X aria-hidden="true" className="w-5 h-5" />
               </button>
             </div>
 
@@ -2321,17 +2394,17 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
                       setQbExportTarget(null);
                     });
                   }}
-                  className="w-full text-left p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-500 dark:hover:border-blue-500 hover:bg-blue-50/40 dark:hover:bg-blue-950/20 transition-all group cursor-pointer"
+                  className="w-full text-left p-3.5 rounded-xl border border-slate-800 hover:border-blue-500 hover:border-blue-500 hover:bg-blue-500/15 hover:bg-blue-950/20 transition-all group cursor-pointer"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                    <span className="text-sm font-bold text-white group-hover:text-blue-600 group-hover:text-blue-400">
                       {opt.title}
                     </span>
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30 whitespace-nowrap">
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-blue-500/10 border border-blue-500/30 whitespace-nowrap">
                       {opt.badge}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
                     {opt.desc}
                   </p>
                 </button>
@@ -2342,14 +2415,16 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
               <button
                 type="button"
                 onClick={() => setQbExportTarget(null)}
-                className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs transition-colors cursor-pointer"
+                className="min-h-[32px] px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-300 hover:bg-slate-700 text-slate-200 font-medium text-xs transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
               >
                 Cancel
               </button>
             </div>
           </div>
-        </div>
+        </BiweeklyModalDialog>
       )}
-    </div>
+    </PageShell>
   );
 });
+
+
