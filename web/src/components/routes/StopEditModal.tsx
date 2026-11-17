@@ -40,6 +40,7 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
   const [pullawayTime, setPullawayTime] = useState('');
   const [stopType, setStopType] = useState('HomePickup');
   const [selectedDays, setSelectedDays] = useState<string[]>(['M', 'T', 'W', 'R', 'F']);
+  const [weekParity, setWeekParity] = useState<'ALL' | 'ODD' | 'EVEN'>('ALL');
   const [effectiveDate, setEffectiveDate] = useState('');
   const [retireDate, setRetireDate] = useState('');
   const [comment, setComment] = useState('');
@@ -66,6 +67,7 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
 
       setEffectiveDate(stop.effectiveDate || '');
       setRetireDate(stop.retireDate || '');
+      setWeekParity(stop.weekParity === 'ODD' || stop.weekParity === 'EVEN' ? stop.weekParity : 'ALL');
       setComment(stop.comment || '');
       setInstruction(stop.instruction || '');
       setAssignedStudents(stop.assignedStudents ? [...stop.assignedStudents] : []);
@@ -86,6 +88,7 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
 
       setEffectiveDate(shift.effectiveDate || '');
       setRetireDate(shift.retireDate || '');
+      setWeekParity('ALL');
       setComment('');
       setInstruction('');
       setAssignedStudents([]);
@@ -141,9 +144,19 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
     setAssignedStudents((prev) => prev.filter((s) => s.studentId !== studentId));
   };
 
+  const shiftAllowedDays = useMemo(() => {
+    const raw = (shift?.runDays || 'MTWRF').toUpperCase().trim();
+    if (!raw || raw === 'WEEKDAYS' || raw === 'MTWRF' || raw === 'ALL') {
+      return new Set(['M', 'T', 'W', 'R', 'F']);
+    }
+    const parsed = ['M', 'T', 'W', 'R', 'F'].filter((d) => raw.includes(d));
+    return new Set(parsed.length > 0 ? parsed : ['M', 'T', 'W', 'R', 'F']);
+  }, [shift?.runDays]);
+
   if (!isOpen || !shift) return null;
 
   const toggleDay = (key: string) => {
+    if (!shiftAllowedDays.has(key)) return;
     if (selectedDays.includes(key)) {
       setSelectedDays(selectedDays.filter((d) => d !== key));
     } else {
@@ -171,6 +184,17 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
       setErrorMsg('Pullaway time is required.');
       return;
     }
+    if (selectedDays.length === 0) {
+      setErrorMsg('Please select at least one operating day.');
+      return;
+    }
+    const overflowDays = selectedDays.filter((d) => !shiftAllowedDays.has(d));
+    if (overflowDays.length > 0) {
+      setErrorMsg(
+        `Stop operating days (${overflowDays.join(', ')}) cannot exceed shift operating days (${shift?.runDays || 'MTWRF'}).`
+      );
+      return;
+    }
 
     setIsSubmitting(true);
     setErrorMsg(null);
@@ -185,6 +209,7 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
           pullawayTime: pullawayTime.trim(),
           stopType,
           runDays: computedDays || 'MTWRF',
+          weekParity: weekParity === 'ALL' ? undefined : weekParity,
           effectiveDate: effectiveDate || undefined,
           retireDate: retireDate || undefined,
           comment: comment.trim() || undefined,
@@ -197,6 +222,7 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
           pullawayTime: pullawayTime.trim(),
           stopType,
           runDays: computedDays || 'MTWRF',
+          weekParity: weekParity === 'ALL' ? undefined : weekParity,
           effectiveDate: effectiveDate || undefined,
           retireDate: retireDate || undefined,
           comment: comment.trim() || undefined,
@@ -217,7 +243,7 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fade-in">
-      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
           <div className="flex items-center space-x-3">
@@ -250,7 +276,10 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
             </div>
           )}
 
-          {/* Location */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Left Column: Location, Time/Type, Operating Days, Week Schedule, Instructions */}
+            <div className="space-y-4">
+              {/* Location */}
           <div>
             <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
               Stop Location / Address
@@ -308,21 +337,31 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
 
           {/* Op Days / Weekdays */}
           <div>
-            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-              Operating Days
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                Operating Days
+              </label>
+              <span className="text-[10px] font-mono text-slate-400">
+                Shift limit: {shift?.runDays || 'MTWRF'}
+              </span>
+            </div>
             <div className="flex items-center space-x-1.5">
               {WEEKDAY_OPTIONS.map((opt) => {
-                const isSelected = selectedDays.includes(opt.key);
+                const isAllowed = shiftAllowedDays.has(opt.key);
+                const isSelected = selectedDays.includes(opt.key) && isAllowed;
                 return (
                   <button
                     key={opt.key}
                     type="button"
+                    disabled={!isAllowed}
                     onClick={() => toggleDay(opt.key)}
-                    className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-bold transition border cursor-pointer ${
-                      isSelected
-                        ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-slate-900 dark:hover:text-white'
+                    title={!isAllowed ? `Not active on shift (${shift?.runDays || 'MTWRF'})` : undefined}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-bold transition border ${
+                      !isAllowed
+                        ? 'bg-slate-100/50 dark:bg-slate-900/50 text-slate-300 dark:text-slate-600 border-slate-200/50 dark:border-slate-800 cursor-not-allowed opacity-60'
+                        : isSelected
+                        ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs cursor-pointer'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-slate-900 dark:hover:text-white cursor-pointer'
                     }`}
                   >
                     {opt.label}
@@ -332,7 +371,59 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
             </div>
           </div>
 
-          {/* Assigned Riders Section */}
+          {/* Alternating Week Parity */}
+          <div>
+            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+              Week Schedule (Shared Custody)
+            </label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(
+                [
+                  { key: 'ALL', label: 'Every Week' },
+                  { key: 'ODD', label: 'Odd Weeks' },
+                  { key: 'EVEN', label: 'Even Weeks' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setWeekParity(opt.key)}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition border cursor-pointer ${
+                    weekParity === opt.key
+                      ? 'bg-sky-500 text-slate-950 border-sky-500 shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+              {/* Comment / Instruction */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                  Comment / Special Instructions
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={comment || instruction}
+                    onChange={(e) => {
+                      setComment(e.target.value);
+                      setInstruction(e.target.value);
+                    }}
+                    placeholder="e.g. Wait across sidewalk, turn around at church..."
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none"
+                  />
+                  <FileText className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Assigned Riders & Effective/Retire Dates */}
+            <div className="space-y-4">
+              {/* Assigned Riders Section */}
           <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
@@ -478,24 +569,6 @@ export const StopEditModal: React.FC<StopEditModalProps> = ({
               </p>
             )}
           </div>
-
-          {/* Comment / Instruction */}
-          <div>
-            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
-              Comment / Special Instructions
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={comment || instruction}
-                onChange={(e) => {
-                  setComment(e.target.value);
-                  setInstruction(e.target.value);
-                }}
-                placeholder="e.g. Wait across sidewalk, turn around at church..."
-                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none"
-              />
-              <FileText className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3 pointer-events-none" />
             </div>
           </div>
 

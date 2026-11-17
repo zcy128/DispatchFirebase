@@ -1,9 +1,10 @@
-import React, { useState, useRef, useMemo, useDeferredValue, memo } from 'react';
+import React, { useState, useRef, useMemo, useDeferredValue, useEffect, useCallback, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { BusRoute, RouteStats, formatOpDays, getShiftBadgeStyle, isAutoMarryupEnabled } from '../types/route';
+import { BusRoute, BusRouteShift, RouteStats, formatOpDays, getShiftBadgeStyle, isAutoMarryupEnabled } from '../types/route';
 import { Student } from '../types/student';
 import { School } from '../types/school';
 import { Employee } from '../types/employee';
+import { Vehicle } from '../types/vehicle';
 import { Yard } from '../types/yard';
 import { RouteService } from '../services/routeService';
 import { RouteInlineDetail } from '../components/routes/RouteInlineDetail';
@@ -18,6 +19,14 @@ import {
   countRouteFixIssues,
   matchesRouteFixFilter,
 } from '../utils/routeFixFilterUtils';
+import {
+  RouteAuditFilter,
+  RouteAuditIssue,
+  RouteAuditResult,
+  buildFixedShiftStopsForMissingSchoolStudents,
+  matchesRouteAuditFilter,
+  runRouteAudit,
+} from '../utils/routeAuditUtils';
 import {
   Search,
   Filter,
@@ -37,7 +46,8 @@ import {
   UserCheck,
   SlidersHorizontal,
   History,
-  AlertTriangle
+  AlertTriangle,
+  Wrench
 } from 'lucide-react';
 
 interface RouteListViewProps {
@@ -47,15 +57,223 @@ interface RouteListViewProps {
   schools: School[];
   yards: Yard[];
   employees: Employee[];
+  vehicles?: Vehicle[];
   loading?: boolean;
   onRefresh?: () => void;
   onSelectRoute: (route: BusRoute) => void;
   onSelectStudent?: (student: Student) => void;
-  onSelectStudentId?: (studentId: number) => void;
+  onSelectStudentId?: (studentId: number, initialTab?: 'profile' | 'stops') => void;
+  onEditStudentStops?: (studentId: number) => void;
   onSelectEmployee?: (employeeId?: string, employeeName?: string) => void;
   onSelectVehicle?: (vehicleId?: number, unitNumber?: string) => void;
   onAssignCrew?: (route: BusRoute) => void;
   onRouteUpdated?: (route: BusRoute) => void;
+}
+
+const AUDIT_FILTER_OPTIONS: Array<{
+  key: RouteAuditFilter;
+  label: string;
+  countKey?: keyof import('../utils/routeAuditUtils').RouteAuditSummary['counts'];
+  tone: 'neutral' | 'rose' | 'sky';
+}> = [
+  { key: 'ALL', label: 'All', tone: 'neutral' },
+  { key: 'ANY_ISSUE', label: 'All Audit Issues', countKey: 'anyIssue', tone: 'rose' },
+  { key: 'EMPTY_STOP', label: 'Empty Stops', countKey: 'EMPTY_STOP', tone: 'rose' },
+  { key: 'SCHOOL_STOP_MISSING_STUDENT', label: 'School Stop Missing Student', countKey: 'SCHOOL_STOP_MISSING_STUDENT', tone: 'rose' },
+  { key: 'SCHOOL_STOP_MISMATCH', label: 'Home Stop Missing Student', countKey: 'SCHOOL_STOP_MISMATCH', tone: 'rose' },
+  { key: 'DUPLICATE_STUDENT_IN_ROUTE', label: 'Duplicate Student (Route)', countKey: 'DUPLICATE_STUDENT_IN_ROUTE', tone: 'rose' },
+  { key: 'CROSS_SHIFT_DUPLICATE_STUDENT', label: 'Same-Day Multi-Shift', countKey: 'CROSS_SHIFT_DUPLICATE_STUDENT', tone: 'rose' },
+  { key: 'MULTI_ROUTE_TIME_CONFLICT', label: 'Crew/Vehicle Time Conflict', countKey: 'MULTI_ROUTE_TIME_CONFLICT', tone: 'rose' },
+  { key: 'INACTIVE_CREW_OR_VEHICLE', label: 'Inactive Crew/Vehicle', countKey: 'INACTIVE_CREW_OR_VEHICLE', tone: 'rose' },
+  { key: 'MULTI_ROUTE_SHARED', label: 'Crew/Vehicle ≥2 Routes', countKey: 'MULTI_ROUTE_SHARED', tone: 'sky' },
+];
+
+function RouteAuditIssuesPanel({
+  route,
+  auditResult,
+  ignoringKeys,
+  fixingKeys,
+  fixingAllRoute,
+  onToggleIgnore,
+  onFixMissingSchoolStudent,
+  onFixAllMissingSchoolStudentsForRoute,
+  onSelectStudentStops,
+}: {
+  route: BusRoute;
+  auditResult?: RouteAuditResult;
+  ignoringKeys: Record<string, boolean>;
+  fixingKeys: Record<string, boolean>;
+  fixingAllRoute: boolean;
+  onToggleIgnore: (route: BusRoute, studentId: number, ignore: boolean) => void;
+  onFixMissingSchoolStudent: (issue: RouteAuditIssue) => void;
+  onFixAllMissingSchoolStudentsForRoute: (routeId: string) => void;
+  onSelectStudentStops?: (studentId: number) => void;
+}) {
+  if (!auditResult) return null;
+  const { issues, ignoredIssues, isMultiRouteShared, sharedReasons } = auditResult;
+  if (issues.length === 0 && ignoredIssues.length === 0 && !isMultiRouteShared) {
+    return null;
+  }
+
+  const missingSchoolCount = issues.filter((i) => i.type === 'SCHOOL_STOP_MISSING_STUDENT').length;
+
+  const renderIssueMessage = (issue: RouteAuditIssue) => {
+    if (issue.studentId && issue.studentName && onSelectStudentStops) {
+      const quoted = `"${issue.studentName}"`;
+      const idx = issue.message.indexOf(quoted);
+      if (idx >= 0) {
+        const before = issue.message.slice(0, idx);
+        const after = issue.message.slice(idx + quoted.length);
+        return (
+          <span className="text-slate-200 break-words">
+            {before}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectStudentStops(issue.studentId!);
+              }}
+              className="font-bold text-amber-300 underline decoration-dotted hover:text-amber-200 cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+              title="Click to view student's Stops tab"
+            >
+              {quoted}
+            </button>
+            {after}
+          </span>
+        );
+      }
+    }
+    return <span className="text-slate-200 break-words">{issue.message}</span>;
+  };
+
+  return (
+    <div className="px-4 py-3 border-b border-slate-800/80 bg-slate-950/90 space-y-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>Route Audit Diagnostics</span>
+          {issues.length > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+              {issues.length} active {issues.length === 1 ? 'issue' : 'issues'}
+            </span>
+          )}
+          {ignoredIssues.length > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+              {ignoredIssues.length} ignored
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {missingSchoolCount > 0 && (
+            <button
+              type="button"
+              disabled={fixingAllRoute}
+              onClick={(e) => {
+                e.stopPropagation();
+                onFixAllMissingSchoolStudentsForRoute(route.id);
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition disabled:opacity-50"
+            >
+              <Wrench className="w-3 h-3" />
+              <span>{fixingAllRoute ? 'Fixing...' : `Fix School Stops (${missingSchoolCount})`}</span>
+            </button>
+          )}
+          {isMultiRouteShared && (
+            <div className="text-[11px] text-sky-300 bg-sky-500/10 border border-sky-500/25 px-2.5 py-0.5 rounded-lg">
+              Shared Crew/Vehicle: {sharedReasons.join(' • ')}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {issues.length > 0 && (
+        <div className="space-y-1.5">
+          {issues.map((issue: RouteAuditIssue) => {
+            const ignoreKey = issue.studentId !== undefined ? `${route.id}:${issue.studentId}` : '';
+            const isIgnoreBusy = ignoreKey ? !!ignoringKeys[ignoreKey] : false;
+            const isFixBusy = !!fixingKeys[issue.id];
+            return (
+              <div
+                key={issue.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-xl bg-rose-950/30 border border-rose-500/25 text-xs"
+              >
+                <div className="flex items-start gap-2 min-w-0">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0">
+                    {issue.type.replace(/_/g, ' ')}
+                  </span>
+                  {renderIssueMessage(issue)}
+                </div>
+                <div className="flex items-center gap-1.5 self-start sm:self-center shrink-0">
+                  {issue.type === 'SCHOOL_STOP_MISSING_STUDENT' && (
+                    <button
+                      type="button"
+                      disabled={isFixBusy || fixingAllRoute}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onFixMissingSchoolStudent(issue);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition disabled:opacity-50"
+                    >
+                      <Wrench className="w-3 h-3" />
+                      <span>{isFixBusy ? 'Fixing...' : 'Fix School Stop'}</span>
+                    </button>
+                  )}
+                  {issue.canIgnore && issue.studentId !== undefined && (
+                    <button
+                      type="button"
+                      disabled={isIgnoreBusy}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleIgnore(route, issue.studentId!, true);
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 transition disabled:opacity-50"
+                    >
+                      {isIgnoreBusy ? 'Saving...' : 'Ignore (Shared Custody)'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {ignoredIssues.length > 0 && (
+        <div className="space-y-1.5 pt-1">
+          {ignoredIssues.map((issue: RouteAuditIssue) => {
+            const ignoreKey = issue.studentId !== undefined ? `${route.id}:${issue.studentId}` : '';
+            const isBusy = ignoreKey ? !!ignoringKeys[ignoreKey] : false;
+            return (
+              <div
+                key={issue.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-400"
+              >
+                <div className="flex items-start gap-2 min-w-0">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
+                    IGNORED
+                  </span>
+                  <span className="break-words">{issue.message}</span>
+                </div>
+                {issue.studentId !== undefined && (
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleIgnore(route, issue.studentId!, false);
+                    }}
+                    className="self-start sm:self-center shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition disabled:opacity-50"
+                  >
+                    {isBusy ? 'Saving...' : 'Restore Warning'}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export const RouteListView = memo(function RouteListView({
@@ -65,10 +283,12 @@ export const RouteListView = memo(function RouteListView({
   schools,
   yards,
   employees,
+  vehicles = [],
   onRefresh,
   onSelectRoute,
   onSelectStudent,
   onSelectStudentId,
+  onEditStudentStops,
   onSelectEmployee,
   onSelectVehicle,
   onAssignCrew,
@@ -82,17 +302,158 @@ export const RouteListView = memo(function RouteListView({
   const [opDaysFilter, setOpDaysFilter] = useState('ALL'); // ALL, MTWRF, ----F, MTWR-
   const [marryupFilter, setMarryupFilter] = useState<'ALL' | 'ENABLED' | 'DISABLED'>('ALL');
   const [fixFilter, setFixFilter] = useState<RouteFixFilter>('ALL');
+  const [auditFilter, setAuditFilter] = useState<RouteAuditFilter>('ALL');
+  const [allShifts, setAllShifts] = useState<BusRouteShift[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [ignoringKeys, setIgnoringKeys] = useState<Record<string, boolean>>({});
+  const [fixingSchoolStopKeys, setFixingSchoolStopKeys] = useState<Record<string, boolean>>({});
+  const [fixingAllSchoolStops, setFixingAllSchoolStops] = useState(false);
+  const [fixingRouteSchoolStops, setFixingRouteSchoolStops] = useState<Record<string, boolean>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [expandedRouteIds, setExpandedRouteIds] = useState<Record<string, boolean>>({});
   const [editingRoute, setEditingRoute] = useState<BusRoute | null>(null);
   const [togglingRouteIds, setTogglingRouteIds] = useState<Record<string, boolean>>({});
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
+  const loadAuditShifts = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const list = await RouteService.getAllShifts();
+      setAllShifts(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.warn('[RouteListView] Failed to load shifts for audit:', err);
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAuditShifts();
+  }, [loadAuditShifts]);
+
+  const auditSummary = useMemo(
+    () => runRouteAudit({ routes, shifts: allShifts, employees, vehicles, schools }),
+    [routes, allShifts, employees, vehicles, schools]
+  );
+
+  const handleToggleIgnoreDuplicateStudent = useCallback(
+    async (route: BusRoute, studentId: number, ignore: boolean) => {
+      const key = `${route.id}:${studentId}`;
+      if (ignoringKeys[key]) return;
+      setIgnoringKeys((prev) => ({ ...prev, [key]: true }));
+      try {
+        const current = route.ignoredDuplicateStudentIds || [];
+        const nextIds = ignore
+          ? Array.from(new Set([...current, studentId]))
+          : current.filter((id) => id !== studentId);
+        const updated = await RouteService.updateRoute(route.id, {
+          ignoredDuplicateStudentIds: nextIds,
+        });
+        onRouteUpdated?.({ ...route, ...updated, ignoredDuplicateStudentIds: nextIds });
+      } catch (err: any) {
+        alert(`Failed to update ignore flag: ${err?.message || 'Unknown error'}`);
+      } finally {
+        setIgnoringKeys((prev) => ({ ...prev, [key]: false }));
+      }
+    },
+    [ignoringKeys, onRouteUpdated]
+  );
+
+  const handleFixMissingSchoolStudent = useCallback(
+    async (issue: RouteAuditIssue) => {
+      if (!issue.shiftId || issue.studentId === undefined || fixingSchoolStopKeys[issue.id]) return;
+      const shift = allShifts.find((s) => s.id === issue.shiftId);
+      if (!shift) return;
+
+      const nextStops = buildFixedShiftStopsForMissingSchoolStudents(
+        shift,
+        [issue.studentId],
+        studentsMap,
+        undefined,
+        schools
+      );
+      if (!nextStops) return;
+
+      setFixingSchoolStopKeys((prev) => ({ ...prev, [issue.id]: true }));
+      try {
+        const updated = await RouteService.updateShift(shift.id, { stops: nextStops });
+        setAllShifts((prev) =>
+          prev.map((s) => (s.id === shift.id ? { ...s, ...updated, stops: nextStops } : s))
+        );
+      } catch (err: any) {
+        alert(`Failed to fix school stop: ${err?.message || 'Unknown error'}`);
+      } finally {
+        setFixingSchoolStopKeys((prev) => ({ ...prev, [issue.id]: false }));
+      }
+    },
+    [allShifts, fixingSchoolStopKeys, schools, studentsMap]
+  );
+
+  const handleFixAllMissingSchoolStudents = useCallback(
+    async (targetRouteId?: string) => {
+      const issuesToFix: RouteAuditIssue[] = [];
+      for (const res of auditSummary.byRouteId.values()) {
+        if (targetRouteId && res.routeId !== targetRouteId) continue;
+        for (const issue of res.issues) {
+          if (issue.type === 'SCHOOL_STOP_MISSING_STUDENT' && issue.shiftId && issue.studentId !== undefined) {
+            issuesToFix.push(issue);
+          }
+        }
+      }
+      if (issuesToFix.length === 0) return;
+
+      const byShiftId = new Map<string, number[]>();
+      for (const issue of issuesToFix) {
+        const list = byShiftId.get(issue.shiftId!) || [];
+        list.push(issue.studentId!);
+        byShiftId.set(issue.shiftId!, list);
+      }
+
+      if (targetRouteId) {
+        setFixingRouteSchoolStops((prev) => ({ ...prev, [targetRouteId]: true }));
+      } else {
+        setFixingAllSchoolStops(true);
+      }
+
+      try {
+        const updatedShiftsById = new Map<string, BusRouteShift>();
+        for (const [shiftId, studentIds] of byShiftId.entries()) {
+          const shift = allShifts.find((s) => s.id === shiftId);
+          if (!shift) continue;
+          const nextStops = buildFixedShiftStopsForMissingSchoolStudents(
+            shift,
+            studentIds,
+            studentsMap,
+            undefined,
+            schools
+          );
+          if (!nextStops) continue;
+          const updated = await RouteService.updateShift(shift.id, { stops: nextStops });
+          updatedShiftsById.set(shift.id, { ...shift, ...updated, stops: nextStops });
+        }
+        if (updatedShiftsById.size > 0) {
+          setAllShifts((prev) => prev.map((s) => updatedShiftsById.get(s.id) || s));
+        }
+      } catch (err: any) {
+        alert(`Failed to fix school stops: ${err?.message || 'Unknown error'}`);
+      } finally {
+        if (targetRouteId) {
+          setFixingRouteSchoolStops((prev) => ({ ...prev, [targetRouteId]: false }));
+        } else {
+          setFixingAllSchoolStops(false);
+        }
+      }
+    },
+    [allShifts, auditSummary.byRouteId, schools, studentsMap]
+  );
+
   const handleRefresh = async () => {
-    if (!onRefresh) return;
     setRefreshing(true);
-    await onRefresh();
-    setTimeout(() => setRefreshing(false), 500);
+    try {
+      await Promise.all([onRefresh ? onRefresh() : Promise.resolve(), loadAuditShifts()]);
+    } finally {
+      setTimeout(() => setRefreshing(false), 300);
+    }
   };
 
   const handleToggleAutoMarryup = async (e: React.MouseEvent, route: BusRoute) => {
@@ -199,6 +560,9 @@ export const RouteListView = memo(function RouteListView({
       if (!matchesRouteFixFilter(r, fixFilter)) {
         return false;
       }
+      if (!matchesRouteAuditFilter(r.id, auditSummary, auditFilter)) {
+        return false;
+      }
 
       if (opDaysFilter !== 'ALL') {
         const hasMatchingShift = r.shifts?.some((s) => {
@@ -238,7 +602,7 @@ export const RouteListView = memo(function RouteListView({
 
       return true;
     });
-  }, [routes, boardFilter, yardFilter, marryupFilter, fixFilter, opDaysFilter, deferredSearch]);
+  }, [routes, boardFilter, yardFilter, marryupFilter, fixFilter, auditFilter, auditSummary, opDaysFilter, deferredSearch]);
   const totalExpanded = Object.values(expandedRouteIds).filter(Boolean).length;
 
   // Virtual scrolling containers for 1,000+ routes
@@ -334,7 +698,7 @@ export const RouteListView = memo(function RouteListView({
             <ChevronDown aria-hidden="true" className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showMobileFilters ? 'rotate-180' : ''}`} />
           </button>
 
-          {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || fixFilter !== 'ALL' || opDaysFilter !== 'ALL' || searchTerm) && (
+          {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || fixFilter !== 'ALL' || auditFilter !== 'ALL' || opDaysFilter !== 'ALL' || searchTerm) && (
             <button
               type="button"
               onClick={() => {
@@ -342,6 +706,7 @@ export const RouteListView = memo(function RouteListView({
                 setYardFilter('ALL');
                 setMarryupFilter('ALL');
                 setFixFilter('ALL');
+                setAuditFilter('ALL');
                 setOpDaysFilter('ALL');
                 setSearchTerm('');
               }}
@@ -491,7 +856,7 @@ export const RouteListView = memo(function RouteListView({
             <span>Needs Fix ({fixCounts.needsFix})</span>
           </button>
 
-          {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || fixFilter !== 'ALL' || opDaysFilter !== 'ALL' || searchTerm) && (
+          {(boardFilter !== 'ALL' || yardFilter !== 'ALL' || marryupFilter !== 'ALL' || fixFilter !== 'ALL' || auditFilter !== 'ALL' || opDaysFilter !== 'ALL' || searchTerm) && (
             <button
               type="button"
               onClick={() => {
@@ -499,6 +864,7 @@ export const RouteListView = memo(function RouteListView({
                 setYardFilter('ALL');
                 setMarryupFilter('ALL');
                 setFixFilter('ALL');
+                setAuditFilter('ALL');
                 setOpDaysFilter('ALL');
                 setSearchTerm('');
               }}
@@ -553,6 +919,84 @@ export const RouteListView = memo(function RouteListView({
             <div className="text-lg sm:text-xl font-bold text-white tracking-tight">{stats.totalStops}</div>
             <div className="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate">Total Stops Serviced</div>
           </div>
+        </div>
+      </div>
+
+      {/* Route Audit & Multi-Route Quick Filters */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+            <AlertTriangle className="w-4 h-4 text-amber-400" />
+            <span>Route Audit & Quick Filters</span>
+            {auditLoading && (
+              <span className="text-[11px] font-normal text-slate-400">Scanning shifts...</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {auditSummary.counts.SCHOOL_STOP_MISSING_STUDENT > 0 && (
+              <button
+                type="button"
+                onClick={() => void handleFixAllMissingSchoolStudents()}
+                disabled={fixingAllSchoolStops || auditLoading}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition disabled:opacity-50"
+              >
+                <Wrench className="w-3 h-3" />
+                <span>
+                  {fixingAllSchoolStops
+                    ? 'Fixing School Stops...'
+                    : `Fix All School Stops (${auditSummary.counts.SCHOOL_STOP_MISSING_STUDENT})`}
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void loadAuditShifts()}
+              disabled={auditLoading}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${auditLoading ? 'animate-spin' : ''}`} />
+              <span>Re-run Audit</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {AUDIT_FILTER_OPTIONS.map((opt) => {
+            const count = opt.countKey ? auditSummary.counts[opt.countKey] : undefined;
+            const isActive = auditFilter === opt.key;
+            const activeStyle =
+              opt.tone === 'sky'
+                ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+                : opt.tone === 'rose'
+                ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                : 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+            const countBadgeStyle =
+              opt.tone === 'sky'
+                ? 'bg-sky-500/25 text-sky-200'
+                : count && count > 0
+                ? 'bg-rose-500/25 text-rose-200'
+                : 'bg-slate-700/80 text-slate-400';
+
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setAuditFilter(isActive && opt.key !== 'ALL' ? 'ALL' : opt.key)}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
+                  isActive
+                    ? activeStyle
+                    : 'bg-slate-800/80 text-slate-300 border-slate-700/80 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {count !== undefined && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${countBadgeStyle}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -616,6 +1060,7 @@ export const RouteListView = memo(function RouteListView({
                     const r = filteredRoutes[virtualRow.index];
                     if (!r) return null;
                     const isExpanded = !!expandedRouteIds[r.id];
+                    const auditResult = auditSummary.byRouteId.get(r.id);
 
                     return (
                       <React.Fragment key={r.id}>
@@ -657,11 +1102,24 @@ export const RouteListView = memo(function RouteListView({
                                 <Bus className="w-5 h-5" />
                               </div>
                               <div>
-                                <div className="font-bold text-white group-hover:text-amber-400 transition flex items-center space-x-2">
+                                <div className="font-bold text-white group-hover:text-amber-400 transition flex flex-wrap items-center gap-1.5">
                                   <span>{r.routeNo}</span>
                                   {!isAutoMarryupEnabled(r) && (
                                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30">
                                       No Auto Marryup
+                                    </span>
+                                  )}
+                                  {auditResult && auditResult.issues.length > 0 && (
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                                      {auditResult.issues.length} {auditResult.issues.length === 1 ? 'Issue' : 'Issues'}
+                                    </span>
+                                  )}
+                                  {auditResult && auditResult.isMultiRouteShared && (
+                                    <span
+                                      className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-300 border border-sky-500/30"
+                                      title={auditResult.sharedReasons.join('; ')}
+                                    >
+                                      2+ Routes
                                     </span>
                                   )}
                                 </div>
@@ -894,6 +1352,23 @@ export const RouteListView = memo(function RouteListView({
                         {isExpanded && (
                           <tr>
                             <td colSpan={7} className="p-0 border-b border-slate-800 bg-slate-950">
+                              <RouteAuditIssuesPanel
+                                route={r}
+                                auditResult={auditResult}
+                                ignoringKeys={ignoringKeys}
+                                fixingKeys={fixingSchoolStopKeys}
+                                fixingAllRoute={!!fixingRouteSchoolStops[r.id] || fixingAllSchoolStops}
+                                onToggleIgnore={handleToggleIgnoreDuplicateStudent}
+                                onFixMissingSchoolStudent={handleFixMissingSchoolStudent}
+                                onFixAllMissingSchoolStudentsForRoute={(routeId) =>
+                                  void handleFixAllMissingSchoolStudents(routeId)
+                                }
+                                onSelectStudentStops={(studentId) =>
+                                  onEditStudentStops
+                                    ? onEditStudentStops(studentId)
+                                    : onSelectStudentId?.(studentId, 'stops')
+                                }
+                              />
                               <RouteInlineDetail
                                 route={r}
                                 studentsMap={studentsMap}
@@ -932,6 +1407,7 @@ export const RouteListView = memo(function RouteListView({
                   const r = filteredRoutes[virtualRow.index];
                   if (!r) return null;
                 const isExpanded = !!expandedRouteIds[r.id];
+                const auditResult = auditSummary.byRouteId.get(r.id);
 
                 return (
                   <div
@@ -962,6 +1438,19 @@ export const RouteListView = memo(function RouteListView({
                             {r.yardName && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
                                 {r.yardName}
+                              </span>
+                            )}
+                            {auditResult && auditResult.issues.length > 0 && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                                {auditResult.issues.length} {auditResult.issues.length === 1 ? 'Issue' : 'Issues'}
+                              </span>
+                            )}
+                            {auditResult && auditResult.isMultiRouteShared && (
+                              <span
+                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30"
+                                title={auditResult.sharedReasons.join('; ')}
+                              >
+                                2+ Routes
                               </span>
                             )}
                           </div>
@@ -1153,6 +1642,23 @@ export const RouteListView = memo(function RouteListView({
                     {/* Inline Stops Detail on Mobile */}
                     {isExpanded && (
                       <div className="pt-2 border-t border-slate-800/80 -mx-3.5 px-1 bg-slate-950">
+                        <RouteAuditIssuesPanel
+                          route={r}
+                          auditResult={auditResult}
+                          ignoringKeys={ignoringKeys}
+                          fixingKeys={fixingSchoolStopKeys}
+                          fixingAllRoute={!!fixingRouteSchoolStops[r.id] || fixingAllSchoolStops}
+                          onToggleIgnore={handleToggleIgnoreDuplicateStudent}
+                          onFixMissingSchoolStudent={handleFixMissingSchoolStudent}
+                          onFixAllMissingSchoolStudentsForRoute={(routeId) =>
+                            void handleFixAllMissingSchoolStudents(routeId)
+                          }
+                          onSelectStudentStops={(studentId) =>
+                            onEditStudentStops
+                              ? onEditStudentStops(studentId)
+                              : onSelectStudentId?.(studentId, 'stops')
+                          }
+                        />
                         <RouteInlineDetail
                           route={r}
                           studentsMap={studentsMap}

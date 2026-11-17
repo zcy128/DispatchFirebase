@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { reorderStopsAndUpdateSequence } from './routeOptimizer';
+import {
+  optimizeStopSequence,
+  recalculateStopTimes,
+  reorderStopsAndUpdateSequence,
+} from './routeOptimizer';
 import type { RouteStop } from '../types/route';
 
 function makeStop(overrides: Partial<RouteStop>): RouteStop {
@@ -97,5 +101,64 @@ describe('reorderStopsAndUpdateSequence', () => {
       recalculateTimes: false,
     });
     expect('instruction' in reordered[1]).toBe(false);
+  });
+
+  it('recalculates ODD and EVEN week stops independently while keeping one time on shared stops', () => {
+    const parityStops: RouteStop[] = [
+      makeStop({
+        stopId: 1,
+        sequence: 1,
+        stopLocation: 'Shared Stop',
+        latitude: 45.35,
+        longitude: -75.76,
+        pullawayTime: '07:45',
+      }),
+      makeStop({
+        stopId: 2,
+        sequence: 2,
+        stopLocation: 'Dad House (ODD)',
+        weekParity: 'ODD',
+        latitude: 45.37,
+        longitude: -75.71,
+        pullawayTime: '08:00',
+      }),
+      makeStop({
+        stopId: 3,
+        sequence: 3,
+        stopLocation: 'Mom House (EVEN)',
+        weekParity: 'EVEN',
+        latitude: 45.37,
+        longitude: -75.71,
+        pullawayTime: '08:00',
+      }),
+      makeStop({
+        stopId: 4,
+        sequence: 4,
+        stopLocation: 'Hillcrest High School',
+        stopType: 'SchoolDropoff',
+        schoolName: 'Hillcrest High School',
+        latitude: 45.405,
+        longitude: -75.642,
+        pullawayTime: '08:30',
+      }),
+    ];
+
+    const calculated = recalculateStopTimes(parityStops, 3, 30, undefined, 'AM');
+    // Both Dad (ODD) and Mom (EVEN) are at the exact same coords before School (08:30),
+    // so they must get the SAME pullawayTime (not stacked sequentially!)
+    expect(calculated[1].pullawayTime).toBe(calculated[2].pullawayTime);
+    // School remains anchored at 08:30
+    expect(calculated[3].pullawayTime).toBe('08:30');
+    // Shared Stop #1 has a single pullawayTime earlier than Dad/Mom
+    expect(calculated[0].pullawayTime < calculated[1].pullawayTime).toBe(true);
+
+    const optimized = optimizeStopSequence(parityStops, {
+      shiftType: 'AM',
+      recalculateTimes: true,
+      dwellMinutes: 3,
+      averageSpeedKmH: 30,
+    });
+    expect(optimized.optimizedStops).toHaveLength(4);
+    expect(optimized.optimizedStops[3].pullawayTime).toBe('08:30');
   });
 });

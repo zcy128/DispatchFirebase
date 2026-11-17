@@ -305,6 +305,24 @@ func (r *FirestoreRouteRepository) GetShiftByID(ctx context.Context, id string) 
 }
 
 func (r *FirestoreRouteRepository) UpdateShift(ctx context.Context, id string, req *models.UpdateShiftRequest) (*models.BusRouteShift, error) {
+	if req.Stops != nil || req.RunDays != nil {
+		existingShift, err := r.GetShiftByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		effectiveRunDays := existingShift.RunDays
+		if req.RunDays != nil {
+			effectiveRunDays = *req.RunDays
+		}
+		effectiveStops := existingShift.Stops
+		if req.Stops != nil {
+			effectiveStops = *req.Stops
+		}
+		if err := models.ValidateStopsRunDaysSubset(effectiveRunDays, effectiveStops); err != nil {
+			return nil, err
+		}
+	}
+
 	docRef := r.client.Collection(r.shiftColl).Doc(id)
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -556,6 +574,10 @@ func (r *FirestoreRouteRepository) UpdateRoute(ctx context.Context, id string, r
 		updates = append(updates, firestore.Update{Path: "yardName", Value: trimmedYard})
 		rt.YardName = trimmedYard
 	}
+	if req.IgnoredDuplicateStudentIds != nil {
+		updates = append(updates, firestore.Update{Path: "ignoredDuplicateStudentIds", Value: *req.IgnoredDuplicateStudentIds})
+		rt.IgnoredDuplicateStudentIds = *req.IgnoredDuplicateStudentIds
+	}
 
 	if len(updates) > 1 {
 		if _, err := docRef.Update(ctx, updates); err != nil {
@@ -693,6 +715,9 @@ func (m *MemoryRouteRepository) UpdateRoute(ctx context.Context, id string, req 
 	if req.SchoolBoardID != nil {
 		rt.SchoolBoardID = *req.SchoolBoardID
 	}
+	if req.IgnoredDuplicateStudentIds != nil {
+		rt.IgnoredDuplicateStudentIds = *req.IgnoredDuplicateStudentIds
+	}
 	if req.YardID != nil {
 		rt.YardID = *req.YardID
 	}
@@ -709,6 +734,19 @@ func (m *MemoryRouteRepository) UpdateShift(ctx context.Context, id string, req 
 	s, ok := m.shifts[id]
 	if !ok {
 		return nil, ErrShiftNotFound
+	}
+	if req.Stops != nil || req.RunDays != nil {
+		effectiveRunDays := s.RunDays
+		if req.RunDays != nil {
+			effectiveRunDays = *req.RunDays
+		}
+		effectiveStops := s.Stops
+		if req.Stops != nil {
+			effectiveStops = *req.Stops
+		}
+		if err := models.ValidateStopsRunDaysSubset(effectiveRunDays, effectiveStops); err != nil {
+			return nil, err
+		}
 	}
 	if req.Stops != nil {
 		s.Stops = *req.Stops

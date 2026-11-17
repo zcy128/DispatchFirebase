@@ -18,6 +18,7 @@ export interface RouteStop {
   schoolId?: number;
   schoolName?: string;
   runDays?: string;     // "MTWRF", "----F", etc.
+  weekParity?: 'ALL' | 'ODD' | 'EVEN'; // Optional alternating week parity (ODD/EVEN ISO weeks)
   comment?: string;
   instruction?: string;
   effectiveDate?: string;
@@ -107,6 +108,7 @@ export interface BusRoute {
   autoMarryup?: boolean;
   instructions?: string;
   assignedEmployeeIds?: string[];
+  ignoredDuplicateStudentIds?: number[];
   createdAt?: string;
   updatedAt?: string;
 }

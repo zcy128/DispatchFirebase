@@ -36,7 +36,8 @@ import {
   Zap,
   Download,
   Mail,
-  GripVertical
+  GripVertical,
+  Copy
 } from 'lucide-react';
 import { RouteStudentItineraryView } from './RouteStudentItineraryView';
 import { ShiftEditModal } from './ShiftEditModal';
@@ -329,6 +330,30 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
     }
 
     await handleRefreshShifts();
+  };
+
+  const handleCloneStop = async (stop: RouteStop, index: number) => {
+    if (!activeShift || !activeShift.stops || isReorderingStops) return;
+    const clonedStop: RouteStop = {
+      ...stop,
+      stopId: Date.now(),
+      assignedStudents: stop.assignedStudents
+        ? stop.assignedStudents.map((s) => ({ ...s }))
+        : [],
+    };
+    const nextStops = [...activeShift.stops];
+    nextStops.splice(index + 1, 0, clonedStop);
+    const resequenced = nextStops.map((s, i) => ({
+      ...s,
+      sequence: i + 1,
+    }));
+    const savedClone = resequenced[index + 1];
+
+    await RouteService.updateShift(activeShift.id, {
+      stops: resequenced,
+    });
+    await handleRefreshShifts();
+    setEditingStop(savedClone);
   };
 
   const handleReorderStop = async (fromIndex: number, toIndex: number) => {
@@ -1356,6 +1381,11 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
                           >
                             {stopOpDays}
                           </span>
+                          {(stop.weekParity === 'ODD' || stop.weekParity === 'EVEN') && (
+                            <span className="ml-1 inline-block px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                              {stop.weekParity} WK
+                            </span>
+                          )}
                         </td>
 
                         {/* Type */}
@@ -1405,9 +1435,18 @@ export const RouteInlineDetail = memo(function RouteInlineDetail({
                             </button>
                             <button
                               type="button"
+                              onClick={() => void handleCloneStop(stop, idx)}
+                              disabled={isReorderingStops}
+                              title={`Clone Stop #${stop.sequence} (with students)`}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-sky-300 hover:bg-slate-800 transition cursor-pointer ml-1 disabled:opacity-30"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => setEditingStop(stop)}
                               title={`Edit Stop #${stop.sequence}`}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer ml-1"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </button>

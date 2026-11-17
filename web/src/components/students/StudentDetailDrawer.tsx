@@ -15,8 +15,10 @@ import {
   Trash2,
   FileText,
   MessageSquare,
-  UserX
+  UserX,
+  Download
 } from 'lucide-react';
+import { exportStudentPdf } from '../../utils/studentPdfExporter';
 import { CreateParentChannelPayload } from '../../types/chat';
 import { RecordStudentAbsenceModal } from '../dispatch/RecordStudentAbsenceModal';
 import { StudentModalTab } from './StudentModal';
@@ -56,29 +58,23 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
   }, [student?.id, initialTab]);
 
   useEffect(() => {
-    if (!student || (student.stops && student.stops.length > 0)) {
+    if (!student) {
       setAsyncShiftStops([]);
       return;
     }
 
-    const routeNo = student.routes ? student.routes.split(',')[0].trim() : '';
-    if (!routeNo) return;
-
     let isMounted = true;
-    RouteService.list()
-      .then(async (allRoutes) => {
+    RouteService.getAllShifts()
+      .then((allShifts) => {
         if (!isMounted) return;
-        const matched = (allRoutes || []).find((r) => r.routeNo === routeNo);
-        if (!matched) return;
-        const shifts = await RouteService.getShiftsForRoute(matched.id);
-        if (!isMounted) return;
+        const activeShifts = (allShifts || []).filter((sh) => sh.active !== false);
         const extracted = extractStudentStopsFromShifts(
           student.studentId,
           student.studentNo,
           student.fullName || student.studentName,
-          shifts
+          activeShifts
         );
-        if (extracted.length > 0 && isMounted) {
+        if (isMounted) {
           setAsyncShiftStops(extracted);
         }
       })
@@ -87,19 +83,23 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [student?.id, student?.routes, student?.studentId, student?.studentNo]);
+  }, [student?.id, student?.studentId, student?.studentNo, student?.fullName, student?.studentName]);
 
-  const routesList = student?.routes
-    ? student.routes.split(',').map((r) => r.trim()).filter(Boolean)
-    : [];
+  const routesList = useMemo(() => {
+    const fromStops = asyncShiftStops.map((s) => s.route).filter((r): r is string => Boolean(r));
+    const fromStudent = student?.routes
+      ? student.routes.split(',').map((r) => r.trim()).filter(Boolean)
+      : [];
+    return Array.from(new Set([...fromStops, ...fromStudent]));
+  }, [asyncShiftStops, student?.routes]);
 
   const effectiveStops = useMemo<StudentStop[]>(() => {
     if (!student) return [];
-    if (student.stops && Array.isArray(student.stops) && student.stops.length > 0) {
-      return student.stops;
-    }
     if (asyncShiftStops.length > 0) {
       return asyncShiftStops;
+    }
+    if (student.stops && Array.isArray(student.stops) && student.stops.length > 0) {
+      return student.stops;
     }
     return generateDefaultStudentStops(
       student.studentAddress || '',
@@ -165,6 +165,15 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
             </div>
 
             <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => exportStudentPdf({ student, school, stops: effectiveStops })}
+                className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition cursor-pointer"
+                title="Export Student PDF (Stops on separate page)"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export PDF</span>
+              </button>
               {onEdit && (
                 <button
                   onClick={() => onEdit(student)}
@@ -260,7 +269,7 @@ export const StudentDetailDrawer: React.FC<StudentDetailDrawerProps> = ({
                     <tbody className="divide-y divide-slate-800/60 font-sans">
                       {effectiveStops.map((stop, idx) => (
                         <tr
-                          key={stop.stopId || idx}
+                          key={`${stop.route || ''}-${stop.shift || ''}-${stop.stopId || idx}-${idx}`}
                           className="hover:bg-slate-800/40 transition group"
                         >
                           <td className="py-2 px-3 font-semibold text-white whitespace-nowrap">

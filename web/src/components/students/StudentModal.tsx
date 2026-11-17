@@ -67,6 +67,7 @@ const safeFormatDateForInput = (val?: any): string => {
 };
 
 import {
+  extractStudentStopsFromShifts,
   generateDefaultStudentStops as generateDefaultStops
 } from '../../utils/studentStopsHelper';
 
@@ -109,6 +110,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
 
   // Stops List
   const [stops, setStops] = useState<StudentStop[]>([]);
+  const hasUserModifiedStopsRef = React.useRef(false);
   const [editingStopIndex, setEditingStopIndex] = useState<number | null>(null);
   const [stopFormTime, setStopFormTime] = useState('7:10 a.m.');
   const [stopFormType, setStopFormType] = useState('Pickup');
@@ -165,6 +167,31 @@ export const StudentModal: React.FC<StudentModalProps> = ({
       .catch((e) => console.warn('Failed to load shifts in StudentModal:', e));
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || !initialData || availableShifts.length === 0 || hasUserModifiedStopsRef.current) {
+      return;
+    }
+    const activeShifts = availableShifts.filter((s) => s.active !== false);
+    const fullName = initialData.fullName || initialData.studentName || `${initialData.firstName} ${initialData.lastName}`.trim();
+    const extracted = extractStudentStopsFromShifts(
+      initialData.studentId,
+      initialData.studentNo,
+      fullName,
+      activeShifts
+    );
+    if (extracted.length > 0) {
+      setStops(extracted);
+      const fromStops = extracted.map((s) => s.route).filter((r): r is string => Boolean(r));
+      if (fromStops.length > 0) {
+        const existing = initialData.routes
+          ? initialData.routes.split(',').map((r) => r.trim()).filter(Boolean)
+          : [];
+        const merged = Array.from(new Set([...fromStops, ...existing]));
+        setRoutes(merged.join(', '));
+      }
+    }
+  }, [isOpen, initialData, availableShifts]);
+
   // Multiple Contacts List
   const [contacts, setContacts] = useState<StudentContact[]>([]);
 
@@ -176,6 +203,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
   const [studentSchoolNotes, setStudentSchoolNotes] = useState('');
 
   useEffect(() => {
+    hasUserModifiedStopsRef.current = false;
     try {
       if (initialData) {
         setFirstName(initialData.firstName || '');
@@ -371,6 +399,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
           existingStops.push(newStop);
         }
       }
+      hasUserModifiedStopsRef.current = true;
       setStops(existingStops);
 
       // Append assigned routes to routes field
@@ -430,6 +459,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
       shift: stopFormShift || 'AM'
     };
 
+    hasUserModifiedStopsRef.current = true;
     if (editingStopIndex === -1) {
       setStops([...stops, updatedStop]);
     } else if (editingStopIndex !== null && editingStopIndex >= 0) {
@@ -441,6 +471,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
   const handleDeleteStop = (index: number) => {
     const item = stops[index];
     if (item && isSchoolStop(item.type)) return;
+    hasUserModifiedStopsRef.current = true;
     setStops(stops.filter((_, i) => i !== index));
   };
 

@@ -12,12 +12,12 @@ interface PageShellProps {
 }
 
 const WIDTH_CLASSES: Record<PageShellWidth, string> = {
-  standard: 'max-w-7xl',
-  wide: 'max-w-[1600px]',
+  standard: 'w-full',
+  wide: 'w-full',
 };
 
 /**
- * Shared outer page container enforcing consistent horizontal width,
+ * Shared outer page container enforcing full-width layout,
  * responsive padding, and vertical rhythm across all web console views.
  */
 export const PageShell: React.FC<PageShellProps> = ({
@@ -27,7 +27,7 @@ export const PageShell: React.FC<PageShellProps> = ({
 }) => {
   return (
     <div
-      className={`w-full ${WIDTH_CLASSES[width]} mx-auto p-3.5 sm:p-5 space-y-4 sm:space-y-5 ${className}`.trim()}
+      className={`${WIDTH_CLASSES[width]} p-3.5 sm:p-5 space-y-4 sm:space-y-5 ${className}`.trim()}
     >
       {children}
     </div>

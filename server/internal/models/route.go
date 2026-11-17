@@ -1,5 +1,13 @@
 package models
 
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+var ErrStopRunDaysExceedShift = errors.New("stop operational days exceed shift operational days")
+
 // StopStudent represents a student boarding/alighting at a stop (lightweight reference)
 type StopStudent struct {
 	StudentID   int    `json:"studentId" firestore:"studentId"`
@@ -22,6 +30,7 @@ type RouteStop struct {
 	Comment                string        `json:"comment,omitempty" firestore:"comment,omitempty"`
 	Instruction            string        `json:"instruction,omitempty" firestore:"instruction,omitempty"`
 	RunDays                string        `json:"runDays,omitempty" firestore:"runDays,omitempty"`
+	WeekParity             string        `json:"weekParity,omitempty" firestore:"weekParity,omitempty"` // "", "ALL", "ODD", "EVEN"
 	EffectiveDate          *string       `json:"effectiveDate,omitempty" firestore:"effectiveDate,omitempty"`
 	RetireDate             *string       `json:"retireDate,omitempty" firestore:"retireDate,omitempty"`
 	AssignedStudents       []StopStudent `json:"assignedStudents,omitempty" firestore:"assignedStudents,omitempty"`
@@ -112,9 +121,10 @@ type BusRoute struct {
 	TotalStops          int            `json:"totalStops" firestore:"totalStops"`
 	TotalStudents       int            `json:"totalStudents" firestore:"totalStudents"`
 	AutoMarryup         *bool          `json:"autoMarryup,omitempty" firestore:"autoMarryup,omitempty"`
-	Instructions        string         `json:"instructions,omitempty" firestore:"instructions,omitempty"`
-	AssignedEmployeeIds []string       `json:"assignedEmployeeIds,omitempty" firestore:"assignedEmployeeIds,omitempty"`
-	CreatedAt           interface{}    `json:"createdAt,omitempty" firestore:"createdAt,omitempty"`
+	Instructions               string         `json:"instructions,omitempty" firestore:"instructions,omitempty"`
+	AssignedEmployeeIds        []string       `json:"assignedEmployeeIds,omitempty" firestore:"assignedEmployeeIds,omitempty"`
+	IgnoredDuplicateStudentIds []int          `json:"ignoredDuplicateStudentIds,omitempty" firestore:"ignoredDuplicateStudentIds,omitempty"`
+	CreatedAt                  interface{}    `json:"createdAt,omitempty" firestore:"createdAt,omitempty"`
 	UpdatedAt           interface{}    `json:"updatedAt,omitempty" firestore:"updatedAt,omitempty"`
 }
 
@@ -145,8 +155,9 @@ type UpdateRouteRequest struct {
 	Active        *bool   `json:"active,omitempty"`
 	SchoolBoardID *int    `json:"schoolBoardId,omitempty"`
 	YardID        *int    `json:"yardId,omitempty"`
-	YardName      *string `json:"yardName,omitempty"`
-	AutoMarryup   *bool   `json:"autoMarryup,omitempty"`
+	YardName                   *string `json:"yardName,omitempty"`
+	AutoMarryup                *bool   `json:"autoMarryup,omitempty"`
+	IgnoredDuplicateStudentIds *[]int  `json:"ignoredDuplicateStudentIds,omitempty"`
 }
 
 // ShiftCrewOverride specifies crew details for a single shift when custom crew is enabled
@@ -185,4 +196,42 @@ type UpdateShiftRequest struct {
 	RunDays       *string      `json:"runDays,omitempty"`
 	EffectiveDate *string      `json:"effectiveDate,omitempty"`
 	RetireDate    *string      `json:"retireDate,omitempty"`
+}
+
+func extractWeekdayLetters(raw string) map[string]bool {
+	upper := strings.ToUpper(strings.TrimSpace(raw))
+	res := make(map[string]bool)
+	if upper == "" || upper == "ALL" || upper == "WEEKDAYS" {
+		for _, d := range []string{"M", "T", "W", "R", "F"} {
+			res[d] = true
+		}
+		return res
+	}
+	for _, d := range []string{"M", "T", "W", "R", "F"} {
+		if strings.Contains(upper, d) {
+			res[d] = true
+		}
+	}
+	return res
+}
+
+// ValidateStopsRunDaysSubset ensures no stop's operational days exceed the parent shift's operational days.
+func ValidateStopsRunDaysSubset(shiftRunDays string, stops []RouteStop) error {
+	allowed := extractWeekdayLetters(shiftRunDays)
+	if len(allowed) == 0 {
+		return nil
+	}
+	for _, st := range stops {
+		raw := strings.TrimSpace(st.RunDays)
+		if raw == "" {
+			continue
+		}
+		stopDays := extractWeekdayLetters(raw)
+		for day := range stopDays {
+			if !allowed[day] {
+				return fmt.Errorf("%w: stop %q (%s) includes %s which is not in shift runDays (%s)", ErrStopRunDaysExceedShift, st.StopLocation, st.RunDays, day, shiftRunDays)
+			}
+		}
+	}
+	return nil
 }

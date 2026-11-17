@@ -25,8 +25,15 @@ import {
   X,
   Sparkles,
   ArrowRight,
-  Loader2
+  Loader2,
+  Download
 } from 'lucide-react';
+import { RouteService } from '../services/routeService';
+import {
+  extractStudentStopsFromShifts,
+  generateDefaultStudentStops
+} from '../utils/studentStopsHelper';
+import { exportStudentPdf } from '../utils/studentPdfExporter';
 import { CreateParentChannelPayload } from '../types/chat';
 import type { StudentModalTab } from '../components/students/StudentModal';
 
@@ -71,6 +78,42 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
       onSelectStudent(student);
     }
   };
+  const [exportingPdfId, setExportingPdfId] = useState<string | null>(null);
+
+  const handleExportStudentPdf = async (stu: Student) => {
+    if (exportingPdfId) return;
+    setExportingPdfId(stu.id);
+    try {
+      const matchedSchool = schools.find((sch) => sch.schoolId === stu.schoolId) || null;
+      let resolvedStops = Array.isArray(stu.stops) ? stu.stops : [];
+      try {
+        const allShifts = await RouteService.getAllShifts();
+        const activeShifts = (allShifts || []).filter((sh) => sh.active !== false);
+        const extracted = extractStudentStopsFromShifts(
+          stu.studentId,
+          stu.studentNo,
+          stu.fullName || stu.studentName,
+          activeShifts
+        );
+        if (extracted.length > 0) {
+          resolvedStops = extracted;
+        }
+      } catch {
+        // Fallback to student.stops or generated default stops
+      }
+      if (resolvedStops.length === 0) {
+        resolvedStops = generateDefaultStudentStops(
+          stu.studentAddress || '',
+          stu.schoolName || (matchedSchool ? matchedSchool.schoolName : ''),
+          stu.routes || ''
+        );
+      }
+      exportStudentPdf({ student: stu, school: matchedSchool, stops: resolvedStops });
+    } finally {
+      setExportingPdfId(null);
+    }
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
   // School selection defaults to saved preference or first active school
@@ -1107,6 +1150,16 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                             className="flex items-center justify-end space-x-1.5 text-slate-400"
                             onClick={(e) => e.stopPropagation()}
                           >
+                            <button
+                              type="button"
+                              onClick={() => void handleExportStudentPdf(s)}
+                              disabled={exportingPdfId === s.id}
+                              aria-label={`Export PDF for ${s.studentName}`}
+                              title="Export Student PDF (Stops on separate page)"
+                              className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                            >
+                              <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
                             {onEditStudent && (
                               <button
                                 type="button"
@@ -1319,6 +1372,16 @@ export const StudentListView: React.FC<StudentListViewProps> = ({
                         </div>
 
                         <div className="flex items-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={() => void handleExportStudentPdf(s)}
+                            disabled={exportingPdfId === s.id}
+                            aria-label={`Export PDF for ${s.studentName}`}
+                            className="p-1.5 min-w-[28px] min-h-[28px] flex items-center justify-center text-slate-400 hover:text-emerald-400 rounded-lg hover:bg-slate-800 transition disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                            title="Export Student PDF (Stops on separate page)"
+                          >
+                            <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
                           {onEditStudent && (
                             <button
                               type="button"

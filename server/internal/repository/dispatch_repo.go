@@ -529,6 +529,38 @@ func subtractMinutesFromTime(tStr string, mins int) string {
 	return fmt.Sprintf("%02d:%02d", (total/60)%24, total%60)
 }
 
+func shouldIncludeRouteStopForDate(st models.RouteStop, date, weekdayCode string, isOddWeek bool) bool {
+	if st.EffectiveDate != nil && *st.EffectiveDate != "" && date < *st.EffectiveDate {
+		return false
+	}
+	if st.RetireDate != nil && *st.RetireDate != "" && date > *st.RetireDate {
+		return false
+	}
+	if rawRunDays := strings.ToUpper(strings.TrimSpace(st.RunDays)); rawRunDays != "" && rawRunDays != "ALL" && rawRunDays != "WEEKDAYS" {
+		hasWeekdayLetter := false
+		for _, ch := range []string{"M", "T", "W", "R", "F"} {
+			if strings.Contains(rawRunDays, ch) {
+				hasWeekdayLetter = true
+				break
+			}
+		}
+		if hasWeekdayLetter && !strings.Contains(rawRunDays, weekdayCode) {
+			return false
+		}
+	}
+	switch strings.ToUpper(strings.TrimSpace(st.WeekParity)) {
+	case "ODD":
+		if !isOddWeek {
+			return false
+		}
+	case "EVEN":
+		if isOddWeek {
+			return false
+		}
+	}
+	return true
+}
+
 func (r *FirestoreDispatchRepository) CreateDay(ctx context.Context, date string, routeNoFilter []string) (*models.CreateDispatchDayResult, error) {
 	weekdayCode, err := getWeekdayCode(date)
 	if err != nil {
@@ -541,6 +573,9 @@ func (r *FirestoreDispatchRepository) CreateDay(ctx context.Context, date string
 			Message: "The selected date is on a weekend with no regular school shifts scheduled.",
 		}, nil
 	}
+	targetTime, _ := time.Parse("2006-01-02", date)
+	_, isoWeek := targetTime.ISOWeek()
+	isOddWeek := isoWeek%2 == 1
 
 	// 1. Fetch Calendar events to identify closed schools / boards (holiday, PD day, break)
 	closedSchools := make(map[int]bool)
@@ -760,11 +795,8 @@ func (r *FirestoreDispatchRepository) CreateDay(ctx context.Context, date string
 			// Filter stops on shift
 			var activeStops []models.RouteStop
 			for _, st := range s.Stops {
-				// Stop date check
-				if st.EffectiveDate != nil && *st.EffectiveDate != "" && date < *st.EffectiveDate {
-					continue
-				}
-				if st.RetireDate != nil && *st.RetireDate != "" && date > *st.RetireDate {
+				// Stop date, operational day (overrides shift), and week parity check
+				if !shouldIncludeRouteStopForDate(st, date, weekdayCode, isOddWeek) {
 					continue
 				}
 				// Stop school closed check

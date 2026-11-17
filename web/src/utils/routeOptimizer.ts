@@ -141,7 +141,7 @@ export function checkIsSchoolStop(
  *   Student stops are calculated forward from the school stop time.
  * - If school is in the middle: Stops before school are calculated backward; stops after are calculated forward.
  */
-export function recalculateStopTimes(
+function recalculateStopTimesSingleTrip(
   stops: RouteStop[],
   dwellMinutes: number = 3,
   speedKmH: number = 30,
@@ -263,6 +263,77 @@ export function recalculateStopTimes(
 }
 
 /**
+ * Recalculate scheduled pullaway times, handling alternating Odd/Even week stops
+ * independently while keeping a single conservative scheduled time for shared stops.
+ */
+export function recalculateStopTimes(
+  stops: RouteStop[],
+  dwellMinutes: number = 3,
+  speedKmH: number = 30,
+  schoolBoardOrRouteName?: string,
+  shiftType?: string
+): RouteStop[] {
+  if (stops.length === 0) return [];
+  const hasParityStops = stops.some((s) => s.weekParity === 'ODD' || s.weekParity === 'EVEN');
+  if (!hasParityStops) {
+    return recalculateStopTimesSingleTrip(stops, dwellMinutes, speedKmH, schoolBoardOrRouteName, shiftType);
+  }
+
+  const oddStops = stops.filter((s) => s.weekParity !== 'EVEN');
+  const evenStops = stops.filter((s) => s.weekParity !== 'ODD');
+
+  const oddCalculated = recalculateStopTimesSingleTrip(
+    oddStops,
+    dwellMinutes,
+    speedKmH,
+    schoolBoardOrRouteName,
+    shiftType
+  );
+  const evenCalculated = recalculateStopTimesSingleTrip(
+    evenStops,
+    dwellMinutes,
+    speedKmH,
+    schoolBoardOrRouteName,
+    shiftType
+  );
+
+  const oddById = new Map<number, RouteStop>(oddCalculated.map((s) => [s.stopId, s]));
+  const evenById = new Map<number, RouteStop>(evenCalculated.map((s) => [s.stopId, s]));
+
+  const totalStops = stops.length;
+  const schoolIdx = stops.findIndex((s, idx) =>
+    checkIsSchoolStop(s, schoolBoardOrRouteName, idx === totalStops - 1, idx === 0, shiftType)
+  );
+
+  return stops.map((s, idx) => {
+    const seq = idx + 1;
+    if (s.weekParity === 'ODD') {
+      const calc = oddById.get(s.stopId);
+      return calc ? { ...calc, sequence: seq } : { ...s, sequence: seq };
+    }
+    if (s.weekParity === 'EVEN') {
+      const calc = evenById.get(s.stopId);
+      return calc ? { ...calc, sequence: seq } : { ...s, sequence: seq };
+    }
+
+    const fromOdd = oddById.get(s.stopId);
+    const fromEven = evenById.get(s.stopId);
+    if (fromOdd && !fromEven) return { ...fromOdd, sequence: seq };
+    if (fromEven && !fromOdd) return { ...fromEven, sequence: seq };
+    if (!fromOdd && !fromEven) return { ...s, sequence: seq };
+
+    // Shared stop: school stop stays locked; pre-school shared stops take earlier time so neither week is late
+    if (idx === schoolIdx) {
+      return { ...fromOdd!, sequence: seq };
+    }
+    const oddMins = parseTimeToMinutes(fromOdd!.pullawayTime);
+    const evenMins = parseTimeToMinutes(fromEven!.pullawayTime);
+    const pickOdd = schoolIdx !== -1 && idx < schoolIdx ? oddMins <= evenMins : oddMins >= evenMins;
+    return { ...(pickOdd ? fromOdd! : fromEven!), sequence: seq };
+  });
+}
+
+/**
  * Calculate total route distance in meters for an ordered sequence of stops
  */
 export function calculateTotalRouteDistance(
@@ -288,7 +359,7 @@ export function calculateTotalRouteDistance(
  * - Optionally incorporates Driver's Home location as origin (AM) or destination (PM)
  * - Untangles criss-crossing paths with 2-Opt local search
  */
-export function optimizeStopSequence(
+function optimizeStopSequenceSingleTrip(
   stops: RouteStop[],
   options: OptimizationOptions = {}
 ): OptimizationResult {
@@ -516,6 +587,95 @@ export function optimizeStopSequence(
     originalDistanceMeters: originalDistance,
     optimizedDistanceMeters: optimizedDistance,
     savedDistanceMeters: savedDistance,
+    savingsPercentage,
+    originalDurationMinutes,
+    optimizedDurationMinutes
+  };
+}
+
+/**
+ * Optimize Stop Sequence using Constrained 2-Opt TSP.
+ * When stops include ODD/EVEN weekParity entries, Odd and Even week sub-routes are
+ * optimized independently (so ODD and EVEN stops never create phantom travel legs
+ * between each other) and merged while keeping one single time on shared stops.
+ */
+export function optimizeStopSequence(
+  stops: RouteStop[],
+  options: OptimizationOptions = {}
+): OptimizationResult {
+  const hasParityStops = stops.some((s) => s.weekParity === 'ODD' || s.weekParity === 'EVEN');
+  if (!hasParityStops || stops.length <= 2) {
+    return optimizeStopSequenceSingleTrip(stops, options);
+  }
+
+  const speedKmH = options.averageSpeedKmH ?? 30;
+  const dwellMinutes = options.dwellMinutes ?? 3;
+  const origOdd = stops.filter((s) => s.weekParity !== 'EVEN');
+  const origEven = stops.filter((s) => s.weekParity !== 'ODD');
+
+  const optOdd = optimizeStopSequenceSingleTrip(origOdd, { ...options, recalculateTimes: false });
+  const optEven = optimizeStopSequenceSingleTrip(origEven, { ...options, recalculateTimes: false });
+
+  // Merge optimized Odd and Even stop orders: keep Odd order and insert each EVEN stop
+  // right after the shared (ALL) stop that precedes it in the optimized Even order.
+  const merged: RouteStop[] = [...optOdd.optimizedStops];
+  let lastInsertedPos = -1;
+  for (let i = 0; i < optEven.optimizedStops.length; i++) {
+    const cur = optEven.optimizedStops[i];
+    if (cur.weekParity !== 'EVEN') continue;
+
+    // Find nearest preceding shared stop in optEven
+    let insertAfterIdx = -1;
+    for (let k = i - 1; k >= 0; k--) {
+      if (optEven.optimizedStops[k].weekParity !== 'EVEN') {
+        const sharedId = optEven.optimizedStops[k].stopId;
+        const foundIdx = merged.findIndex((m) => m.stopId === sharedId);
+        if (foundIdx >= 0) {
+          insertAfterIdx = foundIdx;
+          break;
+        }
+      }
+    }
+    const targetPos = Math.max(insertAfterIdx + 1, lastInsertedPos + 1);
+    merged.splice(Math.min(targetPos, merged.length), 0, cur);
+    lastInsertedPos = Math.min(targetPos, merged.length - 1);
+  }
+
+  let resultStops: RouteStop[];
+  if (options.recalculateTimes !== false) {
+    resultStops = recalculateStopTimes(
+      merged,
+      dwellMinutes,
+      speedKmH,
+      options.schoolBoardOrRouteName,
+      options.shiftType
+    );
+  } else {
+    resultStops = merged.map((s, idx) => ({ ...s, sequence: idx + 1 }));
+  }
+
+  const originalDistanceMeters = Math.round(
+    (optOdd.originalDistanceMeters + optEven.originalDistanceMeters) / 2
+  );
+  const optimizedDistanceMeters = Math.round(
+    (optOdd.optimizedDistanceMeters + optEven.optimizedDistanceMeters) / 2
+  );
+  const savedDistanceMeters = Math.max(0, originalDistanceMeters - optimizedDistanceMeters);
+  const savingsPercentage =
+    originalDistanceMeters > 0
+      ? Math.round((savedDistanceMeters / originalDistanceMeters) * 1000) / 10
+      : 0;
+  const avgStopCount = Math.round((origOdd.length + origEven.length) / 2);
+  const originalDurationMinutes =
+    Math.round((originalDistanceMeters / 1000 / speedKmH) * 60) + avgStopCount * dwellMinutes;
+  const optimizedDurationMinutes =
+    Math.round((optimizedDistanceMeters / 1000 / speedKmH) * 60) + avgStopCount * dwellMinutes;
+
+  return {
+    optimizedStops: resultStops,
+    originalDistanceMeters,
+    optimizedDistanceMeters,
+    savedDistanceMeters,
     savingsPercentage,
     originalDurationMinutes,
     optimizedDurationMinutes

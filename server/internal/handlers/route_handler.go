@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -136,6 +137,10 @@ func (h *RouteHandler) UpdateShift(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.repo.UpdateShift(r.Context(), id, &payload)
 	if err != nil {
+		if errors.Is(err, models.ErrStopRunDaysExceedShift) {
+			http.Error(w, `{"error":`+strconv.Quote(err.Error())+`}`, http.StatusBadRequest)
+			return
+		}
 		http.Error(w, `{"error":"failed to update shift: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}

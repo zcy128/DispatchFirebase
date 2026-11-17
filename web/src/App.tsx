@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
+import { flushSync } from 'react-dom';
 import { useAuth } from './contexts/AuthContext';
 import { AIProvider } from './contexts/AIContext';
 import { Header } from './components/common/Header';
@@ -91,6 +92,31 @@ export const AppContent: React.FC = () => {
   const { currentUser, loading: authLoading, updateCurrentUser } = useAuth();
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
+
+  const navigateToTab = useCallback((nextTab: NavTab) => {
+    const startVT = typeof document !== 'undefined'
+      ? (document as Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } }).startViewTransition
+      : undefined;
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (!startVT || prefersReducedMotion) {
+      setCurrentTab(nextTab);
+      mainRef.current?.focus({ preventScroll: true });
+      return;
+    }
+
+    const transition = startVT.call(document, () => {
+      flushSync(() => {
+        setCurrentTab(nextTab);
+      });
+    });
+    transition.finished.finally(() => {
+      mainRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
   const mainRef = useRef<HTMLElement>(null);
   const [dispatchLogDate, setDispatchLogDate] = useState<string>(() => getLocalTodayString());
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -199,6 +225,7 @@ export const AppContent: React.FC = () => {
     schoolDistribution: {}
   });
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [studentDrawerInitialTab, setStudentDrawerInitialTab] = useState<'profile' | 'stops'>('profile');
   const [isStudentModalOpen, setIsStudentModalOpen] = useState<boolean>(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [studentModalInitialTab, setStudentModalInitialTab] = useState<StudentModalTab>('profile');
@@ -245,11 +272,12 @@ export const AppContent: React.FC = () => {
   const studentDetailRequest = useRef(0);
   const employeeDetailRequest = useRef(0);
   const vehicleDetailRequest = useRef(0);
-  const openStudentDetailsByRef = useCallback((ref: { id?: string; name?: string }) => {
+  const openStudentDetailsByRef = useCallback((ref: { id?: string; name?: string; initialTab?: 'profile' | 'stops' }) => {
     const id = ref.id?.trim() || '';
     const name = ref.name?.trim() || '';
     const nameLower = name.toLowerCase();
     if (!id && !name) return;
+    setStudentDrawerInitialTab(ref.initialTab || 'profile');
 
     const studentFullName = (student: Student) =>
       (student.fullName || student.studentName || `${student.firstName} ${student.lastName}`).trim();
@@ -361,9 +389,9 @@ export const AppContent: React.FC = () => {
   }, []);
 
   const openStudentDetails = useCallback(
-    (studentId: number) => {
+    (studentId: number, initialTab: 'profile' | 'stops' = 'profile') => {
       if (!studentId) return;
-      openStudentDetailsByRef({ id: String(studentId) });
+      openStudentDetailsByRef({ id: String(studentId), initialTab });
     },
     [openStudentDetailsByRef],
   );
@@ -1252,6 +1280,20 @@ export const AppContent: React.FC = () => {
     setSelectedStudent(null);
   };
 
+  const handleEditStudentById = (studentId: number, initialTab: StudentModalTab = 'stops') => {
+    if (!studentId) return;
+    const cached = studentsRef.current.find((s) => Number(s.studentId) === Number(studentId));
+    if (cached) {
+      handleEditStudent(cached, initialTab);
+      return;
+    }
+    void StudentService.getByStudentId(studentId)
+      .then((stu) => {
+        if (stu) handleEditStudent(stu, initialTab);
+      })
+      .catch(() => {});
+  };
+
   const handleSaveStudent = async (data: Partial<Student>) => {
     const actor: EntityOperationActor = {
       userId: currentUser?.employeeId || currentUser?.uid || 'usr-dispatch',
@@ -1370,7 +1412,7 @@ export const AppContent: React.FC = () => {
     <div className="h-screen overflow-hidden bg-slate-950 flex flex-col text-slate-100 font-sans">
       <Header
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
+        onSelectTab={navigateToTab}
         expiringLicenseCount={stats.licenseExpiringSoon}
         onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
         onOpenChat={() => {
@@ -1387,20 +1429,24 @@ export const AppContent: React.FC = () => {
       <div className="flex flex-1 min-h-0 overflow-hidden relative">
         <Sidebar
           currentTab={currentTab}
-          onSelectTab={setCurrentTab}
+          onSelectTab={navigateToTab}
           expiringLicenseCount={stats.licenseExpiringSoon}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={toggleSidebarCollapse}
         />
 
-        <main ref={mainRef} className="flex-1 min-h-0 overflow-y-auto bg-slate-950/80 pb-20 md:pb-6">
+        <main
+          ref={mainRef}
+          tabIndex={-1}
+          className="app-main-transition flex-1 min-h-0 overflow-y-auto bg-slate-950/80 pb-20 md:pb-6 outline-none"
+        >
           <Suspense fallback={<div className="p-8 text-sm text-slate-400">Loading...</div>}>
           {currentTab === 'dashboard' && (
             <DashboardView
               stats={stats}
               employees={employees}
               routes={routes}
-              onNavigateTab={setCurrentTab}
+              onNavigateTab={navigateToTab}
               onSelectEmployee={setSelectedEmployee}
             />
           )}
@@ -1598,10 +1644,12 @@ export const AppContent: React.FC = () => {
               schools={schools}
               yards={yards}
               employees={employees}
+              vehicles={vehicles}
               loading={dataLoading}
               onSelectRoute={setSelectedRoute}
               onSelectStudent={setSelectedStudent}
               onSelectStudentId={openStudentDetails}
+              onEditStudentStops={(studentId) => handleEditStudentById(studentId, 'stops')}
               onSelectEmployee={openEmployeeDetails}
               onSelectVehicle={openVehicleDetails}
               onAssignCrew={handleOpenAssignCrew}
@@ -1757,6 +1805,7 @@ export const AppContent: React.FC = () => {
       <StudentDetailDrawer
         student={selectedStudent}
         school={selectedStudent ? schools.find((s) => s.schoolId === selectedStudent.schoolId) : null}
+        initialTab={studentDrawerInitialTab}
         onClose={() => setSelectedStudent(null)}
         onEdit={handleEditStudent}
         onDelete={handleDeleteStudent}
