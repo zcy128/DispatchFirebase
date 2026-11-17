@@ -17,6 +17,18 @@ A modern, full-stack open-source fleet dispatch, scheduling, and live tracking p
 
 ---
 
+## 🎬 Product Walkthrough Video
+
+<p align="center">
+  <img src="docs/media/intro-demo.gif" alt="School Bus Dispatch Platform — Morning Dispatch Storyline Demo" width="100%" />
+</p>
+
+<p align="center">
+  <a href="docs/media/intro-demo.mp4"><strong>▶ Watch Full HD Video with Audio (1280×720 MP4)</strong></a>
+</p>
+
+---
+
 ## 🌐 Live Interactive Demo
 
 A fully interactive public demo environment is available online with zero setup required:
