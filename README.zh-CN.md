@@ -17,6 +17,18 @@
 
 ---
 
+## 🎬 产品功能演示视频
+
+<p align="center">
+  <img src="docs/media/intro-demo.gif" alt="School Bus Dispatch Platform — Morning Dispatch Storyline Demo" width="100%" />
+</p>
+
+<p align="center">
+  <a href="docs/media/intro-demo.mp4"><strong>▶ 观看高清完整视频（含背景配乐 1280×720 MP4）</strong></a>
+</p>
+
+---
+
 ## 🌐 在线演示体验 (Live Demo)
 
 系统提供全功能的在线 Demo 环境，无需本地安装即可直接体验调度中心、移动端及智能 AI 助理：

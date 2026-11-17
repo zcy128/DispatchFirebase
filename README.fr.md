@@ -17,6 +17,18 @@ Une solution complète, moderne et open-source de régulation de flotte, de plan
 
 ---
 
+## 🎬 Vidéo de Présentation du Produit
+
+<p align="center">
+  <img src="docs/media/intro-demo.gif" alt="School Bus Dispatch Platform — Morning Dispatch Storyline Demo" width="100%" />
+</p>
+
+<p align="center">
+  <a href="docs/media/intro-demo.mp4"><strong>▶ Voir la Vidéo HD Complète avec Audio (1280×720 MP4)</strong></a>
+</p>
+
+---
+
 ## 🌐 Démonstration en Ligne (Live Demo)
 
 Un environnement de démonstration public complet est directement accessible sans installation locale :
