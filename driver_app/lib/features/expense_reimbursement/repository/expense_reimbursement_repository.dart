@@ -7,6 +7,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/network/api_client.dart';
 import '../../../core/api_config.dart';
+import '../../../core/offline/offline_outbox.dart';
 import '../models/expense_reimbursement_model.dart';
 
 class ExpenseReimbursementRepository {
@@ -16,10 +17,12 @@ class ExpenseReimbursementRepository {
   Box? _box;
   final FirebaseFirestore? _firestoreOverride;
   final http.Client _httpClient;
+  final OfflineOutbox? outbox;
 
   ExpenseReimbursementRepository({
     FirebaseFirestore? firestore,
     http.Client? httpClient,
+    this.outbox,
   })  : _firestoreOverride = firestore,
         _httpClient = httpClient ?? AuthenticatedHttpClient.instance;
 
@@ -166,17 +169,18 @@ class ExpenseReimbursementRepository {
   // ─── Submit Claim ──────────────────────────────────────────────────────────
 
   Future<ExpenseReimbursementClaim> submitClaim(ExpenseReimbursementClaim claim) async {
+    final payload = {
+      'employeeId': claim.employeeId,
+      'employeeName': claim.employeeName,
+      'claimDate': claim.claimDate,
+      'routeNo': claim.routeNo,
+      'lines': claim.lines.map((l) => l.toJson()).toList(),
+      'attachmentUrls': claim.attachmentUrls,
+    };
+
     // 1. Try REST
     try {
       final uri = Uri.parse('$_baseUrl/expense-reimbursements');
-      final payload = {
-        'employeeId': claim.employeeId,
-        'employeeName': claim.employeeName,
-        'claimDate': claim.claimDate,
-        'routeNo': claim.routeNo,
-        'lines': claim.lines.map((l) => l.toJson()).toList(),
-        'attachmentUrls': claim.attachmentUrls,
-      };
 
       final res = await _httpClient
           .post(
@@ -220,6 +224,19 @@ class ExpenseReimbursementRepository {
     }
 
     // 3. Offline fallback
+    if (outbox != null) {
+      final now = DateTime.now().toUtc();
+      await outbox!.enqueue(
+        OutboxMutation(
+          id: 'expense_${claim.employeeId}_${now.microsecondsSinceEpoch}',
+          entityType: 'expense_reimbursement',
+          method: 'POST',
+          endpoint: '/api/dispatch/expense-reimbursements',
+          payload: Map<String, dynamic>.from(payload),
+          createdAt: now,
+        ),
+      );
+    }
     final offlineClaim = claim.copyWith(
       id: claim.id.isNotEmpty
           ? claim.id

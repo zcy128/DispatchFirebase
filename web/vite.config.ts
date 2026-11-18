@@ -115,6 +115,17 @@ export default defineConfig({
       }
     })
   ],
+  optimizeDeps: {
+    exclude: ['lucide-react'],
+    include: [
+      'exceljs',
+      'jspdf',
+      'html2canvas',
+      'leaflet',
+      '@tanstack/react-query',
+      '@tanstack/react-virtual',
+    ],
+  },
   server: {
     port: 3000,
     proxy: {

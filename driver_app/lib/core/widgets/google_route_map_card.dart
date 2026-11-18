@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:fleet_core/fleet_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
@@ -8,31 +9,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 
-class MapStopPin {
-  final int sequence;
-  final String title;
-  final String subtitle;
-  final String scheduledTime;
-  final String? arrivedTime;
-  final bool isSchoolStop;
-  final bool isCompleted;
-  final double? latitude;
-  final double? longitude;
-  final String? schoolNameHint;
-
-  const MapStopPin({
-    required this.sequence,
-    required this.title,
-    this.subtitle = '',
-    required this.scheduledTime,
-    this.arrivedTime,
-    this.isSchoolStop = false,
-    this.isCompleted = false,
-    this.latitude,
-    this.longitude,
-    this.schoolNameHint,
-  });
-}
+export 'package:fleet_core/fleet_core.dart' show MapStopPin;
 
 enum GoogleMapLayerType {
   road,

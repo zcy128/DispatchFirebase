@@ -1,4 +1,4 @@
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { PageShell } from '../components/common/PageShell';
 import { PageHeader } from '../components/common/PageHeader';
@@ -23,11 +23,13 @@ import {
   X,
 } from 'lucide-react';
 import { PayrollDepartmentLogRecord } from '../types/dispatch';
-import { DispatchService } from '../services/dispatchService';
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalTodayString, addDaysToDateString } from '../utils/dateUtils';
-import { logDispatchAction } from '../utils/dispatchLogger';
 import { PayrollDeptLogEditModal } from '../components/payroll/PayrollDeptLogEditModal';
+import {
+  usePayrollDepartmentLogsQuery,
+  useSyncCleanPayrollsMutation,
+} from '../features/payroll/api/payrollQueries';
 
 const formatModifiedAt = (dateStr?: string) => {
   if (!dateStr) return '-';
@@ -76,21 +78,14 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
   const [selectedDate, setSelectedDate] = useState<string>(
     initialDate || getLocalTodayString()
   );
-  const [logs, setLogs] = useState<PayrollDepartmentLogRecord[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
 
-  // Keep track of data signature to prevent unnecessary re-renders and flicker
-  const prevSignatureRef = useRef<string>('');
-
-  const updateLogsIfChanged = (newLogs: PayrollDepartmentLogRecord[]) => {
-    const safeList = Array.isArray(newLogs) ? newLogs : [];
-    const sig = safeList.map(i => `${i.id}_${i.payAmount}_${i.eiHours}_${i.status}_${i.updatedAt}`).join('|');
-    if (sig !== prevSignatureRef.current) {
-      prevSignatureRef.current = sig;
-      setLogs(safeList);
-    }
-  };
+  const {
+    logs,
+    loading,
+    error,
+    refresh: handleRefresh,
+    updateLogInCache: applyLogUpdate,
+  } = usePayrollDepartmentLogsQuery(selectedDate);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -100,59 +95,12 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
   const [sourceTypeFilter, setSourceTypeFilter] = useState<'all' | 'routes' | 'charter'>('all');
 
   // Sync state
-  const [syncing, setSyncing] = useState<boolean>(false);
   const [syncFeedback, setSyncFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const syncMutation = useSyncCleanPayrollsMutation(selectedDate, actorName);
+  const syncing = syncMutation.isPending;
 
   // Edit Modal State
   const [editingLog, setEditingLog] = useState<PayrollDepartmentLogRecord | null>(null);
-
-  // Fetch data & subscribe to real-time updates
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
-
-    // Real-time subscription as the primary reactive source
-    const unsubscribe = DispatchService.subscribeToPayrollDepartmentLogs(
-      selectedDate,
-      (updatedList) => {
-        updateLogsIfChanged(updatedList);
-        setLoading(false);
-      },
-      (err) => {
-        console.warn('Realtime payroll log subscription error, fallback to REST:', err);
-        DispatchService.listPayrollDepartmentLogs(selectedDate ? { date: selectedDate } : undefined)
-          .then((records) => {
-            updateLogsIfChanged(records);
-            setLoading(false);
-          })
-          .catch((fetchErr) => {
-            console.error('Failed to load payroll department logs:', fetchErr);
-            setError('Failed to fetch payroll department records.');
-            setLoading(false);
-          });
-      }
-    );
-
-    return () => {
-      unsubscribe();
-    };
-  }, [selectedDate]);
-
-  const handleRefresh = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const records = await DispatchService.listPayrollDepartmentLogs(
-        selectedDate ? { date: selectedDate } : undefined
-      );
-      updateLogsIfChanged(records);
-    } catch (err) {
-      console.error('Failed to refresh payroll department logs:', err);
-      setError('Failed to refresh records.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handlePrevDay = () => {
     setSelectedDate(addDaysToDateString(selectedDate, -1));
@@ -168,17 +116,8 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
 
   const handleSyncFromDailyDispatch = async () => {
     try {
-      setSyncing(true);
       setSyncFeedback(null);
-      const res = await DispatchService.syncCleanPayrollsForDate(selectedDate);
-
-      void logDispatchAction({
-        date: selectedDate,
-        type: 'Payroll Synced',
-        detail: `Finance synced daily dispatch payroll records for ${selectedDate} (${res.synced} clean records synced)`,
-        user: actorName,
-      });
-
+      const res = await syncMutation.mutateAsync();
       setSyncFeedback({
         type: 'success',
         message: `Successfully synchronized ${res.synced} clean record(s) from daily dispatch for ${selectedDate}.`,
@@ -189,8 +128,6 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
         type: 'error',
         message: 'Failed to sync from daily dispatch: ' + (err as Error).message,
       });
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -199,10 +136,6 @@ export const PayrollDepartmentLogView = memo(function PayrollDepartmentLogView({
   };
 
   const closeEditModal = useCallback(() => setEditingLog(null), []);
-
-  const applyLogUpdate = useCallback((updated: PayrollDepartmentLogRecord) => {
-    setLogs((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-  }, []);
 
   // Filtered logs
   const filteredLogs = useMemo(() => {

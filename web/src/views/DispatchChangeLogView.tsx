@@ -2,7 +2,6 @@ import React, {
   memo,
   useCallback,
   useDeferredValue,
-  useEffect,
   useId,
   useMemo,
   useRef,
@@ -28,7 +27,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { DispatchChangeLog } from '../types/dispatch';
-import { DispatchService } from '../services/dispatchService';
+import { useDispatchChangeLogsQuery } from '../features/dispatch';
 import { getLocalTodayString } from '../utils/dateUtils';
 
 interface DispatchChangeLogViewProps {
@@ -139,10 +138,6 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
   const routeFilterId = useId();
   const shiftFilterId = useId();
   const typeFilterId = useId();
-  const [logs, setLogs] = useState<DispatchChangeLog[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
   // Targeted database query state (Tiered logging) — store as primitives for stable effect deps
   const [targetRoute, setTargetRoute] = useState<string>('');
   const [targetEmployee, setTargetEmployee] = useState<string>('');
@@ -151,6 +146,17 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
   const [filterScope, setFilterScope] = useState<string | undefined>(undefined);
 
   const hasActiveFilter = Boolean(filterRouteNo || filterEmployee || filterScope);
+
+  const {
+    logs,
+    loading,
+    error,
+    refresh: handleManualRefresh,
+  } = useDispatchChangeLogsQuery(selectedDate, {
+    routeNo: filterRouteNo,
+    employee: filterEmployee,
+    scope: filterScope,
+  });
 
   // In-memory filters (applied on top of currently fetched logs)
   const [globalSearch, setGlobalSearch] = useState<string>('');
@@ -168,78 +174,6 @@ export const DispatchChangeLogView: React.FC<DispatchChangeLogViewProps> = ({
     cutoff.setDate(cutoff.getDate() - 7);
     return selectedDate < cutoff.toISOString().slice(0, 10);
   }, [selectedDate]);
-
-  const requestSeqRef = useRef(0);
-
-  // Load / Subscribe to change logs for selectedDate & filter primitives
-  useEffect(() => {
-    if (!selectedDate) {
-      setLogs([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    const seq = ++requestSeqRef.current;
-    setLoading(true);
-    setError(null);
-    setLogs([]);
-
-    const filterParams =
-      filterRouteNo || filterEmployee || filterScope
-        ? {
-            routeNo: filterRouteNo,
-            employee: filterEmployee,
-            scope: filterScope,
-          }
-        : undefined;
-
-    const unsubscribe = DispatchService.subscribeToChangeLogs(
-      selectedDate,
-      (updatedLogs) => {
-        if (seq !== requestSeqRef.current) return;
-        setLogs(updatedLogs);
-        setError(null);
-        setLoading(false);
-      },
-      (err) => {
-        if (seq !== requestSeqRef.current) return;
-        console.error('Failed to subscribe to change logs:', err);
-        setError('Failed to load dispatch change logs');
-        setLoading(false);
-      },
-      filterParams
-    );
-
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [selectedDate, filterRouteNo, filterEmployee, filterScope]);
-
-  const handleManualRefresh = useCallback(async () => {
-    if (!selectedDate) return;
-    const seq = ++requestSeqRef.current;
-    setLoading(true);
-    try {
-      const filterParams =
-        filterRouteNo || filterEmployee || filterScope
-          ? {
-              routeNo: filterRouteNo,
-              employee: filterEmployee,
-              scope: filterScope,
-            }
-          : undefined;
-      const data = await DispatchService.listChangeLogs(selectedDate, filterParams);
-      if (seq !== requestSeqRef.current) return;
-      setLogs(data);
-      setError(null);
-    } catch (err: any) {
-      if (seq !== requestSeqRef.current) return;
-      setError(err?.message || 'Failed to refresh logs');
-    } finally {
-      if (seq === requestSeqRef.current) setLoading(false);
-    }
-  }, [selectedDate, filterRouteNo, filterEmployee, filterScope]);
 
   const handleSearchTargeted = (e?: React.FormEvent) => {
     if (e) e.preventDefault();

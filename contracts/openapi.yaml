@@ -1,0 +1,234 @@
+openapi: 3.0.3
+info:
+  title: DispatchFirebase Fleet & School Bus API
+  version: 1.0.0
+  description: >
+    Single source of truth contract for critical Dispatch, Compliance, Pre-Trip,
+    Vehicle Defect, and Payroll endpoints shared across Web, Driver App, and Parent App.
+
+paths:
+  /api/dispatch/shifts/{id}/check-in:
+    put:
+      summary: Check in a driver for a dispatch shift
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                checkInTime:
+                  type: string
+      responses:
+        '200':
+          description: Shift checked in
+
+  /api/dispatch/shifts/{id}/check-out:
+    post:
+      summary: Check out a driver or attendant for a dispatch shift
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  enum: [driver, attendant]
+                checkOutTime:
+                  type: string
+                payrollComments:
+                  type: string
+      responses:
+        '200':
+          description: Shift checked out
+
+  /api/dispatch/pretrip-inspections:
+    get:
+      summary: List pre-trip inspections for a date or vehicle
+      responses:
+        '200':
+          description: Inspection list
+    post:
+      summary: Submit a pre-trip inspection
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Inspection created
+
+  /api/dispatch/vehicle-defects:
+    get:
+      summary: List vehicle defect reports
+      responses:
+        '200':
+          description: Defect report list
+    post:
+      summary: Submit a vehicle defect report
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Defect report created
+
+  /api/dispatch/payroll-logs:
+    get:
+      summary: List payroll department logs
+      responses:
+        '200':
+          description: Payroll log records
+
+  /api/dispatch/payroll-logs/sync-day:
+    post:
+      summary: Sync clean daily dispatch payroll records
+      responses:
+        '200':
+          description: Sync summary
+
+  /api/dispatch/change-logs:
+    get:
+      summary: List dispatch change logs
+      responses:
+        '200':
+          description: Change logs
+    post:
+      summary: Create a dispatch change log entry
+      responses:
+        '201':
+          description: Change log created
+
+  /api/busplanner/staging/routes:
+    get:
+      summary: List BusPlanner staging routes
+      responses:
+        '200':
+          description: Staging routes summary
+
+  /api/employees:
+    get:
+      summary: List employees
+      responses:
+        '200':
+          description: Employee list
+    post:
+      summary: Create an employee
+      responses:
+        '201':
+          description: Employee created
+
+  /api/employees/{id}:
+    get:
+      summary: Get an employee by ID
+      responses:
+        '200':
+          description: Employee detail
+    put:
+      summary: Update an employee
+      responses:
+        '200':
+          description: Employee updated
+    delete:
+      summary: Delete an employee
+      responses:
+        '200':
+          description: Employee deleted
+
+  /api/schools:
+    get:
+      summary: List schools
+      responses:
+        '200':
+          description: School list
+    post:
+      summary: Create a school
+      responses:
+        '201':
+          description: School created
+
+  /api/students:
+    get:
+      summary: List students
+      responses:
+        '200':
+          description: Student list
+    post:
+      summary: Create a student
+      responses:
+        '201':
+          description: Student created
+
+  /api/routes:
+    get:
+      summary: List bus routes
+      responses:
+        '200':
+          description: Route list
+
+  /api/routes/{id}/crew:
+    put:
+      summary: Assign driver, vehicle, and attendant to a route
+      responses:
+        '200':
+          description: Crew assigned
+
+  /api/vehicles:
+    get:
+      summary: List fleet vehicles
+      responses:
+        '200':
+          description: Vehicle list
+    post:
+      summary: Create a fleet vehicle
+      responses:
+        '201':
+          description: Vehicle created
+
+  /api/calendars:
+    get:
+      summary: Get school calendar
+      responses:
+        '200':
+          description: Calendar data
+    post:
+      summary: Save school calendar
+      responses:
+        '200':
+          description: Calendar saved
+
+  /api/payroll-rates:
+    get:
+      summary: List route payroll rates
+      responses:
+        '200':
+          description: Payroll rates list

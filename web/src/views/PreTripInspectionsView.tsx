@@ -1,14 +1,11 @@
-import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import React, { useState, useMemo, useRef, useDeferredValue } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { PageShell } from '../components/common/PageShell';
 import { PageHeader } from '../components/common/PageHeader';
 import { useRegisterPageAIContext } from '../contexts/AIContext';
 import { PreTripInspection, VehiclePretripStatus } from '../types/pretrip';
 import { PreTripService } from '../services/pretripService';
-import { DispatchService } from '../services/dispatchService';
-import { VehicleService } from '../services/vehicleService';
-import { Vehicle } from '../types/vehicle';
-import { DispatchShift } from '../types/dispatch';
+import { usePreTripRosterQuery } from '../features/compliance';
 import { ExportLoadingOverlay } from '../components/common/ExportLoadingOverlay';
 
 const PreTripReportPdfModal = React.lazy(() =>
@@ -52,10 +49,13 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(() => getLocalTodayString());
   useRegisterPageAIContext('pre_trip', { selectedDate });
 
-  const [inspections, setInspections] = useState<PreTripInspection[]>([]);
-  const [shifts, setShifts] = useState<DispatchShift[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const {
+    vehicles,
+    shifts,
+    inspections,
+    loading,
+    refresh: refreshRoster,
+  } = usePreTripRosterQuery(selectedDate);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [activeTab, setActiveTab] = useState<'all_dispatched' | 'missing' | 'passed' | 'defects' | 'all_fleet'>('missing');
@@ -67,52 +67,6 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
 
   const isColdData = useMemo(() => {
     return PreTripService.isColdDate(selectedDate);
-  }, [selectedDate]);
-
-  // Load shifts, vehicles, and subscribe to pre-trip inspections with race-condition cancellation protection (Vercel client-event-listeners)
-  const loadData = async (signal?: { isCancelled: boolean }) => {
-    setLoading(true);
-    try {
-      const [vList, sList, inspList] = await Promise.all([
-        VehicleService.list().catch(() => []),
-        DispatchService.list(selectedDate).catch(() => []),
-        PreTripService.listInspections(selectedDate).catch(() => []),
-      ]);
-      if (signal?.isCancelled) return;
-      setVehicles(vList);
-      setShifts(sList);
-      setInspections(inspList);
-    } catch (err) {
-      if (!signal?.isCancelled) {
-        console.error('[PreTripInspectionsView] Error loading data:', err);
-      }
-    } finally {
-      if (!signal?.isCancelled) {
-        setLoading(false);
-      }
-    }
-  };
-
-  useEffect(() => {
-    const signal = { isCancelled: false };
-    loadData(signal);
-
-    // Subscribe to live updates for today / recent dates
-    if (!PreTripService.isColdDate(selectedDate)) {
-      const unsub = PreTripService.subscribeToDate(selectedDate, (live) => {
-        if (!signal.isCancelled) {
-          setInspections(live);
-        }
-      });
-      return () => {
-        signal.isCancelled = true;
-        unsub();
-      };
-    }
-
-    return () => {
-      signal.isCancelled = true;
-    };
   }, [selectedDate]);
 
   // Map each vehicle/shift into unified VehiclePretripStatus
@@ -370,7 +324,7 @@ export const PreTripInspectionsView: React.FC<PreTripInspectionsViewProps> = ({
           {/* Refresh */}
           <button
             type="button"
-            onClick={() => void loadData()}
+            onClick={refreshRoster}
             disabled={loading}
             aria-label="Refresh inspections and shifts"
             className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-700 text-slate-200 transition shadow-xs disabled:opacity-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"

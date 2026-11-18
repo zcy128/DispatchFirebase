@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState, useRef, useCallback, useDeferredValue, memo } from 'react';
+import React, { useMemo, useState, useRef, useCallback, useDeferredValue, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Bus, ChevronDown, ChevronRight, Clock, Copy, Download, MapPin, RefreshCw, Search, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { BusPlannerService, StagingRoute, StagingShift } from '../services/busplannerService';
+import { useStagingRoutesQuery } from '../features/routes';
 import { getShiftBadgeStyle } from '../types/route';
 import { getPagePermission } from '../utils/permissions';
 import { downloadStagingRouteSheet } from '../utils/stagingRouteSheet';
@@ -18,40 +19,21 @@ export const StagingRouteListView: React.FC<StagingRouteListViewProps> = ({ onSe
   const { isFrench } = useI18n();
   const { currentUser } = useAuth();
   const canCopy = getPagePermission(currentUser, 'staging_routes') === 'readwrite';
-  const [routes, setRoutes] = useState<StagingRoute[]>([]);
-  const [totals, setTotals] = useState({ routes: 0, shifts: 0, stops: 0, students: 0 });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    routes,
+    totals,
+    loading,
+    error,
+    refresh: load,
+  } = useStagingRoutesQuery(
+    isFrench ? 'Impossible de charger les circuits staging' : 'Could not load staging routes'
+  );
   const [search, setSearch] = useState('');
   const [shiftFilter, setShiftFilter] = useState('ALL');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [activeShift, setActiveShift] = useState<Record<string, string>>({});
   const [copyingId, setCopyingId] = useState<string | null>(null);
   const [copyNote, setCopyNote] = useState<Record<string, { text: string; error?: boolean }>>({});
-
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const list = await BusPlannerService.listStagingRoutes();
-      const next = list.routes || [];
-      setRoutes(next);
-      setTotals({
-        routes: list.totalRoutes || next.length,
-        shifts: list.totalShifts || 0,
-        stops: list.totalStops || 0,
-        students: list.totalStudents || 0,
-      });
-    } catch (err: any) {
-      setError(err.message || (isFrench ? 'Impossible de charger les circuits staging' : 'Could not load staging routes'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
 
   const searchIndex = useMemo(() => {
     const index = new Map<string, string>();

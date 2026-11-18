@@ -1,31 +1,16 @@
-import 'package:flutter/foundation.dart';
+import 'package:fleet_core/fleet_core.dart';
 
 class ApiConfig {
-  static const String cloudRunBaseUrl =
-      'https://dispatch-api-337919645491.northamerica-northeast1.run.app';
+  static const String cloudRunBaseUrl = FleetApiUrlResolver.defaultCloudRunBaseUrl;
 
-  static String get baseUrl {
-    if (kIsWeb) {
-      final host = Uri.base.host;
-      if (host != 'localhost' && host != '127.0.0.1') {
-        return Uri.base.origin;
-      }
-      return 'http://localhost:8080';
-    }
-    if (!kDebugMode) {
-      return cloudRunBaseUrl;
-    }
-    return 'http://localhost:8080';
-  }
+  static String get baseUrl => FleetApiUrlResolver.resolveBaseUrl(
+        releaseBaseUrl: cloudRunBaseUrl,
+      );
 
   static String get dispatchApiUrl => '$baseUrl/api/dispatch';
   static String get uploadApiUrl => '$baseUrl/api/upload';
 
   static String resolveUrl(String url) {
-    final trimmed = url.trim();
-    if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
-      return '$baseUrl$trimmed';
-    }
-    return trimmed;
+    return FleetApiUrlResolver.resolveRelativeUrl(url, baseUrl: baseUrl);
   }
 }

@@ -186,12 +186,13 @@ func main() {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   origins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-User-Role", "X-Admin-Secret", "X-User-Id", "X-Parent-Contact"},
-		ExposedHeaders:   []string{"Link"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-User-Role", "X-Admin-Secret", "X-User-Id", "X-Parent-Contact", "X-Idempotency-Key"},
+		ExposedHeaders:   []string{"Link", "X-Idempotent-Replay"},
 		AllowCredentials: allowCredentials,
 		MaxAge:           300,
 	}))
 	r.Use(httpjson.ErrorContentType)
+	r.Use(httpjson.Idempotency(24*time.Hour, 2000))
 
 	// Auth, Employee, School, Student, Route & Vehicle handlers
 	authHandler := handlers.NewAuthHandler(repo, authClient, cfg)

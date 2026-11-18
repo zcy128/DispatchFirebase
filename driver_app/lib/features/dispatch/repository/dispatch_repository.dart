@@ -8,8 +8,10 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import '../../../core/api_config.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/offline/offline_outbox.dart';
 import '../../route/repository/route_repository.dart';
 import '../dispatch_progress.dart';
+import '../domain/dispatch_schedule_rules.dart';
 import '../models/dispatch_model.dart';
 
 class DispatchRejected implements Exception {
@@ -26,6 +28,7 @@ class DispatchRepository {
   Box<String>? _box;
   final http.Client _httpClient;
   final String apiBaseUrl;
+  final OfflineOutbox? outbox;
 
   bool get isFirestoreAvailable {
     try {
@@ -38,6 +41,7 @@ class DispatchRepository {
   DispatchRepository({
     http.Client? httpClient,
     String? apiBaseUrl,
+    this.outbox,
   })  : _httpClient = httpClient ?? AuthenticatedHttpClient.instance,
         apiBaseUrl = apiBaseUrl ?? ApiConfig.baseUrl;
 
@@ -56,7 +60,7 @@ class DispatchRepository {
   }
 
   static DateTime normalizeDate(DateTime dt) {
-    return DateTime(dt.year, dt.month, dt.day);
+    return DispatchScheduleRules.normalizeDate(dt);
   }
 
   static String formatDate(DateTime dt) {
@@ -68,28 +72,21 @@ class DispatchRepository {
   }
 
   bool isWithinAllowedWindow(DateTime targetDate, {DateTime? referenceToday}) {
-    final today = normalizeDate(referenceToday ?? DateTime.now());
-    final target = normalizeDate(targetDate);
-    final minDate = DateTime(today.year, today.month, today.day - 7);
-    final maxDate = DateTime(today.year, today.month, today.day + 7);
-    return !target.isBefore(minDate) && !target.isAfter(maxDate);
+    return DispatchScheduleRules.isWithinAllowedWindow(
+      targetDate,
+      referenceToday: referenceToday,
+    );
   }
 
   bool isToday(DateTime targetDate, {DateTime? referenceToday}) {
-    final today = normalizeDate(referenceToday ?? DateTime.now());
-    final target = normalizeDate(targetDate);
-    return today.isAtSameMomentAs(target);
+    return DispatchScheduleRules.isToday(
+      targetDate,
+      referenceToday: referenceToday,
+    );
   }
 
   static DateTime getNextOperatingDate(DateTime fromDate) {
-    final norm = normalizeDate(fromDate);
-    if (norm.weekday == DateTime.friday) {
-      return norm.add(const Duration(days: 3));
-    } else if (norm.weekday == DateTime.saturday) {
-      return norm.add(const Duration(days: 2));
-    } else {
-      return norm.add(const Duration(days: 1));
-    }
+    return DispatchScheduleRules.getNextOperatingDate(fromDate);
   }
 
   List<DispatchRecord> getDispatchesForDate(DateTime date, {String? driverId}) {
@@ -465,8 +462,10 @@ class DispatchRepository {
     String method,
     Uri uri,
     Map<String, dynamic> body,
-    String failureMessage,
-  ) async {
+    String failureMessage, {
+    String? outboxEntityType,
+    String? outboxEndpoint,
+  }) async {
     final headers = {'Content-Type': 'application/json'};
     final encoded = jsonEncode(body);
     final http.Response res;
@@ -476,6 +475,19 @@ class DispatchRepository {
           : _httpClient.put(uri, headers: headers, body: encoded);
       res = await request.timeout(const Duration(seconds: 12));
     } catch (_) {
+      if (outbox != null && outboxEntityType != null && outboxEndpoint != null) {
+        final now = DateTime.now().toUtc();
+        await outbox!.enqueue(
+          OutboxMutation(
+            id: '${outboxEntityType}_${now.microsecondsSinceEpoch}',
+            entityType: outboxEntityType,
+            method: method,
+            endpoint: outboxEndpoint,
+            payload: Map<String, dynamic>.from(body),
+            createdAt: now,
+          ),
+        );
+      }
       throw DispatchRejected(failureMessage);
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -503,11 +515,14 @@ class DispatchRepository {
     final currentTime = now ?? DateTime.now();
     final timeStr = formatTime(currentTime);
 
+    final endpointPath = '/api/dispatch/shifts/$dispatchId/check-in';
     await _sendAccepted(
       'PUT',
-      Uri.parse('$apiBaseUrl/api/dispatch/shifts/$dispatchId/check-in'),
+      Uri.parse('$apiBaseUrl$endpointPath'),
       {'checkInTime': timeStr},
       'Check-in was not saved on the server. Try again.',
+      outboxEntityType: 'dispatch_checkin',
+      outboxEndpoint: endpointPath,
     );
 
     final updated = record.copyWith(
@@ -536,15 +551,18 @@ class DispatchRepository {
 
     // The API writes the shift. A direct client update can stall on security
     // rules and never reach this request, so the Check-Out button appears dead.
+    final endpointPath = '/api/dispatch/shifts/$dispatchId/check-out';
     await _sendAccepted(
       'POST',
-      Uri.parse('$apiBaseUrl/api/dispatch/shifts/$dispatchId/check-out'),
+      Uri.parse('$apiBaseUrl$endpointPath'),
       {
         'role': 'driver',
         'checkOutTime': timeStr,
         if (hasComments) 'payrollComments': comments,
       },
       'Check-out was not saved on the server. Try again.',
+      outboxEntityType: 'dispatch_checkout',
+      outboxEndpoint: endpointPath,
     );
 
     final updated = record.copyWith(

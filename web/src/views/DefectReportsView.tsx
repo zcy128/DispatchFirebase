@@ -34,6 +34,7 @@ import { DispatchService } from '../services/dispatchService';
 import { useAuth } from '../contexts/AuthContext';
 import { OperationalSafetyLogService } from '../services/operationalSafetyLogService';
 import { ExportLoadingOverlay } from '../components/common/ExportLoadingOverlay';
+import { DefectTimeRange, useDefectReportsQuery } from '../features/fleet';
 
 const VehicleDefectPdfModal = React.lazy(() =>
   import('../components/defects/VehicleDefectPdfModal').then((module) => ({
@@ -130,9 +131,8 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
   onSelectVehicle,
 }) => {
   const { currentUser } = useAuth();
-  const [reports, setReports] = useState<VehicleDefectReport[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [committedHistoryQuery, setCommittedHistoryQuery] = useState<string>('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedReport, setSelectedReport] = useState<VehicleDefectReport | null>(null);
@@ -163,7 +163,7 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
   const [mechanicNotes, setMechanicNotes] = useState<string>('');
   const [resolvedBy, setResolvedBy] = useState<string>('');
 
-  const [timeRange, setTimeRange] = useState<'6months' | '1year' | 'all'>('6months');
+  const [timeRange, setTimeRange] = useState<DefectTimeRange>('6months');
 
   const isArchivedDate = (d?: string) => {
     if (!d) return false;
@@ -172,69 +172,19 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
     return d < cutoff.toISOString().slice(0, 10);
   };
 
-  const loadDefects = async (overrideQuery?: string, opts?: { isCancelled?: () => boolean }) => {
-    const q = (overrideQuery !== undefined ? overrideQuery : searchQuery).trim();
-    if (timeRange === 'all' && !q) {
-      if (!opts?.isCancelled?.()) {
-        setReports([]);
-        setLoading(false);
-      }
-      return;
-    }
-    setLoading(true);
-    try {
-      const params: Record<string, string> = { timeRange };
-      if (q) {
-        params.vehicleUnit = q;
-        params.query = q;
-      }
-      const data = await DefectService.listDefects(params);
-      if (opts?.isCancelled?.()) return;
-      setReports(data);
-    } catch (err) {
-      console.error('Failed to load defect reports:', err);
-      if (!opts?.isCancelled?.()) {
-        setReports([]);
-      }
-    } finally {
-      if (!opts?.isCancelled?.()) {
-        setLoading(false);
-      }
-    }
-  };
+  const {
+    reports,
+    loading,
+    refresh: refreshData,
+  } = useDefectReportsQuery(timeRange, timeRange === 'all' ? committedHistoryQuery : '');
 
-  useEffect(() => {
-    let isCancelled = false;
-    if (timeRange === '6months') {
-      setLoading(true);
-      const unsubscribe = DefectService.subscribeToDefects((data) => {
-        if (!isCancelled) {
-          setReports(data);
-          setLoading(false);
-        }
-      });
-      return () => {
-        isCancelled = true;
-        unsubscribe();
-      };
-    } else if (timeRange === '1year') {
-      void loadDefects(undefined, { isCancelled: () => isCancelled });
+  const handleSearchArchive = () => {
+    const trimmed = searchQuery.trim();
+    if (trimmed === committedHistoryQuery) {
+      refreshData();
     } else {
-      // 'all' history mode requires a targeted query
-      if (searchQuery.trim()) {
-        void loadDefects(searchQuery.trim(), { isCancelled: () => isCancelled });
-      } else {
-        setReports([]);
-        setLoading(false);
-      }
+      setCommittedHistoryQuery(trimmed);
     }
-    return () => {
-      isCancelled = true;
-    };
-  }, [timeRange]);
-
-  const refreshData = async () => {
-    loadDefects();
   };
 
   // KPIs: single-pass iteration across defect statuses
@@ -726,7 +676,7 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && timeRange === 'all') {
-                  loadDefects(searchQuery.trim());
+                  handleSearchArchive();
                 }
               }}
               className="w-full pl-9 pr-3 py-1.5 text-base sm:text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
@@ -735,7 +685,7 @@ export const DefectReportsView: React.FC<DefectReportsViewProps> = ({
           {timeRange === 'all' && (
             <button
               type="button"
-              onClick={() => loadDefects(searchQuery.trim())}
+              onClick={handleSearchArchive}
               disabled={loading || !searchQuery.trim()}
               className="px-3 py-1.5 min-h-[32px] text-xs font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-slate-200 rounded-lg transition shadow-xs whitespace-nowrap cursor-pointer flex items-center gap-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
             >

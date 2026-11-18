@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useDeferredValue, Suspense } from 'react';
+import React, { useState, useMemo, useDeferredValue, Suspense } from 'react';
 import { PageShell } from '../components/common/PageShell';
 import { PageHeader } from '../components/common/PageHeader';
 import {
@@ -29,6 +29,7 @@ import {
 } from '../types/training';
 import { Employee } from '../types/employee';
 import { TrainingService } from '../services/trainingService';
+import { useTrainingDataQuery } from '../features/training';
 const TrainingCourseModal = React.lazy(() =>
   import('../components/training/TrainingCourseModal').then((m) => ({ default: m.TrainingCourseModal }))
 );
@@ -52,10 +53,13 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
   const isManagement = currentUser?.role === 'admin' || currentUser?.role === 'dispatcher' || currentUser?.role === 'hr';
   const isHR = currentUser?.role === 'hr' || currentUser?.role === 'admin';
 
-  const [courses, setCourses] = useState<TrainingCourse[]>([]);
-  const [trainingTypes, setTrainingTypes] = useState<TrainingType[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    courses,
+    trainingTypes,
+    loading,
+    error,
+    refresh: loadData,
+  } = useTrainingDataQuery();
 
   // Active view tab: 'sessions' or 'catalog'
   const [activeTab, setActiveTab] = useState<'sessions' | 'catalog'>('sessions');
@@ -77,51 +81,6 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ employees }) => {
 
   const [isTypeModalOpen, setIsTypeModalOpen] = useState(false);
   const [editingType, setEditingType] = useState<TrainingType | null>(null);
-
-  const loadData = async (opts?: { isCancelled?: () => boolean }) => {
-    setLoading(true);
-    try {
-      const [coursesData, typesData] = await Promise.all([
-        TrainingService.listCourses(),
-        TrainingService.listTrainingTypes()
-      ]);
-      if (opts?.isCancelled?.()) return;
-      setCourses(Array.isArray(coursesData) ? coursesData : []);
-      setTrainingTypes(Array.isArray(typesData) ? typesData : []);
-      setError(null);
-    } catch (err: any) {
-      console.error('Failed to load training data:', err);
-      if (!opts?.isCancelled?.()) {
-        setError('Failed to load training courses. Please refresh.');
-      }
-    } finally {
-      if (!opts?.isCancelled?.()) {
-        setLoading(false);
-      }
-    }
-  };
-
-  useEffect(() => {
-    let isCancelled = false;
-    void loadData({ isCancelled: () => isCancelled });
-
-    const unsubscribe = TrainingService.subscribeToTrainingCourses(
-      (updatedCourses) => {
-        if (!isCancelled) {
-          setCourses(Array.isArray(updatedCourses) ? updatedCourses : []);
-          setLoading(false);
-        }
-      },
-      (err) => {
-        console.error('Training courses subscription error:', err);
-      }
-    );
-
-    return () => {
-      isCancelled = true;
-      if (unsubscribe) unsubscribe();
-    };
-  }, []);
 
   // Filtered courses
   const filteredCourses = useMemo(() => {

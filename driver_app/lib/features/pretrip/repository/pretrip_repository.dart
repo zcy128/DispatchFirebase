@@ -7,6 +7,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/api_config.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/offline/offline_outbox.dart';
 import '../models/pretrip_model.dart';
 
 class PreTripLookupException implements Exception {
@@ -36,9 +37,13 @@ class PreTripRepository {
   Box? _box;
   final FirebaseFirestore? _firestoreOverride;
   final http.Client _httpClient;
+  final OfflineOutbox? outbox;
 
-  PreTripRepository({FirebaseFirestore? firestore, http.Client? httpClient})
-      : _firestoreOverride = firestore,
+  PreTripRepository({
+    FirebaseFirestore? firestore,
+    http.Client? httpClient,
+    this.outbox,
+  })  : _firestoreOverride = firestore,
         _httpClient = httpClient ?? AuthenticatedHttpClient.instance;
 
   bool get isFirestoreAvailable {
@@ -328,6 +333,19 @@ class PreTripRepository {
     // Firestore fallback
     final fs = _firestore;
     if (fs == null) {
+      if (outbox != null) {
+        final now = DateTime.now().toUtc();
+        await outbox!.enqueue(
+          OutboxMutation(
+            id: 'pretrip_${record.vehicleUnit}_${record.inspectionDate}_${now.microsecondsSinceEpoch}',
+            entityType: 'pretrip_inspection',
+            method: 'POST',
+            endpoint: '/api/pretrip-inspections',
+            payload: Map<String, dynamic>.from(payload),
+            createdAt: now,
+          ),
+        );
+      }
       throw Exception('Failed to submit inspection. The server did not respond.');
     }
 

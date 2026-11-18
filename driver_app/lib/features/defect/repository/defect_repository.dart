@@ -7,6 +7,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/api_config.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/offline/offline_outbox.dart';
 import '../models/defect_model.dart';
 
 class DefectLookupException implements Exception {
@@ -36,9 +37,13 @@ class DefectRepository {
   Box? _box;
   final FirebaseFirestore? _firestoreOverride;
   final http.Client _httpClient;
+  final OfflineOutbox? outbox;
 
-  DefectRepository({FirebaseFirestore? firestore, http.Client? httpClient})
-      : _firestoreOverride = firestore,
+  DefectRepository({
+    FirebaseFirestore? firestore,
+    http.Client? httpClient,
+    this.outbox,
+  })  : _firestoreOverride = firestore,
         _httpClient = httpClient ?? AuthenticatedHttpClient.instance;
 
   bool get isFirestoreAvailable {
@@ -193,7 +198,7 @@ class DefectRepository {
     }
 
     final uri = Uri.parse('$_baseUrl/vehicle-defects');
-    final body = jsonEncode({
+    final payloadMap = <String, dynamic>{
       'vehicleId': report.vehicleId,
       'vehicleUnitNumber': report.vehicleUnitNumber,
       'odometer': report.odometer,
@@ -205,7 +210,23 @@ class DefectRepository {
       'defectNotes': report.defectNotes,
       'noDefectsFound': report.noDefectsFound,
       'confirmedAccurate': report.confirmedAccurate,
-    });
+    };
+    final body = jsonEncode(payloadMap);
+
+    Future<void> enqueueOfflineDefect() async {
+      if (outbox == null) return;
+      final now = DateTime.now().toUtc();
+      await outbox!.enqueue(
+        OutboxMutation(
+          id: 'defect_${report.vehicleUnitNumber}_${now.microsecondsSinceEpoch}',
+          entityType: 'vehicle_defect',
+          method: 'POST',
+          endpoint: '/api/vehicle-defects',
+          payload: payloadMap,
+          createdAt: now,
+        ),
+      );
+    }
 
     final http.Response res;
     try {
@@ -217,9 +238,11 @@ class DefectRepository {
           )
           .timeout(const Duration(seconds: 8));
     } on TimeoutException {
+      await enqueueOfflineDefect();
       throw Exception(
           'Failed to submit defect report. The server did not respond.');
     } on http.ClientException {
+      await enqueueOfflineDefect();
       throw Exception(
           'Failed to submit defect report. The server did not respond.');
     }

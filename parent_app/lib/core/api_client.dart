@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:fleet_core/fleet_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,22 +14,10 @@ class ApiClient {
   static const String _configuredApiUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
 
   // In Flutter web on deployed host, use same origin (rewritten via /api/**); on localhost default to localhost:8080
-  String get baseUrl {
-    if (_configuredApiUrl.isNotEmpty) {
-      return _configuredApiUrl;
-    }
-    if (kIsWeb) {
-      final host = Uri.base.host;
-      if (host != 'localhost' && host != '127.0.0.1') {
-        return Uri.base.origin;
-      }
-      return 'http://localhost:8080';
-    }
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:8080';
-    }
-    return 'http://localhost:8080';
-  }
+  String get baseUrl => FleetApiUrlResolver.resolveBaseUrl(
+        configuredUrl: _configuredApiUrl,
+        useAndroidEmulatorLoopback: true,
+      );
 
   String? _sessionToken;
   String? _savedContact;

@@ -1,7 +1,7 @@
 {
   "name": "dispatch-pwa",
   "private": true,
-  "version": "1.0.13",
+  "version": "1.0.14",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.108.0",
     "@tanstack/react-virtual": "^3.14.23",
     "@types/leaflet": "^1.9.22",
     "clsx": "^2.1.1",
