@@ -83,3 +83,6 @@ schoolbusdispatchapp-*.json
 .firebase/
 *.log
 **/.integration-dev-key
+
+# Private company website (excluded from open-source repo)
+pcyweb/
