@@ -37,9 +37,12 @@ import {
   FileCheck2,
   FileBadge,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Bookmark
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useDashboardPreferences } from '../../hooks/useDashboardPreferences';
+import { QuickAccessSection } from '../dashboard/QuickAccessSection';
 import { hasPageAccess } from '../../utils/permissions';
 import {
   NavDomainId,
@@ -102,6 +105,7 @@ interface NavGroupConfig {
 
 interface SidebarProps {
   currentTab: NavTab;
+  activeDomain?: NavDomainId;
   onSelectTab: (tab: NavTab) => void;
   expiringLicenseCount: number;
   isCollapsed?: boolean;
@@ -110,6 +114,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
+  activeDomain,
   onSelectTab,
   expiringLicenseCount,
   isCollapsed = false,
@@ -117,8 +122,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { t, isFrench } = useI18n();
   const { currentUser } = useAuth();
+  const { prefs, isSaving: isSavingPrefs, persistPrefs } = useDashboardPreferences();
+  const [isQuickAccessOpen, setIsQuickAccessOpen] = React.useState(false);
+  const [quickAccessHoverPos, setQuickAccessHoverPos] = React.useState<{
+    left: number;
+    bottom: number;
+  } | null>(null);
 
-  const activeDomainId = getDomainForTab(currentTab);
+  const showQuickAccessTip = (el: HTMLElement) => {
+    const rect = el.getBoundingClientRect();
+    setQuickAccessHoverPos({
+      left: rect.right + 10,
+      bottom: Math.max(12, window.innerHeight - rect.bottom),
+    });
+  };
+  const hideQuickAccessTip = () => setQuickAccessHoverPos(null);
+
+  const activeDomainId = activeDomain ?? getDomainForTab(currentTab);
   const activeDomainDef =
     NAV_DOMAINS.find((d) => d.id === activeDomainId) || NAV_DOMAINS[0];
 
@@ -390,9 +410,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   ];
 
-  const domainGroups = groups.filter((g) => g.domain === activeDomainId);
+  const itemLookup = React.useMemo(() => {
+    const map = new Map<NavTab, NavItemConfig>();
+    for (const group of groups) {
+      for (const item of group.items) {
+        map.set(item.id, item);
+      }
+    }
+    return map;
+  }, [groups]);
+
+  const quickAccessItems: NavItemConfig[] = React.useMemo(() => {
+    const list: NavItemConfig[] = [];
+    for (const tabId of prefs.pinnedPages ?? []) {
+      if (!hasPageAccess(currentUser, tabId)) continue;
+      const item = itemLookup.get(tabId);
+      if (item) list.push(item);
+    }
+    return list;
+  }, [prefs.pinnedPages, currentUser, itemLookup]);
+
+  const domainGroups: NavGroupConfig[] =
+    activeDomainId === 'home'
+      ? [
+          {
+            domain: 'home',
+            title: isFrench ? 'Mes raccourcis rapides' : 'My Quick Access',
+            items: quickAccessItems,
+          },
+        ]
+      : groups.filter((g) => g.domain === activeDomainId);
 
   return (
+    <>
     <aside
       aria-label={isFrench ? 'Menu secondaire du domaine' : 'Domain secondary navigation'}
       className={`hidden md:flex flex-col flex-shrink-0 h-full overflow-hidden bg-slate-900 border-r border-slate-800 transition-all duration-300 z-20 ${
@@ -474,6 +524,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Domain Filtered Menu Items */}
       <div className="flex-1 min-h-0 overflow-y-auto py-3 px-2 space-y-4">
+        {activeDomainId === 'home' && quickAccessItems.length === 0 && !isCollapsed && (
+          <div className="px-3 py-2.5 rounded-xl bg-slate-950/50 border border-dashed border-slate-800 text-[11px] text-slate-400 leading-relaxed">
+            <div className="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-1">
+              {isFrench ? 'Mes raccourcis rapides' : 'My Quick Access'}
+            </div>
+            {isFrench
+              ? 'Épinglez vos pages fréquentes sur l’accueil pour les voir ici.'
+              : 'Pin your frequent pages on Home to see shortcuts here.'}
+          </div>
+        )}
         {domainGroups.map((group, groupIdx) => {
           const visibleItems = group.items.filter((item) => hasPageAccess(currentUser, item.id));
           if (visibleItems.length === 0) return null;
@@ -547,8 +607,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </div>
 
-      {/* Bottom Depot & Collapse Controls */}
+      {/* Bottom Depot, Quick Access Customizer & Collapse Controls */}
       <div className="shrink-0 p-2.5 border-t border-slate-800 space-y-2">
+        <button
+          type="button"
+          onClick={() => {
+            hideQuickAccessTip();
+            setIsQuickAccessOpen(true);
+          }}
+          onMouseEnter={(e) => showQuickAccessTip(e.currentTarget)}
+          onMouseLeave={hideQuickAccessTip}
+          onFocus={(e) => showQuickAccessTip(e.currentTarget)}
+          onBlur={hideQuickAccessTip}
+          aria-label={isFrench ? 'Personnaliser My Quick Access' : 'Customize My Quick Access'}
+          className={`w-full flex items-center rounded-xl text-xs font-semibold transition border border-slate-800 bg-slate-800/40 hover:bg-slate-800 hover:border-amber-500/30 text-slate-200 hover:text-amber-300 cursor-pointer ${
+            isCollapsed ? 'justify-center h-9 w-9 mx-auto' : 'justify-between px-2.5 py-2'
+          }`}
+        >
+          <span className={`flex items-center min-w-0 ${isCollapsed ? 'justify-center' : 'space-x-2'}`}>
+            <Bookmark className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+            {!isCollapsed && (
+              <span className="truncate text-[11px]">
+                {isFrench ? 'My Quick Access' : 'My Quick Access'}
+              </span>
+            )}
+          </span>
+          {!isCollapsed && quickAccessItems.length > 0 && (
+            <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
+              {quickAccessItems.length}
+            </span>
+          )}
+        </button>
+
         {!isCollapsed && (
           <div className="px-2.5 py-2 rounded-lg bg-slate-800/40 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
             <span className="flex items-center space-x-1.5 truncate">
@@ -588,5 +678,76 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
     </aside>
+
+    {quickAccessHoverPos && !isQuickAccessOpen && (
+      <div
+        role="tooltip"
+        style={{
+          left: quickAccessHoverPos.left,
+          bottom: quickAccessHoverPos.bottom,
+        }}
+        className="fixed z-50 w-72 pointer-events-none rounded-2xl bg-slate-900/95 backdrop-blur-md border border-amber-500/40 shadow-2xl shadow-black/50 p-3.5 text-slate-100 animate-in fade-in slide-in-from-left-2 duration-200"
+      >
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center space-x-1.5">
+            <Bookmark className="w-3.5 h-3.5 text-amber-400 animate-bounce" />
+            <span className="text-xs font-bold text-white">My Quick Access</span>
+          </div>
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+            {isFrench ? 'Synchronisé' : 'Synced'}
+          </span>
+        </div>
+
+        <p className="text-[11px] text-slate-300 leading-relaxed mb-2.5">
+          {isFrench
+            ? 'Épinglez vos pages fréquentes dans le menu Accueil pour y accéder en un clic sur tous vos appareils.'
+            : 'Pin your role-specific pages to the Home sidebar for 1-click access across all your devices.'}
+        </p>
+
+        {/* Animated Mini Preview */}
+        <div className="rounded-xl bg-slate-950/80 border border-slate-800 p-2 space-y-1.5">
+          <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+            {isFrench ? 'Aperçu du menu Home' : 'Home Sidebar Preview'}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
+              {isFrench ? 'Employés' : 'Employees'}
+            </span>
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">
+              {isFrench ? 'Formation' : 'Training'}
+            </span>
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">
+              {isFrench ? 'Élèves' : 'Students'}
+            </span>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {isQuickAccessOpen && (
+      <div
+        className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4"
+        onClick={() => setIsQuickAccessOpen(false)}
+      >
+        <div
+          className="w-full max-w-4xl max-h-[85vh] overflow-y-auto rounded-2xl shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <QuickAccessSection
+            currentUser={currentUser}
+            prefs={prefs}
+            isSaving={isSavingPrefs}
+            onUpdatePrefs={persistPrefs}
+            onNavigateTab={(tab) => {
+              onSelectTab(tab);
+              setIsQuickAccessOpen(false);
+            }}
+            defaultEditing
+            onClose={() => setIsQuickAccessOpen(false)}
+          />
+        </div>
+      </div>
+    )}
+    </>
   );
 };

@@ -17,11 +17,14 @@ import { useAuth } from './contexts/AuthContext';
 import { useChatNotifications } from './hooks/useChatNotifications';
 import { CreateParentChannelPayload } from './types/chat';
 import { getLocalTodayString } from './utils/dateUtils';
+import { lazyWithRetry } from './utils/lazyWithRetry';
+import { NavDomainId } from './utils/navigationConfig';
 import { hasPageAccess } from './utils/permissions';
 import { LoginView } from './views/LoginView';
 
-const AICopilotDrawer = React.lazy(() =>
-  import('./components/ai/AICopilotDrawer').then((m) => ({ default: m.AICopilotDrawer }))
+const AICopilotDrawer = lazyWithRetry(
+  () => import('./components/ai/AICopilotDrawer').then((m) => ({ default: m.AICopilotDrawer })),
+  'AICopilotDrawer'
 );
 
 const ACCESSIBLE_TAB_ORDER: NavTab[] = [
@@ -39,6 +42,7 @@ export const AppContent: React.FC = () => {
   const { currentUser, loading: authLoading, updateCurrentUser } = useAuth();
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
+  const [activeDomain, setActiveDomain] = useState<NavDomainId>('home');
   const mainRef = useRef<HTMLElement>(null);
   const [dispatchLogDate, setDispatchLogDate] = useState<string>(() => getLocalTodayString());
   const [calendarSelectedSchoolId, setCalendarSelectedSchoolId] = useState<number | null>(null);
@@ -201,7 +205,9 @@ export const AppContent: React.FC = () => {
       <div className="h-screen overflow-hidden bg-slate-950 flex flex-col text-slate-100 font-sans">
         <Header
           currentTab={currentTab}
+          activeDomain={activeDomain}
           onSelectTab={navigateToTab}
+          onSelectDomain={setActiveDomain}
           expiringLicenseCount={fleet.stats.licenseExpiringSoon}
           onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
           onOpenChat={() => {
@@ -218,6 +224,7 @@ export const AppContent: React.FC = () => {
         <div className="flex flex-1 min-h-0 overflow-hidden relative">
           <Sidebar
             currentTab={currentTab}
+            activeDomain={activeDomain}
             onSelectTab={navigateToTab}
             expiringLicenseCount={fleet.stats.licenseExpiringSoon}
             isCollapsed={isSidebarCollapsed}

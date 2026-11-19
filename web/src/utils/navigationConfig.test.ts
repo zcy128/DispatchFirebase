@@ -28,7 +28,7 @@ describe('navigationConfig (Hybrid Navigation Architecture)', () => {
   });
 
   it('resolves the owning domain for individual tabs accurately', () => {
-    expect(getDomainForTab('dashboard')).toBe('dispatch_ops');
+    expect(getDomainForTab('dashboard')).toBe('home');
     expect(getDomainForTab('dispatch')).toBe('dispatch_ops');
     expect(getDomainForTab('employees')).toBe('hr_payroll');
     expect(getDomainForTab('payroll')).toBe('hr_payroll');
@@ -41,16 +41,18 @@ describe('navigationConfig (Hybrid Navigation Architecture)', () => {
   });
 
   it('returns the first accessible tab in each domain for an admin user', () => {
-    expect(getDefaultTabForDomain('dispatch_ops', mockAdminUser)).toBe('dashboard');
+    expect(getDefaultTabForDomain('home', mockAdminUser)).toBe('dashboard');
+    expect(getDefaultTabForDomain('dispatch_ops', mockAdminUser)).toBe('dispatch');
     expect(getDefaultTabForDomain('hr_payroll', mockAdminUser)).toBe('employees');
     expect(getDefaultTabForDomain('fleet', mockAdminUser)).toBe('vehicles');
     expect(getDefaultTabForDomain('students_safety', mockAdminUser)).toBe('compliance');
     expect(getDefaultTabForDomain('system', mockAdminUser)).toBe('company_contacts');
   });
 
-  it('returns all 5 domains for an admin user', () => {
+  it('returns all 6 domains for an admin user with home first', () => {
     const domains = getAccessibleDomains(mockAdminUser);
     expect(domains.map((d) => d.id)).toEqual([
+      'home',
       'dispatch_ops',
       'hr_payroll',
       'fleet',

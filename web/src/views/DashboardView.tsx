@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { DashboardStats, Employee } from '../types/employee';
 import { PageShell } from '../components/common/PageShell';
 import { BusRoute } from '../types/route';
@@ -14,8 +14,7 @@ import { StudentIncidentService } from '../services/studentIncidentService';
 import { DefectService } from '../services/defectService';
 import { HazardReportService } from '../services/hazardReportService';
 import { ExpenseReimbursementService } from '../services/expenseReimbursementService';
-import { userPreferencesService } from '../services/userPreferencesService';
-import { useAuth } from '../contexts/AuthContext';
+import { useDashboardPreferences } from '../hooks/useDashboardPreferences';
 import { getLocalTodayString } from '../utils/dateUtils';
 import { getCurrentHHmm } from '../utils/dispatchDelayUtils';
 import { computeFleetPulseSummary } from '../utils/fleetPulseUtils';
@@ -23,7 +22,6 @@ import {
   DASHBOARD_CARDS_META,
   DashboardActionCardId,
   DashboardCardId,
-  DashboardPreferences,
   DashboardSummaryPanelId,
   createDefaultDashboardPreferences,
   hideDashboardCard,
@@ -184,53 +182,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateTab,
   onSelectEmployee: _onSelectEmployee,
 }) => {
-  const { currentUser } = useAuth();
-  const prefUserId = currentUser?.uid || currentUser?.employeeId || '';
-
-  const [prefs, setPrefs] = useState<DashboardPreferences>(() => createDefaultDashboardPreferences());
+  const { prefs, isSaving: isSavingPrefs, persistPrefs } = useDashboardPreferences();
   const [isCustomizing, setIsCustomizing] = useState(false);
-  const [isSavingPrefs, setIsSavingPrefs] = useState(false);
-  const [draggedCardId, setDraggedCardId] = useState<DashboardCardId | null>(null);
-  const [reorderStatus, setReorderStatus] = useState('');
-
-  useEffect(() => {
-    if (!prefUserId) return;
-    let cancelled = false;
-    userPreferencesService
-      .getDashboardPreferences(prefUserId)
-      .then((loaded) => {
-        if (!cancelled) {
-          setPrefs({ ...loaded, userId: prefUserId });
-        }
-      })
-      .catch((err) => {
-        console.warn('[DashboardView] Failed to load dashboard preferences:', err);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [prefUserId]);
-
-  const persistPrefs = useCallback(
-    (nextPrefs: DashboardPreferences) => {
-      const payload: DashboardPreferences = {
-        ...nextPrefs,
-        userId: prefUserId || nextPrefs.userId,
-      };
-      setPrefs(payload);
-      if (!payload.userId) return;
-      setIsSavingPrefs(true);
-      userPreferencesService
-        .saveDashboardPreferences(payload)
-        .catch((err) => {
-          console.warn('[DashboardView] Failed to save dashboard preferences:', err);
-        })
-        .finally(() => {
-          setIsSavingPrefs(false);
-        });
-    },
-    [prefUserId]
+  const [customizeHoverPos, setCustomizeHoverPos] = useState<{ right: number; top: number } | null>(
+    null
   );
+  const [draggedCardId, setDraggedCardId] = useState<DashboardCardId | null>(null);
+
+  const showCustomizeTip = (el: HTMLElement) => {
+    if (isCustomizing) return;
+    const rect = el.getBoundingClientRect();
+    setCustomizeHoverPos({
+      right: Math.max(12, window.innerWidth - rect.right),
+      top: rect.bottom + 8,
+    });
+  };
+  const hideCustomizeTip = () => setCustomizeHoverPos(null);
+  const [reorderStatus, setReorderStatus] = useState('');
 
   const hiddenSet = useMemo(() => new Set(prefs.hiddenCards), [prefs.hiddenCards]);
 
@@ -416,7 +384,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <button
               type="button"
               aria-expanded={isCustomizing}
-              onClick={() => setIsCustomizing((prev) => !prev)}
+              onClick={() => {
+                hideCustomizeTip();
+                setIsCustomizing((prev) => !prev);
+              }}
+              onMouseEnter={(e) => showCustomizeTip(e.currentTarget)}
+              onMouseLeave={hideCustomizeTip}
+              onFocus={(e) => showCustomizeTip(e.currentTarget)}
+              onBlur={hideCustomizeTip}
               className={`px-3.5 py-2.5 font-bold text-xs rounded-xl transition flex items-center space-x-2 cursor-pointer border ${FOCUS_VISIBLE_CLASS} ${
                 isCustomizing
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
@@ -450,6 +425,46 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
       </div>
 
+      {customizeHoverPos && !isCustomizing && (
+        <div
+          role="tooltip"
+          style={{
+            right: customizeHoverPos.right,
+            top: customizeHoverPos.top,
+          }}
+          className="fixed z-50 w-72 pointer-events-none rounded-2xl bg-slate-900/95 backdrop-blur-md border border-amber-500/40 shadow-2xl shadow-black/50 p-3.5 text-slate-100 animate-in fade-in slide-in-from-top-2 duration-200"
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center space-x-1.5">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400 animate-pulse" aria-hidden="true" />
+              <span className="text-xs font-bold text-white">Customize Cards</span>
+            </div>
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              Synced
+            </span>
+          </div>
+
+          <p className="text-[11px] text-slate-300 leading-relaxed mb-2.5">
+            Drag cards or use arrows to reorder your Fleet Pulse layout, or hide cards you don&apos;t need. Saved across all devices.
+          </p>
+
+          <div className="rounded-xl bg-slate-950/80 border border-slate-800 p-2 space-y-1.5">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+              Layout Controls Preview
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
+                Missing Driver
+              </span>
+              <span className="text-[10px] text-slate-500">↔</span>
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">
+                Time Off &times;
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Customization & Hidden Cards Toolbar */}
       {isCustomizing && (
         <div className="bg-slate-900/90 border border-amber-500/30 rounded-xl p-4 space-y-3">
@@ -465,7 +480,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                persistPrefs(createDefaultDashboardPreferences());
+                persistPrefs({
+                  ...createDefaultDashboardPreferences(),
+                  pinnedPages: prefs.pinnedPages,
+                });
                 setReorderStatus('Reset Fleet Pulse layout to default.');
               }}
               className={`px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center space-x-1.5 cursor-pointer transition ${FOCUS_VISIBLE_CLASS}`}

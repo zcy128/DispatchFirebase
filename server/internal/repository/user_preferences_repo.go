@@ -27,6 +27,7 @@ func (r *FirestoreDispatchRepository) GetUserDashboardPreferences(ctx context.Co
 		return &models.DashboardPreferences{
 			CardOrder:   []string{},
 			HiddenCards: []string{},
+			PinnedPages: []string{},
 		}, nil
 	}
 
@@ -37,6 +38,7 @@ func (r *FirestoreDispatchRepository) GetUserDashboardPreferences(ctx context.Co
 				UserID:      strings.TrimSpace(userID),
 				CardOrder:   []string{},
 				HiddenCards: []string{},
+				PinnedPages: []string{},
 			}, nil
 		}
 		return nil, err
@@ -51,6 +53,9 @@ func (r *FirestoreDispatchRepository) GetUserDashboardPreferences(ctx context.Co
 	}
 	if prefs.HiddenCards == nil {
 		prefs.HiddenCards = []string{}
+	}
+	if prefs.PinnedPages == nil {
+		prefs.PinnedPages = []string{}
 	}
 	return &prefs, nil
 }
@@ -70,6 +75,9 @@ func (r *FirestoreDispatchRepository) SaveUserDashboardPreferences(ctx context.C
 	}
 	if prefs.HiddenCards == nil {
 		prefs.HiddenCards = []string{}
+	}
+	if prefs.PinnedPages == nil {
+		prefs.PinnedPages = []string{}
 	}
 	prefs.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
@@ -91,6 +99,7 @@ func (r *MemoryDispatchRepository) GetUserDashboardPreferences(ctx context.Conte
 			UserID:      strings.TrimSpace(userID),
 			CardOrder:   []string{},
 			HiddenCards: []string{},
+			PinnedPages: []string{},
 		}, nil
 	}
 
@@ -100,6 +109,7 @@ func (r *MemoryDispatchRepository) GetUserDashboardPreferences(ctx context.Conte
 			UserID:      strings.TrimSpace(userID),
 			CardOrder:   []string{},
 			HiddenCards: []string{},
+			PinnedPages: []string{},
 		}, nil
 	}
 
@@ -107,10 +117,13 @@ func (r *MemoryDispatchRepository) GetUserDashboardPreferences(ctx context.Conte
 	copy(cardOrder, existing.CardOrder)
 	hiddenCards := make([]string, len(existing.HiddenCards))
 	copy(hiddenCards, existing.HiddenCards)
+	pinnedPages := make([]string, len(existing.PinnedPages))
+	copy(pinnedPages, existing.PinnedPages)
 	return &models.DashboardPreferences{
 		UserID:      existing.UserID,
 		CardOrder:   cardOrder,
 		HiddenCards: hiddenCards,
+		PinnedPages: pinnedPages,
 		UpdatedAt:   existing.UpdatedAt,
 	}, nil
 }
@@ -135,10 +148,13 @@ func (r *MemoryDispatchRepository) SaveUserDashboardPreferences(ctx context.Cont
 	copy(cardOrder, prefs.CardOrder)
 	hiddenCards := make([]string, len(prefs.HiddenCards))
 	copy(hiddenCards, prefs.HiddenCards)
+	pinnedPages := make([]string, len(prefs.PinnedPages))
+	copy(pinnedPages, prefs.PinnedPages)
 	saved := &models.DashboardPreferences{
 		UserID:      strings.TrimSpace(prefs.UserID),
 		CardOrder:   cardOrder,
 		HiddenCards: hiddenCards,
+		PinnedPages: pinnedPages,
 		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
 	}
 	r.dashboardPreferences[docID] = saved

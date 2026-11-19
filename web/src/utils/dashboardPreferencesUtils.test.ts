@@ -7,6 +7,9 @@ import {
   restoreDashboardCard,
   moveDashboardCardStep,
   reorderDashboardCards,
+  togglePinnedPage,
+  movePinnedPageStep,
+  clearPinnedPages,
 } from './dashboardPreferencesUtils';
 
 describe('dashboardPreferencesUtils', () => {
@@ -55,5 +58,27 @@ describe('dashboardPreferencesUtils', () => {
     // Cross-category drag should be ignored
     const crossCategory = reorderDashboardCards(prefs, 'cdl_watchlist', 'dispatch_missing_driver');
     expect(crossCategory.cardOrder).toEqual(prefs.cardOrder);
+  });
+
+  it('normalizes, toggles, reorders, and clears pinned quick-access pages', () => {
+    const normalized = normalizeDashboardPreferences({
+      pinnedPages: ['employees', 'training', 'employees', 'dashboard' as any, 'unknown_tab' as any],
+    });
+    expect(normalized.pinnedPages).toEqual(['employees', 'training']);
+
+    let prefs = createDefaultDashboardPreferences();
+    prefs = togglePinnedPage(prefs, 'student_incidents');
+    prefs = togglePinnedPage(prefs, 'students');
+    prefs = togglePinnedPage(prefs, 'routes');
+    expect(prefs.pinnedPages).toEqual(['student_incidents', 'students', 'routes']);
+
+    prefs = movePinnedPageStep(prefs, 'routes', -1);
+    expect(prefs.pinnedPages).toEqual(['student_incidents', 'routes', 'students']);
+
+    prefs = togglePinnedPage(prefs, 'routes');
+    expect(prefs.pinnedPages).toEqual(['student_incidents', 'students']);
+
+    prefs = clearPinnedPages(prefs);
+    expect(prefs.pinnedPages).toEqual([]);
   });
 });

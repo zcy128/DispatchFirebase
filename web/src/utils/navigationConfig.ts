@@ -3,6 +3,7 @@ import { AuthUser } from '../types/employee';
 import { hasPageAccess } from './permissions';
 
 export type NavDomainId =
+  | 'home'
   | 'dispatch_ops'
   | 'hr_payroll'
   | 'fleet'
@@ -20,13 +21,20 @@ export interface NavDomainDefinition {
 
 export const NAV_DOMAINS: NavDomainDefinition[] = [
   {
+    id: 'home',
+    labelEn: 'Home',
+    labelFr: 'Accueil',
+    shortLabelEn: 'Home',
+    shortLabelFr: 'Accueil',
+    tabs: ['dashboard']
+  },
+  {
     id: 'dispatch_ops',
     labelEn: 'Dispatch & Ops',
     labelFr: 'Répartition & Opérations',
     shortLabelEn: 'Dispatch',
     shortLabelFr: 'Répartition',
     tabs: [
-      'dashboard',
       'dispatch',
       'charter',
       'routes',

@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import { NavTab } from '../components/common/Sidebar';
 import { StudentModalTab } from '../components/students/StudentModal';
 import { calculateSchoolStats } from '../services/schoolService';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { CompanyContact } from '../services/companyContactsService';
 import { SchoolCalendar } from '../types/calendar';
 import { CreateParentChannelPayload } from '../types/chat';
@@ -29,68 +30,89 @@ import { VehicleListView } from '../views/VehicleListView';
 import { VehicleSignoutView } from '../views/VehicleSignoutView';
 import { YardListView } from '../views/YardListView';
 
-const SchoolListView = React.lazy(() =>
-  import('../views/SchoolListView').then((m) => ({ default: m.SchoolListView }))
+const SchoolListView = lazyWithRetry(
+  () => import('../views/SchoolListView').then((m) => ({ default: m.SchoolListView })),
+  'SchoolListView'
 );
-const SchoolCalendarView = React.lazy(() =>
-  import('../views/SchoolCalendarView').then((m) => ({ default: m.SchoolCalendarView }))
+const SchoolCalendarView = lazyWithRetry(
+  () => import('../views/SchoolCalendarView').then((m) => ({ default: m.SchoolCalendarView })),
+  'SchoolCalendarView'
 );
-const PayrollRateView = React.lazy(() =>
-  import('../views/PayrollRateView').then((m) => ({ default: m.PayrollRateView }))
+const PayrollRateView = lazyWithRetry(
+  () => import('../views/PayrollRateView').then((m) => ({ default: m.PayrollRateView })),
+  'PayrollRateView'
 );
-const BiweeklyPayrollView = React.lazy(() =>
-  import('../views/BiweeklyPayrollView').then((m) => ({ default: m.BiweeklyPayrollView }))
+const BiweeklyPayrollView = lazyWithRetry(
+  () => import('../views/BiweeklyPayrollView').then((m) => ({ default: m.BiweeklyPayrollView })),
+  'BiweeklyPayrollView'
 );
-const PayrollDepartmentLogView = React.lazy(() =>
-  import('../views/PayrollDepartmentLogView').then((m) => ({ default: m.PayrollDepartmentLogView }))
+const PayrollDepartmentLogView = lazyWithRetry(
+  () => import('../views/PayrollDepartmentLogView').then((m) => ({ default: m.PayrollDepartmentLogView })),
+  'PayrollDepartmentLogView'
 );
-const RoleManagementView = React.lazy(() =>
-  import('../views/RoleManagementView').then((m) => ({ default: m.RoleManagementView }))
+const RoleManagementView = lazyWithRetry(
+  () => import('../views/RoleManagementView').then((m) => ({ default: m.RoleManagementView })),
+  'RoleManagementView'
 );
-const CompanyContactsView = React.lazy(() =>
-  import('../views/CompanyContactsView').then((m) => ({ default: m.CompanyContactsView }))
+const CompanyContactsView = lazyWithRetry(
+  () => import('../views/CompanyContactsView').then((m) => ({ default: m.CompanyContactsView })),
+  'CompanyContactsView'
 );
-const LoginLogsView = React.lazy(() =>
-  import('../views/LoginLogsView').then((m) => ({ default: m.LoginLogsView }))
+const LoginLogsView = lazyWithRetry(
+  () => import('../views/LoginLogsView').then((m) => ({ default: m.LoginLogsView })),
+  'LoginLogsView'
 );
-const AuditLogsView = React.lazy(() =>
-  import('../views/AuditLogsView').then((m) => ({ default: m.AuditLogsView }))
+const AuditLogsView = lazyWithRetry(
+  () => import('../views/AuditLogsView').then((m) => ({ default: m.AuditLogsView })),
+  'AuditLogsView'
 );
-const ErrorLogsView = React.lazy(() =>
-  import('../views/ErrorLogsView').then((m) => ({ default: m.ErrorLogsView }))
+const ErrorLogsView = lazyWithRetry(
+  () => import('../views/ErrorLogsView').then((m) => ({ default: m.ErrorLogsView })),
+  'ErrorLogsView'
 );
-const SettingsView = React.lazy(() =>
-  import('../views/SettingsView').then((m) => ({ default: m.SettingsView }))
+const SettingsView = lazyWithRetry(
+  () => import('../views/SettingsView').then((m) => ({ default: m.SettingsView })),
+  'SettingsView'
 );
-const DispatchWorkbenchView = React.lazy(() =>
-  import('../views/DispatchWorkbenchView').then((m) => ({ default: m.DispatchWorkbenchView }))
+const DispatchWorkbenchView = lazyWithRetry(
+  () => import('../views/DispatchWorkbenchView').then((m) => ({ default: m.DispatchWorkbenchView })),
+  'DispatchWorkbenchView'
 );
-const RouteListView = React.lazy(() =>
-  import('../views/RouteListView').then((m) => ({ default: m.RouteListView }))
+const RouteListView = lazyWithRetry(
+  () => import('../views/RouteListView').then((m) => ({ default: m.RouteListView })),
+  'RouteListView'
 );
-const StagingRouteListView = React.lazy(() =>
-  import('../views/StagingRouteListView').then((m) => ({ default: m.StagingRouteListView }))
+const StagingRouteListView = lazyWithRetry(
+  () => import('../views/StagingRouteListView').then((m) => ({ default: m.StagingRouteListView })),
+  'StagingRouteListView'
 );
-const DispatchDailyPayrollTab = React.lazy(() =>
-  import('../components/payroll/DispatchDailyPayrollTab').then((m) => ({ default: m.DispatchDailyPayrollTab }))
+const DispatchDailyPayrollTab = lazyWithRetry(
+  () => import('../components/payroll/DispatchDailyPayrollTab').then((m) => ({ default: m.DispatchDailyPayrollTab })),
+  'DispatchDailyPayrollTab'
 );
-const CharterManagementView = React.lazy(() =>
-  import('../views/CharterManagementView').then((m) => ({ default: m.CharterManagementView }))
+const CharterManagementView = lazyWithRetry(
+  () => import('../views/CharterManagementView').then((m) => ({ default: m.CharterManagementView })),
+  'CharterManagementView'
 );
-const EmployeeListView = React.lazy(() =>
-  import('../views/EmployeeListView').then((m) => ({ default: m.EmployeeListView }))
+const EmployeeListView = lazyWithRetry(
+  () => import('../views/EmployeeListView').then((m) => ({ default: m.EmployeeListView })),
+  'EmployeeListView'
 );
-const TimeOffView = React.lazy(() =>
-  import('../views/TimeOffView').then((m) => ({ default: m.TimeOffView }))
+const TimeOffView = lazyWithRetry(
+  () => import('../views/TimeOffView').then((m) => ({ default: m.TimeOffView })),
+  'TimeOffView'
 );
-const VehicleInspectionsView = React.lazy(() =>
-  import('../views/VehicleInspectionsView').then((m) => ({ default: m.VehicleInspectionsView }))
+const VehicleInspectionsView = lazyWithRetry(
+  () => import('../views/VehicleInspectionsView').then((m) => ({ default: m.VehicleInspectionsView })),
+  'VehicleInspectionsView'
 );
-const DispatchChangeLogView = React.lazy(() =>
-  import('../views/DispatchChangeLogView').then((m) => ({ default: m.DispatchChangeLogView }))
+const DispatchChangeLogView = lazyWithRetry(
+  () => import('../views/DispatchChangeLogView').then((m) => ({ default: m.DispatchChangeLogView })),
+  'DispatchChangeLogView'
 );
-const TemporaryAssignmentsView = React.lazy(() =>
-  import('../views/TemporaryAssignmentsView').then((m) => ({ default: m.TemporaryAssignmentsView }))
+const TemporaryAssignmentsView = lazyWithRetry(
+  () => import('../views/TemporaryAssignmentsView').then((m) => ({ default: m.TemporaryAssignmentsView })),
+  'TemporaryAssignmentsView'
 );
 
 export interface AppRouterProps {

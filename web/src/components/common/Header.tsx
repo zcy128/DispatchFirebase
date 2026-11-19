@@ -5,6 +5,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import {
   ShieldCheck,
   LogOut,
+  Home,
   Radio,
   Menu,
   Globe,
@@ -29,7 +30,9 @@ import { PWAInstallHeaderButton } from './PWAInstallBanner';
 
 interface HeaderProps {
   currentTab?: NavTab;
+  activeDomain?: NavDomainId;
   onSelectTab?: (tab: NavTab) => void;
+  onSelectDomain?: (domain: NavDomainId) => void;
   expiringLicenseCount?: number;
   onOpenMobileMenu?: () => void;
   onOpenChat?: () => void;
@@ -38,6 +41,7 @@ interface HeaderProps {
 }
 
 const DOMAIN_ICONS: Record<NavDomainId, React.ComponentType<{ className?: string }>> = {
+  home: Home,
   dispatch_ops: Radio,
   hr_payroll: DollarSign,
   fleet: Truck,
@@ -47,7 +51,9 @@ const DOMAIN_ICONS: Record<NavDomainId, React.ComponentType<{ className?: string
 
 export const Header: React.FC<HeaderProps> = ({
   currentTab = 'dashboard',
+  activeDomain,
   onSelectTab,
+  onSelectDomain,
   expiringLicenseCount = 0,
   onOpenMobileMenu,
   onOpenChat,
@@ -58,13 +64,14 @@ export const Header: React.FC<HeaderProps> = ({
   const { lang, setLang, t, isFrench } = useI18n();
   const { theme, toggleTheme } = useTheme();
 
-  const activeDomainId = getDomainForTab(currentTab);
+  const activeDomainId = activeDomain ?? getDomainForTab(currentTab);
   const accessibleDomains = React.useMemo(
     () => getAccessibleDomains(currentUser),
     [currentUser]
   );
 
   const handleDomainClick = (domainId: NavDomainId) => {
+    onSelectDomain?.(domainId);
     if (!onSelectTab) return;
     const targetTab = getDefaultTabForDomain(domainId, currentUser);
     if (targetTab) {

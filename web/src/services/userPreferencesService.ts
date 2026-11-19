@@ -24,6 +24,7 @@ export const userPreferencesService = {
           userId: prefs.userId,
           cardOrder: prefs.cardOrder,
           hiddenCards: prefs.hiddenCards,
+          pinnedPages: prefs.pinnedPages ?? [],
         }),
       }
     );

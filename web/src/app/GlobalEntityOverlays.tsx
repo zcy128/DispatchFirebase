@@ -1,5 +1,6 @@
 import React, { Suspense } from 'react';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { NavTab } from '../components/common/Sidebar';
 import { RouteAssignModal } from '../components/routes/RouteAssignModal';
 import { RouteDetailDrawer } from '../components/routes/RouteDetailDrawer';
@@ -17,15 +18,19 @@ import { School, SchoolBoard } from '../types/school';
 import { Student } from '../types/student';
 import { Vehicle } from '../types/vehicle';
 
-const EmployeeDetailDrawer = React.lazy(() =>
-  import('../components/employees/EmployeeDetailDrawer').then((m) => ({
-    default: m.EmployeeDetailDrawer,
-  }))
+const EmployeeDetailDrawer = lazyWithRetry(
+  () =>
+    import('../components/employees/EmployeeDetailDrawer').then((m) => ({
+      default: m.EmployeeDetailDrawer,
+    })),
+  'EmployeeDetailDrawer'
 );
-const EmployeeModal = React.lazy(() =>
-  import('../components/employees/EmployeeModal').then((m) => ({
-    default: m.EmployeeModal,
-  }))
+const EmployeeModal = lazyWithRetry(
+  () =>
+    import('../components/employees/EmployeeModal').then((m) => ({
+      default: m.EmployeeModal,
+    })),
+  'EmployeeModal'
 );
 
 export type EmployeeModalTab = 'profile' | 'permissions' | 'contact' | 'license' | 'emergency';
