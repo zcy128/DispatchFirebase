@@ -98,6 +98,8 @@ class _ExpenseReimbursementFormViewState
   late final TextEditingController _routeController;
 
   List<ExpenseCategory> _categories = [];
+  String _selectedCategoryCode = '';
+  String _selectedCategoryDisplayName = '';
   final List<_LineFormEntry> _lines = [];
   List<String> _attachmentUrls = [];
   bool _loadingCategories = true;
@@ -126,6 +128,10 @@ class _ExpenseReimbursementFormViewState
       setState(() {
         _categories = cats;
         _loadingCategories = false;
+        if (cats.isNotEmpty) {
+          _selectedCategoryCode = cats.first.code;
+          _selectedCategoryDisplayName = cats.first.displayName;
+        }
         if (_lines.isEmpty && cats.isNotEmpty) {
           _addLine();
         }
@@ -136,6 +142,10 @@ class _ExpenseReimbursementFormViewState
       setState(() {
         _categories = defaults;
         _loadingCategories = false;
+        if (defaults.isNotEmpty) {
+          _selectedCategoryCode = defaults.first.code;
+          _selectedCategoryDisplayName = defaults.first.displayName;
+        }
         if (_lines.isEmpty) {
           _addLine();
         }
@@ -145,17 +155,25 @@ class _ExpenseReimbursementFormViewState
 
   void _addLine() {
     final defaultCat = _categories.isNotEmpty
-        ? _categories.first
+        ? _categories.firstWhere(
+            (c) => c.code == _selectedCategoryCode,
+            orElse: () => _categories.first,
+          )
         : const ExpenseCategory(
-            id: 'cat-fuel',
-            code: 'fuel',
-            displayName: 'Fuel / Gas',
+            id: 'cat-bus_washing',
+            code: 'bus_washing',
+            displayName: 'Bus Washing',
           );
+
+    if (_selectedCategoryCode.isEmpty) {
+      _selectedCategoryCode = defaultCat.code;
+      _selectedCategoryDisplayName = defaultCat.displayName;
+    }
 
     final entry = _LineFormEntry(
       id: 'line-${DateTime.now().millisecondsSinceEpoch}-${_lines.length}',
-      categoryCode: defaultCat.code,
-      categoryDisplayName: defaultCat.displayName,
+      categoryCode: _selectedCategoryCode,
+      categoryDisplayName: _selectedCategoryDisplayName,
     );
     entry.amountController.addListener(() {
       setState(() {});
@@ -234,8 +252,12 @@ class _ExpenseReimbursementFormViewState
       parsedLines.add(
         ExpenseReimbursementLine(
           id: entry.id,
-          categoryCode: entry.categoryCode,
-          categoryDisplayName: entry.categoryDisplayName,
+          categoryCode: _selectedCategoryCode.isNotEmpty
+              ? _selectedCategoryCode
+              : entry.categoryCode,
+          categoryDisplayName: _selectedCategoryDisplayName.isNotEmpty
+              ? _selectedCategoryDisplayName
+              : entry.categoryDisplayName,
           amount: amount,
           note: entry.noteController.text.trim(),
           sortOrder: i + 1,
@@ -418,16 +440,150 @@ class _ExpenseReimbursementFormViewState
     );
   }
 
+  ExpenseCategory? get _selectedCategory {
+    for (final c in _categories) {
+      if (c.code == _selectedCategoryCode) {
+        return c;
+      }
+    }
+    return _categories.isNotEmpty ? _categories.first : null;
+  }
+
   Widget _buildExpenseItemsSection(bool isDark) {
+    final selectedCat = _selectedCategory;
+    final maxCap = selectedCat?.maxTotalAmount;
+    final limitLabel = selectedCat?.limitLabel ?? '';
+    final exceedsCap = maxCap != null && _totalAmount > maxCap;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkCard : AppColors.lightCard,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Expense Category (One Type Per Claim)',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                key: const ValueKey('claim_category_selector'),
+                initialValue: selectedCat?.code,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Category',
+                  prefixIcon: const Icon(Icons.category_outlined, size: 20),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+                items: _categories.map((c) {
+                  return DropdownMenuItem<String>(
+                    value: c.code,
+                    child: Row(
+                      children: [
+                        Icon(c.icon, size: 18, color: _brandColor),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            c.displayName,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    final cat = _categories.firstWhere((c) => c.code == val);
+                    setState(() {
+                      _selectedCategoryCode = cat.code;
+                      _selectedCategoryDisplayName = cat.displayName;
+                      for (final l in _lines) {
+                        l.categoryCode = cat.code;
+                        l.categoryDisplayName = cat.displayName;
+                      }
+                    });
+                  }
+                },
+              ),
+              if (limitLabel.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.policy_outlined, size: 14, color: _brandColor),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        '${selectedCat!.approverGroup.toUpperCase()} Policy: $limitLabel',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (exceedsCap) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD97706).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFFD97706).withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        size: 16,
+                        color: Color(0xFFD97706),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Claim total exceeds policy limit ($limitLabel). Manual review will be required.',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFD97706),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Expanded(
               child: Text(
-                'Expense Items (${_lines.length})',
+                'Receipts / Line Items (${_lines.length})',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -441,7 +597,7 @@ class _ExpenseReimbursementFormViewState
             TextButton.icon(
               onPressed: _addLine,
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add Item'),
+              label: const Text('Add Receipt'),
               style: TextButton.styleFrom(
                 foregroundColor: _brandColor,
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -484,7 +640,7 @@ class _ExpenseReimbursementFormViewState
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  'Item #${index + 1}',
+                  'Receipt #${index + 1}',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -496,52 +652,11 @@ class _ExpenseReimbursementFormViewState
                 IconButton(
                   onPressed: () => _removeLine(index),
                   icon: const Icon(Icons.delete_outline, color: AppColors.error, size: 20),
-                  tooltip: 'Remove Item',
+                  tooltip: 'Remove Receipt',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
             ],
-          ),
-          const SizedBox(height: 12),
-          // Category Dropdown
-          DropdownButtonFormField<String>(
-            key: ValueKey('cat_${line.id}'),
-            initialValue: line.categoryCode,
-            isExpanded: true,
-            decoration: InputDecoration(
-              labelText: 'Category',
-              prefixIcon: const Icon(Icons.category_outlined, size: 20),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            ),
-            items: _categories.map((c) {
-              return DropdownMenuItem<String>(
-                value: c.code,
-                child: Row(
-                  children: [
-                    Icon(c.icon, size: 18, color: _brandColor),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        c.displayName,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-            onChanged: (val) {
-              if (val != null) {
-                final cat = _categories.firstWhere((c) => c.code == val);
-                setState(() {
-                  line.categoryCode = cat.code;
-                  line.categoryDisplayName = cat.displayName;
-                });
-              }
-            },
           ),
           const SizedBox(height: 12),
           // Amount

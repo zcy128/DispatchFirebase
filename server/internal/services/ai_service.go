@@ -222,6 +222,40 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 			var cardTitle string
 			var suggested []string
 
+			if action.ActionType == "UPDATE_EXPENSE_POLICY" && action.ExpensePolicyAfter != nil {
+				pol := action.ExpensePolicyAfter
+				if isFr {
+					reply = fmt.Sprintf(
+						"✅ **Politique de remboursement mise à jour : %s** (v%d)\n\n- **Groupe** : %s\n- **Limite** : %s\n- **Statut** : %v\n\nCette modification a été enregistrée dans `expense_policy_audit_logs`.",
+						pol.DisplayName, pol.Version, strings.ToUpper(pol.ApproverGroup), pol.LimitLabel, pol.Active,
+					)
+					cardTitle = "Politique mise à jour"
+					suggested = []string{"Afficher les politiques de remboursement"}
+				} else {
+					reply = fmt.Sprintf(
+						"✅ **Expense policy updated: %s** (v%d)\n\n- **Group**: %s\n- **Limit**: %s\n- **Active**: %v\n\nThis update has been recorded in `expense_policy_audit_logs`.",
+						pol.DisplayName, pol.Version, strings.ToUpper(pol.ApproverGroup), pol.LimitLabel, pol.Active,
+					)
+					cardTitle = "Expense Policy Updated"
+					suggested = []string{"Show expense reimbursement policies"}
+				}
+				return &models.AIChatResponse{
+					Reply: reply,
+					ActionCards: []models.AIActionCard{
+						{
+							Type:  "action_success",
+							Title: cardTitle,
+							Data: map[string]interface{}{
+								"actionType":   action.ActionType,
+								"categoryCode": pol.Code,
+								"policy":       pol,
+							},
+						},
+					},
+					SuggestedQuestions: suggested,
+				}, nil
+			}
+
 			if action.ActionType == "CREATE_DISPATCH_SHEET" {
 				if isFr {
 					reply = fmt.Sprintf(
@@ -2109,6 +2143,94 @@ func (s *AIService) processWithBuiltinEngine(ctx context.Context, req *models.AI
 				Reply:              toReply,
 				ActionCards:        cards,
 				SuggestedQuestions: suggested,
+			}, nil
+		}
+	}
+
+	// Pattern K-Policy-Update: Propose Expense Policy Change (strict HR/Fleet group isolation + confirmation card)
+	hasPolicyVerb := strings.Contains(lowerMsg, "update") ||
+		strings.Contains(lowerMsg, "change") ||
+		strings.Contains(lowerMsg, "set ") ||
+		strings.Contains(lowerMsg, "increase") ||
+		strings.Contains(lowerMsg, "decrease") ||
+		strings.Contains(lowerMsg, "raise") ||
+		strings.Contains(lowerMsg, "lower") ||
+		strings.Contains(lowerMsg, "deactivate") ||
+		strings.Contains(lowerMsg, "activate") ||
+		strings.Contains(lowerMsg, "disable") ||
+		strings.Contains(lowerMsg, "enable") ||
+		strings.Contains(lowerMsg, "modifier") ||
+		strings.Contains(lowerMsg, "mettre à jour") ||
+		strings.Contains(lowerMsg, "augmenter") ||
+		strings.Contains(lowerMsg, "désactiver")
+
+	hasPolicyTarget := strings.Contains(lowerMsg, "bus wash") ||
+		strings.Contains(lowerMsg, "washing") ||
+		strings.Contains(lowerMsg, "washer fluid") ||
+		strings.Contains(lowerMsg, "drivers medical") ||
+		strings.Contains(lowerMsg, "driver medical") ||
+		strings.Contains(lowerMsg, "road test") ||
+		strings.Contains(lowerMsg, "knowledge test") ||
+		strings.Contains(lowerMsg, "s endorsement") ||
+		strings.Contains(lowerMsg, "expense policy") ||
+		strings.Contains(lowerMsg, "expense limit") ||
+		strings.Contains(lowerMsg, "reimbursement policy") ||
+		strings.Contains(lowerMsg, "reimbursement limit") ||
+		strings.Contains(lowerMsg, "politique de remboursement") ||
+		strings.Contains(lowerMsg, "lavage")
+
+	if hasPolicyVerb && hasPolicyTarget {
+		pendingAct, summaryMsg, card, err := s.toolService.ParseAndPrepareExpensePolicyChange(ctx, msg, req.OperatorName, req.UserRole, lang)
+		if err == nil {
+			var cards []models.AIActionCard
+			var suggested []string
+			if card != nil {
+				cards = []models.AIActionCard{*card}
+			}
+			if pendingAct != nil {
+				if isFr {
+					suggested = []string{"Confirmer", "Annuler"}
+				} else {
+					suggested = []string{"Confirm", "Cancel"}
+				}
+			}
+			return &models.AIChatResponse{
+				Reply:              summaryMsg,
+				ActionCards:        cards,
+				SuggestedQuestions: suggested,
+				Engine:             "builtin",
+			}, nil
+		}
+	}
+
+	// Pattern K-Policy-List: List Expense Reimbursement Policies
+	isExpensePolicyQuery := strings.Contains(lowerMsg, "expense polic") ||
+		strings.Contains(lowerMsg, "expense limit") ||
+		strings.Contains(lowerMsg, "expense rule") ||
+		strings.Contains(lowerMsg, "reimbursement polic") ||
+		strings.Contains(lowerMsg, "reimbursement limit") ||
+		strings.Contains(lowerMsg, "reimbursement rule") ||
+		strings.Contains(lowerMsg, "washing limit") ||
+		strings.Contains(lowerMsg, "politique de remboursement") ||
+		strings.Contains(lowerMsg, "règles de remboursement") ||
+		strings.Contains(lowerMsg, "limites de remboursement")
+
+	if isExpensePolicyQuery {
+		policyReply, card, err := s.toolService.ListExpensePoliciesSummary(ctx, req.UserRole, lang)
+		if err == nil {
+			var cards []models.AIActionCard
+			if card != nil {
+				cards = []models.AIActionCard{*card}
+			}
+			suggested := []string{"Update bus washing limit to $25 per pay period", "Pending expense claims"}
+			if isFr {
+				suggested = []string{"Modifier la limite bus washing à 25$", "Demandes de remboursement en attente"}
+			}
+			return &models.AIChatResponse{
+				Reply:              policyReply,
+				ActionCards:        cards,
+				SuggestedQuestions: suggested,
+				Engine:             "builtin",
 			}, nil
 		}
 	}

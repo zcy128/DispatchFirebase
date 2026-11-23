@@ -369,7 +369,12 @@ service cloud.firestore {
 
     match /expense_categories/{id} {
       allow read: if isAuthenticated();
-      allow write: if canWrite('expenses', ['HR', 'payroll']);
+      allow write: if isAdmin();
+    }
+
+    match /expense_policy_audit_logs/{id} {
+      allow read: if canRead('expenses', ['HR', 'fleet', 'payroll']);
+      allow write: if false;
     }
 
     // 8.4 道路与环境隐患报告 (Hazard Reports)

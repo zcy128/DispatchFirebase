@@ -331,3 +331,43 @@ func BuildExpenseAccessDeniedMessage(userRole string, lang string) string {
 		norm,
 	)
 }
+
+// CanManageExpensePolicyGroup enforces strict group-level isolation for expense policy changes:
+// admin can manage both groups, HR can only manage "hr", and fleet can only manage "fleet".
+func CanManageExpensePolicyGroup(userRole string, approverGroup string) bool {
+	norm := NormalizeRole(userRole)
+	group := strings.ToLower(strings.TrimSpace(approverGroup))
+	if group != "hr" && group != "fleet" {
+		return false
+	}
+	if norm == "admin" {
+		return true
+	}
+	if norm == "HR" && group == "hr" {
+		return true
+	}
+	if norm == "fleet" && group == "fleet" {
+		return true
+	}
+	return false
+}
+
+// BuildExpensePolicyAccessDeniedMessage returns a bilingual refusal when a role tries to modify
+// an expense policy outside its authorized group.
+func BuildExpensePolicyAccessDeniedMessage(userRole string, approverGroup string, lang string) string {
+	norm := NormalizeRole(userRole)
+	groupLabel := strings.ToUpper(strings.TrimSpace(approverGroup))
+	if groupLabel == "" {
+		groupLabel = "HR / FLEET"
+	}
+	if strings.EqualFold(lang, "fr") {
+		return fmt.Sprintf(
+			"⚠️ **Accès refusé (Politique de remboursement — groupe %s)**\n\nVotre rôle actuel (**%s**) n'est pas autorisé à modifier les règles du groupe **%s**.\n\n- 🔒 Isolation stricte par groupe : **HR** modifie uniquement les règles **HR**, **Fleet** modifie uniquement les règles **Fleet**, et **Admin** gère tous les groupes.",
+			groupLabel, norm, groupLabel,
+		)
+	}
+	return fmt.Sprintf(
+		"⚠️ **Permission Denied (Expense Policy — %s Group)**\n\nYour current role (**%s**) cannot modify **%s** expense policies.\n\n- 🔒 Strict group isolation is enforced: **HR** can only edit **HR** policies, **Fleet** can only edit **Fleet** policies, and **Admin** can manage both.",
+		groupLabel, norm, groupLabel,
+	)
+}

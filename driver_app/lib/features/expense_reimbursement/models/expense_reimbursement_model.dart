@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 /// Status of an expense reimbursement claim.
 enum ExpenseClaimStatus {
   pending,
+  preApproved,
   approved,
   rejected,
   cancelled;
@@ -12,6 +13,8 @@ enum ExpenseClaimStatus {
     switch (this) {
       case ExpenseClaimStatus.pending:
         return 'pending';
+      case ExpenseClaimStatus.preApproved:
+        return 'pre_approved';
       case ExpenseClaimStatus.approved:
         return 'approved';
       case ExpenseClaimStatus.rejected:
@@ -23,6 +26,7 @@ enum ExpenseClaimStatus {
 
   static ExpenseClaimStatus fromApiValue(dynamic v) {
     final str = (v ?? '').toString().toLowerCase().trim();
+    if (str == 'pre_approved') return ExpenseClaimStatus.preApproved;
     if (str == 'approved') return ExpenseClaimStatus.approved;
     if (str == 'rejected') return ExpenseClaimStatus.rejected;
     if (str == 'cancelled' || str == 'canceled') return ExpenseClaimStatus.cancelled;
@@ -33,6 +37,8 @@ enum ExpenseClaimStatus {
     switch (this) {
       case ExpenseClaimStatus.pending:
         return 'Pending Review';
+      case ExpenseClaimStatus.preApproved:
+        return 'Pre-Approved (5-Day Review)';
       case ExpenseClaimStatus.approved:
         return 'Approved';
       case ExpenseClaimStatus.rejected:
@@ -46,6 +52,8 @@ enum ExpenseClaimStatus {
     switch (this) {
       case ExpenseClaimStatus.pending:
         return const Color(0xFFD97706); // Amber
+      case ExpenseClaimStatus.preApproved:
+        return const Color(0xFF0284C7); // Sky Blue
       case ExpenseClaimStatus.approved:
         return const Color(0xFF16A34A); // Green
       case ExpenseClaimStatus.rejected:
@@ -59,6 +67,8 @@ enum ExpenseClaimStatus {
     switch (this) {
       case ExpenseClaimStatus.pending:
         return Icons.hourglass_top_rounded;
+      case ExpenseClaimStatus.preApproved:
+        return Icons.verified_outlined;
       case ExpenseClaimStatus.approved:
         return Icons.check_circle_outline_rounded;
       case ExpenseClaimStatus.rejected:
@@ -69,11 +79,17 @@ enum ExpenseClaimStatus {
   }
 }
 
-/// Expense category definition.
+/// Expense category definition with dynamic policy limit metadata.
 class ExpenseCategory extends Equatable {
   final String id;
   final String code;
   final String displayName;
+  final String limitLabel;
+  final String approverGroup;
+  final String periodType;
+  final double? maxTotalAmount;
+  final int? maxCountPerPeriod;
+  final bool requireAttachment;
   final int sortOrder;
   final bool active;
 
@@ -81,6 +97,12 @@ class ExpenseCategory extends Equatable {
     required this.id,
     required this.code,
     required this.displayName,
+    this.limitLabel = '',
+    this.approverGroup = 'hr',
+    this.periodType = 'per_claim',
+    this.maxTotalAmount,
+    this.maxCountPerPeriod,
+    this.requireAttachment = false,
     this.sortOrder = 0,
     this.active = true,
   });
@@ -90,6 +112,12 @@ class ExpenseCategory extends Equatable {
       id: json['id']?.toString() ?? '',
       code: json['code']?.toString() ?? '',
       displayName: json['displayName']?.toString() ?? '',
+      limitLabel: json['limitLabel']?.toString() ?? '',
+      approverGroup: json['approverGroup']?.toString() ?? 'hr',
+      periodType: json['periodType']?.toString() ?? 'per_claim',
+      maxTotalAmount: (json['maxTotalAmount'] as num?)?.toDouble(),
+      maxCountPerPeriod: (json['maxCountPerPeriod'] as num?)?.toInt(),
+      requireAttachment: json['requireAttachment'] as bool? ?? false,
       sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
       active: json['active'] as bool? ?? true,
     );
@@ -99,20 +127,35 @@ class ExpenseCategory extends Equatable {
     'id': id,
     'code': code,
     'displayName': displayName,
+    'limitLabel': limitLabel,
+    'approverGroup': approverGroup,
+    'periodType': periodType,
+    if (maxTotalAmount != null) 'maxTotalAmount': maxTotalAmount,
+    if (maxCountPerPeriod != null) 'maxCountPerPeriod': maxCountPerPeriod,
+    'requireAttachment': requireAttachment,
     'sortOrder': sortOrder,
     'active': active,
   };
 
   IconData get icon {
     switch (code.toLowerCase()) {
+      case 'bus_washing':
+      case 'cleaning':
+        return Icons.local_car_wash_outlined;
+      case 'washer_fluid':
+        return Icons.water_drop_outlined;
+      case 'drivers_medical':
+        return Icons.medical_services_outlined;
+      case 'road_test':
+      case 'class4_knowledge_test':
+      case 's_endorsement':
+        return Icons.badge_outlined;
       case 'fuel':
         return Icons.local_gas_station_outlined;
       case 'parking':
         return Icons.local_parking_outlined;
       case 'maintenance':
         return Icons.build_outlined;
-      case 'cleaning':
-        return Icons.cleaning_services_outlined;
       case 'meals':
         return Icons.restaurant_outlined;
       default:
@@ -121,16 +164,104 @@ class ExpenseCategory extends Equatable {
   }
 
   @override
-  List<Object?> get props => [id, code, displayName, sortOrder, active];
+  List<Object?> get props => [
+    id,
+    code,
+    displayName,
+    limitLabel,
+    approverGroup,
+    periodType,
+    maxTotalAmount,
+    maxCountPerPeriod,
+    requireAttachment,
+    sortOrder,
+    active,
+  ];
 
   static List<ExpenseCategory> defaultCategories() {
     return const [
-      ExpenseCategory(id: 'cat-fuel', code: 'fuel', displayName: 'Fuel / Gas', sortOrder: 1),
-      ExpenseCategory(id: 'cat-parking', code: 'parking', displayName: 'Parking & Tolls', sortOrder: 2),
-      ExpenseCategory(id: 'cat-maintenance', code: 'maintenance', displayName: 'Supplies & Minor Maintenance', sortOrder: 3),
-      ExpenseCategory(id: 'cat-cleaning', code: 'cleaning', displayName: 'Vehicle Cleaning', sortOrder: 4),
-      ExpenseCategory(id: 'cat-meals', code: 'meals', displayName: 'Meal Allowance', sortOrder: 5),
-      ExpenseCategory(id: 'cat-other', code: 'other', displayName: 'Other Expense', sortOrder: 6),
+      ExpenseCategory(
+        id: 'cat-drivers_medical',
+        code: 'drivers_medical',
+        displayName: 'Drivers Medical',
+        limitLabel: 'Up to \$60.00 / year',
+        approverGroup: 'hr',
+        periodType: 'yearly',
+        maxTotalAmount: 60.0,
+        requireAttachment: true,
+        sortOrder: 1,
+      ),
+      ExpenseCategory(
+        id: 'cat-road_test',
+        code: 'road_test',
+        displayName: 'Road Test (after successful completion)',
+        limitLabel: 'Up to \$155.00',
+        approverGroup: 'hr',
+        periodType: 'per_claim',
+        maxTotalAmount: 155.0,
+        requireAttachment: true,
+        sortOrder: 2,
+      ),
+      ExpenseCategory(
+        id: 'cat-class4_knowledge_test',
+        code: 'class4_knowledge_test',
+        displayName: 'Class 4 Knowledge Test (after successful completion)',
+        limitLabel: 'Up to \$17.00',
+        approverGroup: 'hr',
+        periodType: 'per_claim',
+        maxTotalAmount: 17.0,
+        requireAttachment: true,
+        sortOrder: 3,
+      ),
+      ExpenseCategory(
+        id: 'cat-s_endorsement',
+        code: 's_endorsement',
+        displayName: 'S Endorsement Licence Addition',
+        limitLabel: 'Up to \$28.00',
+        approverGroup: 'hr',
+        periodType: 'per_claim',
+        maxTotalAmount: 28.0,
+        requireAttachment: true,
+        sortOrder: 4,
+      ),
+      ExpenseCategory(
+        id: 'cat-bus_washing',
+        code: 'bus_washing',
+        displayName: 'Bus Washing',
+        limitLabel: 'Up to \$20.00 / pay period',
+        approverGroup: 'fleet',
+        periodType: 'biweekly_pay_period',
+        maxTotalAmount: 20.0,
+        requireAttachment: true,
+        sortOrder: 5,
+      ),
+      ExpenseCategory(
+        id: 'cat-washer_fluid',
+        code: 'washer_fluid',
+        displayName: 'Washer Fluid',
+        limitLabel: 'Up to \$5.00 / month',
+        approverGroup: 'fleet',
+        periodType: 'monthly',
+        maxTotalAmount: 5.0,
+        requireAttachment: true,
+        sortOrder: 6,
+      ),
+      ExpenseCategory(
+        id: 'cat-other_hr',
+        code: 'other_hr',
+        displayName: 'Other (HR)',
+        approverGroup: 'hr',
+        periodType: 'per_claim',
+        sortOrder: 7,
+      ),
+      ExpenseCategory(
+        id: 'cat-other_fleet',
+        code: 'other_fleet',
+        displayName: 'Other (Fleet)',
+        approverGroup: 'fleet',
+        periodType: 'per_claim',
+        sortOrder: 8,
+      ),
     ];
   }
 }

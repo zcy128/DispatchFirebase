@@ -62,10 +62,14 @@ type PendingDispatchAction struct {
 	DriverName    string    `json:"driverName"`
 	DriverPhone   string    `json:"driverPhone"`
 	OldDriverName string    `json:"oldDriverName"`
-	VehicleID     int       `json:"vehicleId,omitempty"`
-	UnitNumber    string    `json:"unitNumber,omitempty"`
-	OldUnitNumber string    `json:"oldUnitNumber,omitempty"`
-	CreatedBy     string    `json:"createdBy"`
-	CreatedByRole string    `json:"createdByRole,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
+	VehicleID           int              `json:"vehicleId,omitempty"`
+	UnitNumber          string           `json:"unitNumber,omitempty"`
+	OldUnitNumber       string           `json:"oldUnitNumber,omitempty"`
+	ExpensePolicyBefore *ExpenseCategory `json:"expensePolicyBefore,omitempty"`
+	ExpensePolicyAfter  *ExpenseCategory `json:"expensePolicyAfter,omitempty"`
+	PolicyChangeReason  string           `json:"policyChangeReason,omitempty"`
+	PolicyAction        string           `json:"policyAction,omitempty"` // "create" | "update" | "deactivate"
+	CreatedBy           string           `json:"createdBy"`
+	CreatedByRole       string           `json:"createdByRole,omitempty"`
+	CreatedAt           time.Time        `json:"createdAt"`
 }

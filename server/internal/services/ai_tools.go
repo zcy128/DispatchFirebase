@@ -728,7 +728,17 @@ func (s *AIToolService) ExecutePendingAction(ctx context.Context, actionID strin
 	if effectiveRole == "" {
 		effectiveRole = action.CreatedByRole
 	}
-	if action.ActionType == "ASSIGN_ROUTE_CREW" {
+	if action.ActionType == "UPDATE_EXPENSE_POLICY" {
+		if action.ExpensePolicyAfter == nil {
+			return nil, fmt.Errorf("invalid expense policy update payload")
+		}
+		if action.ExpensePolicyBefore != nil && !CanManageExpensePolicyGroup(effectiveRole, action.ExpensePolicyBefore.ApproverGroup) {
+			return nil, fmt.Errorf("insufficient permissions: role '%s' cannot modify '%s' expense policies", effectiveRole, action.ExpensePolicyBefore.ApproverGroup)
+		}
+		if !CanManageExpensePolicyGroup(effectiveRole, action.ExpensePolicyAfter.ApproverGroup) {
+			return nil, fmt.Errorf("insufficient permissions: role '%s' cannot modify '%s' expense policies", effectiveRole, action.ExpensePolicyAfter.ApproverGroup)
+		}
+	} else if action.ActionType == "ASSIGN_ROUTE_CREW" {
 		if !CanModifyRoutes(effectiveRole, pagePermissions) {
 			return nil, fmt.Errorf("insufficient permissions: role '%s' cannot execute route assignment changes", effectiveRole)
 		}
@@ -741,6 +751,29 @@ func (s *AIToolService) ExecutePendingAction(ctx context.Context, actionID strin
 	}
 	if operatorName == "" {
 		operatorName = "Dispatcher (via AI Copilot)"
+	}
+
+	if action.ActionType == "UPDATE_EXPENSE_POLICY" {
+		updatedPolicy := *action.ExpensePolicyAfter
+		updatedPolicy.UpdatedBy = operatorName
+		audit := &models.ExpensePolicyAuditLog{
+			CategoryCode: updatedPolicy.Code,
+			Action:       action.PolicyAction,
+			Source:       "ai_copilot",
+			Before:       action.ExpensePolicyBefore,
+			After:        &updatedPolicy,
+			Reason:       action.PolicyChangeReason,
+			ActorEmail:   operatorUser,
+			ActorName:    operatorName,
+			ActorRole:    effectiveRole,
+			CreatedAt:    time.Now().UTC(),
+		}
+		saved, err := s.dispatchRepo.UpsertExpenseCategory(ctx, &updatedPolicy, audit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply expense policy update: %w", err)
+		}
+		action.ExpensePolicyAfter = saved
+		return action, nil
 	}
 
 	now := time.Now()

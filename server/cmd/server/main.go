@@ -572,13 +572,23 @@ func main() {
 		protected.Patch("/api/dispatch/student-incidents/{id}/office-review", dispatchHandler.UpdateStudentIncidentOfficeFollowUp)
 		protected.Patch("/api/dispatch/student-incidents/{id}/status", dispatchHandler.UpdateStudentIncidentStatus)
 
-		// Expense Reimbursements
+		// Expense Reimbursements & Policies
 		protected.Get("/api/dispatch/expense-categories", dispatchHandler.ListExpenseCategories)
+		protected.Put("/api/dispatch/expense-categories/{code}", dispatchHandler.UpsertExpenseCategory)
+		protected.Get("/api/dispatch/expense-policy-settings", dispatchHandler.GetExpensePolicySettings)
+		protected.Put("/api/dispatch/expense-policy-settings", dispatchHandler.SaveExpensePolicySettings)
+		protected.Get("/api/dispatch/expense-policy-audit-logs", dispatchHandler.ListExpensePolicyAuditLogs)
 		protected.Post("/api/dispatch/expense-reimbursements", dispatchHandler.CreateExpenseClaim)
 		protected.Get("/api/dispatch/expense-reimbursements/{id}", dispatchHandler.GetExpenseClaim)
+		protected.Get("/api/dispatch/expense-reimbursements/{id}/evaluate", dispatchHandler.EvaluateExpenseClaim)
+		protected.Post("/api/dispatch/expense-reimbursements/{id}/ai-precheck", dispatchHandler.AIPreCheckExpenseClaim)
 		protected.Get("/api/dispatch/expense-reimbursements", dispatchHandler.ListExpenseClaims)
 		protected.Post("/api/dispatch/expense-reimbursements/{id}/review", dispatchHandler.ReviewExpenseClaim)
 		protected.Post("/api/dispatch/expense-reimbursements/{id}/cancel", dispatchHandler.CancelExpenseClaim)
+
+		// Shared Bi-Weekly Payroll Anchor Configuration
+		protected.Get("/api/payroll/biweekly-config", dispatchHandler.GetBiweeklyPayrollConfig)
+		protected.Put("/api/payroll/biweekly-config", dispatchHandler.SaveBiweeklyPayrollConfig)
 
 		// Hazard & Near-Miss Reports
 		protected.Post("/api/dispatch/hazard-reports", dispatchHandler.CreateHazardReport)
@@ -1035,6 +1045,9 @@ func main() {
 	r.Group(func(adminRoute chi.Router) {
 		adminRoute.Use(adminSecretMiddleware(cfg.AdminAPISecret))
 
+		// Expense Reimbursement 5-day Pre-Approval Auto-Finalization Sweep
+		adminRoute.Post("/api/admin/expense-reimbursements/finalize-preapproved", dispatchHandler.FinalizePreApprovedExpenseClaims)
+
 		// Crew Late Check-in Reminders (Scheduled Mon-Fri 6:00-18:00 every minute)
 		adminRoute.Post("/api/admin/shifts/check-in-reminders", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -1423,6 +1436,22 @@ func main() {
 		defer ticker.Stop()
 		for range ticker.C {
 			run()
+		}
+	}()
+
+	// Expense Reimbursement 5-day Pre-Approval Auto-Finalization Sweep (runs every 10 minutes)
+	go func() {
+		runSweep := func() {
+			if n, err := dispatchRepo.FinalizeDuePreApprovedClaims(context.Background(), time.Now().UTC()); err == nil && n > 0 {
+				log.Printf("[EXPENSE-SLA] Auto-finalized %d pre_approved expense claim(s) past 5-day deadline", n)
+			}
+		}
+		time.Sleep(5 * time.Second)
+		runSweep()
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			runSweep()
 		}
 	}()
 

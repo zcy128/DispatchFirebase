@@ -394,7 +394,7 @@ func (u *AuthUser) CanManageDailyDispatch() bool {
 	return false
 }
 
-// CanReviewExpenses returns true if user is admin, payroll, or manager/HR with expense write permission
+// CanReviewExpenses returns true if user is admin, payroll, or manager/HR/fleet with expense write permission
 func (u *AuthUser) CanReviewExpenses() bool {
 	if u == nil {
 		return false
@@ -403,8 +403,49 @@ func (u *AuthUser) CanReviewExpenses() bool {
 	if normRole == "admin" || normRole == "payroll" {
 		return true
 	}
-	if (normRole == "manager" || normRole == "HR") && u.HasModulePermission("expenses", true) {
+	if (normRole == "manager" || normRole == "HR" || normRole == "fleet") && u.HasModulePermission("expenses", true) {
 		return true
 	}
 	return false
+}
+
+// CanManageExpensePolicyGroup enforces strict group-level isolation for expense policy changes:
+// admin can manage both groups, HR can only manage "hr", and fleet can only manage "fleet".
+func (u *AuthUser) CanManageExpensePolicyGroup(approverGroup string) bool {
+	if u == nil {
+		return false
+	}
+	normRole := NormalizeRoleName(u.Role)
+	normGroup := strings.ToLower(strings.TrimSpace(approverGroup))
+	if normGroup != "hr" && normGroup != "fleet" {
+		return false
+	}
+	if normRole == "admin" {
+		return true
+	}
+	if normRole == "HR" && normGroup == "hr" {
+		return true
+	}
+	if normRole == "fleet" && normGroup == "fleet" {
+		return true
+	}
+	return false
+}
+
+// CanViewExpensePolicyAuditLogs returns true for admin, HR, fleet, and payroll roles.
+func (u *AuthUser) CanViewExpensePolicyAuditLogs() bool {
+	if u == nil {
+		return false
+	}
+	normRole := NormalizeRoleName(u.Role)
+	return normRole == "admin" || normRole == "HR" || normRole == "fleet" || normRole == "payroll"
+}
+
+// CanManageBiweeklyPayrollConfig returns true for admin and payroll roles.
+func (u *AuthUser) CanManageBiweeklyPayrollConfig() bool {
+	if u == nil {
+		return false
+	}
+	normRole := NormalizeRoleName(u.Role)
+	return normRole == "admin" || normRole == "payroll"
 }

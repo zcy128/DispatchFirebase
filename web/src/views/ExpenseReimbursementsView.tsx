@@ -23,14 +23,20 @@ import {
   ChevronLeft,
   ChevronRight,
   Database,
+  AlertTriangle,
+  SlidersHorizontal,
+  Sparkles,
 } from 'lucide-react';
 import {
   ExpenseReimbursement,
   ReviewExpenseClaimPayload,
+  ExpenseClaimEvaluation,
+  ExpenseAIPreCheckResult,
   EXPENSE_CLAIM_STATUS_LABELS,
   EXPENSE_CLAIM_STATUS_COLORS,
 } from '../types/expenseReimbursement';
 import { ExpenseReimbursementService } from '../services/expenseReimbursementService';
+import { ExpensePoliciesPanel } from '../components/expense/ExpensePoliciesPanel';
 import { useAuth } from '../contexts/AuthContext';
 import { Employee } from '../types/employee';
 
@@ -121,7 +127,27 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedClaim, setSelectedClaim] = useState<ExpenseReimbursement | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<'claims' | 'policies'>('claims');
+  const [claimEvaluation, setClaimEvaluation] = useState<ExpenseClaimEvaluation | null>(null);
+  const [evalLoading, setEvalLoading] = useState<boolean>(false);
+  const [aiPreCheck, setAiPreCheck] = useState<ExpenseAIPreCheckResult | null>(null);
+  const [aiPreCheckLoading, setAiPreCheckLoading] = useState<boolean>(false);
+  const [autoApproveDays, setAutoApproveDays] = useState<number>(5);
   const [saving, setSaving] = useState<boolean>(false);
+
+  const loadSlaDays = () => {
+    ExpenseReimbursementService.getExpensePolicySettings()
+      .then((s) => {
+        if (s?.autoApproveDays) {
+          setAutoApproveDays(s.autoApproveDays);
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadSlaDays();
+  }, []);
   const [lightbox, setLightbox] = useState<{
     urls: string[];
     currentIndex: number;
@@ -144,7 +170,7 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
   }, [lightbox]);
 
   // Review form state
-  const [reviewAction, setReviewAction] = useState<'approved' | 'rejected'>('approved');
+  const [reviewAction, setReviewAction] = useState<'approved' | 'rejected' | 'pending'>('approved');
   const [reviewerName, setReviewerName] = useState<string>('');
   const [approvalNotes, setApprovalNotes] = useState<string>('');
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -257,9 +283,11 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
   // KPIs
   const stats = useMemo(() => {
     let pending = 0;
+    let preApproved = 0;
     let approved = 0;
     let rejected = 0;
     let approvedDollars = 0;
+    let preApprovedDollars = 0;
     let pendingDollars = 0;
 
     for (const c of claims) {
@@ -267,6 +295,9 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
       if (c.status === 'pending') {
         pending++;
         pendingDollars += amt;
+      } else if (c.status === 'pre_approved') {
+        preApproved++;
+        preApprovedDollars += amt;
       } else if (c.status === 'approved') {
         approved++;
         approvedDollars += amt;
@@ -278,9 +309,11 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
     return {
       total: claims.length,
       pending,
+      preApproved,
       approved,
       rejected,
       approvedDollars: Math.round(approvedDollars * 100) / 100,
+      preApprovedDollars: Math.round(preApprovedDollars * 100) / 100,
       pendingDollars: Math.round(pendingDollars * 100) / 100,
     };
   }, [claims]);
@@ -353,18 +386,51 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
     );
     setApprovalNotes(claim.approvalNotes || '');
     setReviewError(null);
+    setClaimEvaluation(null);
+    setAiPreCheck(null);
+    setEvalLoading(true);
     setIsReviewModalOpen(true);
+
+    ExpenseReimbursementService.evaluateClaim(claim.id)
+      .then((res) => setClaimEvaluation(res))
+      .catch(() => setClaimEvaluation(null))
+      .finally(() => setEvalLoading(false));
+  };
+
+  const handleRunAIPreCheck = async () => {
+    if (!selectedClaim || aiPreCheckLoading) return;
+    setAiPreCheckLoading(true);
+    try {
+      const res = await ExpenseReimbursementService.aiPreCheckClaim(selectedClaim.id);
+      setAiPreCheck(res);
+    } catch {
+      setAiPreCheck(null);
+    } finally {
+      setAiPreCheckLoading(false);
+    }
   };
 
   const closeReviewModal = () => {
     setIsReviewModalOpen(false);
     setSelectedClaim(null);
+    setClaimEvaluation(null);
+    setAiPreCheck(null);
   };
 
   const handleSaveReview = async () => {
     if (!selectedClaim) return;
     if (!reviewerName.trim()) {
       setReviewError('Reviewer name is required.');
+      return;
+    }
+    if (
+      reviewAction === 'approved' &&
+      claimEvaluation?.requiresOverride &&
+      !approvalNotes.trim()
+    ) {
+      setReviewError(
+        'Policy violation detected: please enter an override reason in Administrative Notes to approve.'
+      );
       return;
     }
     setReviewError(null);
@@ -412,22 +478,64 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
           )
         }
         actions={
-          <button
-            type="button"
-            onClick={() => void refreshData()}
-            disabled={loading}
-            aria-label="Refresh expense claims"
-            className="flex items-center gap-2 px-3.5 py-2 min-h-[36px] text-xs font-semibold text-slate-200 bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-700 transition-colors shadow-sm cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-xl bg-slate-900/80 border border-slate-700 p-0.5">
+              <button
+                type="button"
+                onClick={() => setActiveTab('claims')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  activeTab === 'claims'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Claims
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('policies')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  activeTab === 'policies'
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden="true" />
+                Policies &amp; Limits
+              </button>
+            </div>
+            {activeTab === 'claims' && (
+              <button
+                type="button"
+                onClick={() => void refreshData()}
+                disabled={loading}
+                aria-label="Refresh expense claims"
+                className="flex items-center gap-2 px-3.5 py-2 min-h-[36px] text-xs font-semibold text-slate-200 bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-700 transition-colors shadow-sm cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+                Refresh
+              </button>
+            )}
+          </div>
         }
       />
 
+      {activeTab === 'policies' ? (
+        <ExpensePoliciesPanel onPoliciesUpdated={loadSlaDays} />
+      ) : (
+        <>
+
       {/* ─── KPI Metrics ───────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="p-4 bg-slate-800/80 rounded-xl border border-slate-700/60 shadow-sm">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <button
+          type="button"
+          onClick={() => setStatusFilter('all')}
+          className={`text-left p-4 bg-slate-800/80 rounded-xl border shadow-sm transition-all cursor-pointer ${
+            statusFilter === 'all'
+              ? 'border-teal-500/70 ring-1 ring-teal-500/30'
+              : 'border-slate-700/60 hover:border-slate-600'
+          }`}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
               Total Claims
@@ -440,39 +548,86 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
           <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-400">
             <span>All recorded submissions</span>
           </div>
-        </div>
+        </button>
 
-        <div className="p-4 bg-slate-800/80 rounded-xl border border-amber-700/50 shadow-sm bg-gradient-to-br from-amber-50/30 to-transparent from-amber-950/10">
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'pending' ? 'all' : 'pending')}
+          className={`text-left p-4 bg-slate-800/80 rounded-xl border shadow-sm bg-gradient-to-br from-amber-50/30 to-transparent from-amber-950/10 transition-all cursor-pointer ${
+            statusFilter === 'pending'
+              ? 'border-amber-400 ring-1 ring-amber-400/40'
+              : 'border-amber-700/50 hover:border-amber-600'
+          }`}
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider">
+            <span className="text-xs font-semibold uppercase tracking-wider text-amber-300">
               Pending Review
             </span>
-            <Clock className="w-4 h-4" aria-hidden="true" />
+            <Clock className="w-4 h-4 text-amber-400" aria-hidden="true" />
           </div>
-          <p className="text-2xl font-bold mt-2">
+          <p className="text-2xl font-bold text-white mt-2">
             {stats.pending}
           </p>
-          <div className="flex items-center gap-1.5 mt-1 text-xs">
+          <div className="flex items-center gap-1.5 mt-1 text-xs text-amber-200/80">
             <span>${stats.pendingDollars.toFixed(2)} awaiting review</span>
           </div>
-        </div>
+        </button>
 
-        <div className="p-4 bg-slate-800/80 rounded-xl border border-emerald-700/50 shadow-sm bg-gradient-to-br from-emerald-50/30 to-transparent from-emerald-950/10">
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'pre_approved' ? 'all' : 'pre_approved')}
+          className={`text-left p-4 bg-slate-800/80 rounded-xl border shadow-sm bg-gradient-to-br from-sky-950/20 to-transparent transition-all cursor-pointer ${
+            statusFilter === 'pre_approved'
+              ? 'border-sky-400 ring-1 ring-sky-400/40'
+              : 'border-sky-700/50 hover:border-sky-600'
+          }`}
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider">
+            <span className="text-xs font-semibold uppercase tracking-wider text-sky-300">
+              Pre-Approved
+            </span>
+            <ShieldCheck className="w-4 h-4 text-sky-400" aria-hidden="true" />
+          </div>
+          <p className="text-2xl font-bold text-white mt-2">
+            {stats.preApproved}
+          </p>
+          <div className="flex items-center gap-1.5 mt-1 text-xs text-sky-200/80">
+            <span>${stats.preApprovedDollars.toFixed(2)} ({autoApproveDays}d SLA)</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'approved' ? 'all' : 'approved')}
+          className={`text-left p-4 bg-slate-800/80 rounded-xl border shadow-sm bg-gradient-to-br from-emerald-50/30 to-transparent from-emerald-950/10 transition-all cursor-pointer ${
+            statusFilter === 'approved'
+              ? 'border-emerald-400 ring-1 ring-emerald-400/40'
+              : 'border-emerald-700/50 hover:border-emerald-600'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-emerald-300">
               Approved Payouts
             </span>
-            <DollarSign className="w-4 h-4" aria-hidden="true" />
+            <DollarSign className="w-4 h-4 text-emerald-400" aria-hidden="true" />
           </div>
-          <p className="text-2xl font-bold mt-2">
+          <p className="text-2xl font-bold text-white mt-2">
             ${stats.approvedDollars.toFixed(2)}
           </p>
-          <div className="flex items-center gap-1.5 mt-1 text-xs">
+          <div className="flex items-center gap-1.5 mt-1 text-xs text-emerald-200/80">
             <span>{stats.approved} claims approved</span>
           </div>
-        </div>
+        </button>
 
-        <div className="p-4 bg-slate-800/80 rounded-xl border border-slate-700/60 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'rejected' ? 'all' : 'rejected')}
+          className={`text-left p-4 bg-slate-800/80 rounded-xl border shadow-sm transition-all cursor-pointer ${
+            statusFilter === 'rejected'
+              ? 'border-rose-400 ring-1 ring-rose-400/40'
+              : 'border-slate-700/60 hover:border-slate-600'
+          }`}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
               Rejected / Cancelled
@@ -485,7 +640,7 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
           <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-400">
             <span>Declined or withdrawn claims</span>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* ─── Search and Filters Bar ────────────────────────────────────────── */}
@@ -555,7 +710,32 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
           </button>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center rounded-lg bg-slate-900/70 border border-slate-700 p-0.5" role="group" aria-label="Quick status filters">
+            {(
+              [
+                { id: 'all', label: 'All' },
+                { id: 'pending', label: 'Pending' },
+                { id: 'pre_approved', label: 'Pre-Approved' },
+                { id: 'approved', label: 'Approved' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setStatusFilter(opt.id)}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                  statusFilter === opt.id
+                    ? opt.id === 'pre_approved'
+                      ? 'bg-sky-600 text-white'
+                      : 'bg-teal-600 text-white'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -564,6 +744,7 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
           >
             <option value="all">All Statuses</option>
             <option value="pending">Pending Review</option>
+            <option value="pre_approved">Pre-Approved ({autoApproveDays}-Day SLA)</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
             <option value="cancelled">Cancelled</option>
@@ -1005,6 +1186,167 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
                 </div>
               )}
 
+              {/* Pre-Approved 5-Day SLA Banner */}
+              {selectedClaim.status === 'pre_approved' && (
+                <div className="p-3.5 rounded-xl border border-sky-500/40 bg-sky-950/30 text-xs text-sky-200 space-y-1">
+                  <div className="font-bold flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="w-4 h-4 text-sky-400" aria-hidden="true" />
+                      Pre-Approved (Not yet released to Finance / Payroll)
+                    </span>
+                    {selectedClaim.autoApproveDeadline && (
+                      <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-sky-500/20 text-sky-300">
+                        Auto-finalizes:{' '}
+                        {new Date(selectedClaim.autoApproveDeadline).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sky-300/90">
+                    This claim passed automated policy checks and will automatically transition to{' '}
+                    <strong>Approved</strong> (and release to Finance) after {autoApproveDays}{' '}
+                    calendar days unless you approve early, hold it back to Pending, or reject it.
+                  </p>
+                </div>
+              )}
+
+              {/* Deterministic Policy Compliance Check */}
+              <div className="p-4 rounded-xl border border-slate-700 bg-slate-900/50 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-teal-400" aria-hidden="true" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                      Automated Policy Compliance Check
+                    </h4>
+                  </div>
+                  {evalLoading ? (
+                    <span className="text-xs text-slate-400 flex items-center gap-1">
+                      <RefreshCw className="w-3 h-3 animate-spin" aria-hidden="true" />
+                      Evaluating...
+                    </span>
+                  ) : claimEvaluation ? (
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${
+                        claimEvaluation.status === 'violation'
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                          : claimEvaluation.status === 'warning'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      }`}
+                    >
+                      {claimEvaluation.status === 'violation' && (
+                        <AlertTriangle className="w-3 h-3" aria-hidden="true" />
+                      )}
+                      {claimEvaluation.status === 'pass' && (
+                        <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
+                      )}
+                      {claimEvaluation.status}
+                    </span>
+                  ) : null}
+                </div>
+
+                {claimEvaluation && (
+                  <div className="space-y-2">
+                    {claimEvaluation.lines.map((lineEval) => (
+                      <div
+                        key={lineEval.lineId || lineEval.categoryCode}
+                        className={`p-2.5 rounded-lg border text-xs space-y-1 ${
+                          lineEval.status === 'violation'
+                            ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+                            : lineEval.status === 'warning'
+                              ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+                              : 'bg-slate-800/60 border-slate-700 text-slate-200'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold">
+                            {lineEval.categoryDisplayName || lineEval.categoryCode}{' '}
+                            <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">
+                              {lineEval.approverGroup}
+                            </span>
+                          </span>
+                          <span className="font-mono">
+                            {lineEval.maxTotalAmount !== null && lineEval.maxTotalAmount !== undefined
+                              ? `Approved $${lineEval.approvedAmount.toFixed(2)} + Current $${lineEval.currentAmount.toFixed(2)} = $${lineEval.projectedApproved.toFixed(2)} / $${lineEval.maxTotalAmount.toFixed(2)}`
+                              : `Current $${lineEval.currentAmount.toFixed(2)} (No fixed cap)`}
+                          </span>
+                        </div>
+                        {lineEval.windowStart && lineEval.windowEnd && (
+                          <div className="text-[11px] text-slate-400">
+                            Period window: {lineEval.windowStart} to {lineEval.windowEnd}
+                            {lineEval.pendingAmount > 0
+                              ? ` · Other pending: $${lineEval.pendingAmount.toFixed(2)}`
+                              : ''}
+                          </div>
+                        )}
+                        {lineEval.reasons && lineEval.reasons.length > 0 && (
+                          <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
+                            {lineEval.reasons.map((r, idx) => (
+                              <li key={idx}>{r}</li>
+                            ))}
+                          </ul>
+                        )}
+                        {lineEval.aiReviewGuidance && (
+                          <div className="text-[11px] text-sky-300">
+                            Review guidance: {lineEval.aiReviewGuidance}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {claimEvaluation.requiresOverride && (
+                      <div className="text-xs font-semibold text-rose-300 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                        Override reason in Administrative Notes is required to approve this claim.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* AI Receipt & Soft-Rule Pre-Check */}
+                <div className="pt-2 border-t border-slate-700/70 flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-300">
+                      Receipt &amp; soft-rule verification (completion proof, attachment check)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRunAIPreCheck}
+                      disabled={aiPreCheckLoading}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {aiPreCheckLoading ? (
+                        <RefreshCw className="w-3 h-3 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Sparkles className="w-3 h-3" aria-hidden="true" />
+                      )}
+                      {aiPreCheckLoading ? 'Checking...' : 'AI Pre-Check'}
+                    </button>
+                  </div>
+                  {aiPreCheck && (
+                    <div
+                      className={`p-2.5 rounded-lg border text-xs space-y-1 ${
+                        aiPreCheck.status === 'missing_proof'
+                          ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+                          : aiPreCheck.status === 'attention'
+                            ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+                            : 'bg-emerald-950/25 border-emerald-500/30 text-emerald-200'
+                      }`}
+                    >
+                      <div className="font-semibold flex items-center justify-between">
+                        <span>{aiPreCheck.summary}</span>
+                        <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                          {aiPreCheck.engine}
+                        </span>
+                      </div>
+                      {aiPreCheck.findings?.map((f) => (
+                        <div key={f.lineId || f.categoryCode} className="text-[11px] opacity-90">
+                          • <strong>{f.categoryDisplayName || f.categoryCode}:</strong> {f.summary}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Administrative Review Section */}
               <div className="p-4 bg-slate-900/40 rounded-xl border border-slate-700 space-y-4">
                 <div className="flex items-center gap-2">
@@ -1019,7 +1361,13 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
                     <span className="block text-xs font-semibold text-slate-200 mb-1.5">
                       Decision
                     </span>
-                    <div className="grid grid-cols-2 gap-3" role="group" aria-label="Approval decision">
+                    <div
+                      className={`grid gap-3 ${
+                        selectedClaim.status === 'pre_approved' ? 'grid-cols-3' : 'grid-cols-2'
+                      }`}
+                      role="group"
+                      aria-label="Approval decision"
+                    >
                       <button
                         type="button"
                         aria-pressed={reviewAction === 'approved'}
@@ -1031,8 +1379,26 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
                         }`}
                       >
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" aria-hidden="true" />
-                        Approve for Reimbursement
+                        {selectedClaim.status === 'pre_approved'
+                          ? 'Approve Now'
+                          : 'Approve for Reimbursement'}
                       </button>
+
+                      {selectedClaim.status === 'pre_approved' && (
+                        <button
+                          type="button"
+                          aria-pressed={reviewAction === 'pending'}
+                          onClick={() => setReviewAction('pending')}
+                          className={`flex items-center justify-center gap-2 p-3 rounded-xl border font-semibold text-sm transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+                            reviewAction === 'pending'
+                              ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/20 text-amber-300'
+                              : 'border-slate-700 text-slate-400 hover:bg-slate-800'
+                          }`}
+                        >
+                          <Clock className="w-4 h-4 text-amber-500" aria-hidden="true" />
+                          Hold (Move to Pending)
+                        </button>
+                      )}
 
                       <button
                         type="button"
@@ -1103,11 +1469,17 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
                 className={`px-5 py-2 min-h-[36px] text-sm font-bold text-white rounded-lg transition-all shadow-md flex items-center gap-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500 ${
                   reviewAction === 'approved'
                     ? 'bg-emerald-600 hover:bg-emerald-700'
-                    : 'bg-rose-600 hover:bg-rose-700'
+                    : reviewAction === 'pending'
+                      ? 'bg-amber-600 hover:bg-amber-700'
+                      : 'bg-rose-600 hover:bg-rose-700'
                 }`}
               >
                 {saving && <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />}
-                {reviewAction === 'approved' ? 'Approve & Confirm' : 'Confirm Rejection'}
+                {reviewAction === 'approved'
+                  ? 'Approve & Confirm'
+                  : reviewAction === 'pending'
+                    ? 'Hold to Pending'
+                    : 'Confirm Rejection'}
               </button>
             </div>
           </>
@@ -1228,6 +1600,8 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
           </>
         )}
       </ExpenseModalDialog>
+        </>
+      )}
     </PageShell>
   );
 };

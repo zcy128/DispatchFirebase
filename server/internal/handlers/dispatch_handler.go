@@ -17,6 +17,7 @@ import (
 	"dispatch-server/internal/auth"
 	"dispatch-server/internal/models"
 	"dispatch-server/internal/repository"
+	"dispatch-server/internal/services"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -2228,13 +2229,31 @@ func (h *DispatchHandler) UpdateStudentIncidentStatus(w http.ResponseWriter, r *
 
 // ─── Expense Reimbursements ────────────────────────────────────────────────
 
-// ListExpenseCategories returns active expense categories.
+// ListExpenseCategories returns expense categories/policies with optional includeInactive and approverGroup filters.
 func (h *DispatchHandler) ListExpenseCategories(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	categories, err := h.repo.ListExpenseCategories(r.Context())
+	includeInactive := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("includeInactive")), "true")
+	approverGroup := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("approverGroup")))
+
+	var categories []*models.ExpenseCategory
+	var err error
+	if includeInactive {
+		categories, err = h.repo.ListAllExpenseCategories(r.Context())
+	} else {
+		categories, err = h.repo.ListExpenseCategories(r.Context())
+	}
 	if err != nil {
 		http.Error(w, `{"error":"failed to list expense categories: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
+	}
+	if approverGroup != "" {
+		filtered := make([]*models.ExpenseCategory, 0, len(categories))
+		for _, cat := range categories {
+			if strings.EqualFold(cat.ApproverGroup, approverGroup) {
+				filtered = append(filtered, cat)
+			}
+		}
+		categories = filtered
 	}
 	if categories == nil {
 		categories = []*models.ExpenseCategory{}
@@ -2279,6 +2298,47 @@ func (h *DispatchHandler) CreateExpenseClaim(w http.ResponseWriter, r *http.Requ
 			http.Error(w, `{"error":"each expense line needs an amount greater than zero"}`, http.StatusBadRequest)
 			return
 		}
+	}
+
+	if _, err := services.ValidateSingleCategoryClaim(req.Lines); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Option A automatic pre-approval triage (configurable calendar-day SLA before release to Finance)
+	now := time.Now().UTC()
+	categories, _ := h.repo.ListAllExpenseCategories(r.Context())
+	cfg, _ := h.repo.GetBiweeklyPayrollConfig(r.Context())
+	policySettings, _ := h.repo.GetExpensePolicySettings(r.Context())
+	autoApproveDays := 5
+	if policySettings != nil && policySettings.AutoApproveDays > 0 {
+		autoApproveDays = policySettings.AutoApproveDays
+	}
+	history, _ := h.repo.ListExpenseClaimsFiltered(r.Context(), repository.ExpenseClaimFilter{
+		EmployeeID: req.EmployeeID,
+		TimeRange:  "all",
+	})
+	candidate := &models.ExpenseReimbursement{
+		EmployeeID:     req.EmployeeID,
+		ClaimDate:      req.ClaimDate,
+		AttachmentURLs: req.AttachmentURLs,
+		Lines:          make([]models.ExpenseReimbursementLine, 0, len(req.Lines)),
+	}
+	for i, l := range req.Lines {
+		candidate.Lines = append(candidate.Lines, models.ExpenseReimbursementLine{
+			ID:                  fmt.Sprintf("new-line-%d", i+1),
+			CategoryCode:        l.CategoryCode,
+			CategoryDisplayName: l.CategoryDisplayName,
+			Amount:              l.Amount,
+			Note:                l.Note,
+		})
+	}
+	eval := services.EvaluateExpenseClaim(candidate, history, categories, cfg)
+	if ok, deadline, reason := services.ShouldAutoPreApproveClaim(candidate, eval, categories, now, autoApproveDays); ok && deadline != nil {
+		req.InitialStatus = "pre_approved"
+		req.PreApprovedAt = &now
+		req.AutoApproveDeadline = deadline
+		req.InitialNotes = reason
 	}
 
 	record, err := h.repo.CreateExpenseClaim(r.Context(), &req)
@@ -2370,8 +2430,8 @@ func (h *DispatchHandler) ReviewExpenseClaim(w http.ResponseWriter, r *http.Requ
 		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
 		return
 	}
-	if req.Status != "approved" && req.Status != "rejected" {
-		http.Error(w, `{"error":"status must be 'approved' or 'rejected'"}`, http.StatusBadRequest)
+	if req.Status != "approved" && req.Status != "rejected" && req.Status != "pending" {
+		http.Error(w, `{"error":"status must be 'approved', 'rejected', or 'pending'"}`, http.StatusBadRequest)
 		return
 	}
 	req.ApprovedByName = strings.TrimSpace(req.ApprovedByName)
@@ -2379,6 +2439,23 @@ func (h *DispatchHandler) ReviewExpenseClaim(w http.ResponseWriter, r *http.Requ
 	if req.ApprovedByName == "" {
 		http.Error(w, `{"error":"approvedByName is required"}`, http.StatusBadRequest)
 		return
+	}
+
+	// Enforce override justification when approving a claim that violates configured expense policies
+	if req.Status == "approved" && req.ApprovalNotes == "" {
+		if existingClaim, getErr := h.repo.GetExpenseClaimByID(r.Context(), id); getErr == nil && existingClaim != nil {
+			categories, _ := h.repo.ListAllExpenseCategories(r.Context())
+			cfg, _ := h.repo.GetBiweeklyPayrollConfig(r.Context())
+			history, _ := h.repo.ListExpenseClaimsFiltered(r.Context(), repository.ExpenseClaimFilter{
+				EmployeeID: existingClaim.EmployeeID,
+				TimeRange:  "all",
+			})
+			eval := services.EvaluateExpenseClaim(existingClaim, history, categories, cfg)
+			if eval.RequiresOverride {
+				http.Error(w, `{"error":"policy violation detected: approvalNotes (override reason) is required to approve"}`, http.StatusBadRequest)
+				return
+			}
+		}
 	}
 
 	record, err := h.repo.ReviewExpenseClaim(r.Context(), id, &req)

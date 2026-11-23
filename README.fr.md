@@ -70,6 +70,10 @@ La plateforme est structurée autour d'un écosystème d'applications dédiées,
   - Calcul automatisé des gains quotidiens, des crédits de jours fériés légaux (Statutory Holidays) et des remboursements de frais approuvés avec traçabilité dans `payroll_logs`.
   - **Détails de Feuille de Temps Chauffeur & Relevé PDF** : Bouton **Details** par chauffeur affichant le salaire sur 2 semaines, les heures assurables (AE/EI), le comparatif Semaine 1 / Semaine 2 et le détail de chaque service quotidien (`AM`/`PM`/`MIDDAY`/`CHARTER`), avec export **PDF A4**, **CSV** et **Excel (`.xlsx`)**.
   - **Intégration QuickBooks & Paie Canadienne** : Export en un clic vers **QuickBooks Online (QBO)** (`TimeActivity` CSV et synthèse), **QuickBooks Desktop Canada** (fichier natif `.IIF` `TIMEACT`) et **Wagepoint / ADP / Ceridian Powerpay (Canada)** (CSV conforme ARC/RE).
+- **Moteur de Politiques de Remboursement & Assistant IA** :
+  - **Règles Dynamiques RH & Flotte** : Plafonds cumulatifs par employé (période de paie aux deux semaines partagée avec la Paie, mensuel, annuel ou par demande) avec isolation stricte des permissions RH / Flotte et journalisation immuable dans `expense_policy_audit_logs`.
+  - **Pré-approbation Automatisée & Délai Configurable (SLA)** : Les demandes standards conformes (ex. lavage d'autobus, lave-glace) passent en statut `pre_approved` (isolées de la finance) puis sont finalisées en `approved` après un délai configurable en jours calendaires (5 jours par défaut dans **Policies & Limits**) sans intervention manuelle. Les demandes exigeant une preuve de réussite (ex. Road Test, Class 4 Knowledge Test) restent en révision manuelle.
+  - **Catégorie Unique par Demande & Pré-vérification IA** : Impose une seule catégorie par demande (avec plusieurs reçus autorisés), vérifications déterministes de conformité, mise à jour des règles en langage naturel via le Copilote IA avec carte de confirmation et pré-vérification IA des pièces justificatives.
 - **Cache Global Instantané & Défilement Virtuel** : Mise en cache persistante au niveau supérieur (mémoire + IndexedDB/`localStorage`) et virtualisation des tableaux (`@tanstack/react-virtual`) pour une navigation sans latence.
 - **Publication des Lignes Vacantes & Candidatures Chauffeurs (Bidding)** : Diffusion des tournées ouvertes ou renforts temporaires auprès des chauffeurs. Analyse des candidatures et attribution transparente des circuits.
 - **Traitement des Défectuosités, Dangers & Incidents** : Déclaration, catégorisation, photos justificatives et suivi de la résolution pour les anomalies mécaniques (Defects), dangers routiers (Hazards) et rapports de discipline élèves (Student Incidents).
@@ -96,6 +100,7 @@ La plateforme est structurée autour d'un écosystème d'applications dédiées,
 - **Candidature aux Lignes Vacantes (Route Bidding)** : Consultation des circuits vacants et des vacations supplémentaires proposées par la régulation avec soumission directe de candidature depuis le mobile.
 - **Messagerie Instantanée d'Équipe en Direct** : Canal de communication bidirectionnel direct avec le centre de régulation en cas de ralentissement ou d'urgence.
 - **Notifications Push Automatisées (FCM)** : Rappels programmés avant la prise de poste, relances d'inspection pré-départ et notifications de modification de tournée.
+- **Remboursements de Frais Dynamiques** : Soumission à catégorie unique par demande (plusieurs reçus autorisés), synchronisée en temps réel avec les plafonds de la console et le suivi du statut `Pre-Approved (5-Day Review)`.
 
 ---
 

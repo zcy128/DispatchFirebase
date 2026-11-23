@@ -85,6 +85,10 @@ The platform consists of a deeply integrated ecosystem of specialized applicatio
   - Auto-calculates daily shift earnings upon run completion, statutory holiday route assignment shift credits, and approved expense reimbursements with an immutable audit trail in `payroll_logs`.
   - **Driver Bi-Weekly Timesheet Details Modal & Vector PDF Statement**: Per-driver **Details** view breaking down 2-week wages, insurable EI hours, Week 1 vs. Week 2 subtotals, and every daily dispatch shift (`AM`/`PM`/`MIDDAY`/`CHARTER`), with 1-click **A4 PDF Statement** and **CSV** exports.
   - **QuickBooks & Canadian Payroll Export Integration**: Built-in exporter supporting **QuickBooks Online (QBO)** `TimeActivity` CSV, **QBO Bi-Weekly Summary** CSV, **QuickBooks Desktop Canada** native `.IIF` (`TIMEACT`) timesheet files, **Wagepoint / ADP / Ceridian Powerpay (Canada)** CRA/ROE batch CSV, and official Microsoft Excel (`.xlsx`) workbooks.
+- **Expense Reimbursement Policy Engine & AI Policy Assistant**:
+  - **Dynamic HR & Fleet Policies**: Configurable per-employee expense caps (bi-weekly pay period aligned with Bi-Weekly Payroll's shared anchor, monthly, yearly, or per-claim) with strict HR vs. Fleet group-level RBAC isolation and immutable `expense_policy_audit_logs`.
+  - **Automated Pre-Approval & Configurable SLA**: Eligible standard claims (e.g. Bus Washing, Washer Fluid) automatically enter `pre_approved` (isolated from Finance/Payroll) and finalize to `approved` after a configurable calendar-day SLA (default 5 days, adjustable in **Policies & Limits**) unless held or rejected. Completion-proof items (e.g. Road Test, Class 4 Knowledge Test) always require manual review.
+  - **Single-Category Claim Enforcement & AI Pre-Check**: Enforces one expense category per claim (supporting multiple receipts for that category), provides deterministic compliance badges, natural-language policy updates via AI Copilot confirmation cards, and on-demand AI receipt/soft-rule pre-checks.
 - **Zero-Latency Global Caching & Virtualized Tables**: Top-level persistent state and IndexedDB/`localStorage` caching for Routes, Employees, Vehicles, Students, Schools, Yards, Payroll Rates, School Calendars, and Company Contacts, paired with `@tanstack/react-virtual` virtual scrolling across large operational tables.
 - **Route Openings & Shift Bidding Workflow**: Dispatchers can publish open routes or temporary shifts to the driver pool. Review incoming driver bids, compare seniority or availability, and award shifts directly.
 - **Safety, Defect & Incident Intake**: Immediate triage workflow for vehicle mechanical defects, roadside hazards, and student behavior incidents with photo evidence and resolution tracking.
@@ -111,6 +115,7 @@ The platform consists of a deeply integrated ecosystem of specialized applicatio
 - **Open Route Bidding**: In-app marketplace where drivers can browse posted route openings, view compensation rates, and submit shift bids directly from their mobile phone.
 - **Real-Time Dispatch Team Chat**: Secure two-way messaging channel with dispatchers and yard staff for route delays, road closures, or operational questions.
 - **Push Notification Shift Reminders (FCM)**: Timely push notifications reminding drivers of upcoming shift departure times, pending pre-trip inspections, and dispatch updates.
+- **Dynamic Expense Reimbursements**: Single-category expense submission (supporting multiple receipts per claim) synced live with office policy limits, displaying real-time cap warnings and `Pre-Approved (5-Day Review)` status tracking.
 
 ---
 

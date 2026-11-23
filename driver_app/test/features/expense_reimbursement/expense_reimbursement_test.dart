@@ -57,12 +57,14 @@ void main() {
   group('ExpenseClaimStatus enum tests', () {
     test('maps correctly to API values', () {
       expect(ExpenseClaimStatus.pending.apiValue, 'pending');
+      expect(ExpenseClaimStatus.preApproved.apiValue, 'pre_approved');
       expect(ExpenseClaimStatus.approved.apiValue, 'approved');
       expect(ExpenseClaimStatus.rejected.apiValue, 'rejected');
       expect(ExpenseClaimStatus.cancelled.apiValue, 'cancelled');
     });
 
     test('parses correctly from strings', () {
+      expect(ExpenseClaimStatus.fromApiValue('pre_approved'), ExpenseClaimStatus.preApproved);
       expect(ExpenseClaimStatus.fromApiValue('approved'), ExpenseClaimStatus.approved);
       expect(ExpenseClaimStatus.fromApiValue('rejected'), ExpenseClaimStatus.rejected);
       expect(ExpenseClaimStatus.fromApiValue('cancelled'), ExpenseClaimStatus.cancelled);
@@ -73,18 +75,40 @@ void main() {
   });
 
   group('ExpenseCategory tests', () {
-    test('default categories list contains expected options', () {
+    test('default categories list contains 8 HR and Fleet policy options without LPN or Van washing', () {
       final defaults = ExpenseCategory.defaultCategories();
-      expect(defaults.length, 6);
-      expect(defaults.map((c) => c.code), containsAll(['fuel', 'parking', 'maintenance', 'cleaning', 'meals', 'other']));
+      expect(defaults.length, 8);
+      expect(
+        defaults.map((c) => c.code),
+        containsAll([
+          'drivers_medical',
+          'road_test',
+          'class4_knowledge_test',
+          's_endorsement',
+          'bus_washing',
+          'washer_fluid',
+          'other_hr',
+          'other_fleet',
+        ]),
+      );
+      final busWash = defaults.firstWhere((c) => c.code == 'bus_washing');
+      expect(busWash.approverGroup, 'fleet');
+      expect(busWash.periodType, 'biweekly_pay_period');
+      expect(busWash.maxTotalAmount, 20.0);
     });
 
-    test('JSON serialization round-trip', () {
+    test('JSON serialization round-trip preserves policy fields', () {
       const cat = ExpenseCategory(
-        id: 'cat-fuel',
-        code: 'fuel',
-        displayName: 'Fuel / Gas',
-        sortOrder: 1,
+        id: 'cat-bus_washing',
+        code: 'bus_washing',
+        displayName: 'Bus Washing',
+        limitLabel: 'Up to \$20.00 / pay period',
+        approverGroup: 'fleet',
+        periodType: 'biweekly_pay_period',
+        maxTotalAmount: 20.0,
+        maxCountPerPeriod: 2,
+        requireAttachment: true,
+        sortOrder: 5,
         active: true,
       );
       final json = cat.toJson();

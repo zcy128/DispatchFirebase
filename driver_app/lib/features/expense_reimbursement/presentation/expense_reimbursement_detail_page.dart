@@ -212,6 +212,8 @@ class _ExpenseReimbursementDetailViewState
     switch (status) {
       case ExpenseClaimStatus.pending:
         return 'Submitted to dispatch office for review and approval.';
+      case ExpenseClaimStatus.preApproved:
+        return 'Pre-approved by automated policy check. Will finalize for payroll after 5 days unless modified.';
       case ExpenseClaimStatus.approved:
         return 'Approved by office administration for payroll reimbursement.';
       case ExpenseClaimStatus.rejected:

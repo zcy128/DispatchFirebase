@@ -17,6 +17,13 @@ import {
   ReviewExpenseClaimPayload,
   ExpenseClaimStatus,
   ExpenseCategory,
+  ExpenseApproverGroup,
+  UpsertExpenseCategoryPayload,
+  ExpensePolicyAuditLog,
+  BiweeklyPayrollConfig,
+  ExpensePolicySettings,
+  ExpenseClaimEvaluation,
+  ExpenseAIPreCheckResult,
   DEFAULT_EXPENSE_CATEGORIES,
 } from '../types/expenseReimbursement';
 
@@ -60,7 +67,11 @@ function normalizeExpenseRecord(raw: any, id: string): ExpenseReimbursement {
     routeNo: String(raw?.routeNo || ''),
     totalAmount,
     lines,
+    attachmentUrls: Array.isArray(raw?.attachmentUrls) ? raw.attachmentUrls : undefined,
     status: (raw?.status as ExpenseClaimStatus) || 'pending',
+    preApprovedAt: normalizeDate(raw?.preApprovedAt) || undefined,
+    autoApproveDeadline: normalizeDate(raw?.autoApproveDeadline) || undefined,
+    autoApproved: Boolean(raw?.autoApproved),
     approvalNotes: raw?.approvalNotes || '',
     approvedByName: raw?.approvedByName || '',
     approvedAt: normalizeDate(raw?.approvedAt),
@@ -70,9 +81,17 @@ function normalizeExpenseRecord(raw: any, id: string): ExpenseReimbursement {
 }
 
 export const ExpenseReimbursementService = {
-  listCategories: async (): Promise<ExpenseCategory[]> => {
+  listCategories: async (options?: {
+    includeInactive?: boolean;
+    approverGroup?: ExpenseApproverGroup;
+  }): Promise<ExpenseCategory[]> => {
+    const params = new URLSearchParams();
+    if (options?.includeInactive) params.set('includeInactive', 'true');
+    if (options?.approverGroup) params.set('approverGroup', options.approverGroup);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+
     try {
-      const res = await apiRequest<ExpenseCategory[]>('/api/dispatch/expense-categories');
+      const res = await apiRequest<ExpenseCategory[]>(`/api/dispatch/expense-categories${qs}`);
       if (Array.isArray(res) && res.length > 0) return res;
     } catch {
       if (db) {
@@ -82,28 +101,141 @@ export const ExpenseReimbursementService = {
             const list: ExpenseCategory[] = [];
             snap.forEach((d) => {
               const data = d.data();
+              const active = data.active !== false;
+              if (!options?.includeInactive && !active) return;
+              if (options?.approverGroup && data.approverGroup !== options.approverGroup) return;
               list.push({
                 id: d.id,
                 code: data.code || '',
                 displayName: data.displayName || '',
+                limitLabel: data.limitLabel || '',
+                approverGroup: data.approverGroup || 'hr',
+                periodType: data.periodType || 'per_claim',
+                maxTotalAmount:
+                  data.maxTotalAmount !== undefined && data.maxTotalAmount !== null
+                    ? Number(data.maxTotalAmount)
+                    : null,
+                maxCountPerPeriod:
+                  data.maxCountPerPeriod !== undefined && data.maxCountPerPeriod !== null
+                    ? Number(data.maxCountPerPeriod)
+                    : null,
+                requireAttachment: Boolean(data.requireAttachment),
+                autoPreApprove: Boolean(data.autoPreApprove),
+                aiReviewGuidance: data.aiReviewGuidance || '',
                 sortOrder: data.sortOrder || 0,
-                active: data.active !== false,
+                active,
+                version: data.version || 1,
+                updatedBy: data.updatedBy || '',
+                updatedAt: normalizeDate(data.updatedAt),
               });
             });
             list.sort((a, b) => a.sortOrder - b.sortOrder);
-            return list;
+            if (list.length > 0) return list;
           }
         } catch (_) {}
       }
     }
 
-    return DEFAULT_EXPENSE_CATEGORIES.map((c, i) => ({
+    return DEFAULT_EXPENSE_CATEGORIES.filter(
+      (c) => !options?.approverGroup || c.approverGroup === options.approverGroup
+    ).map((c, i) => ({
       id: `cat-${c.code}`,
       code: c.code,
       displayName: c.label,
+      limitLabel: c.limitLabel,
+      approverGroup: c.approverGroup,
+      periodType: c.periodType,
+      maxTotalAmount: c.maxTotalAmount,
+      maxCountPerPeriod: null,
+      requireAttachment: c.requireAttachment,
       sortOrder: i + 1,
       active: true,
+      version: 1,
     }));
+  },
+
+  upsertCategory: async (
+    code: string,
+    payload: UpsertExpenseCategoryPayload
+  ): Promise<ExpenseCategory> => {
+    return apiRequest<ExpenseCategory>(
+      `/api/dispatch/expense-categories/${encodeURIComponent(code)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }
+    );
+  },
+
+  listPolicyAuditLogs: async (
+    categoryCode?: string,
+    limit = 50
+  ): Promise<ExpensePolicyAuditLog[]> => {
+    const params = new URLSearchParams();
+    if (categoryCode) params.set('categoryCode', categoryCode);
+    if (limit > 0) params.set('limit', String(limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await apiRequest<ExpensePolicyAuditLog[]>(
+      `/api/dispatch/expense-policy-audit-logs${qs}`
+    );
+    return Array.isArray(res) ? res : [];
+  },
+
+  evaluateClaim: async (claimId: string): Promise<ExpenseClaimEvaluation> => {
+    return apiRequest<ExpenseClaimEvaluation>(
+      `/api/dispatch/expense-reimbursements/${encodeURIComponent(claimId)}/evaluate`
+    );
+  },
+
+  aiPreCheckClaim: async (claimId: string): Promise<ExpenseAIPreCheckResult> => {
+    return apiRequest<ExpenseAIPreCheckResult>(
+      `/api/dispatch/expense-reimbursements/${encodeURIComponent(claimId)}/ai-precheck`,
+      { method: 'POST' }
+    );
+  },
+
+  getBiweeklyPayrollConfig: async (): Promise<BiweeklyPayrollConfig> => {
+    try {
+      const res = await apiRequest<BiweeklyPayrollConfig>('/api/payroll/biweekly-config');
+      if (res && res.biweeklyAnchorDate) return res;
+    } catch {
+      // Fallback to default anchor if offline
+    }
+    return {
+      biweeklyAnchorDate: '2026-01-04',
+      periodLengthDays: 14,
+      timezone: 'America/Toronto',
+    };
+  },
+
+  saveBiweeklyPayrollConfig: async (
+    payload: Partial<BiweeklyPayrollConfig>
+  ): Promise<BiweeklyPayrollConfig> => {
+    return apiRequest<BiweeklyPayrollConfig>('/api/payroll/biweekly-config', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  getExpensePolicySettings: async (): Promise<ExpensePolicySettings> => {
+    try {
+      const res = await apiRequest<ExpensePolicySettings>('/api/dispatch/expense-policy-settings');
+      if (res && typeof res.autoApproveDays === 'number' && res.autoApproveDays > 0) {
+        return res;
+      }
+    } catch {
+      // Fallback to default 5 days if offline
+    }
+    return { autoApproveDays: 5 };
+  },
+
+  saveExpensePolicySettings: async (
+    payload: Partial<ExpensePolicySettings>
+  ): Promise<ExpensePolicySettings> => {
+    return apiRequest<ExpensePolicySettings>('/api/dispatch/expense-policy-settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
   },
 
   isColdClaim: (claimDate?: string): boolean => {

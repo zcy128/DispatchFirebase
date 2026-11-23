@@ -231,13 +231,22 @@ type DispatchRepository interface {
 	UpdateStudentIncidentOfficeFollowUp(ctx context.Context, id string, req *models.UpdateIncidentOfficeFollowUpPayload) (*models.StudentIncident, error)
 	UpdateStudentIncidentStatus(ctx context.Context, id string, status string) (*models.StudentIncident, error)
 
-	// Expense Reimbursements
+	// Expense Reimbursements & Policies
 	ListExpenseCategories(ctx context.Context) ([]*models.ExpenseCategory, error)
+	ListAllExpenseCategories(ctx context.Context) ([]*models.ExpenseCategory, error)
+	GetExpenseCategoryByCode(ctx context.Context, code string) (*models.ExpenseCategory, error)
+	UpsertExpenseCategory(ctx context.Context, cat *models.ExpenseCategory, audit *models.ExpensePolicyAuditLog) (*models.ExpenseCategory, error)
+	ListExpensePolicyAuditLogs(ctx context.Context, categoryCode string, limit int) ([]*models.ExpensePolicyAuditLog, error)
+	GetBiweeklyPayrollConfig(ctx context.Context) (*models.BiweeklyPayrollConfig, error)
+	SaveBiweeklyPayrollConfig(ctx context.Context, cfg *models.BiweeklyPayrollConfig) (*models.BiweeklyPayrollConfig, error)
+	GetExpensePolicySettings(ctx context.Context) (*models.ExpensePolicySettings, error)
+	SaveExpensePolicySettings(ctx context.Context, settings *models.ExpensePolicySettings) (*models.ExpensePolicySettings, error)
 	CreateExpenseClaim(ctx context.Context, req *models.CreateExpenseClaimPayload) (*models.ExpenseReimbursement, error)
 	GetExpenseClaimByID(ctx context.Context, id string) (*models.ExpenseReimbursement, error)
 	ListExpenseClaims(ctx context.Context, employeeID string, status string) ([]*models.ExpenseReimbursement, error)
 	ListExpenseClaimsFiltered(ctx context.Context, filter ExpenseClaimFilter) ([]*models.ExpenseReimbursement, error)
 	ReviewExpenseClaim(ctx context.Context, id string, req *models.ReviewExpenseClaimPayload) (*models.ExpenseReimbursement, error)
+	FinalizeDuePreApprovedClaims(ctx context.Context, now time.Time) (int, error)
 	CancelExpenseClaim(ctx context.Context, id string, employeeID string) (*models.ExpenseReimbursement, error)
 
 	// Hazard & Near-Miss Reports
@@ -6278,6 +6287,9 @@ type MemoryDispatchRepository struct {
 	studentIncidents        map[string]*models.StudentIncident
 	expenseCategories       map[string]*models.ExpenseCategory
 	expenseClaims           map[string]*models.ExpenseReimbursement
+	expensePolicyAuditLogs  []*models.ExpensePolicyAuditLog
+	biweeklyPayrollConfig   *models.BiweeklyPayrollConfig
+	expensePolicySettings   *models.ExpensePolicySettings
 	hazardReports           map[string]*models.HazardReport
 	routeAssessments        map[string]*models.RouteAssessment
 	vehicleSignouts         map[string]*models.VehicleSignout
@@ -6307,6 +6319,9 @@ func NewMemoryDispatchRepository() *MemoryDispatchRepository {
 		studentIncidents:        make(map[string]*models.StudentIncident),
 		expenseCategories:       make(map[string]*models.ExpenseCategory),
 		expenseClaims:           make(map[string]*models.ExpenseReimbursement),
+		expensePolicyAuditLogs:  make([]*models.ExpensePolicyAuditLog, 0),
+		biweeklyPayrollConfig:   models.DefaultBiweeklyPayrollConfig(),
+		expensePolicySettings:   models.DefaultExpensePolicySettings(),
 		hazardReports:           make(map[string]*models.HazardReport),
 		routeAssessments:        make(map[string]*models.RouteAssessment),
 		vehicleSignouts:         make(map[string]*models.VehicleSignout),
@@ -6325,16 +6340,7 @@ func NewMemoryDispatchRepository() *MemoryDispatchRepository {
 	return repo
 }
 
-func defaultExpenseCategories() []*models.ExpenseCategory {
-	return []*models.ExpenseCategory{
-		{ID: "cat-fuel", Code: "fuel", DisplayName: "Fuel / Gas", SortOrder: 1, Active: true},
-		{ID: "cat-parking", Code: "parking", DisplayName: "Parking & Tolls", SortOrder: 2, Active: true},
-		{ID: "cat-maintenance", Code: "maintenance", DisplayName: "Supplies & Minor Maintenance", SortOrder: 3, Active: true},
-		{ID: "cat-cleaning", Code: "cleaning", DisplayName: "Vehicle Cleaning", SortOrder: 4, Active: true},
-		{ID: "cat-meals", Code: "meals", DisplayName: "Meal Allowance", SortOrder: 5, Active: true},
-		{ID: "cat-other", Code: "other", DisplayName: "Other Expense", SortOrder: 6, Active: true},
-	}
-}
+// defaultExpenseCategories is defined in expense_policy_repo.go.
 
 func (m *MemoryDispatchRepository) GetCheckInReminderSettings(ctx context.Context) (*models.CheckInReminderSettings, error) {
 	m.mu.RLock()
@@ -9879,18 +9885,26 @@ func (r *FirestoreDispatchRepository) CreateExpenseClaim(ctx context.Context, re
 		lines = append(lines, line)
 	}
 
+	initialStatus := strings.TrimSpace(req.InitialStatus)
+	if initialStatus == "" {
+		initialStatus = "pending"
+	}
+
 	record := &models.ExpenseReimbursement{
-		ID:             docRef.ID,
-		EmployeeID:     req.EmployeeID,
-		EmployeeName:   req.EmployeeName,
-		ClaimDate:      req.ClaimDate,
-		RouteNo:        req.RouteNo,
-		TotalAmount:    total,
-		Lines:          lines,
-		AttachmentURLs: req.AttachmentURLs,
-		Status:         "pending",
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                  docRef.ID,
+		EmployeeID:          req.EmployeeID,
+		EmployeeName:        req.EmployeeName,
+		ClaimDate:           req.ClaimDate,
+		RouteNo:             req.RouteNo,
+		TotalAmount:         models.RoundCurrencyHalfUp(total),
+		Lines:               lines,
+		AttachmentURLs:      req.AttachmentURLs,
+		Status:              initialStatus,
+		PreApprovedAt:       req.PreApprovedAt,
+		AutoApproveDeadline: req.AutoApproveDeadline,
+		ApprovalNotes:       req.InitialNotes,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 
 	if _, err := docRef.Set(ctx, record); err != nil {
@@ -12228,18 +12242,26 @@ func (m *MemoryDispatchRepository) CreateExpenseClaim(ctx context.Context, req *
 		lines = append(lines, line)
 	}
 
+	initialStatus := strings.TrimSpace(req.InitialStatus)
+	if initialStatus == "" {
+		initialStatus = "pending"
+	}
+
 	record := &models.ExpenseReimbursement{
-		ID:             id,
-		EmployeeID:     req.EmployeeID,
-		EmployeeName:   req.EmployeeName,
-		ClaimDate:      req.ClaimDate,
-		RouteNo:        req.RouteNo,
-		TotalAmount:    total,
-		Lines:          lines,
-		AttachmentURLs: req.AttachmentURLs,
-		Status:         "pending",
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                  id,
+		EmployeeID:          req.EmployeeID,
+		EmployeeName:        req.EmployeeName,
+		ClaimDate:           req.ClaimDate,
+		RouteNo:             req.RouteNo,
+		TotalAmount:         models.RoundCurrencyHalfUp(total),
+		Lines:               lines,
+		AttachmentURLs:      req.AttachmentURLs,
+		Status:              initialStatus,
+		PreApprovedAt:       req.PreApprovedAt,
+		AutoApproveDeadline: req.AutoApproveDeadline,
+		ApprovalNotes:       req.InitialNotes,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 
 	m.expenseClaims[id] = record

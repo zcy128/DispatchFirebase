@@ -40,6 +40,11 @@ import { BusRoute } from '../types/route';
 import { ExpenseReimbursement } from '../types/expenseReimbursement';
 import { addDaysToDateString } from '../utils/dateUtils';
 import {
+  resolveBiweeklyPayPeriod,
+  canManageBiweeklyPayrollConfig,
+} from '../utils/biweeklyPeriodUtils';
+import { useAuth } from '../contexts/AuthContext';
+import {
   PREDEFINED_HOLIDAYS,
   buildHolidayEntitlements,
 } from '../utils/biweeklyHolidayEntitlements';
@@ -108,10 +113,54 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
   routes: routesProp = EMPTY_ROUTES,
   onSelectEmployee,
 }: BiweeklyPayrollViewProps) {
-  const [startDate, setStartDate] = useState<string>(getTodayDateString);
+  const { currentUser } = useAuth();
+  const [biweeklyAnchorDate, setBiweeklyAnchorDate] = useState<string>('2026-01-04');
+  const [savingAnchor, setSavingAnchor] = useState<boolean>(false);
+  const [startDate, setStartDate] = useState<string>(
+    () => resolveBiweeklyPayPeriod(getTodayDateString(), '2026-01-04').startDate
+  );
   const endDate = useMemo(() => addDaysToDateString(startDate, 13), [startDate]);
   const week1EndDate = useMemo(() => addDaysToDateString(startDate, 6), [startDate]);
   const week2StartDate = useMemo(() => addDaysToDateString(startDate, 7), [startDate]);
+
+  useEffect(() => {
+    let active = true;
+    ExpenseReimbursementService.getBiweeklyPayrollConfig()
+      .then((cfg) => {
+        if (!active || !cfg?.biweeklyAnchorDate) return;
+        setBiweeklyAnchorDate(cfg.biweeklyAnchorDate);
+        setStartDate(
+          resolveBiweeklyPayPeriod(
+            getTodayDateString(),
+            cfg.biweeklyAnchorDate,
+            cfg.periodLengthDays || 14
+          ).startDate
+        );
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const canEditAnchor = canManageBiweeklyPayrollConfig(currentUser?.role);
+  const handleSaveCurrentAsAnchor = async () => {
+    if (!canEditAnchor || savingAnchor) return;
+    setSavingAnchor(true);
+    try {
+      const saved = await ExpenseReimbursementService.saveBiweeklyPayrollConfig({
+        biweeklyAnchorDate: startDate,
+        periodLengthDays: 14,
+      });
+      if (saved?.biweeklyAnchorDate) {
+        setBiweeklyAnchorDate(saved.biweeklyAnchorDate);
+      }
+    } catch (err) {
+      console.error('[BiweeklyPayrollView] Failed to save biweekly anchor date:', err);
+    } finally {
+      setSavingAnchor(false);
+    }
+  };
 
   const [selectedBoard, setSelectedBoard] = useState<string>('all');
   const [selectedEmployee, setSelectedEmployee] = useState<string>('all');
@@ -1063,12 +1112,27 @@ export const BiweeklyPayrollView = memo(function BiweeklyPayrollView({
             {/* Current Period Button */}
             <button
               type="button"
-              onClick={() => setStartDate(getTodayDateString())}
+              onClick={() =>
+                setStartDate(
+                  resolveBiweeklyPayPeriod(getTodayDateString(), biweeklyAnchorDate).startDate
+                )
+              }
               className="min-h-[32px] px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 shadow-2xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
-              title="Jump to Current Bi-Weekly Period"
+              title={`Jump to Current Bi-Weekly Period (Anchor: ${biweeklyAnchorDate})`}
             >
               Current Period
             </button>
+            {canEditAnchor && startDate !== biweeklyAnchorDate && (
+              <button
+                type="button"
+                onClick={handleSaveCurrentAsAnchor}
+                disabled={savingAnchor}
+                className="min-h-[32px] px-2.5 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-xs font-semibold text-amber-300 shadow-2xs transition-colors disabled:opacity-50"
+                title={`Set ${startDate} as the shared bi-weekly pay period anchor for Payroll and Expense Policies (Current anchor: ${biweeklyAnchorDate})`}
+              >
+                {savingAnchor ? 'Saving...' : 'Set Pay Anchor'}
+              </button>
+            )}
             {/* Formatted Date Range Pill */}
             <div className="text-base font-bold tracking-tight text-white px-2">
               {startDate} - {endDate}
