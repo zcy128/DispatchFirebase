@@ -1,8 +1,14 @@
 import React from 'react';
-import { Sparkles } from 'lucide-react';
+import { Bot, Sparkles } from 'lucide-react';
 import { useAIOptional } from '../../contexts/AIContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../contexts/I18nContext';
+
+interface CustomAIAction {
+  label: string;
+  title?: string;
+  onClick: () => void;
+}
 
 interface PageHeaderProps {
   /** Primary page heading rendered inside the <h1> element. */
@@ -15,6 +21,8 @@ interface PageHeaderProps {
   badge?: React.ReactNode;
   /** Right-aligned action controls (refresh, export, primary CTA). */
   actions?: React.ReactNode;
+  /** Optional page-specific AI agent launcher (replaces generic drawer toggle to avoid duplication). */
+  customAIAction?: CustomAIAction;
   /** Optional embedded toolbar/search bar rendered inside the header card. */
   children?: React.ReactNode;
   /** Optional extra classes for the header card container. */
@@ -31,6 +39,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   icon,
   badge,
   actions,
+  customAIAction,
   children,
   className = '',
 }) => {
@@ -63,15 +72,38 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
             </p>
           )}
         </div>
-        {(actions || canUseAI) && (
+        {(actions || customAIAction || canUseAI) && (
           <div className="flex flex-wrap items-center gap-2 self-start md:self-center shrink-0">
             {actions}
-            {canUseAI && (
+            {customAIAction ? (
               <button
                 type="button"
-                onClick={() => ai.openAI()}
-                title={isFrench ? 'Ouvrir l\'assistant IA pour cette page' : 'Open page-scoped AI Assistant'}
-                className="min-h-[36px] px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-300 text-xs font-bold transition inline-flex items-center gap-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                onClick={customAIAction.onClick}
+                title={customAIAction.title || customAIAction.label}
+                className="min-h-[36px] px-3 py-1.5 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/40 text-teal-200 text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
+              >
+                <Bot className="w-3.5 h-3.5 text-teal-300 shrink-0" aria-hidden="true" />
+                <span>{customAIAction.label}</span>
+              </button>
+            ) : canUseAI ? (
+              <button
+                type="button"
+                aria-pressed={ai.isAIOpen}
+                onClick={() => ai.setIsAIOpen(!ai.isAIOpen)}
+                title={
+                  ai.isAIOpen
+                    ? isFrench
+                      ? 'Masquer l\'assistant IA'
+                      : 'Hide page-scoped AI Assistant'
+                    : isFrench
+                      ? 'Ouvrir l\'assistant IA pour cette page'
+                      : 'Open page-scoped AI Assistant'
+                }
+                className={`min-h-[36px] px-3 py-1.5 rounded-xl border text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
+                  ai.isAIOpen
+                    ? 'bg-amber-500/25 hover:bg-amber-500/35 border-amber-400 text-amber-200 ring-1 ring-amber-400/40'
+                    : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/35 text-amber-300'
+                }`}
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />
                 <span>{isFrench ? 'Assistant IA' : 'AI Assistant'}</span>
@@ -81,7 +113,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
                   </span>
                 )}
               </button>
-            )}
+            ) : null}
           </div>
         )}
       </div>

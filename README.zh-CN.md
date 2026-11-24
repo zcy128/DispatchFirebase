@@ -40,24 +40,31 @@
 ```mermaid
 flowchart TD
   Start(["司机提交请假\n（Office Chat 对话或表单）"]) --> Check["AI 自动识别线路与 AM/PM 班次\n+ 表单预览确认"]
-  Check --> Branch{"替班情况与请假天数？"}
+  Check --> Branch{"替班、天数与提前期？"}
 
   Branch -- "已指定替班司机\n（档期冲突与 CDL 合规校验）" --> PeerWait["awaiting_peer_confirm\n（Option B：向替班司机发送确认卡）"]
   PeerWait -- "替班司机点击同意\n（预锁定 TemporaryAssignment）" --> PreApproved["pre_approved\n（SLA 截止: min(now+24h, 发车前2h)）"]
   PeerWait -- "替班司机拒绝（<= 2 天）" --> Seeking
   PeerWait -- "替班司机拒绝（> 2 天）" --> ManualPending
 
-  Branch -- "未指定替班且 <= 2 天" --> Seeking["seeking_coverage\n（自动拆分为 AM / PM 班次广播）"]
+  Branch -- "未指定替班且 <= 2 天\n且未超远期阈值（90 天）" --> Seeking["seeking_coverage\n（自动拆分为 AM / PM 班次广播）"]
   Seeking -- "0 个班次被认领" --> Unclaimed["阶段 2 告警：\nBroadcasted · No Applicants"]
   Unclaimed --> ClaimSlot["其他司机认领班次\n（冲突与 CDL 校验通过）"]
   Seeking --> ClaimSlot
   ClaimSlot -- "部分认领（1/2）" --> Seeking
-  ClaimSlot -- "全部 AM/PM 认领完毕（2/2）" --> PreApproved
+  ClaimSlot -- "全部认领（> 自动寻替班窗口）" --> PreApproved
+  ClaimSlot -- "全部认领（<= 14 天自动窗口）" --> Approved
 
-  Branch -- "未指定替班且 > 2 天\n或转人工审核" --> ManualPending["pending\n（HR / 调度人工审核）"]
+  Branch -- "超过远期阈值（默认 90 天 / 3 个月）\n或 > 2 天转人工审核" --> ManualPending["pending\n（需 HR 手工审批）"]
+  ManualPending -- "进入请假前自动窗口\n（默认 <= 14 天 / 2 周前）" --> Seeking
   ManualPending -- "调度手动发布空缺\n或直接指定备用司机" --> Assigned["已分配替班司机\n（待 HR 最终审批）"]
 
-  PreApproved -- "到期无人工干预\n（24h SLA 自动转正任务）" --> Approved["approved\n（正式批准 · 24h 自动转正）"]
+  ManualPending -- "审批人点击 Hold On" --> OnHold["on_hold（暂缓处理）\n屏蔽自动寻替班与自动审批"]
+  Seeking -- "审批人点击 Hold On" --> OnHold
+  PreApproved -- "审批人点击 Hold On" --> OnHold
+  OnHold -- "审批人点击 Release Hold" --> ManualPending
+
+  PreApproved -- "到期无人工干预\n（24h SLA 自动转正任务）" --> Approved["approved（正式批准）"]
   PreApproved -- "审批人在 Approver AI Agent\n点击 Approve" --> Approved
   PreApproved -- "审批人点击 Reject" --> Rejected["rejected（已拒绝）"]
   Assigned -- "HR 批准" --> Approved
@@ -66,6 +73,40 @@ flowchart TD
 
   Approved --> Trajectory["Web Agent 保留原卡片并追加\n[Work Trajectory] 轨迹 + 通知司机端"]
   Rejected --> Trajectory
+```
+
+</details>
+
+### 💳 费用报销与规则引擎全流程动画演示（3 大场景）
+*实时展示 **Driver App ↔ Web 报销与政策控制台** 的三大完整闭环：（1）合规标准报销自动预批准与可配 SLA、（2）超额/证明类人工核验与 AI 预审、（3）Policies & Limits 与 AI 政策助手改规则。您也可在 Web 端 **Expense Reimbursements → Workflow Demo** 中亲自交互体验。*
+
+<p align="center">
+  <img src="docs/media/expense-workflow-demo.gif" alt="费用报销与规则引擎全流程动画演示（3 大场景）" width="100%" />
+</p>
+
+<details>
+<summary><strong>📊 费用报销全生命周期与规则引擎（Mermaid 流程图）</strong></summary>
+
+```mermaid
+flowchart TD
+  Start(["司机提交报销\n（单类别 + 同类多张收据）"]) --> SingleCheck{"是否单类别\n且金额有效？"}
+  SingleCheck -- "混填多种类别" --> RejectSubmit["拦截拒绝（400）\n强制单张报销单仅限单一类别"]
+  SingleCheck -- "校验通过" --> Eval["ExpensePolicyEvaluator 规则评估\n（共享发薪双周锚点、月/年限额、收据与证明校验）"]
+
+  Eval --> AutoCheck{"autoPreApprove == true\n且未超限额、已附收据\n且无需通过证明？"}
+
+  AutoCheck -- "是（如洗车费、玻璃水）" --> PreApp["pre_approved（自动预批准）\n隔离财务结算 · 观察期: now + 可配 SLA 天数"]
+  AutoCheck -- "否（如路考费 / 超限额）" --> Pending["pending（默认视图：Pending Review）\n附带确定性违规/证明提示徽章"]
+
+  PreApp -- "SLA 天数到期无干预" --> Approved["approved（正式批准）\n进入 Bi-Weekly Payroll 与 QuickBooks 导出"]
+  PreApp -- "审核员提前点击 Approve" --> Approved
+  PreApp -- "审核员点击 Reject" --> Rejected["rejected（已拒绝）"]
+
+  Pending -- "HR / Fleet 权限隔离审核\n+ AI 预审 + 超额特批备注" --> Decision{"审核决定？"}
+  Decision -- "批准 Approve" --> Approved
+  Decision -- "拒绝 Reject" --> Rejected
+
+  Policy["Policies & Limits + AI 政策助手\n（调整 SLA 天数 / 对话确认卡修改限额）"] -. "写入不可变审计日志:\nexpense_policy_audit_logs" .-> Eval
 ```
 
 </details>
@@ -428,6 +469,8 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
   - Google Cloud 控制台中的 Firestore 自动过期（TTL）规则设置说明。
   - Cloud Scheduler 唯一聚合归档任务（`/api/admin/archive/sync-all`）配置步骤，一键归档班次、流水日志及过期请假单，实现超低云端运行开销。
   - Firestore 热存储与 BigQuery 冷存储的双引擎无感知智能路由与兜底机制。
+- 🤖 **[本地 AI 模型配置向导 (Ollama + Qwen 3.5 2B)](docs/local-ai-ollama-setup-guide.md#简体中文)**（[English](docs/local-ai-ollama-setup-guide.md#english) | [Français](docs/local-ai-ollama-setup-guide.md#français)）：
+  - 面向 Linux / Oracle Cloud 免费 ARM 虚拟机的完整安装教程（`zstd`、Ollama、`qwen3.5:2b` 关闭思考模式 `think: false`）、本地开发 SSH 端口转发隧道以及 **系统设置 → Test AI Connection** 一键连通性测试说明。
 - 📄 **[车队运营与调度手册 (PDF)](docs/operations-manual-zh.pdf)**（[Word 文档](docs/operations-manual-zh.docx) | [English PDF](docs/operations-manual-en.pdf) | [Français PDF](docs/operations-manual-fr.pdf)）：面向调度员、安全主管与车队管理人员的完整日常运营作业指导规范。
 
 ---

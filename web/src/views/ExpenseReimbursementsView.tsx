@@ -26,7 +26,9 @@ import {
   AlertTriangle,
   SlidersHorizontal,
   Sparkles,
+  Film,
 } from 'lucide-react';
+import { ExpenseWorkflowDemoModal } from '../components/expenses/ExpenseWorkflowDemoModal';
 import {
   ExpenseReimbursement,
   ReviewExpenseClaimPayload,
@@ -134,6 +136,7 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
   const [aiPreCheckLoading, setAiPreCheckLoading] = useState<boolean>(false);
   const [autoApproveDays, setAutoApproveDays] = useState<number>(5);
   const [saving, setSaving] = useState<boolean>(false);
+  const [isDemoOpen, setIsDemoOpen] = useState<boolean>(false);
 
   const loadSlaDays = () => {
     ExpenseReimbursementService.getExpensePolicySettings()
@@ -504,6 +507,15 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
                 Policies &amp; Limits
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => setIsDemoOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-200 text-xs font-bold cursor-pointer transition-colors"
+              title="Open Expense Workflow Animated Demo"
+            >
+              <Film className="w-3.5 h-3.5 text-indigo-300" aria-hidden="true" />
+              <span>Workflow Demo</span>
+            </button>
             {activeTab === 'claims' && (
               <button
                 type="button"
@@ -1602,6 +1614,10 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
       </ExpenseModalDialog>
         </>
       )}
+      <ExpenseWorkflowDemoModal
+        isOpen={isDemoOpen}
+        onClose={() => setIsDemoOpen(false)}
+      />
     </PageShell>
   );
 };

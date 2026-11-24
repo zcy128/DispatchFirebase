@@ -72,9 +72,9 @@ export const AppContent: React.FC = () => {
   const [isAICopilotOpen, setIsAICopilotOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      return window.innerWidth >= 768 || params.get('mode') === 'ai' || params.get('ai') === '1';
+      return params.get('mode') === 'ai' || params.get('ai') === '1';
     }
-    return true;
+    return false;
   });
   const [aiCopilotMounted, setAiCopilotMounted] = useState<boolean>(isAICopilotOpen);
   const [chatInitialTargetUserId, setChatInitialTargetUserId] = useState<string | null>(null);

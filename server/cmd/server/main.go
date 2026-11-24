@@ -525,10 +525,14 @@ func main() {
 		protected.Put("/api/dispatch/time-off-requests/{id}", dispatchHandler.UpdateTimeOffRequest)
 		protected.Post("/api/dispatch/time-off-requests/{id}/approve", dispatchHandler.ApproveTimeOffRequest)
 		protected.Post("/api/dispatch/time-off-requests/{id}/reject", dispatchHandler.RejectTimeOffRequest)
+		protected.Post("/api/dispatch/time-off-requests/{id}/hold", dispatchHandler.HoldTimeOffRequest)
+		protected.Post("/api/dispatch/time-off-requests/{id}/resume", dispatchHandler.ResumeTimeOffRequest)
 		protected.Post("/api/dispatch/time-off-requests/{id}/cancel", dispatchHandler.CancelTimeOffRequest)
 		protected.Post("/api/dispatch/time-off-requests/{id}/confirm-peer-cover", dispatchHandler.ConfirmTimeOffPeerCover)
 		protected.Post("/api/dispatch/time-off-requests/{id}/claim-slot", dispatchHandler.ClaimTimeOffCoverageSlot)
 		protected.Delete("/api/dispatch/time-off-requests/{id}", dispatchHandler.DeleteTimeOffRequest)
+		protected.Get("/api/dispatch/time-off/policy-settings", dispatchHandler.GetTimeOffPolicySettings)
+		protected.Put("/api/dispatch/time-off/policy-settings", dispatchHandler.SaveTimeOffPolicySettings)
 		protected.Get("/api/dispatch/time-off-workbench", dispatchHandler.GetTimeOffWorkbench)
 		protected.Post("/api/dispatch/office-concierge/chat", dispatchHandler.OfficeConciergeChat)
 		protected.Get("/api/dispatch/office-concierge/messages", dispatchHandler.GetOfficeConciergeMessages)
@@ -634,6 +638,7 @@ func main() {
 		// AI Dispatch Copilot routes
 		protected.Post("/api/ai/chat", aiHandler.ProcessChat)
 		protected.Get("/api/ai/status", aiHandler.GetStatus)
+		protected.Post("/api/ai/test", aiHandler.TestConnection)
 
 		// MCP Server & Personal Access Token routes (Authenticated & RBAC enforced on API server)
 		protected.Post("/api/auth/mcp-token", authHandler.IssueMCPToken)

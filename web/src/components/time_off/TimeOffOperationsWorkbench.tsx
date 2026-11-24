@@ -142,7 +142,10 @@ export const TimeOffOperationsWorkbench: React.FC<TimeOffOperationsWorkbenchProp
     });
   }, [activeClaims, stageFilter, isFrench]);
 
-  const handleInlineDecision = async (req: TimeOffRequest, decision: 'approved' | 'rejected') => {
+  const handleInlineDecision = async (
+    req: TimeOffRequest,
+    decision: 'approved' | 'rejected' | 'on_hold' | 'pending'
+  ) => {
     if (!canApproveTimeOff) return;
     setActingId(req.id);
     try {
@@ -154,12 +157,20 @@ export const TimeOffOperationsWorkbench: React.FC<TimeOffOperationsWorkbenchProp
         approvalNotes:
           decision === 'approved'
             ? 'Approved via 3-Day Time-Off Stage Tracker'
-            : 'Rejected via 3-Day Time-Off Stage Tracker',
+            : decision === 'rejected'
+              ? 'Rejected via 3-Day Time-Off Stage Tracker'
+              : decision === 'on_hold'
+                ? 'Placed on hold via 3-Day Time-Off Stage Tracker'
+                : 'Released from hold via 3-Day Time-Off Stage Tracker',
       };
       if (decision === 'approved') {
         await TimeOffService.approveTimeOffRequest(req.id, payload);
-      } else {
+      } else if (decision === 'rejected') {
         await TimeOffService.rejectTimeOffRequest(req.id, payload);
+      } else if (decision === 'on_hold') {
+        await TimeOffService.holdTimeOffRequest(req.id, payload);
+      } else {
+        await TimeOffService.resumeTimeOffRequest(req.id, payload);
       }
 
       await loadWorkbench(true);
@@ -456,6 +467,25 @@ export const TimeOffOperationsWorkbench: React.FC<TimeOffOperationsWorkbenchProp
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
                               {isFrench ? 'Approuver' : 'Approve'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={actingId === req.id}
+                              onClick={() =>
+                                void handleInlineDecision(
+                                  req,
+                                  req.status === 'on_hold' ? 'pending' : 'on_hold'
+                                )
+                              }
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600/80 hover:bg-amber-600 text-white text-xs font-semibold cursor-pointer disabled:opacity-50"
+                            >
+                              {req.status === 'on_hold'
+                                ? isFrench
+                                  ? 'Reprendre'
+                                  : 'Release Hold'
+                                : isFrench
+                                  ? 'En attente'
+                                  : 'Hold On'}
                             </button>
                             <button
                               type="button"

@@ -1368,6 +1368,7 @@ func (h *DispatchHandler) ListTimeOffRequests(w http.ResponseWriter, r *http.Req
 	}
 	status := r.URL.Query().Get("status")
 	date := r.URL.Query().Get("date")
+	includeArchive := r.URL.Query().Get("includeArchive") == "true" || r.URL.Query().Get("archive") == "true"
 
 	list, err := h.repo.ListTimeOffRequestsFiltered(r.Context(), repository.TimeOffFilter{
 		EmployeeID:     employeeID,
@@ -1375,7 +1376,7 @@ func (h *DispatchHandler) ListTimeOffRequests(w http.ResponseWriter, r *http.Req
 		Date:           date,
 		StartDate:      r.URL.Query().Get("startDate"),
 		EndDate:        r.URL.Query().Get("endDate"),
-		IncludeArchive: r.URL.Query().Get("includeArchive") == "true" || r.URL.Query().Get("archive") == "true",
+		IncludeArchive: includeArchive,
 		OnlyArchive:    r.URL.Query().Get("onlyArchive") == "true",
 		FullArchive:    r.URL.Query().Get("fullArchive") == "true",
 	})
@@ -1385,6 +1386,43 @@ func (h *DispatchHandler) ListTimeOffRequests(w http.ResponseWriter, r *http.Req
 	}
 	if list == nil {
 		list = make([]*models.TimeOffRequest, 0)
+	}
+
+	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("query")))
+	if searchQuery == "" {
+		searchQuery = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("search")))
+	}
+	if searchQuery != "" {
+		filtered := make([]*models.TimeOffRequest, 0, len(list))
+		for _, item := range list {
+			if item == nil {
+				continue
+			}
+			if strings.Contains(strings.ToLower(item.EmployeeName), searchQuery) ||
+				strings.Contains(strings.ToLower(item.EmployeeNumber), searchQuery) ||
+				strings.Contains(strings.ToLower(item.EmployeeID), searchQuery) ||
+				strings.Contains(strings.ToLower(item.RouteNo), searchQuery) ||
+				strings.Contains(strings.ToLower(string(item.LeaveType)), searchQuery) ||
+				strings.Contains(strings.ToLower(item.Comments), searchQuery) ||
+				strings.Contains(strings.ToLower(item.ApprovedByName), searchQuery) ||
+				strings.Contains(strings.ToLower(item.ApprovalNotes), searchQuery) {
+				filtered = append(filtered, item)
+			}
+		}
+		list = filtered
+	}
+
+	maxLimit := 0
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		if parsed, convErr := strconv.Atoi(rawLimit); convErr == nil && parsed > 0 {
+			maxLimit = parsed
+		}
+	}
+	if includeArchive && (maxLimit == 0 || maxLimit > 500) {
+		maxLimit = 500
+	}
+	if maxLimit > 0 && len(list) > maxLimit {
+		list = list[:maxLimit]
 	}
 
 	json.NewEncoder(w).Encode(list)

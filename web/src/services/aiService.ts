@@ -1,5 +1,5 @@
 import { apiRequest } from './api';
-import { AIChatRequest, AIChatResponse, AICopilotStatus, MCPTokenResponse } from '../types/ai';
+import { AIChatRequest, AIChatResponse, AICopilotStatus, AITestResult, MCPTokenResponse } from '../types/ai';
 
 export const aiService = {
   /**
@@ -32,6 +32,15 @@ export const aiService = {
         version: '1.0',
       };
     }
+  },
+
+  /**
+   * Run a live connectivity test against the active AI engine (Gemini, Ollama, or Built-in)
+   */
+  async testConnection(): Promise<AITestResult> {
+    return await apiRequest<AITestResult>('/api/ai/test', {
+      method: 'POST',
+    });
   },
 
   /**

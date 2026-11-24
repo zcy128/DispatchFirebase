@@ -420,11 +420,43 @@ func (s *OfficeConciergeService) ProcessOfficeConciergeChat(
 		return s.replyAndRecord(empID, "Fleet / HR", "idle", reply, nil, nil), nil
 	}
 
-	// STEP 0 -> 1: Initiate new leave draft
-	if sess == nil || strings.Contains(lowerMsg, "time off") || strings.Contains(lowerMsg, "take tomorrow off") || strings.Contains(lowerMsg, "day off") || strings.Contains(lowerMsg, "leave") || strings.Contains(lowerMsg, "congé") || strings.Contains(lowerMsg, "demain") {
-		startDate, endDate := extractLeaveDates(msg, now)
+	// STEP 0 -> 1: Initiate new leave draft (deterministic keywords + optional local Ollama NLP fallback)
+	hasLeaveKeyword := strings.Contains(lowerMsg, "time off") ||
+		strings.Contains(lowerMsg, "take tomorrow off") ||
+		strings.Contains(lowerMsg, "day off") ||
+		strings.Contains(lowerMsg, "leave") ||
+		strings.Contains(lowerMsg, "congé") ||
+		strings.Contains(lowerMsg, "demain")
+
+	var ollamaInfo *OllamaTimeOffExtraction
+	if !hasLeaveKeyword && sess == nil && IsOllamaConfigured() {
+		ext, extErr := ExtractTimeOffIntentWithOllama(ctx, msg)
+		if extErr != nil {
+			baseURL, _, _ := getOllamaConfig()
+			recordAIOperationError(s.dispatchRepo, "time_off_concierge", "ollama_timeoff_extract", baseURL+"/api/chat", empID, empName, extErr)
+		} else if ext != nil {
+			ollamaInfo = ext
+			if ext.Intent == "time_off" {
+				hasLeaveKeyword = true
+			}
+		}
+	}
+
+	if sess == nil || hasLeaveKeyword {
+		dateInput := msg
+		if ollamaInfo != nil && ollamaInfo.DateText != "" {
+			dateInput = ollamaInfo.DateText + " " + msg
+		}
+		startDate, endDate := extractLeaveDates(dateInput, now)
 		routeNo, yardID, yardName, slots := s.DetectEmployeeScheduledSlots(ctx, empID, startDate, endDate)
 		detectedLeaveType := detectLeaveTypeFromText(lowerMsg)
+		if detectedLeaveType == "" && ollamaInfo != nil && ollamaInfo.LeaveType != "" {
+			detectedLeaveType = models.LeaveType(ollamaInfo.LeaveType)
+		}
+		shiftPref := "ALL"
+		if ollamaInfo != nil && (ollamaInfo.ShiftType == "AM" || ollamaInfo.ShiftType == "PM" || ollamaInfo.ShiftType == "Midday") {
+			shiftPref = ollamaInfo.ShiftType
+		}
 
 		newSess := &LeaveDraftSession{
 			EmployeeID:   empID,
@@ -434,7 +466,7 @@ func (s *OfficeConciergeService) ProcessOfficeConciergeChat(
 			RouteNo:      routeNo,
 			StartDate:    startDate,
 			EndDate:      endDate,
-			ShiftType:    "ALL",
+			ShiftType:    shiftPref,
 			LeaveType:    detectedLeaveType,
 			Slots:        slots,
 			Step:         "confirm_schedule",
@@ -617,12 +649,44 @@ func (s *OfficeConciergeService) ProcessOfficeConciergeChat(
 	return s.replyAndRecord(empID, "HR", "idle", reply, nil, nil), nil
 }
 
+func (s *OfficeConciergeService) getPolicySettingsOrDefault(ctx context.Context) *models.TimeOffPolicySettings {
+	if s.dispatchRepo != nil {
+		if cfg, err := s.dispatchRepo.GetTimeOffPolicySettings(ctx); err == nil && cfg != nil {
+			if cfg.FarFutureManualOnlyDays <= 0 {
+				cfg.FarFutureManualOnlyDays = 90
+			}
+			if cfg.AutoCoverWindowDays <= 0 {
+				cfg.AutoCoverWindowDays = 14
+			}
+			return cfg
+		}
+	}
+	return models.DefaultTimeOffPolicySettings()
+}
+
+func daysUntilDate(now time.Time, dateStr string) int {
+	parsed, err := time.Parse("2006-01-02", strings.TrimSpace(dateStr))
+	if err != nil {
+		return 0
+	}
+	todayUTC := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	targetUTC := time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC)
+	return int(targetUTC.Sub(todayUTC).Hours() / 24)
+}
+
 func (s *OfficeConciergeService) finalizeDraftSubmission(
 	ctx context.Context,
 	sess *LeaveDraftSession,
 ) (*models.TimeOffRequest, string, *models.OfficeConciergeCard, error) {
 	slots := make([]models.TimeOffCoverageSlot, len(sess.Slots))
 	copy(slots, sess.Slots)
+
+	policyCfg := s.getPolicySettingsOrDefault(ctx)
+	daysAhead := daysUntilDate(time.Now().UTC(), sess.StartDate)
+	if daysAhead > policyCfg.FarFutureManualOnlyDays && sess.CoverageMode == "auto_broadcast" {
+		// Far-future leave (>90 days by default) does not enter auto-broadcast; requires HR manual approval
+		sess.CoverageMode = "manual_dispatch"
+	}
 
 	var initialStatus models.TimeOffStatus
 	switch sess.CoverageMode {
@@ -790,6 +854,12 @@ func (s *OfficeConciergeService) ConfirmPeerCover(
 	if err != nil || rec == nil {
 		return nil, fmt.Errorf("time-off request not found: %s", requestID)
 	}
+	if rec.Status == models.TimeOffStatusOnHold {
+		return nil, fmt.Errorf("time-off request %s is currently on hold and cannot accept substitute claims", requestID)
+	}
+	if rec.Status == models.TimeOffStatusOnHold {
+		return nil, fmt.Errorf("time-off request %s is currently on hold", requestID)
+	}
 
 	now := time.Now().UTC()
 	driverID := strings.TrimSpace(payload.DriverID)
@@ -948,6 +1018,12 @@ func (s *OfficeConciergeService) ClaimCoverageSlot(
 	if err != nil || rec == nil {
 		return nil, fmt.Errorf("time-off request not found: %s", requestID)
 	}
+	if rec.Status == models.TimeOffStatusOnHold {
+		return nil, fmt.Errorf("time-off request %s is currently on hold and cannot accept substitute claims", requestID)
+	}
+	if rec.Status == models.TimeOffStatusOnHold {
+		return nil, fmt.Errorf("time-off request %s is currently on hold", requestID)
+	}
 
 	slotIdx := -1
 	for i := range rec.CoverageSlots {
@@ -1021,14 +1097,25 @@ func (s *OfficeConciergeService) ClaimCoverageSlot(
 
 	allFilled := filledCount == len(rec.CoverageSlots) && len(rec.CoverageSlots) > 0
 	if allFilled {
-		deadline := ComputeTimeOffAutoApproveDeadline(now, rec.CoverageSlots)
-		rec.Status = models.TimeOffStatusPreApproved
-		rec.PreApprovedAt = &now
-		rec.AutoApproveDeadline = &deadline
+		policyCfg := s.getPolicySettingsOrDefault(ctx)
+		daysAhead := daysUntilDate(now, rec.StartDate)
 		rec.CoverageAssigned = true
 		rec.CoverageAssignedAt = now.Format(time.RFC3339)
 		rec.CoverageDriverId = drvID
 		rec.CoverageDriverName = strings.Join(driverNames, ", ")
+		if daysAhead <= policyCfg.AutoCoverWindowDays {
+			// Within configured pre-departure auto-cover window (e.g. 2 weeks): auto-approve immediately once substitute found
+			rec.Status = models.TimeOffStatusApproved
+			rec.AutoApproved = true
+			rec.ApprovedByName = "AI Office Auto-Approval (Cover Found)"
+			rec.ApprovedAt = &now
+			rec.ApprovalNotes = fmt.Sprintf("Automatically approved after substitute coverage was found within %d-day pre-leave window.", policyCfg.AutoCoverWindowDays)
+		} else {
+			deadline := ComputeTimeOffAutoApproveDeadline(now, rec.CoverageSlots)
+			rec.Status = models.TimeOffStatusPreApproved
+			rec.PreApprovedAt = &now
+			rec.AutoApproveDeadline = &deadline
+		}
 	}
 
 	saved, err := s.dispatchRepo.SaveTimeOffRequest(ctx, rec)
@@ -1254,7 +1341,131 @@ func (s *OfficeConciergeService) RunPreApprovedAutoFinalizationSweep(ctx context
 			Request:      rec,
 		})
 	}
-	return len(finalized), nil
+
+	autoCount, _ := s.runAutoCoverWindowSweep(ctx, now)
+	return len(finalized) + autoCount, nil
+}
+
+// runAutoCoverWindowSweep checks requests entering the configurable pre-departure window (default 14 days / 2 weeks):
+// - Skips any request in 'on_hold' status.
+// - Transitions uncovered 'pending' requests within the window into 'seeking_coverage' (auto-broadcast).
+// - Auto-approves 'seeking_coverage' requests within the window once substitute coverage is assigned/filled.
+func (s *OfficeConciergeService) runAutoCoverWindowSweep(ctx context.Context, now time.Time) (int, error) {
+	if s.dispatchRepo == nil {
+		return 0, nil
+	}
+	policyCfg := s.getPolicySettingsOrDefault(ctx)
+	allReqs, err := s.dispatchRepo.ListTimeOffRequestsFiltered(ctx, repository.TimeOffFilter{})
+	if err != nil {
+		return 0, err
+	}
+
+	updatedCount := 0
+	for _, rec := range allReqs {
+		if rec == nil {
+			continue
+		}
+		if rec.Status == models.TimeOffStatusOnHold ||
+			rec.Status == models.TimeOffStatusApproved ||
+			rec.Status == models.TimeOffStatusRejected ||
+			rec.Status == models.TimeOffStatusCancelled {
+			continue
+		}
+		daysAhead := daysUntilDate(now, rec.StartDate)
+		if daysAhead < 0 || daysAhead > policyCfg.AutoCoverWindowDays {
+			continue
+		}
+
+		// Case 1: Pending request entering 2-week pre-leave window -> automatically start substitute search
+		if rec.Status == models.TimeOffStatusPending && !rec.CoverageAssigned {
+			_, _, _, slots := s.DetectEmployeeScheduledSlots(ctx, rec.EmployeeID, rec.StartDate, rec.EndDate)
+			if len(slots) == 0 {
+				dates := expandDateRange(rec.StartDate, rec.EndDate)
+				for _, d := range dates {
+					for _, st := range []string{"AM", "PM"} {
+						slots = append(slots, models.TimeOffCoverageSlot{
+							SlotID:    fmt.Sprintf("%s_%s", d, st),
+							Date:      d,
+							ShiftType: st,
+							RouteNo:   firstNonEmpty(rec.RouteNo, "TBD"),
+							YardID:    rec.YardID,
+							YardName:  rec.YardName,
+							Status:    "open_broadcast",
+						})
+					}
+				}
+			}
+			for i := range slots {
+				slots[i].Status = "open_broadcast"
+				if slots[i].TemporaryAssignmentID == "" {
+					ta, taErr := s.dispatchRepo.CreateTemporaryAssignment(ctx, &models.CreateTemporaryAssignmentRequest{
+						RouteID:            slots[i].RouteID,
+						RouteNo:            slots[i].RouteNo,
+						ShiftType:          slots[i].ShiftType,
+						StartDate:          slots[i].Date,
+						EndDate:            slots[i].Date,
+						OriginalDriverID:   rec.EmployeeID,
+						OriginalDriverName: rec.EmployeeName,
+						Reason:             formatLeaveTypeLabel(rec.LeaveType),
+						Notes:              fmt.Sprintf("Auto-broadcasted (%d-day pre-leave window) for %s", policyCfg.AutoCoverWindowDays, rec.EmployeeName),
+						CreatedBy:          "AI Office Concierge",
+					})
+					if taErr == nil && ta != nil {
+						slots[i].TemporaryAssignmentID = ta.ID
+					}
+				}
+			}
+			rec.Status = models.TimeOffStatusSeekingCoverage
+			rec.CoverageMode = "auto_broadcast"
+			rec.CoverageSlots = slots
+			if saved, saveErr := s.dispatchRepo.SaveTimeOffRequest(ctx, rec); saveErr == nil && saved != nil {
+				updatedCount++
+				s.recordWorkbenchEvent(models.TimeOffWorkbenchEvent{
+					RequestID:    saved.ID,
+					EmployeeID:   saved.EmployeeID,
+					EmployeeName: saved.EmployeeName,
+					YardID:       saved.YardID,
+					YardName:     saved.YardName,
+					RouteNo:      saved.RouteNo,
+					EventType:    "auto_broadcast_window",
+					Title:        fmt.Sprintf("Auto-Broadcast Started (%d-Day Window): %s", policyCfg.AutoCoverWindowDays, saved.EmployeeName),
+					Summary:      fmt.Sprintf("Leave starts in %d day(s). System automatically opened %d shift slot(s) for substitute matching.", daysAhead, len(slots)),
+					Status:       saved.Status,
+					CanApprove:   true,
+					Request:      saved,
+				})
+			}
+			continue
+		}
+
+		// Case 2: Seeking coverage within window & substitute already assigned -> auto-approve
+		if rec.Status == models.TimeOffStatusSeekingCoverage && rec.CoverageAssigned {
+			rec.Status = models.TimeOffStatusApproved
+			rec.AutoApproved = true
+			rec.ApprovedByName = "AI Office Auto-Approval (Cover Found)"
+			t := now.UTC()
+			rec.ApprovedAt = &t
+			rec.ApprovalNotes = fmt.Sprintf("Automatically approved after substitute coverage was assigned within %d-day window.", policyCfg.AutoCoverWindowDays)
+			if saved, saveErr := s.dispatchRepo.SaveTimeOffRequest(ctx, rec); saveErr == nil && saved != nil {
+				updatedCount++
+				s.recordWorkbenchEvent(models.TimeOffWorkbenchEvent{
+					RequestID:    saved.ID,
+					EmployeeID:   saved.EmployeeID,
+					EmployeeName: saved.EmployeeName,
+					YardID:       saved.YardID,
+					YardName:     saved.YardName,
+					RouteNo:      saved.RouteNo,
+					EventType:    "auto_approved",
+					Title:        fmt.Sprintf("Auto-Approved (Cover Found): %s", saved.EmployeeName),
+					Summary:      fmt.Sprintf("Substitute %s confirmed within %d-day pre-leave window.", firstNonEmpty(saved.CoverageDriverName, "Assigned"), policyCfg.AutoCoverWindowDays),
+					Status:       saved.Status,
+					CanApprove:   false,
+					Request:      saved,
+				})
+			}
+		}
+	}
+	return updatedCount, nil
 }
 
 // GetEmployeeMessages returns the Office Concierge chat history for an employee.

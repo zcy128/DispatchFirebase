@@ -20,6 +20,7 @@ type TimeOffStatus string
 
 const (
 	TimeOffStatusPending             TimeOffStatus = "pending"
+	TimeOffStatusOnHold              TimeOffStatus = "on_hold"
 	TimeOffStatusAwaitingPeerConfirm TimeOffStatus = "awaiting_peer_confirm"
 	TimeOffStatusSeekingCoverage     TimeOffStatus = "seeking_coverage"
 	TimeOffStatusPreApproved         TimeOffStatus = "pre_approved"
@@ -27,6 +28,21 @@ const (
 	TimeOffStatusRejected            TimeOffStatus = "rejected"
 	TimeOffStatusCancelled           TimeOffStatus = "cancelled"
 )
+
+// TimeOffPolicySettings defines configurable automation windows for leave requests.
+type TimeOffPolicySettings struct {
+	FarFutureManualOnlyDays int       `json:"farFutureManualOnlyDays" firestore:"farFutureManualOnlyDays"` // Default 90 (~3 months)
+	AutoCoverWindowDays     int       `json:"autoCoverWindowDays" firestore:"autoCoverWindowDays"`         // Default 14 (2 weeks before startDate)
+	UpdatedBy               string    `json:"updatedBy,omitempty" firestore:"updatedBy,omitempty"`
+	UpdatedAt               time.Time `json:"updatedAt,omitempty" firestore:"updatedAt,omitempty"`
+}
+
+func DefaultTimeOffPolicySettings() *TimeOffPolicySettings {
+	return &TimeOffPolicySettings{
+		FarFutureManualOnlyDays: 90,
+		AutoCoverWindowDays:     14,
+	}
+}
 
 // TimeOffCoverageSlot tracks per-shift substitute coverage (supporting different drivers for AM vs PM).
 type TimeOffCoverageSlot struct {
@@ -72,6 +88,10 @@ type TimeOffRequest struct {
 	ApprovedByName        string                `json:"approvedByName,omitempty" firestore:"approvedByName,omitempty"`
 	ApprovedAt            *time.Time            `json:"approvedAt,omitempty" firestore:"approvedAt,omitempty"`
 	ApprovalNotes         string                `json:"approvalNotes,omitempty" firestore:"approvalNotes,omitempty"`
+	HoldByUserID          string                `json:"holdByUserId,omitempty" firestore:"holdByUserId,omitempty"`
+	HoldByName            string                `json:"holdByName,omitempty" firestore:"holdByName,omitempty"`
+	HoldAt                *time.Time            `json:"holdAt,omitempty" firestore:"holdAt,omitempty"`
+	HoldReason            string                `json:"holdReason,omitempty" firestore:"holdReason,omitempty"`
 	NotifiedChannels      []string              `json:"notifiedChannels,omitempty" firestore:"notifiedChannels,omitempty"`
 	NotifiedAt            *time.Time            `json:"notifiedAt,omitempty" firestore:"notifiedAt,omitempty"`
 	CoverageAssigned      bool                  `json:"coverageAssigned,omitempty" firestore:"coverageAssigned,omitempty"`

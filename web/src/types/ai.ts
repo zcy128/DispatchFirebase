@@ -49,6 +49,8 @@ export interface AICopilotStatus {
   status: string;
   engine: string;
   hasApiKey: boolean;
+  ollamaConfigured?: boolean;
+  ollamaModel?: string;
   name: string;
   supported: string[];
   version: string;
@@ -56,6 +58,17 @@ export interface AICopilotStatus {
   quotaLimit?: number;
   quotaRemaining?: number;
   quotaExhausted?: boolean;
+}
+
+export interface AITestResult {
+  ok: boolean;
+  engine: string;
+  model?: string;
+  latencyMs: number;
+  reply?: string;
+  error?: string;
+  geminiConfigured?: boolean;
+  ollamaConfigured?: boolean;
 }
 
 export interface MCPTokenResponse {

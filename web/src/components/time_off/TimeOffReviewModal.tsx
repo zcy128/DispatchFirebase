@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, XCircle, ShieldCheck, User, MessageSquare, AlertCircle, Bell, Mail } from 'lucide-react';
+import { X, CheckCircle2, XCircle, ShieldCheck, User, MessageSquare, AlertCircle, Bell, Mail, PauseCircle, PlayCircle } from 'lucide-react';
 import { TimeOffRequest, LEAVE_TYPE_LABELS, ReviewTimeOffRequestPayload, TimeOffNotificationSettings, DEFAULT_TIMEOFF_NOTIFICATION_SETTINGS } from '../../types/timeOff';
 import { Employee } from '../../types/employee';
 import { TimeOffService } from '../../services/timeOffService';
@@ -70,7 +70,7 @@ export const TimeOffReviewModal: React.FC<TimeOffReviewModalProps> = ({
     applicantEmployee?.homePhone ||
     '';
 
-  const handleDecision = async (decision: 'approve' | 'reject') => {
+  const handleDecision = async (decision: 'approve' | 'reject' | 'hold' | 'resume') => {
     setSaving(true);
     setError(null);
     try {
@@ -85,20 +85,34 @@ export const TimeOffReviewModal: React.FC<TimeOffReviewModalProps> = ({
         notifiedChannels: notifiedChannels.length > 0 ? notifiedChannels : undefined
       };
 
+      let nextStatus: 'approved' | 'rejected' | 'on_hold' | 'pending' = 'approved';
       if (decision === 'approve') {
         await TimeOffService.approveTimeOffRequest(request.id, payload);
-      } else {
+        nextStatus = 'approved';
+      } else if (decision === 'reject') {
         await TimeOffService.rejectTimeOffRequest(request.id, payload);
+        nextStatus = 'rejected';
+      } else if (decision === 'hold') {
+        await TimeOffService.holdTimeOffRequest(request.id, payload);
+        nextStatus = 'on_hold';
+      } else {
+        await TimeOffService.resumeTimeOffRequest(request.id, payload);
+        nextStatus = 'pending';
       }
 
       await OperationalSafetyLogService.logOperation({
         module: 'time_off',
-        action: decision === 'approve' ? 'approve' : 'reject',
+        action:
+          decision === 'approve'
+            ? 'approve'
+            : decision === 'reject'
+              ? 'reject'
+              : 'update',
         targetId: request.id,
         targetIdentifier: request.id,
         targetTitle: `${request.employeeName} (${request.leaveType || 'Leave'})`,
-        status: decision === 'approve' ? 'approved' : 'rejected',
-        summary: `${actorName} ${decision === 'approve' ? 'approved' : 'rejected'} time-off for ${request.employeeName} (${request.startDate} to ${request.endDate}). Type: ${request.leaveType || 'General'}.${approvalNotes.trim() ? ` Notes: "${approvalNotes.trim()}"` : ''}`,
+        status: nextStatus,
+        summary: `${actorName} ${decision} time-off for ${request.employeeName} (${request.startDate} to ${request.endDate}). Type: ${request.leaveType || 'General'}.${approvalNotes.trim() ? ` Notes: "${approvalNotes.trim()}"` : ''}`,
         actor: {
           userId: actorId,
           userName: actorName,
@@ -110,7 +124,7 @@ export const TimeOffReviewModal: React.FC<TimeOffReviewModalProps> = ({
             field: 'status',
             fieldLabel: 'Request Status',
             oldValue: request.status,
-            newValue: decision === 'approve' ? 'approved' : 'rejected',
+            newValue: nextStatus,
           },
           ...(approvalNotes.trim() ? [{
             field: 'approvalNotes',
@@ -289,7 +303,29 @@ export const TimeOffReviewModal: React.FC<TimeOffReviewModalProps> = ({
             >
               Cancel
             </button>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              {request.status === 'on_hold' ? (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => handleDecision('resume')}
+                  className="px-3.5 py-2 border border-sky-500/40 text-sky-300 hover:bg-sky-500/10 font-semibold text-sm rounded-lg flex items-center space-x-1.5 transition disabled:opacity-50 cursor-pointer"
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  <span>Release Hold</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => handleDecision('hold')}
+                  className="px-3.5 py-2 border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 font-semibold text-sm rounded-lg flex items-center space-x-1.5 transition disabled:opacity-50 cursor-pointer"
+                  title="Pause request: prevents automatic substitute finding and auto-approval"
+                >
+                  <PauseCircle className="w-4 h-4" />
+                  <span>Hold On</span>
+                </button>
+              )}
               <button
                 type="button"
                 disabled={saving}
@@ -303,7 +339,7 @@ export const TimeOffReviewModal: React.FC<TimeOffReviewModalProps> = ({
                   }
                   handleDecision('reject');
                 }}
-                className="px-4 py-2 border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 font-semibold text-sm rounded-lg flex items-center space-x-1.5 transition disabled:opacity-50"
+                className="px-4 py-2 border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 font-semibold text-sm rounded-lg flex items-center space-x-1.5 transition disabled:opacity-50 cursor-pointer"
               >
                 <XCircle className="w-4 h-4" />
                 <span>Reject</span>
@@ -312,7 +348,7 @@ export const TimeOffReviewModal: React.FC<TimeOffReviewModalProps> = ({
                 type="button"
                 disabled={saving}
                 onClick={() => handleDecision('approve')}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm rounded-lg flex items-center space-x-1.5 transition shadow-lg shadow-emerald-600/20 disabled:opacity-50"
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm rounded-lg flex items-center space-x-1.5 transition shadow-lg shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>{saving ? 'Processing...' : 'Approve Request'}</span>

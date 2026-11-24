@@ -40,24 +40,31 @@ A modern, full-stack open-source fleet dispatch, scheduling, and live tracking p
 ```mermaid
 flowchart TD
   Start(["Driver Submits Leave\n(Office Chat or Form)"]) --> Check["AI Detects Route & AM/PM Shifts\n+ Form Preview Confirmed"]
-  Check --> Branch{"Substitute & Duration?"}
+  Check --> Branch{"Substitute, Duration & Lead Time?"}
 
   Branch -- "Named Substitute\n(Conflict & CDL Checked)" --> PeerWait["awaiting_peer_confirm\n(Option B Peer Card Sent)"]
   PeerWait -- "Peer Taps Accept Cover\n(Pre-locks TemporaryAssignment)" --> PreApproved["pre_approved\nDeadline: min(now+24h, departure-2h)"]
   PeerWait -- "Peer Taps Decline (<= 2 Days)" --> Seeking
   PeerWait -- "Peer Taps Decline (> 2 Days)" --> ManualPending
 
-  Branch -- "No Substitute & <= 2 Days" --> Seeking["seeking_coverage\n(Auto-Split AM / PM Slots)"]
+  Branch -- "No Substitute & <= 2 Days\n& <= Far-Future Threshold (90d)" --> Seeking["seeking_coverage\n(Auto-Split AM / PM Slots)"]
   Seeking -- "0 Slots Filled" --> Unclaimed["Stage 2 Alert:\nBroadcasted · No Applicants"]
   Unclaimed --> ClaimSlot["Driver Claims Slot\n(Conflict & CDL Verified)"]
   Seeking --> ClaimSlot
   ClaimSlot -- "Partial Slots Filled (1/2)" --> Seeking
-  ClaimSlot -- "All AM/PM Slots Filled (2/2)" --> PreApproved
+  ClaimSlot -- "All Slots Filled (> Auto-Cover Window)" --> PreApproved
+  ClaimSlot -- "All Slots Filled (<= 14d Auto-Cover Window)" --> Approved
 
-  Branch -- "No Substitute & > 2 Days\nor Manual Review" --> ManualPending["pending\n(Manual HR / Dispatch Review)"]
+  Branch -- "> Far-Future Threshold (Default 90d / 3 mos)\nor > 2 Days Manual Review" --> ManualPending["pending\n(Requires HR Manual Approval)"]
+  ManualPending -- "Enters Auto-Cover Window\n(Default <= 14d / 2 wks Prior)" --> Seeking
   ManualPending -- "Dispatcher Publishes Opening\nor Assigns Spare Driver" --> Assigned["Substitute Assigned\n(Ready for HR Decision)"]
 
-  PreApproved -- "No Intervention Before SLA\n(Auto-Finalize Sweep)" --> Approved["approved\n(Final Approved · 24h Auto-SLA)"]
+  ManualPending -- "Approver Clicks Hold On" --> OnHold["on_hold (Paused)\nBlocks Auto-Cover & Auto-Approval"]
+  Seeking -- "Approver Clicks Hold On" --> OnHold
+  PreApproved -- "Approver Clicks Hold On" --> OnHold
+  OnHold -- "Approver Clicks Release Hold" --> ManualPending
+
+  PreApproved -- "No Intervention Before SLA\n(Auto-Finalize Sweep)" --> Approved["approved\n(Final Approved)"]
   PreApproved -- "Approver Clicks Approve\nin Approver AI Agent" --> Approved
   PreApproved -- "Approver Clicks Reject" --> Rejected["rejected"]
   Assigned -- "HR Approves" --> Approved
@@ -66,6 +73,40 @@ flowchart TD
 
   Approved --> Trajectory["Appends [Work Trajectory] Audit Bubble\nin Web Agent & Notifies Driver Chat"]
   Rejected --> Trajectory
+```
+
+</details>
+
+### 💳 Animated Expense Reimbursement & Policy Engine Demo (3 Scenarios)
+*Live Driver App ↔ Web Expense & Policies Desk walkthrough covering: (1) Auto Pre-Approval with Configurable SLA, (2) Manual Review & Cap/Proof Gate, and (3) AI Policy Assistant (`Policies & Limits`). Also available interactively inside the Web app via **Expense Reimbursements → Workflow Demo**.*
+
+<p align="center">
+  <img src="docs/media/expense-workflow-demo.gif" alt="Expense Reimbursement & Policy Engine Animated Workflow Demo (3 Scenarios)" width="100%" />
+</p>
+
+<details>
+<summary><strong>📊 Expense Reimbursement Lifecycle & Policy Engine (Mermaid Flowchart)</strong></summary>
+
+```mermaid
+flowchart TD
+  Start(["Driver Submits Expense\n(Single Category + 1+ Receipts)"]) --> SingleCheck{"Single Category\n& Valid Amount?"}
+  SingleCheck -- "Mixed Categories" --> RejectSubmit["400 Rejected\n(Enforce Single Category per Claim)"]
+  SingleCheck -- "Valid" --> Eval["ExpensePolicyEvaluator\n(Shared Bi-Weekly Anchor, Monthly/Yearly Caps,\nReceipt & Completion-Proof Check)"]
+
+  Eval --> AutoCheck{"autoPreApprove == true\n& Within Caps\n& Receipt Attached\n& No Proof Required?"}
+
+  AutoCheck -- "Yes (e.g. Bus Washing, Washer Fluid)" --> PreApp["pre_approved\n(Isolated from Finance / Payroll)\nDeadline: now + Configurable SLA Days"]
+  AutoCheck -- "No (e.g. Road Test / Over Cap)" --> Pending["pending\n(Default Tab: Pending Review\n+ Deterministic Warning Badges)"]
+
+  PreApp -- "SLA Days Elapsed\n(No Hold / Intervention)" --> Approved["approved\n(Released to Bi-Weekly Payroll\n& QuickBooks Tax-Free Export)"]
+  PreApp -- "Reviewer Clicks Approve" --> Approved
+  PreApp -- "Reviewer Clicks Reject" --> Rejected["rejected"]
+
+  Pending -- "HR / Fleet RBAC Review\n+ AI Pre-Check + Override Notes" --> Decision{"Reviewer Decision?"}
+  Decision -- "Approve" --> Approved
+  Decision -- "Reject" --> Rejected
+
+  Policy["Policies & Limits + AI Copilot\n(Tune SLA Days or Update Caps via Confirmation Card)"] -. "Immutable Audit:\nexpense_policy_audit_logs" .-> Eval
 ```
 
 </details>
@@ -431,6 +472,8 @@ flutter build web --dart-define=API_BASE_URL=https://your-api-domain.com
   - Instructions for configuring Firestore Time-to-Live (TTL) in Google Cloud Console.
   - Setting up the single unified Cloud Scheduler job (`/api/admin/archive/sync-all`) to archive shifts, logs, and time-off requests to BigQuery with minimal cloud cost.
   - Transparent dual-engine query fallback between Firestore hot storage and BigQuery cold storage.
+- 🤖 **[Local AI Model Setup Guide (Ollama + Qwen 3.5 2B)](docs/local-ai-ollama-setup-guide.md#english)** ([Français](docs/local-ai-ollama-setup-guide.md#français) | [简体中文](docs/local-ai-ollama-setup-guide.md#简体中文)):
+  - Step-by-step installation on Linux / Oracle Cloud Always Free ARM VMs (`zstd`, Ollama, `qwen3.5:2b` with `think: false`), SSH tunnel forwarding for local dev, and one-click verification from **System Settings → Test AI Connection**.
 - 📄 **[Fleet Operations Manual (PDF)](docs/operations-manual-en.pdf)** ([Word](docs/operations-manual-en.docx) | [Français PDF](docs/operations-manual-fr.pdf) | [中文 PDF](docs/operations-manual-zh.pdf)): Complete day-to-day operations guide for dispatchers, safety managers, and fleet supervisors.
 
 ---

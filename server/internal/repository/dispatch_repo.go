@@ -192,8 +192,12 @@ type DispatchRepository interface {
 	UpdateTimeOffRequest(ctx context.Context, id string, req *models.UpdateTimeOffRequestPayload) (*models.TimeOffRequest, error)
 	ApproveTimeOffRequest(ctx context.Context, id string, req *models.ReviewTimeOffRequestPayload) (*models.TimeOffRequest, error)
 	RejectTimeOffRequest(ctx context.Context, id string, req *models.ReviewTimeOffRequestPayload) (*models.TimeOffRequest, error)
+	HoldTimeOffRequest(ctx context.Context, id string, req *models.ReviewTimeOffRequestPayload) (*models.TimeOffRequest, error)
+	ResumeTimeOffRequest(ctx context.Context, id string, req *models.ReviewTimeOffRequestPayload) (*models.TimeOffRequest, error)
 	CancelTimeOffRequest(ctx context.Context, id string, userID string) (*models.TimeOffRequest, error)
 	DeleteTimeOffRequest(ctx context.Context, id string) error
+	GetTimeOffPolicySettings(ctx context.Context) (*models.TimeOffPolicySettings, error)
+	SaveTimeOffPolicySettings(ctx context.Context, settings *models.TimeOffPolicySettings) (*models.TimeOffPolicySettings, error)
 
 	// Training Courses & Types
 	ListTrainingCourses(ctx context.Context, status string, trainingType string, date string) ([]*models.TrainingCourse, error)
@@ -6306,6 +6310,7 @@ type MemoryDispatchRepository struct {
 	expensePolicyAuditLogs  []*models.ExpensePolicyAuditLog
 	biweeklyPayrollConfig   *models.BiweeklyPayrollConfig
 	expensePolicySettings   *models.ExpensePolicySettings
+	timeOffPolicySettings   *models.TimeOffPolicySettings
 	hazardReports           map[string]*models.HazardReport
 	routeAssessments        map[string]*models.RouteAssessment
 	vehicleSignouts         map[string]*models.VehicleSignout

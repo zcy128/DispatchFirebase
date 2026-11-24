@@ -69,9 +69,13 @@ func (h *AIHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	hasKey := os.Getenv("GEMINI_API_KEY") != ""
+	ollamaReady := services.IsOllamaConfigured()
+	_, ollamaModel, _ := services.GetOllamaConfig()
 	engine := "builtin"
 	if hasKey {
 		engine = "gemini"
+	} else if ollamaReady {
+		engine = "ollama"
 	}
 
 	userKey := "anonymous"
@@ -87,15 +91,38 @@ func (h *AIHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":         "online",
-		"engine":         engine,
-		"hasApiKey":      hasKey,
-		"name":           "Dispatch AI Copilot",
-		"version":        "1.0",
-		"supported":      []string{"unassigned_shifts", "assign_driver", "driver_schedule", "fleet_summary"},
-		"quotaUsed":      used,
-		"quotaLimit":     limit,
-		"quotaRemaining": remaining,
-		"quotaExhausted": exhausted,
+		"status":           "online",
+		"engine":           engine,
+		"hasApiKey":        hasKey,
+		"ollamaConfigured": ollamaReady,
+		"ollamaModel":      ollamaModel,
+		"name":             "Dispatch AI Copilot",
+		"version":          "1.0",
+		"supported":        []string{"unassigned_shifts", "assign_driver", "driver_schedule", "fleet_summary"},
+		"quotaUsed":        used,
+		"quotaLimit":       limit,
+		"quotaRemaining":   remaining,
+		"quotaExhausted":   exhausted,
 	})
+}
+
+// TestConnection performs a live connectivity check against the configured AI engine.
+func (h *AIHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if h.aiService == nil {
+		http.Error(w, `{"error":"ai service unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	userID, userName := "", ""
+	if user := auth.GetUser(r.Context()); user != nil {
+		userID = user.UID
+		if user.EmployeeID != "" {
+			userID = user.EmployeeID
+		}
+		userName = user.Email
+	}
+
+	result := h.aiService.TestConnection(r.Context(), userID, userName)
+	json.NewEncoder(w).Encode(result)
 }

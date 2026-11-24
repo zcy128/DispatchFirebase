@@ -19,6 +19,8 @@ import {
   ReviewTimeOffRequestPayload,
   TimeOffNotificationSettings,
   DEFAULT_TIMEOFF_NOTIFICATION_SETTINGS,
+  TimeOffPolicySettings,
+  DEFAULT_TIMEOFF_POLICY_SETTINGS,
   OfficeConciergeChatRequest,
   OfficeConciergeChatResponse,
   OfficeConciergeMessage,
@@ -387,5 +389,111 @@ export const TimeOffService = {
 
   getTimeOffWorkbench: async (): Promise<TimeOffWorkbenchResponse> => {
     return apiRequest<TimeOffWorkbenchResponse>('/api/dispatch/time-off-workbench');
+  },
+
+  holdTimeOffRequest: async (
+    id: string,
+    payload: ReviewTimeOffRequestPayload
+  ): Promise<TimeOffRequest> => {
+    try {
+      return await apiRequest<TimeOffRequest>(`/api/dispatch/time-off-requests/${encodeURIComponent(id)}/hold`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
+      if (db) {
+        const docRef = doc(db, 'time_off_requests', id);
+        const nowStr = new Date().toISOString();
+        await setDoc(
+          docRef,
+          {
+            status: 'on_hold',
+            holdByUserId: payload.reviewerUserId,
+            holdByName: payload.reviewerName,
+            holdAt: nowStr,
+            holdReason: payload.approvalNotes || '',
+            autoApproveDeadline: null,
+            preApprovedAt: null,
+            updatedAt: nowStr,
+          },
+          { merge: true }
+        );
+        const snap = await getDoc(docRef);
+        return normalizeTimeOffRecord(snap.data(), docRef.id);
+      }
+      throw err;
+    }
+  },
+
+  resumeTimeOffRequest: async (
+    id: string,
+    payload: ReviewTimeOffRequestPayload
+  ): Promise<TimeOffRequest> => {
+    try {
+      return await apiRequest<TimeOffRequest>(`/api/dispatch/time-off-requests/${encodeURIComponent(id)}/resume`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      if (isClientHttpError(err)) throw err;
+      if (db) {
+        const docRef = doc(db, 'time_off_requests', id);
+        const nowStr = new Date().toISOString();
+        await setDoc(
+          docRef,
+          {
+            status: 'pending',
+            holdByUserId: '',
+            holdByName: '',
+            holdAt: null,
+            holdReason: '',
+            updatedAt: nowStr,
+          },
+          { merge: true }
+        );
+        const snap = await getDoc(docRef);
+        return normalizeTimeOffRecord(snap.data(), docRef.id);
+      }
+      throw err;
+    }
+  },
+
+  getTimeOffPolicySettings: async (): Promise<TimeOffPolicySettings> => {
+    try {
+      return await apiRequest<TimeOffPolicySettings>('/api/dispatch/time-off/policy-settings');
+    } catch {
+      if (db) {
+        try {
+          const snap = await getDoc(doc(db, 'system_settings', 'time_off_policy_settings'));
+          if (snap.exists()) {
+            return {
+              ...DEFAULT_TIMEOFF_POLICY_SETTINGS,
+              ...snap.data(),
+            } as TimeOffPolicySettings;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return DEFAULT_TIMEOFF_POLICY_SETTINGS;
+    }
+  },
+
+  saveTimeOffPolicySettings: async (
+    settings: TimeOffPolicySettings
+  ): Promise<TimeOffPolicySettings> => {
+    try {
+      return await apiRequest<TimeOffPolicySettings>('/api/dispatch/time-off/policy-settings', {
+        method: 'PUT',
+        body: JSON.stringify(settings),
+      });
+    } catch (err) {
+      if (db) {
+        await setDoc(doc(db, 'system_settings', 'time_off_policy_settings'), settings, { merge: true });
+        return settings;
+      }
+      throw err;
+    }
   },
 };

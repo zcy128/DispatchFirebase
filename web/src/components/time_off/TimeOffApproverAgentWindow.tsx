@@ -31,6 +31,7 @@ const AGENT_WINDOW_DOCK_STORAGE_KEY = 'time_off_approver_agent_dock_v1';
 export interface OpenApproverAgentDetail {
   query?: string;
   focusRequestId?: string;
+  toggle?: boolean;
 }
 
 export function openTimeOffApproverAgent(detail?: OpenApproverAgentDetail): void {
@@ -91,6 +92,18 @@ export function getRequestStageDiagnosis(
       diagnosisText: isFrench
         ? `Refusé${req.approvedByName ? ' par ' + req.approvedByName : ''}.`
         : `Rejected${req.approvedByName ? ' by ' + req.approvedByName : ''}.`,
+      isUnclaimedBroadcast: false,
+    };
+  }
+
+  if (req.status === 'on_hold') {
+    return {
+      stageOrder: 1,
+      stageBadge: isFrench ? 'En attente (Hold On)' : 'On Hold (Paused)',
+      stageColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      diagnosisText: isFrench
+        ? `Mis en pause${req.holdByName ? ' par ' + req.holdByName : ''}. Aucune recherche auto de remplaçant ni approbation automatique.`
+        : `Placed on hold${req.holdByName ? ' by ' + req.holdByName : ''}. Paused from auto-cover matching and auto-approval.`,
       isUnclaimedBroadcast: false,
     };
   }
@@ -350,6 +363,20 @@ export const TimeOffApproverAgentWindow: React.FC<TimeOffApproverAgentWindowProp
       manualPending,
     };
   }, [activeClaims, isFrench]);
+
+  // Sync live badge counts with the Sidebar Approver AI Agent button
+  useEffect(() => {
+    if (!canApproveTimeOff || typeof window === 'undefined') return;
+    window.dispatchEvent(
+      new CustomEvent('approver-agent-badge-update', {
+        detail: {
+          activeCount: stageStats.totalActive,
+          unreadCount,
+          isOpen,
+        },
+      })
+    );
+  }, [canApproveTimeOff, stageStats.totalActive, unreadCount, isOpen]);
 
   // Update only the top briefing message in-place without wiping conversation & approval audit history
   useEffect(() => {
@@ -649,15 +676,22 @@ export const TimeOffApproverAgentWindow: React.FC<TimeOffApproverAgentWindowProp
     [activeClaims, isFrench, managerInput]
   );
 
-  // Listen for external triggers to open the Approver AI Agent window
+  // Listen for external triggers to open or toggle the Approver AI Agent window
   useEffect(() => {
     if (!canApproveTimeOff) return;
     const handler = (ev: Event) => {
       const customEv = ev as CustomEvent<OpenApproverAgentDetail>;
-      setIsOpen(true);
+      const hasFocusTarget = Boolean(
+        customEv.detail?.query || customEv.detail?.focusRequestId
+      );
+      if (customEv.detail?.toggle || !hasFocusTarget) {
+        setIsOpen((prev) => !prev);
+      } else {
+        setIsOpen(true);
+      }
       setUnreadCount(0);
       setLatestToastText(null);
-      if (customEv.detail?.query || customEv.detail?.focusRequestId) {
+      if (hasFocusTarget) {
         handleManagerQuery(customEv.detail.query, customEv.detail.focusRequestId);
       }
     };
@@ -672,7 +706,10 @@ export const TimeOffApproverAgentWindow: React.FC<TimeOffApproverAgentWindowProp
     }
   }, [managerMessages.length, isOpen]);
 
-  const handleInlineDecision = async (req: TimeOffRequest, decision: 'approved' | 'rejected') => {
+  const handleInlineDecision = async (
+    req: TimeOffRequest,
+    decision: 'approved' | 'rejected' | 'on_hold' | 'pending'
+  ) => {
     if (!canApproveTimeOff) return;
     setActingId(req.id);
     try {
@@ -684,13 +721,21 @@ export const TimeOffApproverAgentWindow: React.FC<TimeOffApproverAgentWindowProp
         approvalNotes:
           decision === 'approved'
             ? 'Approved via Time-Off Approver AI Agent'
-            : 'Rejected via Time-Off Approver AI Agent',
+            : decision === 'rejected'
+              ? 'Rejected via Time-Off Approver AI Agent'
+              : decision === 'on_hold'
+                ? 'Placed on hold via Time-Off Approver AI Agent'
+                : 'Released from hold via Time-Off Approver AI Agent',
       };
       let updatedReq: TimeOffRequest;
       if (decision === 'approved') {
         updatedReq = await TimeOffService.approveTimeOffRequest(req.id, payload);
-      } else {
+      } else if (decision === 'rejected') {
         updatedReq = await TimeOffService.rejectTimeOffRequest(req.id, payload);
+      } else if (decision === 'on_hold') {
+        updatedReq = await TimeOffService.holdTimeOffRequest(req.id, payload);
+      } else {
+        updatedReq = await TimeOffService.resumeTimeOffRequest(req.id, payload);
       }
 
       const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -702,9 +747,17 @@ export const TimeOffApproverAgentWindow: React.FC<TimeOffApproverAgentWindowProp
           ? isFrench
             ? `✅ **[Traçabilité · ${nowTime}]** **${reviewerName}** a approuvé la demande de congé de **${req.employeeName}** (\`${req.id}\` · ${leaveLabel} · ${dateSpan}${req.routeNo ? ' · Circuit ' + req.routeNo : ''}).`
             : `✅ **[Work Trajectory · ${nowTime}]** **${reviewerName}** approved **${req.employeeName}**'s time-off request (\`${req.id}\` · ${leaveLabel} · ${dateSpan}${req.routeNo ? ' · Route ' + req.routeNo : ''}).`
-          : isFrench
-            ? `❌ **[Traçabilité · ${nowTime}]** **${reviewerName}** a refusé la demande de congé de **${req.employeeName}** (\`${req.id}\` · ${leaveLabel} · ${dateSpan}).`
-            : `❌ **[Work Trajectory · ${nowTime}]** **${reviewerName}** rejected **${req.employeeName}**'s time-off request (\`${req.id}\` · ${leaveLabel} · ${dateSpan}).`;
+          : decision === 'rejected'
+            ? isFrench
+              ? `❌ **[Traçabilité · ${nowTime}]** **${reviewerName}** a refusé la demande de congé de **${req.employeeName}** (\`${req.id}\` · ${leaveLabel} · ${dateSpan}).`
+              : `❌ **[Work Trajectory · ${nowTime}]** **${reviewerName}** rejected **${req.employeeName}**'s time-off request (\`${req.id}\` · ${leaveLabel} · ${dateSpan}).`
+            : decision === 'on_hold'
+              ? isFrench
+                ? `⏸️ **[Traçabilité · ${nowTime}]** **${reviewerName}** a mis en attente (Hold On) la demande de **${req.employeeName}** (\`${req.id}\`).`
+                : `⏸️ **[Work Trajectory · ${nowTime}]** **${reviewerName}** placed **${req.employeeName}**'s request (\`${req.id}\`) **On Hold** (auto-cover & auto-approval paused).`
+              : isFrench
+                ? `▶️ **[Traçabilité · ${nowTime}]** **${reviewerName}** a levé la suspension de la demande de **${req.employeeName}** (\`${req.id}\`).`
+                : `▶️ **[Work Trajectory · ${nowTime}]** **${reviewerName}** released **${req.employeeName}**'s request (\`${req.id}\`) from Hold.`;
 
       // Update any existing cards in chat messages in-place AND append the new audit trail entry
       setManagerMessages((prev) => {
@@ -752,61 +805,33 @@ export const TimeOffApproverAgentWindow: React.FC<TimeOffApproverAgentWindowProp
       : 'right-4 sm:right-6';
 
   if (!isOpen) {
+    if (!latestToastText) return null;
     return (
       <div className={`fixed bottom-5 ${positionClass} z-40 flex flex-col items-start gap-2`}>
-        {latestToastText && (
-          <div className="max-w-xs sm:max-w-sm p-3 rounded-xl bg-slate-900/95 border border-teal-500/50 shadow-2xl text-xs text-slate-100 flex items-start gap-2.5 backdrop-blur-md">
-            <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
-            <div className="flex-1 space-y-1.5">
-              <div className="font-bold text-teal-300 text-[11px]">
-                {isFrench ? 'Nouvel événement Congés / Remplacement' : 'New Time-Off / Cover Event'}
-              </div>
-              <div className="text-slate-200 line-clamp-2">{latestToastText}</div>
-              <button
-                type="button"
-                onClick={() => setIsOpen(true)}
-                className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-300 hover:text-teal-200 cursor-pointer"
-              >
-                {isFrench ? 'Ouvrir l’Agent Approbateur →' : 'Open Approver AI Agent →'}
-              </button>
+        <div className="max-w-xs sm:max-w-sm p-3 rounded-xl bg-slate-900/95 border border-teal-500/50 shadow-2xl text-xs text-slate-100 flex items-start gap-2.5 backdrop-blur-md">
+          <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="flex-1 space-y-1.5">
+            <div className="font-bold text-teal-300 text-[11px]">
+              {isFrench ? 'Nouvel événement Congés / Remplacement' : 'New Time-Off / Cover Event'}
             </div>
+            <div className="text-slate-200 line-clamp-2">{latestToastText}</div>
             <button
               type="button"
-              onClick={() => setLatestToastText(null)}
-              className="text-slate-400 hover:text-white p-0.5 cursor-pointer"
-              aria-label="Dismiss notification"
+              onClick={() => setIsOpen(true)}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-300 hover:text-teal-200 cursor-pointer"
             >
-              <X className="w-3.5 h-3.5" />
+              {isFrench ? 'Ouvrir l’Agent Approbateur →' : 'Open Approver AI Agent →'}
             </button>
           </div>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setIsOpen(true)}
-          className="group relative inline-flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-slate-900/95 hover:bg-slate-800 border border-teal-500/50 shadow-2xl text-white transition-all cursor-pointer backdrop-blur-md"
-        >
-          <span className="w-8 h-8 rounded-xl bg-teal-600/20 border border-teal-500/40 flex items-center justify-center text-teal-300">
-            <Bot className="w-4 h-4" aria-hidden="true" />
-          </span>
-          <div className="text-left">
-            <div className="text-xs font-bold flex items-center gap-1.5">
-              <span>{isFrench ? 'Agent IA Approbateur' : 'Approver AI Agent'}</span>
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            </div>
-            <div className="text-[10px] text-slate-300">
-              {isFrench
-                ? `${stageStats.totalActive} demande(s) active(s) · 3j`
-                : `${stageStats.totalActive} active request(s) · 3d`}
-            </div>
-          </div>
-
-          {(unreadCount > 0 || stageStats.unclaimedBroadcast > 0 || stageStats.preApproved > 0) && (
-            <span className="ml-1 px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold shadow-xs">
-              {unreadCount > 0 ? `+${unreadCount}` : stageStats.totalActive}
-            </span>
-          )}
-        </button>
+          <button
+            type="button"
+            onClick={() => setLatestToastText(null)}
+            className="text-slate-400 hover:text-white p-0.5 cursor-pointer"
+            aria-label="Dismiss notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     );
   }
@@ -1065,6 +1090,25 @@ export const TimeOffApproverAgentWindow: React.FC<TimeOffApproverAgentWindowProp
                                 >
                                   <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
                                   {isFrench ? 'Approuver' : 'Approve'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void handleInlineDecision(
+                                      r,
+                                      r.status === 'on_hold' ? 'pending' : 'on_hold'
+                                    )
+                                  }
+                                  disabled={actingId === r.id}
+                                  className="px-2.5 py-1 rounded-lg bg-amber-600/80 hover:bg-amber-600 text-white font-semibold text-[10px] cursor-pointer disabled:opacity-50"
+                                >
+                                  {r.status === 'on_hold'
+                                    ? isFrench
+                                      ? 'Reprendre'
+                                      : 'Release Hold'
+                                    : isFrench
+                                      ? 'En attente'
+                                      : 'Hold On'}
                                 </button>
                                 <button
                                   type="button"

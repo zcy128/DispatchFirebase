@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"dispatch-server/internal/models"
+	"dispatch-server/internal/repository"
 )
 
 const (
@@ -572,6 +573,15 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 		return resp, nil
 	}
 
+	var dispatchRepo repository.DispatchRepository
+	if s.toolService != nil {
+		dispatchRepo = s.toolService.dispatchRepo
+	}
+	errorPage := strings.TrimSpace(req.ActivePage)
+	if errorPage == "" {
+		errorPage = "ai_copilot"
+	}
+
 	// 3. For unmatched/complex conversational prompts, invoke Gemini LLM if GEMINI_API_KEY is configured and user is authenticated
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 	if geminiKey != "" && strings.TrimSpace(req.OperatorID) != "" {
@@ -585,6 +595,9 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 				geminiResp.QuotaRemaining = rem
 				geminiResp.QuotaExhausted = rem <= 0
 				return geminiResp, nil
+			}
+			if gemErr != nil {
+				recordAIOperationError(dispatchRepo, errorPage, "gemini_chat", "https://generativelanguage.googleapis.com", req.OperatorID, req.OperatorName, gemErr)
 			}
 		} else {
 			resp.QuotaUsed = used
@@ -604,12 +617,105 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 	}
 
 	used, limit, rem, exh := s.GetQuotaStatus(userQuotaKey)
+	if IsOllamaConfigured() {
+		ollamaReply, olErr := ChatWithOllama(ctx, req.ActivePage, req.Message, lang)
+		if olErr == nil && ollamaReply != "" {
+			return &models.AIChatResponse{
+				Reply:          ollamaReply,
+				Engine:         "ollama",
+				QuotaUsed:      used,
+				QuotaLimit:     limit,
+				QuotaRemaining: rem,
+				QuotaExhausted: exh,
+			}, nil
+		}
+		if olErr != nil {
+			baseURL, _, _ := getOllamaConfig()
+			recordAIOperationError(dispatchRepo, errorPage, "ollama_chat", baseURL+"/api/chat", req.OperatorID, req.OperatorName, olErr)
+		}
+	}
+
 	resp.Engine = "builtin"
 	resp.QuotaUsed = used
 	resp.QuotaLimit = limit
 	resp.QuotaRemaining = rem
 	resp.QuotaExhausted = exh
 	return resp, nil
+}
+
+// AIConnectionTestResult describes the result of an on-demand AI connectivity test from System Settings.
+type AIConnectionTestResult struct {
+	OK               bool   `json:"ok"`
+	Engine           string `json:"engine"`
+	Model            string `json:"model,omitempty"`
+	LatencyMs        int64  `json:"latencyMs"`
+	Reply            string `json:"reply,omitempty"`
+	Error            string `json:"error,omitempty"`
+	GeminiConfigured bool   `json:"geminiConfigured"`
+	OllamaConfigured bool   `json:"ollamaConfigured"`
+}
+
+// TestConnection performs a live connectivity check against the configured external AI provider (Gemini or Ollama),
+// or reports builtin-engine readiness when no external LLM is configured. Failures are recorded in system error_logs.
+func (s *AIService) TestConnection(ctx context.Context, userID, userName string) *AIConnectionTestResult {
+	start := time.Now()
+	geminiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
+	ollamaReady := IsOllamaConfigured()
+	ollamaBase, ollamaModel, _ := GetOllamaConfig()
+
+	res := &AIConnectionTestResult{
+		GeminiConfigured: geminiKey != "",
+		OllamaConfigured: ollamaReady,
+	}
+
+	var dispatchRepo repository.DispatchRepository
+	if s.toolService != nil {
+		dispatchRepo = s.toolService.dispatchRepo
+	}
+
+	if geminiKey != "" {
+		res.Engine = "gemini"
+		res.Model = "gemini-2.0-flash"
+		gemResp, err := s.processWithGemini(ctx, &models.AIChatRequest{
+			Message:    "Reply with OK only.",
+			ActivePage: "settings",
+		}, geminiKey, "en")
+		res.LatencyMs = time.Since(start).Milliseconds()
+		if err != nil {
+			res.OK = false
+			res.Error = err.Error()
+			recordAIOperationError(dispatchRepo, "settings", "gemini_test", "https://generativelanguage.googleapis.com", userID, userName, err)
+			return res
+		}
+		res.OK = true
+		if gemResp != nil {
+			res.Reply = strings.TrimSpace(gemResp.Reply)
+		}
+		return res
+	}
+
+	if ollamaReady {
+		res.Engine = "ollama"
+		res.Model = ollamaModel
+		reply, err := callOllamaChat(ctx, "Reply with OK only.", "Health check ping. Reply with OK.", false)
+		res.LatencyMs = time.Since(start).Milliseconds()
+		if err != nil {
+			res.OK = false
+			res.Error = err.Error()
+			recordAIOperationError(dispatchRepo, "settings", "ollama_test", ollamaBase+"/api/chat", userID, userName, err)
+			return res
+		}
+		res.OK = true
+		res.Reply = reply
+		return res
+	}
+
+	res.Engine = "builtin"
+	res.Model = "builtin-semantic-engine"
+	res.OK = true
+	res.LatencyMs = time.Since(start).Milliseconds()
+	res.Reply = "Built-in deterministic semantic engine is active (no external Gemini or Ollama endpoint configured)."
+	return res
 }
 
 // processWithBuiltinEngine provides high-accuracy zero-configuration parsing in English, French or Chinese

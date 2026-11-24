@@ -61,6 +61,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAICopilot
 }) => {
   const { currentUser, isMockMode, logout } = useAuth();
+  const [isHomeDropOver, setIsHomeDropOver] = React.useState(false);
   const { lang, setLang, t, isFrench } = useI18n();
   const { theme, toggleTheme } = useTheme();
 
@@ -136,11 +137,41 @@ export const Header: React.FC<HeaderProps> = ({
                 key={domain.id}
                 type="button"
                 onClick={() => handleDomainClick(domain.id)}
+                onDragOver={
+                  domain.id === 'home'
+                    ? (e) => {
+                        if (e.dataTransfer.types.includes('application/x-dispatch-nav-tab')) {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'copy';
+                          setIsHomeDropOver(true);
+                        }
+                      }
+                    : undefined
+                }
+                onDragLeave={
+                  domain.id === 'home' ? () => setIsHomeDropOver(false) : undefined
+                }
+                onDrop={
+                  domain.id === 'home'
+                    ? (e) => {
+                        e.preventDefault();
+                        setIsHomeDropOver(false);
+                        const tabId = e.dataTransfer.getData('application/x-dispatch-nav-tab');
+                        if (tabId) {
+                          window.dispatchEvent(
+                            new CustomEvent('pin-nav-tab-to-home', { detail: { tabId } })
+                          );
+                        }
+                      }
+                    : undefined
+                }
                 title={isFrench ? domain.labelFr : domain.labelEn}
                 className={`relative flex items-center space-x-1.5 px-2.5 lg:px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-                  isActive
-                    ? 'bg-amber-500 text-slate-950 font-bold shadow-sm shadow-amber-500/20'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                  domain.id === 'home' && isHomeDropOver
+                    ? 'bg-amber-500/30 text-amber-200 ring-2 ring-amber-400 shadow-lg shadow-amber-500/30'
+                    : isActive
+                      ? 'bg-amber-500 text-slate-950 font-bold shadow-sm shadow-amber-500/20'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
                 }`}
               >
                 <Icon

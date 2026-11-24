@@ -9,6 +9,7 @@ export type LeaveType =
 
 export type TimeOffStatus =
   | 'pending'
+  | 'on_hold'
   | 'awaiting_peer_confirm'
   | 'seeking_coverage'
   | 'pre_approved'
@@ -58,6 +59,10 @@ export interface TimeOffRequest {
   approvedByName?: string;
   approvedAt?: string;
   approvalNotes?: string;
+  holdByUserId?: string;
+  holdByName?: string;
+  holdAt?: string;
+  holdReason?: string;
   notifiedChannels?: ('email' | 'sms')[];
   notifiedAt?: string;
   coverageAssigned?: boolean;
@@ -130,8 +135,21 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   other: 'Other'
 };
 
+export interface TimeOffPolicySettings {
+  farFutureManualOnlyDays: number; // Default 90 (~3 months)
+  autoCoverWindowDays: number;     // Default 14 (2 weeks before leave)
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
+export const DEFAULT_TIMEOFF_POLICY_SETTINGS: TimeOffPolicySettings = {
+  farFutureManualOnlyDays: 90,
+  autoCoverWindowDays: 14,
+};
+
 export const STATUS_LABELS: Record<TimeOffStatus, string> = {
   pending: 'Pending Review',
+  on_hold: 'On Hold',
   awaiting_peer_confirm: 'Awaiting Peer Confirm',
   seeking_coverage: 'Seeking Shift Cover',
   pre_approved: 'Pre-Approved (24h SLA)',

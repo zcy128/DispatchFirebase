@@ -154,3 +154,104 @@ func (h *DispatchHandler) FinalizePreApprovedTimeOffRequests(w http.ResponseWrit
 		"checkedAt": time.Now().UTC().Format(time.RFC3339),
 	})
 }
+
+// HoldTimeOffRequest places a time-off request into 'on_hold' status (blocking auto-cover & auto-approval).
+func (h *DispatchHandler) HoldTimeOffRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
+		return
+	}
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || !authUser.HasModulePermission("time_off", true) {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to hold time off requests"}`, http.StatusForbidden)
+		return
+	}
+	var req models.ReviewTimeOffRequestPayload
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if strings.TrimSpace(req.ReviewerName) == "" {
+		if authUser.FullName != "" {
+			req.ReviewerName = authUser.FullName
+		} else {
+			req.ReviewerName = authUser.Email
+		}
+	}
+	if strings.TrimSpace(req.ReviewerUserID) == "" {
+		req.ReviewerUserID = authUser.UID
+	}
+
+	updated, err := h.repo.HoldTimeOffRequest(r.Context(), id, &req)
+	if err != nil {
+		http.Error(w, `{"error":"failed to hold time off request: `+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+	if h.concierge != nil {
+		h.concierge.NotifyDirectTimeOffUpdated(models.TimeOffStatusPending, updated)
+	}
+	json.NewEncoder(w).Encode(updated)
+}
+
+// ResumeTimeOffRequest releases a time-off request from 'on_hold' back to 'pending'.
+func (h *DispatchHandler) ResumeTimeOffRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		http.Error(w, `{"error":"id is required"}`, http.StatusBadRequest)
+		return
+	}
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || !authUser.HasModulePermission("time_off", true) {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to resume time off requests"}`, http.StatusForbidden)
+		return
+	}
+	var req models.ReviewTimeOffRequestPayload
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	updated, err := h.repo.ResumeTimeOffRequest(r.Context(), id, &req)
+	if err != nil {
+		http.Error(w, `{"error":"failed to resume time off request: `+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+	if h.concierge != nil {
+		h.concierge.NotifyDirectTimeOffUpdated(models.TimeOffStatusOnHold, updated)
+	}
+	json.NewEncoder(w).Encode(updated)
+}
+
+// GetTimeOffPolicySettings returns the configurable time-off automation thresholds.
+func (h *DispatchHandler) GetTimeOffPolicySettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	cfg, err := h.repo.GetTimeOffPolicySettings(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"failed to get time-off policy settings: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(cfg)
+}
+
+// SaveTimeOffPolicySettings updates the configurable time-off automation thresholds.
+func (h *DispatchHandler) SaveTimeOffPolicySettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	authUser := auth.GetUser(r.Context())
+	if authUser == nil || !authUser.HasModulePermission("time_off", true) {
+		http.Error(w, `{"error":"forbidden: insufficient permissions to update time-off policy settings"}`, http.StatusForbidden)
+		return
+	}
+	var cfg models.TimeOffPolicySettings
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		http.Error(w, `{"error":"invalid request payload: `+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+	if authUser.FullName != "" {
+		cfg.UpdatedBy = authUser.FullName
+	} else {
+		cfg.UpdatedBy = authUser.Email
+	}
+	saved, err := h.repo.SaveTimeOffPolicySettings(r.Context(), &cfg)
+	if err != nil {
+		http.Error(w, `{"error":"failed to save time-off policy settings: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(saved)
+}

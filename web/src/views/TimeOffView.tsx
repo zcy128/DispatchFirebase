@@ -24,6 +24,7 @@ import {
   X,
   Radio,
   Printer,
+  FileSpreadsheet,
   BarChart3,
   Database
 } from 'lucide-react';
@@ -39,6 +40,7 @@ import { TemporaryAssignment } from '../types/dispatch';
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalTodayString, safeFormatDate, addDaysToDateString, calculateDefaultDeadline } from '../utils/dateUtils';
 import { TimeOffOperationsWorkbench } from '../components/time_off/TimeOffOperationsWorkbench';
+import { openTimeOffApproverAgent } from '../components/time_off/TimeOffApproverAgentWindow';
 
 const TimeOffModal = React.lazy(() =>
   import('../components/time_off/TimeOffModal').then((module) => ({
@@ -120,6 +122,7 @@ export const TimeOffView = memo(function TimeOffView({
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'pending' | 'needs_coverage' | 'active_today'>('all');
   const [viewScope, setViewScope] = useState<'all' | 'mine'>(isDispatcher ? 'all' : 'mine');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'recent' | 'all_archive' | 'today' | 'upcoming' | 'past_30' | 'specific_date' | 'custom_range'>('upcoming');
@@ -148,23 +151,40 @@ export const TimeOffView = memo(function TimeOffView({
     return Array.from(map.values()).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   }, [requests, archivedRequests]);
 
-  const handleLoadBigQueryArchive = async (force: boolean = false, fullArchive: boolean = false) => {
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const lastArchiveQueryRef = useRef<string>('');
+  const MAX_ARCHIVE_RESULTS = 500;
+
+  const handleLoadBigQueryArchive = async (
+    force: boolean = false,
+    fullArchive: boolean = false,
+    queryText: string = ''
+  ) => {
+    const trimmedQuery = queryText.trim();
     if (loadingArchive || (hasLoadedArchive && !force)) return;
     setLoadingArchive(true);
     setArchiveNotice(null);
     try {
-      const params: Record<string, string> = {};
+      const params: Record<string, string> = {
+        limit: String(MAX_ARCHIVE_RESULTS),
+      };
       if (fullArchive) {
         params.fullArchive = 'true';
       } else {
         params.startDate = oneYearAgoStr;
       }
+      if (trimmedQuery) {
+        params.query = trimmedQuery;
+      }
+      lastArchiveQueryRef.current = trimmedQuery;
       const bqData = await TimeOffService.loadArchivedTimeOffRequests(params);
-      const list = Array.isArray(bqData) ? bqData : [];
+      const list = Array.isArray(bqData) ? bqData.slice(0, MAX_ARCHIVE_RESULTS) : [];
       setArchivedRequests(list);
       setHasLoadedArchive(true);
       const bqCount = list.filter((r) => r.isArchivedToBigQuery || r.endDate < thirtyDaysAgoStr).length;
-      setArchiveNotice(`Loaded ${bqCount > 0 ? bqCount : list.length} records from BigQuery archive (${fullArchive ? 'Full Archive' : 'Past 1 Year'}).`);
+      setArchiveNotice(
+        `Loaded ${bqCount > 0 ? bqCount : list.length} records from BigQuery archive (${fullArchive ? 'Full Archive' : 'Past 1 Year'}, max ${MAX_ARCHIVE_RESULTS}).`
+      );
       setTimeout(() => setArchiveNotice(null), 6000);
     } catch (err: any) {
       console.warn('BigQuery archive load notice:', err);
@@ -175,18 +195,36 @@ export const TimeOffView = memo(function TimeOffView({
     }
   };
 
-  // Auto-fetch BigQuery cold data when user switches to archive view or selects a cold historical date (>30d ago)
+  // Auto-fetch BigQuery cold data when user switches to archive view (with required search on All Requests) or selects a cold historical date (>30d ago)
   useEffect(() => {
+    const trimmedSearch = deferredSearchTerm.trim();
+    if (dateFilter === 'all_archive') {
+      if (categoryFilter === 'all' && trimmedSearch.length === 0) {
+        return;
+      }
+      if (!hasLoadedArchive || lastArchiveQueryRef.current !== trimmedSearch) {
+        void handleLoadBigQueryArchive(true, false, trimmedSearch);
+      }
+      return;
+    }
+
     if (!hasLoadedArchive && !loadingArchive) {
-      if (dateFilter === 'all_archive') {
-        handleLoadBigQueryArchive();
-      } else if (dateFilter === 'specific_date' && filterSpecificDate && filterSpecificDate < thirtyDaysAgoStr) {
-        handleLoadBigQueryArchive();
+      if (dateFilter === 'specific_date' && filterSpecificDate && filterSpecificDate < thirtyDaysAgoStr) {
+        void handleLoadBigQueryArchive();
       } else if (dateFilter === 'custom_range' && filterRangeStart && filterRangeStart < thirtyDaysAgoStr) {
-        handleLoadBigQueryArchive();
+        void handleLoadBigQueryArchive();
       }
     }
-  }, [dateFilter, filterSpecificDate, filterRangeStart, hasLoadedArchive, loadingArchive, thirtyDaysAgoStr]);
+  }, [
+    dateFilter,
+    categoryFilter,
+    deferredSearchTerm,
+    filterSpecificDate,
+    filterRangeStart,
+    hasLoadedArchive,
+    loadingArchive,
+    thirtyDaysAgoStr,
+  ]);
 
   // Modals
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState<boolean>(false);
@@ -207,10 +245,95 @@ export const TimeOffView = memo(function TimeOffView({
   // PDF Export Modal
   const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
   const [activeTimeOffForPdf, setActiveTimeOffForPdf] = useState<TimeOffRequest | null>(null);
+  const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
 
   const handleOpenPdfExport = (req: TimeOffRequest | null) => {
     setActiveTimeOffForPdf(req);
     setIsPdfModalOpen(true);
+  };
+
+  const handleExportExcel = async () => {
+    if (filteredRequests.length === 0) {
+      alert('No time-off requests to export for the current filters.');
+      return;
+    }
+    setIsExportingExcel(true);
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Dispatch Platform';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Time Off Requests');
+
+      ws.columns = [
+        { header: 'Request ID', key: 'id', width: 22 },
+        { header: 'Employee Name', key: 'employeeName', width: 22 },
+        { header: 'Employee #', key: 'employeeNumber', width: 14 },
+        { header: 'Route', key: 'routeNo', width: 14 },
+        { header: 'Yard', key: 'yardName', width: 18 },
+        { header: 'Leave Type', key: 'leaveType', width: 18 },
+        { header: 'Start Date', key: 'startDate', width: 13 },
+        { header: 'End Date', key: 'endDate', width: 13 },
+        { header: 'Shift', key: 'shiftType', width: 10 },
+        { header: 'Status', key: 'status', width: 20 },
+        { header: 'Substitute Driver', key: 'substitute', width: 24 },
+        { header: 'Reason', key: 'reason', width: 32 },
+        { header: 'Reviewed By', key: 'approvedByName', width: 20 },
+        { header: 'Approval Notes', key: 'approvalNotes', width: 28 },
+        { header: 'Submitted At', key: 'createdAt', width: 22 },
+      ];
+
+      const headerRow = ws.getRow(1);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF0F172A' },
+      };
+
+      for (const r of filteredRequests) {
+        const cover = getCoverForRequest(r);
+        const subName =
+          cover?.temporaryDriverName ||
+          r.coverageDriverName ||
+          (r.coverageAssigned ? 'Assigned' : 'Unassigned');
+        ws.addRow({
+          id: r.id,
+          employeeName: r.employeeName || '',
+          employeeNumber: r.employeeNumber || '',
+          routeNo: r.routeNo || '',
+          yardName: r.yardName || '',
+          leaveType: LEAVE_TYPE_LABELS[r.leaveType] || r.leaveType || '',
+          startDate: r.startDate || '',
+          endDate: r.endDate || '',
+          shiftType: r.shiftType || 'ALL',
+          status: r.status || '',
+          substitute: subName,
+          reason: r.comments || '',
+          approvedByName: r.approvedByName || '',
+          approvalNotes: r.approvalNotes || '',
+          createdAt: r.createdAt ? safeFormatDate(r.createdAt) : '',
+        });
+      }
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `time-off-requests-${todayStr}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('Failed to export time off requests to Excel:', err);
+      alert('Failed to export Excel file: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setIsExportingExcel(false);
+    }
   };
 
   const loadData = async () => {
@@ -440,7 +563,6 @@ export const TimeOffView = memo(function TimeOffView({
     setIsCreateOpeningModalOpen(true);
   };
 
-  const deferredSearchTerm = useDeferredValue(searchTerm);
   const hotCount = requests.length;
   const allCount = effectiveRequests.length;
 
@@ -480,12 +602,19 @@ export const TimeOffView = memo(function TimeOffView({
     };
   }, [effectiveRequests, archivedRequests, todayStr, horizonLimitDateStr, thirtyDaysAgoStr]);
 
+  const requiresArchiveSearch = categoryFilter === 'all' && dateFilter === 'all_archive';
+  const archiveSearchMissing = requiresArchiveSearch && deferredSearchTerm.trim().length === 0;
+
   // Filtering
-  const filteredRequests = useMemo(() => {
+  const { filteredRequests, isArchiveTruncated } = useMemo(() => {
     const term = deferredSearchTerm.trim().toLowerCase();
     const isSearching = term.length > 0;
 
-    return effectiveRequests.filter((r) => {
+    if (requiresArchiveSearch && !isSearching) {
+      return { filteredRequests: [] as TimeOffRequest[], isArchiveTruncated: false };
+    }
+
+    const matched = effectiveRequests.filter((r) => {
       // Scope filter: My requests vs All
       if (viewScope === 'mine') {
         const isMine =
@@ -548,8 +677,18 @@ export const TimeOffView = memo(function TimeOffView({
 
       return true;
     });
+
+    if (dateFilter === 'all_archive' && matched.length > MAX_ARCHIVE_RESULTS) {
+      return {
+        filteredRequests: matched.slice(0, MAX_ARCHIVE_RESULTS),
+        isArchiveTruncated: true,
+      };
+    }
+
+    return { filteredRequests: matched, isArchiveTruncated: false };
   }, [
     effectiveRequests,
+    requiresArchiveSearch,
     categoryFilter,
     includeAdvanceInCoverage,
     viewScope,
@@ -588,6 +727,15 @@ export const TimeOffView = memo(function TimeOffView({
       <PageHeader
         title="Time Off Requests"
         subtitle="Submit employee leave requests, review HR approvals, and assign replacement dispatch coverage"
+        customAIAction={
+          isHR
+            ? {
+                label: 'Approver AI Agent',
+                title: 'Open Time-Off Approver AI Agent Window',
+                onClick: () => openTimeOffApproverAgent(),
+              }
+            : undefined
+        }
         icon={
           <div aria-hidden="true" className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
             <CalendarOff className="w-4 h-4" />
@@ -640,12 +788,13 @@ export const TimeOffView = memo(function TimeOffView({
           </button>
           <button
             type="button"
-            onClick={() => handleOpenPdfExport(null)}
-            className="min-h-[32px] px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs rounded-lg flex items-center space-x-1.5 transition shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
-            title="Export or print official employee time off authorization form"
+            onClick={() => void handleExportExcel()}
+            disabled={isExportingExcel || filteredRequests.length === 0}
+            className="min-h-[32px] px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs rounded-lg flex items-center space-x-1.5 transition shadow-sm disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+            title="Export currently displayed time off requests to Excel (.xlsx)"
           >
-            <Printer aria-hidden="true" className="w-3.5 h-3.5 text-amber-400" />
-            <span>Export PDF Form</span>
+            <FileSpreadsheet aria-hidden="true" className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{isExportingExcel ? 'Exporting...' : 'Excel Export'}</span>
           </button>
           {isDispatcher && (
             <button
@@ -897,12 +1046,21 @@ export const TimeOffView = memo(function TimeOffView({
           <div className="relative flex-1 md:w-72">
             <Search aria-hidden="true" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
+              ref={searchInputRef}
               type="search"
               aria-label="Search staff, leave type, or notes"
-              placeholder="Search staff, leave type, notes..."
+              placeholder={
+                archiveSearchMissing
+                  ? 'Required: Enter employee name to search Past 1 Yr...'
+                  : 'Search staff, leave type, notes...'
+              }
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-base sm:text-xs text-slate-100 placeholder-slate-500 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+              className={`w-full bg-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-base sm:text-xs text-slate-100 placeholder-slate-400 focus:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
+                archiveSearchMissing
+                  ? 'border border-amber-500 ring-2 ring-amber-500/30'
+                  : 'border border-slate-700'
+              }`}
             />
           </div>
         </div>
@@ -919,6 +1077,7 @@ export const TimeOffView = memo(function TimeOffView({
             >
               <option value="all">All Statuses</option>
               <option value="pending">Pending Review</option>
+              <option value="on_hold">On Hold (Paused)</option>
               <option value="awaiting_peer_confirm">Awaiting Peer Confirm</option>
               <option value="seeking_coverage">Seeking Shift Cover</option>
               <option value="pre_approved">Pre-Approved (24h SLA)</option>
@@ -1034,6 +1193,15 @@ export const TimeOffView = memo(function TimeOffView({
           </div>
         )}
 
+        {/* 500-record archive cap banner */}
+        {(isArchiveTruncated || (dateFilter === 'all_archive' && filteredRequests.length >= MAX_ARCHIVE_RESULTS)) && (
+          <div role="status" className="px-6 py-2 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300 flex items-center justify-between">
+            <span>
+              Showing up to {MAX_ARCHIVE_RESULTS} matching records. Enter a more specific employee name or filter to narrow your results.
+            </span>
+          </div>
+        )}
+
         {/* Quick Category Filter Banner */}
         {categoryFilter !== 'all' && (
           <div className="px-6 py-2.5 bg-slate-800/60 border-b border-slate-800 flex items-center justify-between text-xs">
@@ -1084,6 +1252,23 @@ export const TimeOffView = memo(function TimeOffView({
           <div role="alert" className="p-8 text-center text-rose-400 flex flex-col items-center justify-center space-y-2">
             <AlertCircle aria-hidden="true" className="w-6 h-6" />
             <p className="text-sm font-medium">{error}</p>
+          </div>
+        ) : archiveSearchMissing ? (
+          <div className="p-12 text-center text-slate-300 space-y-3">
+            <Search aria-hidden="true" className="w-8 h-8 mx-auto text-amber-400" />
+            <p className="text-sm font-semibold text-white">
+              Search Value Required for Past 1 Year (Including BigQuery)
+            </p>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              Please enter a search keyword (such as employee name, employee #, route, or notes) to query historical records. Up to {MAX_ARCHIVE_RESULTS} matching records will be returned.
+            </p>
+            <button
+              type="button"
+              onClick={() => searchInputRef.current?.focus()}
+              className="min-h-[28px] px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg transition cursor-pointer"
+            >
+              Enter Search Keyword
+            </button>
           </div>
         ) : filteredRequests.length === 0 ? (
           <div className="p-12 text-center text-slate-500 space-y-3">
@@ -1317,6 +1502,14 @@ export const TimeOffView = memo(function TimeOffView({
                               </span>
                             )}
                           </div>
+                        ) : r.status === 'on_hold' ? (
+                          <span
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/40"
+                            title={r.holdByName ? `Placed on hold by ${r.holdByName}` : 'On hold: auto-cover & auto-approval paused'}
+                          >
+                            <Clock className="w-3 h-3 mr-1" />
+                            On Hold
+                          </span>
                         ) : r.status === 'rejected' ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
                             <XCircle className="w-3 h-3 mr-1" />
@@ -1375,8 +1568,13 @@ export const TimeOffView = memo(function TimeOffView({
                       {/* Actions */}
                       <td className="py-2.5 px-4 text-right align-middle h-[70px] whitespace-nowrap overflow-hidden">
                         <div className="flex items-center justify-end space-x-1.5">
-                          {/* HR Decision Action: only HR can approve/reject */}
-                          {isHR && r.status === 'pending' && (
+                          {/* HR Decision Action: HR can approve/reject/hold active requests */}
+                          {isHR &&
+                            (r.status === 'pending' ||
+                              r.status === 'on_hold' ||
+                              r.status === 'pre_approved' ||
+                              r.status === 'seeking_coverage' ||
+                              r.status === 'awaiting_peer_confirm') && (
                             <button
                               type="button"
                               aria-label={`Review time off request for ${r.employeeName}`}

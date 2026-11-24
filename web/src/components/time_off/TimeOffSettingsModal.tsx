@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, Bell, Mail, MessageSquare, Check, RotateCcw, ShieldCheck } from 'lucide-react';
-import { TimeOffNotificationSettings, DEFAULT_TIMEOFF_NOTIFICATION_SETTINGS } from '../../types/timeOff';
+import { X, Bell, Mail, MessageSquare, Check, RotateCcw, ShieldCheck, Clock } from 'lucide-react';
+import {
+  TimeOffNotificationSettings,
+  DEFAULT_TIMEOFF_NOTIFICATION_SETTINGS,
+  TimeOffPolicySettings,
+  DEFAULT_TIMEOFF_POLICY_SETTINGS,
+} from '../../types/timeOff';
 import { TimeOffService } from '../../services/timeOffService';
 
 interface TimeOffSettingsModalProps {
@@ -17,6 +22,9 @@ export const TimeOffSettingsModal: React.FC<TimeOffSettingsModalProps> = ({
   const [settings, setSettings] = useState<TimeOffNotificationSettings>(
     DEFAULT_TIMEOFF_NOTIFICATION_SETTINGS
   );
+  const [policySettings, setPolicySettings] = useState<TimeOffPolicySettings>(
+    DEFAULT_TIMEOFF_POLICY_SETTINGS
+  );
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
@@ -25,15 +33,14 @@ export const TimeOffSettingsModal: React.FC<TimeOffSettingsModalProps> = ({
     if (isOpen) {
       setLoading(true);
       setSavedSuccess(false);
-      TimeOffService.getNotificationSettings()
-        .then((s) => {
-          setSettings(s);
-          setLoading(false);
-        })
-        .catch(() => {
-          setSettings(DEFAULT_TIMEOFF_NOTIFICATION_SETTINGS);
-          setLoading(false);
-        });
+      Promise.all([
+        TimeOffService.getNotificationSettings().catch(() => DEFAULT_TIMEOFF_NOTIFICATION_SETTINGS),
+        TimeOffService.getTimeOffPolicySettings().catch(() => DEFAULT_TIMEOFF_POLICY_SETTINGS),
+      ]).then(([s, p]) => {
+        setSettings(s);
+        setPolicySettings(p);
+        setLoading(false);
+      });
     }
   }, [isOpen]);
 
@@ -42,7 +49,10 @@ export const TimeOffSettingsModal: React.FC<TimeOffSettingsModalProps> = ({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await TimeOffService.saveNotificationSettings(settings);
+      await Promise.all([
+        TimeOffService.saveNotificationSettings(settings),
+        TimeOffService.saveTimeOffPolicySettings(policySettings),
+      ]);
       setSavedSuccess(true);
       if (onSettingsSaved) {
         onSettingsSaved(settings);
@@ -59,6 +69,7 @@ export const TimeOffSettingsModal: React.FC<TimeOffSettingsModalProps> = ({
 
   const handleReset = () => {
     setSettings(DEFAULT_TIMEOFF_NOTIFICATION_SETTINGS);
+    setPolicySettings(DEFAULT_TIMEOFF_POLICY_SETTINGS);
   };
 
   return (
@@ -181,6 +192,59 @@ export const TimeOffSettingsModal: React.FC<TimeOffSettingsModalProps> = ({
                     />
                     <MessageSquare className="w-4 h-4 text-rose-400" />
                     <span className="text-xs text-slate-200 font-medium">Send SMS</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Automation & Cover Timing Windows */}
+              <div className="bg-slate-800/20 border border-slate-800 rounded-xl p-4 space-y-3">
+                <div className="flex items-center space-x-2 text-xs font-semibold uppercase tracking-wider text-teal-400">
+                  <Clock className="w-4 h-4" />
+                  <span>Automation &amp; Cover Timing Windows</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-medium text-slate-300">
+                      Manual-Only Threshold (Days Ahead)
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={policySettings.farFutureManualOnlyDays}
+                      onChange={(e) =>
+                        setPolicySettings((prev) => ({
+                          ...prev,
+                          farFutureManualOnlyDays: Math.max(1, Number(e.target.value) || 90),
+                        }))
+                      }
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white focus:border-teal-500"
+                    />
+                    <span className="block text-[10px] text-slate-400">
+                      Requests beyond this (default 90d / ~3 mos) skip auto-cover and require HR manual approval.
+                    </span>
+                  </label>
+
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-medium text-slate-300">
+                      Auto-Cover Search Window (Days Before)
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={90}
+                      value={policySettings.autoCoverWindowDays}
+                      onChange={(e) =>
+                        setPolicySettings((prev) => ({
+                          ...prev,
+                          autoCoverWindowDays: Math.max(1, Number(e.target.value) || 14),
+                        }))
+                      }
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white focus:border-teal-500"
+                    />
+                    <span className="block text-[10px] text-slate-400">
+                      Within this window (default 14d / 2 wks), system auto-broadcasts and auto-approves once covered (unless On Hold).
+                    </span>
                   </label>
                 </div>
               </div>

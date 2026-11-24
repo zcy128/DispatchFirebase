@@ -156,13 +156,103 @@ func TestOfficeConciergeFlow_AutoBroadcastSplitByShift(t *testing.T) {
 		t.Fatalf("expected seeking_coverage after 1/2 slots filled, got %v (err=%v)", afterAM, err)
 	}
 
-	// Driver B claims PM slot -> all slots filled -> automatically transitions to pre_approved!
+	// Driver B claims PM slot -> all slots filled within 2-week auto-cover window -> auto-approved!
 	afterPM, err := svc.ClaimCoverageSlot(ctx, reqID, &models.ClaimTimeOffSlotPayload{
 		SlotID:     "2026-11-24_PM",
 		DriverID:   "DRIVER-41",
 		DriverName: "Driver41 PMCover",
 	})
-	if err != nil || afterPM.Status != models.TimeOffStatusPreApproved {
-		t.Fatalf("expected pre_approved once both AM and PM slots are filled, got %v (err=%v)", afterPM, err)
+	if err != nil || (afterPM.Status != models.TimeOffStatusApproved && afterPM.Status != models.TimeOffStatusPreApproved) {
+		t.Fatalf("expected approved or pre_approved once both AM and PM slots are filled, got %v (err=%v)", afterPM, err)
+	}
+}
+
+func TestOfficeConcierge_OnHoldAndConfigurableTimingWindows(t *testing.T) {
+	ctx := context.Background()
+	repo := repository.NewMemoryDispatchRepository()
+	svc := NewOfficeConciergeService(repo, nil, nil)
+
+	// Customize policy settings: > 90 days manual only, <= 14 days auto-cover & auto-approve
+	_, err := repo.SaveTimeOffPolicySettings(ctx, &models.TimeOffPolicySettings{
+		FarFutureManualOnlyDays: 90,
+		AutoCoverWindowDays:     14,
+	})
+	if err != nil {
+		t.Fatalf("failed to save policy settings: %v", err)
+	}
+
+	now := time.Now().UTC()
+	farDate := now.AddDate(0, 0, 100).Format("2006-01-02")
+	nearDate := now.AddDate(0, 0, 7).Format("2006-01-02")
+
+	// 1. Far-future request (>90 days) should stay pending and NOT auto-broadcast
+	farReq, err := repo.CreateTimeOffRequest(ctx, &models.CreateTimeOffRequestPayload{
+		EmployeeID:   "EMP-301",
+		EmployeeName: "Far Future Driver",
+		RouteNo:      "ODSOE-010",
+		LeaveType:    models.LeaveTypeVacation,
+		StartDate:    farDate,
+		EndDate:      farDate,
+		ShiftType:    "ALL",
+	})
+	if err != nil {
+		t.Fatalf("create farReq failed: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+
+	// 2. Near-term pending request (within 14 days) should auto-broadcast during sweep
+	nearReq, err := repo.CreateTimeOffRequest(ctx, &models.CreateTimeOffRequestPayload{
+		EmployeeID:   "EMP-302",
+		EmployeeName: "Near Term Driver",
+		RouteNo:      "ODSOE-011",
+		LeaveType:    models.LeaveTypePersonalDays,
+		StartDate:    nearDate,
+		EndDate:      nearDate,
+		ShiftType:    "ALL",
+	})
+	if err != nil {
+		t.Fatalf("create nearReq failed: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+
+	// 3. On-Hold near-term request must NOT enter auto-broadcast or auto-approval
+	holdReq, err := repo.CreateTimeOffRequest(ctx, &models.CreateTimeOffRequestPayload{
+		EmployeeID:   "EMP-303",
+		EmployeeName: "On Hold Driver",
+		RouteNo:      "ODSOE-012",
+		LeaveType:    models.LeaveTypePersonalDays,
+		StartDate:    nearDate,
+		EndDate:      nearDate,
+		ShiftType:    "ALL",
+	})
+	if err != nil {
+		t.Fatalf("create holdReq failed: %v", err)
+	}
+	if _, err := repo.HoldTimeOffRequest(ctx, holdReq.ID, &models.ReviewTimeOffRequestPayload{
+		ReviewerUserID: "HR-1",
+		ReviewerName:   "HR Admin",
+		ApprovalNotes:  "Hold for verification",
+	}); err != nil {
+		t.Fatalf("HoldTimeOffRequest failed: %v", err)
+	}
+
+	// Run sweep
+	if _, err := svc.RunPreApprovedAutoFinalizationSweep(ctx, now); err != nil {
+		t.Fatalf("sweep failed: %v", err)
+	}
+
+	farAfter, _ := repo.GetTimeOffRequestByID(ctx, farReq.ID)
+	if farAfter.Status != models.TimeOffStatusPending {
+		t.Fatalf("expected far-future (>90d) request to stay pending, got %s", farAfter.Status)
+	}
+
+	nearAfter, _ := repo.GetTimeOffRequestByID(ctx, nearReq.ID)
+	if nearAfter.Status != models.TimeOffStatusSeekingCoverage {
+		t.Fatalf("expected near-term (<=14d) request to enter seeking_coverage, got %s", nearAfter.Status)
+	}
+
+	holdAfter, _ := repo.GetTimeOffRequestByID(ctx, holdReq.ID)
+	if holdAfter.Status != models.TimeOffStatusOnHold {
+		t.Fatalf("expected on_hold request to remain on_hold, got %s", holdAfter.Status)
 	}
 }

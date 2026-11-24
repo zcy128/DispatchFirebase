@@ -40,24 +40,31 @@ Une solution complète, moderne et open-source de régulation de flotte, de plan
 ```mermaid
 flowchart TD
   Start(["Le chauffeur soumet un congé\n(Office Chat ou Formulaire)"]) --> Check["L'IA détecte le circuit & quarts AM/PM\n+ Aperçu confirmé"]
-  Check --> Branch{"Remplaçant & Durée ?"}
+  Check --> Branch{"Remplaçant, Durée & Préavis ?"}
 
   Branch -- "Remplaçant désigné\n(Vérif. conflit & CDL)" --> PeerWait["awaiting_peer_confirm\n(Option B : Carte envoyée au pair)"]
   PeerWait -- "Le pair accepte\n(Pré-verrouille TemporaryAssignment)" --> PreApproved["pre_approved\nDélai : min(now+24h, départ-2h)"]
   PeerWait -- "Le pair refuse (<= 2 jours)" --> Seeking
   PeerWait -- "Le pair refuse (> 2 jours)" --> ManualPending
 
-  Branch -- "Sans remplaçant & <= 2 jours" --> Seeking["seeking_coverage\n(Découpage auto AM / PM diffusé)"]
+  Branch -- "Sans remplaçant & <= 2 jours\n& <= Seuil lointain (90j)" --> Seeking["seeking_coverage\n(Découpage auto AM / PM diffusé)"]
   Seeking -- "0 quart pourvu" --> Unclaimed["Alerte Étape 2 :\nBroadcasted · No Applicants"]
   Unclaimed --> ClaimSlot["Un chauffeur réclame le quart\n(Conflit & CDL vérifiés)"]
   Seeking --> ClaimSlot
   ClaimSlot -- "Couverture partielle (1/2)" --> Seeking
-  ClaimSlot -- "Tous les quarts pourvus (2/2)" --> PreApproved
+  ClaimSlot -- "Tous pourvus (> Fenêtre auto)" --> PreApproved
+  ClaimSlot -- "Tous pourvus (<= 14j avant congé)" --> Approved
 
-  Branch -- "Sans remplaçant & > 2 jours\nou Révision manuelle" --> ManualPending["pending\n(Révision manuelle RH / Répartition)"]
+  Branch -- "> Seuil lointain (90j / 3 mois)\nou > 2 jours Manuel" --> ManualPending["pending\n(Approbation manuelle RH requise)"]
+  ManualPending -- "Entre dans la fenêtre auto\n(<= 14j / 2 sem. avant départ)" --> Seeking
   ManualPending -- "Le répartiteur publie l'ouverture\nou assigne un remplaçant" --> Assigned["Remplaçant assigné\n(Prêt pour décision RH)"]
 
-  PreApproved -- "Aucune intervention avant échéance\n(Validation auto 24h)" --> Approved["approved\n(Approuvé final · SLA 24h)"]
+  ManualPending -- "Approbateur clique Hold On" --> OnHold["on_hold (Suspendu)\nBloque recherche & approbation auto"]
+  Seeking -- "Approbateur clique Hold On" --> OnHold
+  PreApproved -- "Approbateur clique Hold On" --> OnHold
+  OnHold -- "Approbateur clique Release Hold" --> ManualPending
+
+  PreApproved -- "Aucune intervention avant échéance\n(Validation auto 24h)" --> Approved["approved\n(Approuvé final)"]
   PreApproved -- "L'approbateur clique Approuver\ndans l'Agent IA" --> Approved
   PreApproved -- "L'approbateur clique Refuser" --> Rejected["rejected"]
   Assigned -- "RH approuvent" --> Approved
@@ -66,6 +73,40 @@ flowchart TD
 
   Approved --> Trajectory["Ajoute une trace [Work Trajectory]\ndans l'Agent Web & notifie le chauffeur"]
   Rejected --> Trajectory
+```
+
+</details>
+
+### 💳 Démonstration Animée du Flux Remboursements & Moteur de Politiques (3 Scénarios)
+*Aperçu en direct **Driver App ↔ Console Web Remboursements** : (1) Pré-approbation auto avec SLA configurable, (2) Révision manuelle & dépassement de plafond, et (3) Assistant IA Politiques (`Policies & Limits`). Également interactif dans l’application Web via **Expense Reimbursements → Workflow Demo**.*
+
+<p align="center">
+  <img src="docs/media/expense-workflow-demo.gif" alt="Démonstration Animée du Flux Remboursements & Politiques IA (3 Scénarios)" width="100%" />
+</p>
+
+<details>
+<summary><strong>📊 Cycle de Vie des Remboursements & Moteur de Politiques (Diagramme Mermaid)</strong></summary>
+
+```mermaid
+flowchart TD
+  Start(["Le chauffeur soumet une demande\n(Catégorie unique + 1+ reçus)"]) --> SingleCheck{"Catégorie unique\n& montant valide ?"}
+  SingleCheck -- "Catégories mixtes" --> RejectSubmit["Rejeté (400)\nCatégorie unique imposée"]
+  SingleCheck -- "Valide" --> Eval["ExpensePolicyEvaluator\n(Période bi-hebdo partagée, plafonds, reçus & preuves)"]
+
+  Eval --> AutoCheck{"autoPreApprove == true\n& Dans les plafonds\n& Reçu joint\n& Sans preuve requise ?"}
+
+  AutoCheck -- "Oui (ex. Lavage bus, Lave-glace)" --> PreApp["pre_approved (Pré-approuvé)\nIsolé de la Paie · Délai : now + Jours SLA"]
+  AutoCheck -- "Non (ex. Road Test / Dépassement)" --> Pending["pending (Onglet par défaut : Pending Review)\nBadges déterministes d'alerte"]
+
+  PreApp -- "Délai SLA écoulé sans blocage" --> Approved["approved (Approuvé final)\nTransmis à Bi-Weekly Payroll & QuickBooks"]
+  PreApp -- "Approbation anticipée" --> Approved
+  PreApp -- "Rejeté par l'approbateur" --> Rejected["rejected"]
+
+  Pending -- "Révision RH / Flotte isolée (RBAC)\n+ AI Pre-Check + Justification" --> Decision{"Décision ?"}
+  Decision -- "Approuver" --> Approved
+  Decision -- "Refuser" --> Rejected
+
+  Policy["Policies & Limits + Copilote IA\n(Réglage SLA / Carte de confirmation de règle)"] -. "Journal immuable :\nexpense_policy_audit_logs" .-> Eval
 ```
 
 </details>
@@ -413,6 +454,8 @@ flutter build web --dart-define=API_BASE_URL=https://votre-domaine-api.com
   - Configuration du Time-to-Live (TTL) Firestore dans Google Cloud Console.
   - Mise en place de la tâche planifiée Cloud Scheduler unique (`/api/admin/archive/sync-all`) pour archiver les services, journaux d'audit et congés vers BigQuery au coût le plus bas.
   - Basculement transparent (Dual-Engine) entre le stockage chaud Firestore et l'archivage froid BigQuery.
+- 🤖 **[Guide d'Installation du Modèle IA Local (Ollama + Qwen 3.5 2B)](docs/local-ai-ollama-setup-guide.md#français)** ([English](docs/local-ai-ollama-setup-guide.md#english) | [简体中文](docs/local-ai-ollama-setup-guide.md#简体中文)) :
+  - Installation étape par étape sur VM Linux / Oracle Cloud ARM (`zstd`, Ollama, `qwen3.5:2b` avec `think: false`), tunnel SSH pour le développement local et vérification en un clic depuis **Paramètres système → Tester la connexion IA**.
 - 📄 **[Manuel d'Exploitation du Parc (PDF)](docs/operations-manual-fr.pdf)** ([Word](docs/operations-manual-fr.docx) | [English PDF](docs/operations-manual-en.pdf) | [中文 PDF](docs/operations-manual-zh.pdf)) : Guide complet des opérations quotidiennes pour régulateurs, responsables de la sécurité et superviseurs de flotte.
 
 ---
