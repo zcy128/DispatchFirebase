@@ -18,7 +18,11 @@ import {
   UpdateTimeOffRequestPayload,
   ReviewTimeOffRequestPayload,
   TimeOffNotificationSettings,
-  DEFAULT_TIMEOFF_NOTIFICATION_SETTINGS
+  DEFAULT_TIMEOFF_NOTIFICATION_SETTINGS,
+  OfficeConciergeChatRequest,
+  OfficeConciergeChatResponse,
+  OfficeConciergeMessage,
+  TimeOffWorkbenchResponse,
 } from '../types/timeOff';
 
 function normalizeTimeOffDate(val: any): string {
@@ -334,5 +338,54 @@ export const TimeOffService = {
         console.error('[TimeOffService] Failed to persist settings to Firestore:', e);
       }
     }
+  },
+
+  sendOfficeConciergeChat: async (
+    payload: OfficeConciergeChatRequest
+  ): Promise<OfficeConciergeChatResponse> => {
+    return apiRequest<OfficeConciergeChatResponse>('/api/dispatch/office-concierge/chat', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  getOfficeConciergeMessages: async (
+    employeeId: string
+  ): Promise<OfficeConciergeMessage[]> => {
+    const qs = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : '';
+    const res = await apiRequest<OfficeConciergeMessage[]>(
+      `/api/dispatch/office-concierge/messages${qs}`
+    );
+    return Array.isArray(res) ? res : [];
+  },
+
+  confirmPeerCover: async (
+    requestId: string,
+    payload: { driverId: string; driverName?: string; accepted: boolean; notes?: string }
+  ): Promise<TimeOffRequest> => {
+    return apiRequest<TimeOffRequest>(
+      `/api/dispatch/time-off-requests/${encodeURIComponent(requestId)}/confirm-peer-cover`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  },
+
+  claimCoverageSlot: async (
+    requestId: string,
+    payload: { slotId: string; driverId: string; driverName?: string }
+  ): Promise<TimeOffRequest> => {
+    return apiRequest<TimeOffRequest>(
+      `/api/dispatch/time-off-requests/${encodeURIComponent(requestId)}/claim-slot`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  },
+
+  getTimeOffWorkbench: async (): Promise<TimeOffWorkbenchResponse> => {
+    return apiRequest<TimeOffWorkbenchResponse>('/api/dispatch/time-off-workbench');
   },
 };

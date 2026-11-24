@@ -27,6 +27,13 @@ A modern, full-stack open-source fleet dispatch, scheduling, and live tracking p
   <a href="docs/media/intro-demo.mp4"><strong>▶ Watch Full HD Video with Audio (1280×720 MP4)</strong></a>
 </p>
 
+### 🔄 Animated Time-Off & Shift Cover Workflow Demo (3 Scenarios)
+*Live Driver App (`Company Office Chat`) ↔ Web Console (`Approver AI Agent`) walkthrough covering: (1) Named Substitute + Conflict Check (`Option B`), (2) `<= 2 Days` Auto-Broadcast Split (`AM`/`PM`), and (3) Manual Dispatch / HR Handling. Also available interactively inside the Web app via **Time Off Requests → Workflow Demo**.*
+
+<p align="center">
+  <img src="docs/media/timeoff-workflow-demo.gif" alt="Time-Off & Shift Cover Animated Workflow Demo (3 Scenarios)" width="100%" />
+</p>
+
 ---
 
 ## 🌐 Live Interactive Demo
@@ -87,8 +94,11 @@ The platform consists of a deeply integrated ecosystem of specialized applicatio
   - **QuickBooks & Canadian Payroll Export Integration**: Built-in exporter supporting **QuickBooks Online (QBO)** `TimeActivity` CSV, **QBO Bi-Weekly Summary** CSV, **QuickBooks Desktop Canada** native `.IIF` (`TIMEACT`) timesheet files, **Wagepoint / ADP / Ceridian Powerpay (Canada)** CRA/ROE batch CSV, and official Microsoft Excel (`.xlsx`) workbooks.
 - **Expense Reimbursement Policy Engine & AI Policy Assistant**:
   - **Dynamic HR & Fleet Policies**: Configurable per-employee expense caps (bi-weekly pay period aligned with Bi-Weekly Payroll's shared anchor, monthly, yearly, or per-claim) with strict HR vs. Fleet group-level RBAC isolation and immutable `expense_policy_audit_logs`.
-  - **Automated Pre-Approval & Configurable SLA**: Eligible standard claims (e.g. Bus Washing, Washer Fluid) automatically enter `pre_approved` (isolated from Finance/Payroll) and finalize to `approved` after a configurable calendar-day SLA (default 5 days, adjustable in **Policies & Limits**) unless held or rejected. Completion-proof items (e.g. Road Test, Class 4 Knowledge Test) always require manual review.
+  - **Automated Pre-Approval & Configurable SLA**: Eligible standard claims (e.g. Bus Washing, Washer Fluid) automatically enter `pre_approved` (isolated from Finance/Payroll) and finalize to `approved` after a configurable calendar-day SLA (default 5 days, adjustable in **Policies & Limits**) unless held or rejected. The Expense Reimbursements page defaults to **Pending Review** and includes **Pre-Approved** in both summary cards and quick filters. Completion-proof items (e.g. Road Test, Class 4 Knowledge Test) always require manual review.
   - **Single-Category Claim Enforcement & AI Pre-Check**: Enforces one expense category per claim (supporting multiple receipts for that category), provides deterministic compliance badges, natural-language policy updates via AI Copilot confirmation cards, and on-demand AI receipt/soft-rule pre-checks.
+- **Time-Off Approver AI Agent & 3-Day Coverage Pipeline**:
+  - **Global Approver AI Agent Window**: Dedicated floating/dockable AI Agent window (left/right dock, maximize/minimize, unread badge & proactive toast alerts) visible globally to `admin` and `time_off` approvers. Driven by Firestore `onSnapshot` listeners (zero polling), it streams live employee submissions, substitute cover transitions (`Pre-Approved` with 24h / 2h-before-departure auto-finalize SLA), and persistent inline **Approve / Reject** work trajectory audit logs.
+  - **3-Day Stage Tracker & Regions/Yards Coverage**: Dedicated lower tabs on the Time-Off Requests page tracking all 4 pipeline stages (`Submitted`, `Shift Cover`, `Pre-Approved`, `Final Approved`), flagging `Broadcasted · No Applicants` bottlenecks, and summarizing AM/PM shift coverage by Yard/Region.
 - **Zero-Latency Global Caching & Virtualized Tables**: Top-level persistent state and IndexedDB/`localStorage` caching for Routes, Employees, Vehicles, Students, Schools, Yards, Payroll Rates, School Calendars, and Company Contacts, paired with `@tanstack/react-virtual` virtual scrolling across large operational tables.
 - **Route Openings & Shift Bidding Workflow**: Dispatchers can publish open routes or temporary shifts to the driver pool. Review incoming driver bids, compare seniority or availability, and award shifts directly.
 - **Safety, Defect & Incident Intake**: Immediate triage workflow for vehicle mechanical defects, roadside hazards, and student behavior incidents with photo evidence and resolution tracking.
@@ -113,7 +123,7 @@ The platform consists of a deeply integrated ecosystem of specialized applicatio
 - **Schedule 5 Pre-Trip Inspection Checklist**: Mandatory digital walk-around inspection complying with regulatory safety standards (MTO / SAAQ / CVOR). Requires odometer entry, fluid checks, emergency door tests, lighting checks, and mandatory defect sign-off prior to departure.
 - **Defect & Hazard Reporting**: Immediate field reporting of mechanical defects (brakes, lights, tires, engine) or roadside hazards with descriptions and photo attachments, alerting dispatch in real-time.
 - **Open Route Bidding**: In-app marketplace where drivers can browse posted route openings, view compensation rates, and submit shift bids directly from their mobile phone.
-- **Real-Time Dispatch Team Chat**: Secure two-way messaging channel with dispatchers and yard staff for route delays, road closures, or operational questions.
+- **Real-Time Dispatch Team Chat & Company Office Concierge**: Secure two-way messaging channel with dispatchers and yard staff, plus an extensible bilingual (EN/FR) **Company Office Concierge** AI chat that checks assigned AM/PM routes, validates substitute driver conflicts & CDL compliance, renders interactive Time-Off preview & peer cover confirmation cards (`Accept Cover` / `Decline`), auto-broadcasts <=2-day uncovered leaves into separate AM/PM shift openings, and pushes live Pre-Approved / Approved status updates.
 - **Push Notification Shift Reminders (FCM)**: Timely push notifications reminding drivers of upcoming shift departure times, pending pre-trip inspections, and dispatch updates.
 - **Dynamic Expense Reimbursements**: Single-category expense submission (supporting multiple receipts per claim) synced live with office policy limits, displaying real-time cap warnings and `Pre-Approved (5-Day Review)` status tracking.
 

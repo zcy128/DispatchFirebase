@@ -6,6 +6,7 @@ import { GlobalEntityOverlays } from './app/GlobalEntityOverlays';
 import { useEntityOverlays } from './app/useEntityOverlays';
 import { useFleetData } from './app/useFleetData';
 import { ChatDrawer } from './components/chat/ChatDrawer';
+import { TimeOffApproverAgentWindow } from './components/time_off/TimeOffApproverAgentWindow';
 import { BottomNav } from './components/common/BottomNav';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Header } from './components/common/Header';
@@ -425,6 +426,11 @@ export const AppContent: React.FC = () => {
           onClearInitialTarget={() => setChatInitialTargetUserId(null)}
           initialParentMetadata={chatInitialParent}
           onClearInitialParentMetadata={() => setChatInitialParent(null)}
+        />
+
+        <TimeOffApproverAgentWindow
+          currentTab={currentTab}
+          onNavigateToTimeOff={() => navigateToTab('time_off')}
         />
       </div>
     </AIProvider>

@@ -266,6 +266,8 @@ func main() {
 	googleRoutesService := services.NewGoogleRoutesService(cfg)
 	dispatchHandler.UseParentNotifiers(twilioService, emailService)
 	dispatchHandler.UseStudentLookup(studentRepo)
+	officeConciergeService := services.NewOfficeConciergeService(dispatchRepo, repo, routeRepo)
+	dispatchHandler.UseOfficeConcierge(officeConciergeService)
 	parentHandler := handlers.NewParentHandler(cfg, studentRepo, parentRepo, dispatchRepo, routeRepo, twilioService, emailService, etaService, googleRoutesService)
 	twilioWebhookHandler := handlers.NewTwilioWebhookHandler(cfg, studentRepo, dispatchRepo, parentRepo, twilioService, etaService)
 	twilioWebhookHandler.UseSMSRepository(smsRepo)
@@ -524,7 +526,12 @@ func main() {
 		protected.Post("/api/dispatch/time-off-requests/{id}/approve", dispatchHandler.ApproveTimeOffRequest)
 		protected.Post("/api/dispatch/time-off-requests/{id}/reject", dispatchHandler.RejectTimeOffRequest)
 		protected.Post("/api/dispatch/time-off-requests/{id}/cancel", dispatchHandler.CancelTimeOffRequest)
+		protected.Post("/api/dispatch/time-off-requests/{id}/confirm-peer-cover", dispatchHandler.ConfirmTimeOffPeerCover)
+		protected.Post("/api/dispatch/time-off-requests/{id}/claim-slot", dispatchHandler.ClaimTimeOffCoverageSlot)
 		protected.Delete("/api/dispatch/time-off-requests/{id}", dispatchHandler.DeleteTimeOffRequest)
+		protected.Get("/api/dispatch/time-off-workbench", dispatchHandler.GetTimeOffWorkbench)
+		protected.Post("/api/dispatch/office-concierge/chat", dispatchHandler.OfficeConciergeChat)
+		protected.Get("/api/dispatch/office-concierge/messages", dispatchHandler.GetOfficeConciergeMessages)
 		protected.Get("/api/dispatch/user-preferences/dashboard", dispatchHandler.GetDashboardPreferences)
 		protected.Put("/api/dispatch/user-preferences/dashboard", dispatchHandler.SaveDashboardPreferences)
 
@@ -1048,6 +1055,9 @@ func main() {
 		// Expense Reimbursement 5-day Pre-Approval Auto-Finalization Sweep
 		adminRoute.Post("/api/admin/expense-reimbursements/finalize-preapproved", dispatchHandler.FinalizePreApprovedExpenseClaims)
 
+		// Time-Off 24h Pre-Approval Auto-Finalization Sweep
+		adminRoute.Post("/api/admin/time-off-requests/finalize-preapproved", dispatchHandler.FinalizePreApprovedTimeOffRequests)
+
 		// Crew Late Check-in Reminders (Scheduled Mon-Fri 6:00-18:00 every minute)
 		adminRoute.Post("/api/admin/shifts/check-in-reminders", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -1439,11 +1449,14 @@ func main() {
 		}
 	}()
 
-	// Expense Reimbursement 5-day Pre-Approval Auto-Finalization Sweep (runs every 10 minutes)
+	// Expense Reimbursement 5-day & Time-Off 24h Pre-Approval Auto-Finalization Sweep (runs every 10 minutes)
 	go func() {
 		runSweep := func() {
 			if n, err := dispatchRepo.FinalizeDuePreApprovedClaims(context.Background(), time.Now().UTC()); err == nil && n > 0 {
 				log.Printf("[EXPENSE-SLA] Auto-finalized %d pre_approved expense claim(s) past 5-day deadline", n)
+			}
+			if n, err := officeConciergeService.RunPreApprovedAutoFinalizationSweep(context.Background(), time.Now().UTC()); err == nil && n > 0 {
+				log.Printf("[TIMEOFF-SLA] Auto-finalized %d pre_approved time-off request(s) past 24h deadline", n)
 			}
 		}
 		time.Sleep(5 * time.Second)

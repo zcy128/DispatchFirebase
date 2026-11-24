@@ -5,6 +5,7 @@ import '../repository/chat_repository.dart';
 import '../services/chat_notification_service.dart';
 import 'chat_thread_page.dart';
 import 'new_chat_contact_page.dart';
+import 'office_concierge_chat_page.dart';
 
 class ChatChannelsPage extends StatefulWidget {
   final String driverId;
@@ -66,6 +67,79 @@ class _ChatChannelsPageState extends State<ChatChannelsPage> {
     ).then((_) => _refreshChannels());
   }
 
+  void _openOfficeConcierge() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OfficeConciergeChatPage(
+          driverId: widget.driverId,
+          driverName: widget.driverName,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOfficeConciergeBanner(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+      child: InkWell(
+        onTap: _openOfficeConcierge,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0D9488).withValues(alpha: isDark ? 0.18 : 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFF0D9488).withValues(alpha: 0.4),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D9488),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.support_agent_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Company Office Assistant',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Request time-off, verify shift cover, or ask HR / Dispatch / Payroll',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondaryLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -120,35 +194,42 @@ class _ChatChannelsPageState extends State<ChatChannelsPage> {
           final channels = snapshot.data ?? [];
 
           if (channels.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.forum_outlined,
-                    size: 48,
-                    color: isDark ? Colors.grey.shade700 : Colors.grey.shade400,
+            return ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: [
+                _buildOfficeConciergeBanner(isDark),
+                const SizedBox(height: 36),
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.forum_outlined,
+                        size: 48,
+                        color: isDark ? Colors.grey.shade700 : Colors.grey.shade400,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No active conversations yet.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.black87,
+                        ),
+                        onPressed: _openNewChat,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Start Direct Message'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'No active conversations yet.',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.black87,
-                    ),
-                    onPressed: _openNewChat,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Start Direct Message'),
-                  ),
-                ],
-              ),
+                ),
+              ],
             );
           }
 
@@ -158,6 +239,7 @@ class _ChatChannelsPageState extends State<ChatChannelsPage> {
           return ListView(
             padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
+              _buildOfficeConciergeBanner(isDark),
               // 1. Group / Fleet Channels Section
               if (groupChannels.isNotEmpty) ...[
                 Padding(

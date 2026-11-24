@@ -187,6 +187,8 @@ type DispatchRepository interface {
 	ListTimeOffRequestsFiltered(ctx context.Context, filter TimeOffFilter) ([]*models.TimeOffRequest, error)
 	GetTimeOffRequestByID(ctx context.Context, id string) (*models.TimeOffRequest, error)
 	CreateTimeOffRequest(ctx context.Context, req *models.CreateTimeOffRequestPayload) (*models.TimeOffRequest, error)
+	SaveTimeOffRequest(ctx context.Context, rec *models.TimeOffRequest) (*models.TimeOffRequest, error)
+	FinalizeDuePreApprovedTimeOffRequests(ctx context.Context, now time.Time) ([]*models.TimeOffRequest, error)
 	UpdateTimeOffRequest(ctx context.Context, id string, req *models.UpdateTimeOffRequestPayload) (*models.TimeOffRequest, error)
 	ApproveTimeOffRequest(ctx context.Context, id string, req *models.ReviewTimeOffRequestPayload) (*models.TimeOffRequest, error)
 	RejectTimeOffRequest(ctx context.Context, id string, req *models.ReviewTimeOffRequestPayload) (*models.TimeOffRequest, error)
@@ -5575,21 +5577,35 @@ func (r *FirestoreDispatchRepository) CreateTimeOffRequest(ctx context.Context, 
 		shiftType = "ALL"
 	}
 
+	initialStatus := req.InitialStatus
+	if initialStatus == "" {
+		initialStatus = models.TimeOffStatusPending
+	}
+
 	rec := models.TimeOffRequest{
-		ID:                id,
-		EmployeeID:        req.EmployeeID,
-		EmployeeNumber:    req.EmployeeNumber,
-		EmployeeName:      req.EmployeeName,
-		LeaveType:         req.LeaveType,
-		StartDate:         req.StartDate,
-		EndDate:           req.EndDate,
-		ShiftType:         shiftType,
-		Comments:          req.Comments,
-		Status:            models.TimeOffStatusPending,
-		RequestedByUserID: req.RequestedByUserID,
-		RequestedByName:   req.RequestedByName,
-		CreatedAt:         now,
-		UpdatedAt:         now,
+		ID:                  id,
+		EmployeeID:          req.EmployeeID,
+		EmployeeNumber:      req.EmployeeNumber,
+		EmployeeName:        req.EmployeeName,
+		YardID:              req.YardID,
+		YardName:            req.YardName,
+		RouteNo:             req.RouteNo,
+		LeaveType:           req.LeaveType,
+		StartDate:           req.StartDate,
+		EndDate:             req.EndDate,
+		ShiftType:           shiftType,
+		Comments:            req.Comments,
+		Status:              initialStatus,
+		CoverageMode:        req.CoverageMode,
+		CoverageSlots:       req.CoverageSlots,
+		CoverageDriverId:    req.CoverageDriverId,
+		CoverageDriverName:  req.CoverageDriverName,
+		PreApprovedAt:       req.PreApprovedAt,
+		AutoApproveDeadline: req.AutoApproveDeadline,
+		RequestedByUserID:   req.RequestedByUserID,
+		RequestedByName:     req.RequestedByName,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 
 	if _, err := r.client.Collection(r.timeOffColl).Doc(id).Set(ctx, rec); err != nil {
@@ -7974,21 +7990,35 @@ func (m *MemoryDispatchRepository) CreateTimeOffRequest(ctx context.Context, req
 		shiftType = "ALL"
 	}
 
+	initialStatus := req.InitialStatus
+	if initialStatus == "" {
+		initialStatus = models.TimeOffStatusPending
+	}
+
 	rec := &models.TimeOffRequest{
-		ID:                id,
-		EmployeeID:        req.EmployeeID,
-		EmployeeNumber:    req.EmployeeNumber,
-		EmployeeName:      req.EmployeeName,
-		LeaveType:         req.LeaveType,
-		StartDate:         req.StartDate,
-		EndDate:           req.EndDate,
-		ShiftType:         shiftType,
-		Comments:          req.Comments,
-		Status:            models.TimeOffStatusPending,
-		RequestedByUserID: req.RequestedByUserID,
-		RequestedByName:   req.RequestedByName,
-		CreatedAt:         now,
-		UpdatedAt:         now,
+		ID:                  id,
+		EmployeeID:          req.EmployeeID,
+		EmployeeNumber:      req.EmployeeNumber,
+		EmployeeName:        req.EmployeeName,
+		YardID:              req.YardID,
+		YardName:            req.YardName,
+		RouteNo:             req.RouteNo,
+		LeaveType:           req.LeaveType,
+		StartDate:           req.StartDate,
+		EndDate:             req.EndDate,
+		ShiftType:           shiftType,
+		Comments:            req.Comments,
+		Status:              initialStatus,
+		CoverageMode:        req.CoverageMode,
+		CoverageSlots:       req.CoverageSlots,
+		CoverageDriverId:    req.CoverageDriverId,
+		CoverageDriverName:  req.CoverageDriverName,
+		PreApprovedAt:       req.PreApprovedAt,
+		AutoApproveDeadline: req.AutoApproveDeadline,
+		RequestedByUserID:   req.RequestedByUserID,
+		RequestedByName:     req.RequestedByName,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 
 	m.timeOffRequests[id] = rec

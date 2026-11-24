@@ -124,7 +124,7 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('pending');
   const [selectedClaim, setSelectedClaim] = useState<ExpenseReimbursement | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'claims' | 'policies'>('claims');
@@ -221,7 +221,7 @@ export const ExpenseReimbursementsView: React.FC<ExpenseReimbursementsViewProps>
       if (q) {
         params.query = q;
       }
-      if (statusFilter !== 'all') {
+      if (timeRange === 'all' && statusFilter !== 'all') {
         params.status = statusFilter;
       }
       const data = await ExpenseReimbursementService.listClaims(params);

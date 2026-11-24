@@ -27,6 +27,13 @@
   <a href="docs/media/intro-demo.mp4"><strong>▶ 观看高清完整视频（含背景配乐 1280×720 MP4）</strong></a>
 </p>
 
+### 🔄 请假与替班全流程动画演示（3 大场景）
+*实时展示 **Driver App（Company Office Chat）↔ Web 控制台（Approver AI Agent）** 的三类完整闭环：（1）司机找到替班与冲突检测（Option B）、（2）`<= 2 天` 无替班自动拆分 AM/PM 广播认领、（3）超期/人工发布或指定司机处理。您也可在 Web 端 **Time Off Requests → Workflow Demo** 中亲自交互体验。*
+
+<p align="center">
+  <img src="docs/media/timeoff-workflow-demo.gif" alt="请假与替班全流程动画演示（3 大场景）" width="100%" />
+</p>
+
 ---
 
 ## 🌐 在线演示体验 (Live Demo)
@@ -85,8 +92,11 @@
   - **QuickBooks 与加拿大主流薪酬软件导出**：内置 4 种专业财务对接格式，支持一键导出 **QuickBooks Online (QBO)** `TimeActivity` CSV、**QBO 双周汇总 CSV**、**QuickBooks Desktop Canada** 原生 `.IIF` (`TIMEACT`) 工时文件，以及 **Wagepoint / ADP / Ceridian Powerpay (Canada)** 标准批处理 CSV（含 CRA/ROE EI 工时与免税报销）。
 - **费用报销规则引擎与 AI 政策助手（Expense Policy Engine & AI Assistant）**：
   - **动态 HR / Fleet 规则与共享发薪双周**：支持按人统计固定发薪双周（与 Bi-Weekly Payroll 共享锚点）、自然月、自然年或单笔累计上限；严格执行 HR 与 Fleet 分组权限隔离，并写入不可变审计日志 `expense_policy_audit_logs`。
-  - **自动预批准（Pre-Approved）与可配 SLA 观察期**：符合规则的标准报销单（如洗车费、玻璃水等）自动进入 `pre_approved`（不进入财务结算），在 **Policies & Limits** 可调的观察期（默认 5 个自然日）期满无人工干预后自动转为 `approved` 移交财务；含成绩/通过证明的条目（如 Road Test、Class 4 Knowledge Test）强制人工核验，不进入预批。
+  - **自动预批准（Pre-Approved）与可配 SLA 观察期**：符合规则的标准报销单（如洗车费、玻璃水等）自动进入 `pre_approved`（不进入财务结算），在 **Policies & Limits** 可调的观察期（默认 5 个自然日）期满无人工干预后自动转为 `approved` 移交财务；报销页面默认定位到 **Pending Review**，并在顶部汇总卡片与筛选栏中提供 **Pre-Approved** 视图。含成绩/通过证明的条目（如 Road Test、Class 4 Knowledge Test）强制人工核验，不进入预批。
   - **单类型报销校验与 AI 预审**：强制单张报销单仅填报一种费用类型（支持同类型多张收据），审批弹窗展示确定性合规检查、AI Copilot 自然语言改规则确认卡片及按需触发的 AI 收据/软规则预审。
+- **请假审批 AI Agent 窗口与 3 日全流程看板（Time-Off Approver AI Agent & Stage Tracker）**：
+  - **全局独立 Approver AI Agent 窗口**：专为 `admin` 与拥有请假写入权限的审批人打造的全局可停靠/最大化 AI Agent 窗口（支持左右停靠、最小化胶囊、未读徽标与新事件提醒气泡）。基于 Firestore `onSnapshot` 事件驱动（零定时轮询），实时推送员工新提交请假、替班司机同意替班转为 **Pre-Approved**（24 小时 / 发车前 2 小时自动转正 SLA）以及带时间戳的 **Approve / Reject** 工作轨迹审计流。
+  - **3 日阶段流水线与地区/车场覆盖率看板**：在请假管理页底部提供 **3-Day Pipeline & Stage Tracker**（追踪「已提交 → 替班匹配/已广播无申请人 → 预审通过 → 正式批准」四阶段瓶颈）与 **Regions & Yards Coverage**（按车场汇总 AM/PM 班次替班覆盖率）。
 - **零延迟全局常驻缓存与虚拟滚动列表**：对线路、员工、车辆、学生、学校、车场、薪资费率、校历及公司通讯录启用顶层全局常驻缓存与 IndexedDB/`localStorage` 持久化，配合 `@tanstack/react-virtual` 虚拟滚动技术流畅渲染千级数据列表。
 - **空缺线路发布与司机竞价（Route Bidding）**：调度员可一键发布空缺线路或临时增援班次，在线查看司机提交的接单申请与资历，快速择优定岗。
 - **安全隐患、车辆缺陷与违规事件闭环**：车辆机械故障（Defects）、道路隐患（Hazards）及学生乘车违规行为（Student Incidents）快速立案、上传现场照片并跟踪维保维修闭环。
@@ -111,7 +121,7 @@
 - **Schedule 5 出车前安全检查（Pre-Trip Inspection）**：符合法规（MTO / SAAQ / CVOR）标准的车辆出车前数字点检清单，包含里程表录入、灯光、刹车、应急逃生门检查及隐患上报确认，未通过无法出车。
 - **车辆缺陷与安全隐患实时报修**：随时上报车辆机械缺陷（刹车异响、车灯故障等）或道路突发险情，支持文字描述与拍照上传，调度中心第一时间接收报警。
 - **空缺线路接单竞价（Route Bidding）**：司机可在移动端浏览调度发布的公开空缺线路与包车增援班次，查看薪资待遇并一键提交接单意向。
-- **车队即时通讯（Fleet Real-Time Chat）**：与调度中心建立双向即时文字消息沟通，快速同步堵车、晚点或紧急突发情况。
+- **车队即时通讯与公司办公室 AI 礼宾对话（Fleet Chat & Company Office Concierge）**：与调度中心建立双向即时沟通，并内置可扩展的英/法双语 **Company Office Concierge** 对话窗口——自动识别员工明日 AM/PM 排班线路、校验替班司机档期冲突与驾照合规、生成请假表单预览卡、向指定替班司机推送交互式同意替班卡片，支持 2 天内未指定替班自动拆分 AM/PM 广播招人，并在预批准与正式批准时实时推送回执卡片。
 - **智能推送通知（FCM Push Notifications）**：出车前定时任务倒计时提醒、车检督促通知以及调度中心临时发来的换车换线通知。
 - **动态费用报销（Dynamic Expense Reimbursements）**：强制单类型报销（支持同类型多张收据），实时同步办公室最新规则限额文案与超额提醒，并支持 `Pre-Approved (5-Day Review)` 预批准状态跟踪。
 

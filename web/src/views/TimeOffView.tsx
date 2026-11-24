@@ -38,6 +38,7 @@ import { RouteOpeningRole } from '../types/routeOpening';
 import { TemporaryAssignment } from '../types/dispatch';
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalTodayString, safeFormatDate, addDaysToDateString, calculateDefaultDeadline } from '../utils/dateUtils';
+import { TimeOffOperationsWorkbench } from '../components/time_off/TimeOffOperationsWorkbench';
 
 const TimeOffModal = React.lazy(() =>
   import('../components/time_off/TimeOffModal').then((module) => ({
@@ -247,9 +248,15 @@ export const TimeOffView = memo(function TimeOffView({
       (err) => console.warn('Failed to subscribe to temporary assignments in TimeOffView:', err)
     );
 
+    const onAgentDecision = () => {
+      void loadData();
+    };
+    window.addEventListener('time-off-requests-updated', onAgentDecision);
+
     return () => {
       if (unsubscribe) unsubscribe();
       if (unsubAssignments) unsubAssignments();
+      window.removeEventListener('time-off-requests-updated', onAgentDecision);
     };
   }, []);
 
@@ -912,6 +919,9 @@ export const TimeOffView = memo(function TimeOffView({
             >
               <option value="all">All Statuses</option>
               <option value="pending">Pending Review</option>
+              <option value="awaiting_peer_confirm">Awaiting Peer Confirm</option>
+              <option value="seeking_coverage">Seeking Shift Cover</option>
+              <option value="pre_approved">Pre-Approved (24h SLA)</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
               <option value="cancelled">Cancelled</option>
@@ -1499,6 +1509,13 @@ export const TimeOffView = memo(function TimeOffView({
           </div>
         )}
       </div>
+
+      {/* Lower Tabbed Operations Dock: 3-Day Live Chat Workbench & Region / Yard Coverage List */}
+      <TimeOffOperationsWorkbench
+        employees={employees}
+        canApproveTimeOff={isHR}
+        onRequestsChanged={() => void loadData()}
+      />
     </>
   )}
 

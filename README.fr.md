@@ -27,6 +27,13 @@ Une solution complète, moderne et open-source de régulation de flotte, de plan
   <a href="docs/media/intro-demo.mp4"><strong>▶ Voir la Vidéo HD Complète avec Audio (1280×720 MP4)</strong></a>
 </p>
 
+### 🔄 Démonstration Animée du Flux Congés & Remplacements (3 Scénarios)
+*Aperçu en direct de l’interaction **Driver App (`Company Office Chat`) ↔ Console Web (`Approver AI Agent`)** : (1) Remplaçant désigné + détection de conflit (`Option B`), (2) Diffusion automatique AM/PM (`<= 2 jours`), et (3) Traitement manuel (publication ou assignation directe). Également disponible en mode interactif dans l’application Web via **Time Off Requests → Workflow Demo**.*
+
+<p align="center">
+  <img src="docs/media/timeoff-workflow-demo.gif" alt="Démonstration Animée du Flux Congés & Remplacements (3 Scénarios)" width="100%" />
+</p>
+
 ---
 
 ## 🌐 Démonstration en Ligne (Live Demo)
@@ -72,8 +79,11 @@ La plateforme est structurée autour d'un écosystème d'applications dédiées,
   - **Intégration QuickBooks & Paie Canadienne** : Export en un clic vers **QuickBooks Online (QBO)** (`TimeActivity` CSV et synthèse), **QuickBooks Desktop Canada** (fichier natif `.IIF` `TIMEACT`) et **Wagepoint / ADP / Ceridian Powerpay (Canada)** (CSV conforme ARC/RE).
 - **Moteur de Politiques de Remboursement & Assistant IA** :
   - **Règles Dynamiques RH & Flotte** : Plafonds cumulatifs par employé (période de paie aux deux semaines partagée avec la Paie, mensuel, annuel ou par demande) avec isolation stricte des permissions RH / Flotte et journalisation immuable dans `expense_policy_audit_logs`.
-  - **Pré-approbation Automatisée & Délai Configurable (SLA)** : Les demandes standards conformes (ex. lavage d'autobus, lave-glace) passent en statut `pre_approved` (isolées de la finance) puis sont finalisées en `approved` après un délai configurable en jours calendaires (5 jours par défaut dans **Policies & Limits**) sans intervention manuelle. Les demandes exigeant une preuve de réussite (ex. Road Test, Class 4 Knowledge Test) restent en révision manuelle.
+  - **Pré-approbation Automatisée & Délai Configurable (SLA)** : Les demandes standards conformes (ex. lavage d'autobus, lave-glace) passent en statut `pre_approved` (isolées de la finance) puis sont finalisées en `approved` après un délai configurable en jours calendaires (5 jours par défaut dans **Policies & Limits**) sans intervention manuelle. La page des remboursements s'ouvre par défaut sur **Pending Review** et inclut **Pre-Approved** dans les cartes de synthèse et les filtres rapides. Les demandes exigeant une preuve de réussite (ex. Road Test, Class 4 Knowledge Test) restent en révision manuelle.
   - **Catégorie Unique par Demande & Pré-vérification IA** : Impose une seule catégorie par demande (avec plusieurs reçus autorisés), vérifications déterministes de conformité, mise à jour des règles en langage naturel via le Copilote IA avec carte de confirmation et pré-vérification IA des pièces justificatives.
+- **Agent IA Approbateur de Congés & Suivi sur 3 Jours** :
+  - **Fenêtre Globale Agent IA Approbateur** : Fenêtre flottante dédiée (ancrage gauche/droite, agrandissement/réduction, badge non lu et alertes proactives) réservée aux administrateurs et approbateurs `time_off`. Pilotée en temps réel par Firestore `onSnapshot` (sans scrutation périodique), elle diffuse les nouvelles demandes, les confirmations de remplacement (`Pre-Approved` avec SLA de 24h / 2h avant départ) et l'historique d'approbation/refus en ligne.
+  - **Pipeline 4 Étapes & Couverture par Dépôt** : Onglets dédiés en bas de la page Congés (**3-Day Pipeline & Stage Tracker** et **Regions & Yards Coverage**) mettant en évidence les remplacements publiés sans candidat (`Broadcasted · No Applicants`) et la couverture des quarts AM/PM par dépôt.
 - **Cache Global Instantané & Défilement Virtuel** : Mise en cache persistante au niveau supérieur (mémoire + IndexedDB/`localStorage`) et virtualisation des tableaux (`@tanstack/react-virtual`) pour une navigation sans latence.
 - **Publication des Lignes Vacantes & Candidatures Chauffeurs (Bidding)** : Diffusion des tournées ouvertes ou renforts temporaires auprès des chauffeurs. Analyse des candidatures et attribution transparente des circuits.
 - **Traitement des Défectuosités, Dangers & Incidents** : Déclaration, catégorisation, photos justificatives et suivi de la résolution pour les anomalies mécaniques (Defects), dangers routiers (Hazards) et rapports de discipline élèves (Student Incidents).
@@ -98,7 +108,7 @@ La plateforme est structurée autour d'un écosystème d'applications dédiées,
 - **Ronde de Sécurité Réglementaire Schedule 5 (Pre-Trip Inspection)** : Liste de contrôle numérique obligatoire avant le départ conforme aux exigences réglementaires (MTO / SAAQ / CVOR). Enregistrement de l'odomètre, vérification des freins, issues de secours, feux et signalement des défectuosités bloquant le départ en cas de danger majeur.
 - **Déclaration Immédiate de Défectuosités & Dangers** : Signalement sur le terrain des problèmes mécaniques ou imprévus de circulation avec prise de photos et notification instantanée du dispatch.
 - **Candidature aux Lignes Vacantes (Route Bidding)** : Consultation des circuits vacants et des vacations supplémentaires proposées par la régulation avec soumission directe de candidature depuis le mobile.
-- **Messagerie Instantanée d'Équipe en Direct** : Canal de communication bidirectionnel direct avec le centre de régulation en cas de ralentissement ou d'urgence.
+- **Messagerie d'Équipe & Concierge IA Bureau (`Company Office Concierge`)** : Canal bidirectionnel avec la régulation et assistant conversationnel bilingue (EN/FR) vérifiant les tournées AM/PM assignées, les conflits et la conformité CDL des remplaçants, générant un aperçu de demande de congé, envoyant des cartes d'acceptation aux collègues désignés, diffusant automatiquement les quarts AM/PM ouverts (<= 2 jours) et notifiant les pré-approbations et validations finales en direct.
 - **Notifications Push Automatisées (FCM)** : Rappels programmés avant la prise de poste, relances d'inspection pré-départ et notifications de modification de tournée.
 - **Remboursements de Frais Dynamiques** : Soumission à catégorie unique par demande (plusieurs reçus autorisés), synchronisée en temps réel avec les plafonds de la console et le suivi du statut `Pre-Approved (5-Day Review)`.
 

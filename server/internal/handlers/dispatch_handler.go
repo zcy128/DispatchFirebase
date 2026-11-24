@@ -27,6 +27,7 @@ type DispatchHandler struct {
 	sms       parentSMSSender
 	email     parentEmailSender
 	students  studentContactSource
+	concierge *services.OfficeConciergeService
 }
 
 type studentContactSource interface {
@@ -42,7 +43,17 @@ type parentEmailSender interface {
 }
 
 func NewDispatchHandler(repo repository.DispatchRepository, allowDemo bool) *DispatchHandler {
-	return &DispatchHandler{repo: repo, allowDemo: allowDemo}
+	return &DispatchHandler{
+		repo:      repo,
+		allowDemo: allowDemo,
+		concierge: services.NewOfficeConciergeService(repo, nil, nil),
+	}
+}
+
+func (h *DispatchHandler) UseOfficeConcierge(concierge *services.OfficeConciergeService) {
+	if concierge != nil {
+		h.concierge = concierge
+	}
 }
 
 func (h *DispatchHandler) UseStudentLookup(students studentContactSource) {
@@ -1420,6 +1431,9 @@ func (h *DispatchHandler) CreateTimeOffRequest(w http.ResponseWriter, r *http.Re
 		http.Error(w, `{"error":"failed to create time off request: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+	if h.concierge != nil {
+		h.concierge.NotifyDirectTimeOffSubmitted(created)
+	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(created)
@@ -1462,6 +1476,9 @@ func (h *DispatchHandler) UpdateTimeOffRequest(w http.ResponseWriter, r *http.Re
 		http.Error(w, `{"error":"failed to update time off request: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+	if h.concierge != nil {
+		h.concierge.NotifyDirectTimeOffUpdated(existing.Status, updated)
+	}
 
 	json.NewEncoder(w).Encode(updated)
 }
@@ -1492,6 +1509,16 @@ func (h *DispatchHandler) ApproveTimeOffRequest(w http.ResponseWriter, r *http.R
 		http.Error(w, `{"error":"failed to approve time off request: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+	if h.concierge != nil {
+		reviewer := strings.TrimSpace(req.ReviewerName)
+		if reviewer == "" && authUser != nil {
+			reviewer = authUser.FullName
+			if reviewer == "" {
+				reviewer = authUser.Email
+			}
+		}
+		h.concierge.NotifyManualReviewDecision(updated, "approved", reviewer)
+	}
 
 	json.NewEncoder(w).Encode(updated)
 }
@@ -1521,6 +1548,16 @@ func (h *DispatchHandler) RejectTimeOffRequest(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		http.Error(w, `{"error":"failed to reject time off request: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
+	}
+	if h.concierge != nil {
+		reviewer := strings.TrimSpace(req.ReviewerName)
+		if reviewer == "" && authUser != nil {
+			reviewer = authUser.FullName
+			if reviewer == "" {
+				reviewer = authUser.Email
+			}
+		}
+		h.concierge.NotifyManualReviewDecision(updated, "rejected", reviewer)
 	}
 
 	json.NewEncoder(w).Encode(updated)
