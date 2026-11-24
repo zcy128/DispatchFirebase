@@ -34,6 +34,42 @@ Une solution complète, moderne et open-source de régulation de flotte, de plan
   <img src="docs/media/timeoff-workflow-demo.gif" alt="Démonstration Animée du Flux Congés & Remplacements (3 Scénarios)" width="100%" />
 </p>
 
+<details>
+<summary><strong>📊 Machine à États du Cycle de Vie des Congés (Diagramme Mermaid)</strong></summary>
+
+```mermaid
+flowchart TD
+  Start(["Le chauffeur soumet un congé\n(Office Chat ou Formulaire)"]) --> Check["L'IA détecte le circuit & quarts AM/PM\n+ Aperçu confirmé"]
+  Check --> Branch{"Remplaçant & Durée ?"}
+
+  Branch -- "Remplaçant désigné\n(Vérif. conflit & CDL)" --> PeerWait["awaiting_peer_confirm\n(Option B : Carte envoyée au pair)"]
+  PeerWait -- "Le pair accepte\n(Pré-verrouille TemporaryAssignment)" --> PreApproved["pre_approved\nDélai : min(now+24h, départ-2h)"]
+  PeerWait -- "Le pair refuse (<= 2 jours)" --> Seeking
+  PeerWait -- "Le pair refuse (> 2 jours)" --> ManualPending
+
+  Branch -- "Sans remplaçant & <= 2 jours" --> Seeking["seeking_coverage\n(Découpage auto AM / PM diffusé)"]
+  Seeking -- "0 quart pourvu" --> Unclaimed["Alerte Étape 2 :\nBroadcasted · No Applicants"]
+  Unclaimed --> ClaimSlot["Un chauffeur réclame le quart\n(Conflit & CDL vérifiés)"]
+  Seeking --> ClaimSlot
+  ClaimSlot -- "Couverture partielle (1/2)" --> Seeking
+  ClaimSlot -- "Tous les quarts pourvus (2/2)" --> PreApproved
+
+  Branch -- "Sans remplaçant & > 2 jours\nou Révision manuelle" --> ManualPending["pending\n(Révision manuelle RH / Répartition)"]
+  ManualPending -- "Le répartiteur publie l'ouverture\nou assigne un remplaçant" --> Assigned["Remplaçant assigné\n(Prêt pour décision RH)"]
+
+  PreApproved -- "Aucune intervention avant échéance\n(Validation auto 24h)" --> Approved["approved\n(Approuvé final · SLA 24h)"]
+  PreApproved -- "L'approbateur clique Approuver\ndans l'Agent IA" --> Approved
+  PreApproved -- "L'approbateur clique Refuser" --> Rejected["rejected"]
+  Assigned -- "RH approuvent" --> Approved
+  Assigned -- "RH refusent" --> Rejected
+  ManualPending -- "RH approuvent / refusent" --> Approved
+
+  Approved --> Trajectory["Ajoute une trace [Work Trajectory]\ndans l'Agent Web & notifie le chauffeur"]
+  Rejected --> Trajectory
+```
+
+</details>
+
 ---
 
 ## 🌐 Démonstration en Ligne (Live Demo)

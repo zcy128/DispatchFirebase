@@ -34,6 +34,42 @@ A modern, full-stack open-source fleet dispatch, scheduling, and live tracking p
   <img src="docs/media/timeoff-workflow-demo.gif" alt="Time-Off & Shift Cover Animated Workflow Demo (3 Scenarios)" width="100%" />
 </p>
 
+<details>
+<summary><strong>📊 Time-Off Lifecycle State Machine (Mermaid Flowchart)</strong></summary>
+
+```mermaid
+flowchart TD
+  Start(["Driver Submits Leave\n(Office Chat or Form)"]) --> Check["AI Detects Route & AM/PM Shifts\n+ Form Preview Confirmed"]
+  Check --> Branch{"Substitute & Duration?"}
+
+  Branch -- "Named Substitute\n(Conflict & CDL Checked)" --> PeerWait["awaiting_peer_confirm\n(Option B Peer Card Sent)"]
+  PeerWait -- "Peer Taps Accept Cover\n(Pre-locks TemporaryAssignment)" --> PreApproved["pre_approved\nDeadline: min(now+24h, departure-2h)"]
+  PeerWait -- "Peer Taps Decline (<= 2 Days)" --> Seeking
+  PeerWait -- "Peer Taps Decline (> 2 Days)" --> ManualPending
+
+  Branch -- "No Substitute & <= 2 Days" --> Seeking["seeking_coverage\n(Auto-Split AM / PM Slots)"]
+  Seeking -- "0 Slots Filled" --> Unclaimed["Stage 2 Alert:\nBroadcasted · No Applicants"]
+  Unclaimed --> ClaimSlot["Driver Claims Slot\n(Conflict & CDL Verified)"]
+  Seeking --> ClaimSlot
+  ClaimSlot -- "Partial Slots Filled (1/2)" --> Seeking
+  ClaimSlot -- "All AM/PM Slots Filled (2/2)" --> PreApproved
+
+  Branch -- "No Substitute & > 2 Days\nor Manual Review" --> ManualPending["pending\n(Manual HR / Dispatch Review)"]
+  ManualPending -- "Dispatcher Publishes Opening\nor Assigns Spare Driver" --> Assigned["Substitute Assigned\n(Ready for HR Decision)"]
+
+  PreApproved -- "No Intervention Before SLA\n(Auto-Finalize Sweep)" --> Approved["approved\n(Final Approved · 24h Auto-SLA)"]
+  PreApproved -- "Approver Clicks Approve\nin Approver AI Agent" --> Approved
+  PreApproved -- "Approver Clicks Reject" --> Rejected["rejected"]
+  Assigned -- "HR Approves" --> Approved
+  Assigned -- "HR Rejects" --> Rejected
+  ManualPending -- "HR Approves / Rejects" --> Approved
+
+  Approved --> Trajectory["Appends [Work Trajectory] Audit Bubble\nin Web Agent & Notifies Driver Chat"]
+  Rejected --> Trajectory
+```
+
+</details>
+
 ---
 
 ## 🌐 Live Interactive Demo

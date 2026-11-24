@@ -34,6 +34,42 @@
   <img src="docs/media/timeoff-workflow-demo.gif" alt="请假与替班全流程动画演示（3 大场景）" width="100%" />
 </p>
 
+<details>
+<summary><strong>📊 请假全生命周期状态机（Mermaid 流程图）</strong></summary>
+
+```mermaid
+flowchart TD
+  Start(["司机提交请假\n（Office Chat 对话或表单）"]) --> Check["AI 自动识别线路与 AM/PM 班次\n+ 表单预览确认"]
+  Check --> Branch{"替班情况与请假天数？"}
+
+  Branch -- "已指定替班司机\n（档期冲突与 CDL 合规校验）" --> PeerWait["awaiting_peer_confirm\n（Option B：向替班司机发送确认卡）"]
+  PeerWait -- "替班司机点击同意\n（预锁定 TemporaryAssignment）" --> PreApproved["pre_approved\n（SLA 截止: min(now+24h, 发车前2h)）"]
+  PeerWait -- "替班司机拒绝（<= 2 天）" --> Seeking
+  PeerWait -- "替班司机拒绝（> 2 天）" --> ManualPending
+
+  Branch -- "未指定替班且 <= 2 天" --> Seeking["seeking_coverage\n（自动拆分为 AM / PM 班次广播）"]
+  Seeking -- "0 个班次被认领" --> Unclaimed["阶段 2 告警：\nBroadcasted · No Applicants"]
+  Unclaimed --> ClaimSlot["其他司机认领班次\n（冲突与 CDL 校验通过）"]
+  Seeking --> ClaimSlot
+  ClaimSlot -- "部分认领（1/2）" --> Seeking
+  ClaimSlot -- "全部 AM/PM 认领完毕（2/2）" --> PreApproved
+
+  Branch -- "未指定替班且 > 2 天\n或转人工审核" --> ManualPending["pending\n（HR / 调度人工审核）"]
+  ManualPending -- "调度手动发布空缺\n或直接指定备用司机" --> Assigned["已分配替班司机\n（待 HR 最终审批）"]
+
+  PreApproved -- "到期无人工干预\n（24h SLA 自动转正任务）" --> Approved["approved\n（正式批准 · 24h 自动转正）"]
+  PreApproved -- "审批人在 Approver AI Agent\n点击 Approve" --> Approved
+  PreApproved -- "审批人点击 Reject" --> Rejected["rejected（已拒绝）"]
+  Assigned -- "HR 批准" --> Approved
+  Assigned -- "HR 拒绝" --> Rejected
+  ManualPending -- "HR 批准 / 拒绝" --> Approved
+
+  Approved --> Trajectory["Web Agent 保留原卡片并追加\n[Work Trajectory] 轨迹 + 通知司机端"]
+  Rejected --> Trajectory
+```
+
+</details>
+
 ---
 
 ## 🌐 在线演示体验 (Live Demo)
