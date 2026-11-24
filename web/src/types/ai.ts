@@ -69,6 +69,11 @@ export interface AITestResult {
   error?: string;
   geminiConfigured?: boolean;
   ollamaConfigured?: boolean;
+  promptTokens?: number;
+  promptEvalRate?: number;
+  evalTokens?: number;
+  evalRate?: number;
+  loadDurationMs?: number;
 }
 
 export interface MCPTokenResponse {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -47,6 +48,21 @@ type ollamaChatResponse struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
 	} `json:"message"`
+	TotalDuration      int64 `json:"total_duration"`
+	LoadDuration       int64 `json:"load_duration"`
+	PromptEvalCount    int   `json:"prompt_eval_count"`
+	PromptEvalDuration int64 `json:"prompt_eval_duration"`
+	EvalCount          int   `json:"eval_count"`
+	EvalDuration       int64 `json:"eval_duration"`
+}
+
+type ollamaChatResult struct {
+	Content        string
+	PromptTokens   int
+	PromptEvalRate float64
+	EvalTokens     int
+	EvalRate       float64
+	LoadDurationMs int64
 }
 
 // IsOllamaConfigured returns true when OLLAMA_BASE_URL is set (e.g. http://127.0.0.1:11434).
@@ -70,9 +86,17 @@ func getOllamaConfig() (baseURL, model, apiKey string) {
 }
 
 func callOllamaChat(ctx context.Context, systemPrompt, userMessage string, jsonMode bool) (string, error) {
+	res, err := callOllamaChatDetailed(ctx, systemPrompt, userMessage, jsonMode)
+	if err != nil {
+		return "", err
+	}
+	return res.Content, nil
+}
+
+func callOllamaChatDetailed(ctx context.Context, systemPrompt, userMessage string, jsonMode bool) (*ollamaChatResult, error) {
 	baseURL, model, apiKey := getOllamaConfig()
 	if baseURL == "" {
-		return "", fmt.Errorf("OLLAMA_BASE_URL is not configured")
+		return nil, fmt.Errorf("OLLAMA_BASE_URL is not configured")
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 14*time.Second)
@@ -97,12 +121,12 @@ func callOllamaChat(ctx context.Context, systemPrompt, userMessage string, jsonM
 
 	rawBody, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, baseURL+"/api/chat", bytes.NewReader(rawBody))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if apiKey != "" {
@@ -111,23 +135,38 @@ func callOllamaChat(ctx context.Context, systemPrompt, userMessage string, jsonM
 
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("ollama HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+		return nil, fmt.Errorf("ollama HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
 	}
 
 	var parsed ollamaChatResponse
 	if err := json.Unmarshal(respBytes, &parsed); err != nil {
-		return "", err
+		return nil, err
 	}
-	return strings.TrimSpace(parsed.Message.Content), nil
+
+	out := &ollamaChatResult{
+		Content:        strings.TrimSpace(parsed.Message.Content),
+		PromptTokens:   parsed.PromptEvalCount,
+		EvalTokens:     parsed.EvalCount,
+		LoadDurationMs: parsed.LoadDuration / 1e6,
+	}
+	if parsed.PromptEvalCount > 0 && parsed.PromptEvalDuration > 0 {
+		rate := float64(parsed.PromptEvalCount) / (float64(parsed.PromptEvalDuration) / 1e9)
+		out.PromptEvalRate = math.Round(rate*100) / 100
+	}
+	if parsed.EvalCount > 0 && parsed.EvalDuration > 0 {
+		rate := float64(parsed.EvalCount) / (float64(parsed.EvalDuration) / 1e9)
+		out.EvalRate = math.Round(rate*100) / 100
+	}
+	return out, nil
 }
 
 // ExtractTimeOffIntentWithOllama extracts structured EN/FR leave fields using a lightweight local Ollama model.

@@ -645,14 +645,19 @@ func (s *AIService) ProcessChat(ctx context.Context, req *models.AIChatRequest) 
 
 // AIConnectionTestResult describes the result of an on-demand AI connectivity test from System Settings.
 type AIConnectionTestResult struct {
-	OK               bool   `json:"ok"`
-	Engine           string `json:"engine"`
-	Model            string `json:"model,omitempty"`
-	LatencyMs        int64  `json:"latencyMs"`
-	Reply            string `json:"reply,omitempty"`
-	Error            string `json:"error,omitempty"`
-	GeminiConfigured bool   `json:"geminiConfigured"`
-	OllamaConfigured bool   `json:"ollamaConfigured"`
+	OK               bool    `json:"ok"`
+	Engine           string  `json:"engine"`
+	Model            string  `json:"model,omitempty"`
+	LatencyMs        int64   `json:"latencyMs"`
+	Reply            string  `json:"reply,omitempty"`
+	Error            string  `json:"error,omitempty"`
+	GeminiConfigured bool    `json:"geminiConfigured"`
+	OllamaConfigured bool    `json:"ollamaConfigured"`
+	PromptTokens     int     `json:"promptTokens,omitempty"`
+	PromptEvalRate   float64 `json:"promptEvalRate,omitempty"`
+	EvalTokens       int     `json:"evalTokens,omitempty"`
+	EvalRate         float64 `json:"evalRate,omitempty"`
+	LoadDurationMs   int64   `json:"loadDurationMs,omitempty"`
 }
 
 // TestConnection performs a live connectivity check against the configured external AI provider (Gemini or Ollama),
@@ -697,7 +702,7 @@ func (s *AIService) TestConnection(ctx context.Context, userID, userName string)
 	if ollamaReady {
 		res.Engine = "ollama"
 		res.Model = ollamaModel
-		reply, err := callOllamaChat(ctx, "Reply with OK only.", "Health check ping. Reply with OK.", false)
+		detail, err := callOllamaChatDetailed(ctx, "Reply with OK only.", "Health check ping. Reply with OK.", false)
 		res.LatencyMs = time.Since(start).Milliseconds()
 		if err != nil {
 			res.OK = false
@@ -706,7 +711,14 @@ func (s *AIService) TestConnection(ctx context.Context, userID, userName string)
 			return res
 		}
 		res.OK = true
-		res.Reply = reply
+		if detail != nil {
+			res.Reply = detail.Content
+			res.PromptTokens = detail.PromptTokens
+			res.PromptEvalRate = detail.PromptEvalRate
+			res.EvalTokens = detail.EvalTokens
+			res.EvalRate = detail.EvalRate
+			res.LoadDurationMs = detail.LoadDurationMs
+		}
 		return res
 	}
 

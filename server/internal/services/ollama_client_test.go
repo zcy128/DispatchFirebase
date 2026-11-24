@@ -81,3 +81,42 @@ func TestOllamaErrorPersistedToSystemErrorLogs(t *testing.T) {
 		}
 	})
 }
+
+func TestOllamaTestConnectionReturnsSpeedMetrics(t *testing.T) {
+	okServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"model": "qwen3.5:2b",
+			"message": {"role": "assistant", "content": "OK"},
+			"total_duration": 2847907641,
+			"load_duration": 758885,
+			"prompt_eval_count": 27,
+			"prompt_eval_duration": 1077414205,
+			"eval_count": 29,
+			"eval_duration": 2587508000
+		}`))
+	}))
+	defer okServer.Close()
+
+	t.Setenv("OLLAMA_BASE_URL", okServer.URL)
+	t.Setenv("OLLAMA_MODEL", "qwen3.5:2b")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	dispatchRepo := repository.NewMemoryDispatchRepository()
+	toolSvc := NewAIToolService(dispatchRepo, nil, nil, nil, nil, nil)
+	aiSvc := NewAIService(toolSvc)
+
+	res := aiSvc.TestConnection(context.Background(), "admin-1", "Alice Admin")
+	if !res.OK || res.Engine != "ollama" || res.Reply != "OK" {
+		t.Fatalf("expected healthy ollama test result, got %+v", res)
+	}
+	if res.PromptTokens != 27 || res.EvalTokens != 29 {
+		t.Fatalf("expected token counts 27/29, got %d/%d", res.PromptTokens, res.EvalTokens)
+	}
+	if res.PromptEvalRate != 25.06 {
+		t.Fatalf("expected promptEvalRate 25.06, got %.2f", res.PromptEvalRate)
+	}
+	if res.EvalRate != 11.21 {
+		t.Fatalf("expected evalRate 11.21, got %.2f", res.EvalRate)
+	}
+}

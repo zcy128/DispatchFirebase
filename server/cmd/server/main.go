@@ -37,7 +37,42 @@ import (
 	"dispatch-server/internal/services"
 )
 
+// loadDotEnvIfPresent loads KEY=VALUE pairs from local .env files without overriding existing OS environment variables.
+func loadDotEnvIfPresent(paths ...string) {
+	for _, p := range paths {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		text := string(bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF}))
+		loaded := 0
+		for _, line := range strings.Split(text, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				continue
+			}
+			idx := strings.IndexByte(trimmed, '=')
+			if idx <= 0 {
+				continue
+			}
+			key := strings.TrimSpace(strings.TrimPrefix(trimmed[:idx], "\ufeff"))
+			val := strings.TrimSpace(trimmed[idx+1:])
+			if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+				val = val[1 : len(val)-1]
+			}
+			if key != "" && os.Getenv(key) == "" {
+				_ = os.Setenv(key, val)
+				loaded++
+			}
+		}
+		if loaded > 0 {
+			log.Printf("[INIT] Loaded %d environment variables from %s", loaded, p)
+		}
+	}
+}
+
 func main() {
+	loadDotEnvIfPresent(".env", "../.env")
 	cfg := config.LoadConfig()
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("[INIT] %v", err)

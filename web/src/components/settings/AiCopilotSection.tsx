@@ -116,9 +116,25 @@ export const AiCopilotSection = memo(function AiCopilotSection() {
                       : 'AI Connection Failed'}
                 </span>
                 <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-900/80 border border-slate-700/70">
-                  {testResult.engine}{testResult.model ? ` · ${testResult.model}` : ''} · {testResult.latencyMs}ms
+                  {testResult.engine}{testResult.model ? ` · ${testResult.model}` : ''} · {(testResult.latencyMs / 1000).toFixed(2)}s ({testResult.latencyMs}ms)
                 </span>
               </div>
+              {testResult.ok && (testResult.promptEvalRate || testResult.evalRate) ? (
+                <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-emerald-200/90">
+                  {testResult.promptEvalRate ? (
+                    <span className="px-2 py-0.5 rounded bg-slate-900/70 border border-emerald-500/20">
+                      {isFrench ? 'Traitement prompt' : 'Prompt speed'}: {testResult.promptEvalRate.toFixed(2)} tokens/s
+                      {testResult.promptTokens ? ` (${testResult.promptTokens} tok)` : ''}
+                    </span>
+                  ) : null}
+                  {testResult.evalRate ? (
+                    <span className="px-2 py-0.5 rounded bg-slate-900/70 border border-emerald-500/20">
+                      {isFrench ? 'Génération' : 'Generation speed'}: {testResult.evalRate.toFixed(2)} tokens/s
+                      {testResult.evalTokens ? ` (${testResult.evalTokens} tok)` : ''}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               {testResult.ok && testResult.reply ? (
                 <p className="text-[11px] text-emerald-100/90 break-words">
                   {isFrench ? 'Réponse' : 'Reply'}: <code className="bg-slate-900/70 px-1.5 py-0.5 rounded">{testResult.reply}</code>

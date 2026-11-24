@@ -64,7 +64,44 @@ Tested on **Oracle Cloud Always Free ARM VM (`aarch64`)**:
   ```
   Then set `OLLAMA_BASE_URL=http://127.0.0.1:11434` and `OLLAMA_MODEL=qwen3.5:2b` in your local `.env`.
 
-### 5. Verification
+### 5. Connecting Google Cloud Run via Cloudflare Tunnel (Recommended)
+
+Because Google Cloud Run runs in Google's cloud, it cannot reach `127.0.0.1:11434` on your Oracle VM directly. Using **Cloudflare Tunnel + a local Nginx Bearer-token guard** keeps all inbound firewall ports closed on Oracle while giving Cloud Run a secure HTTPS endpoint:
+
+1. **Generate a strong random `OLLAMA_API_KEY`** (do this on your VM or locally, never commit it):
+   ```bash
+   openssl rand -hex 32
+   ```
+2. **Add a local-only Nginx auth proxy (`127.0.0.1:11435` → `127.0.0.1:11434`) on the Oracle VM:**
+   ```nginx
+   # /etc/nginx/conf.d/ollama-proxy.conf  (outside git repo, chmod 600)
+   server {
+       listen 127.0.0.1:11435;
+       location / {
+           if ($http_authorization != "Bearer REPLACE_WITH_YOUR_RANDOM_KEY") {
+               return 401;
+           }
+           proxy_pass http://127.0.0.1:11434;
+           proxy_set_header Host 127.0.0.1;
+       }
+   }
+   ```
+3. **Install & run `cloudflared` on the Oracle VM (`aarch64`):**
+   ```bash
+   # Quick temporary test (URL changes on restart):
+   cloudflared tunnel --url http://127.0.0.1:11435
+
+   # Production: create a free Cloudflare Named Tunnel pointing your domain to http://127.0.0.1:11435
+   ```
+4. **Store the key in Google Cloud Secret Manager (NEVER in GitHub):**
+   ```bash
+   printf '%s' 'REPLACE_WITH_YOUR_RANDOM_KEY' | gcloud secrets create ollama-api-key --data-file=-
+   gcloud run services update dispatch-api \
+     --set-env-vars="OLLAMA_BASE_URL=https://ai.yourdomain.com,OLLAMA_MODEL=qwen3.5:2b" \
+     --set-secrets="OLLAMA_API_KEY=ollama-api-key:latest"
+   ```
+
+### 6. Verification
 1. **Web Console UI**: Open **Settings → Dispatch AI Copilot Operations Hub** and click **Test AI Connection**. It displays the active engine, model name, latency (`ms`), and reply.
 2. **Ollama Service Logs (on VM)**:
    ```bash
@@ -105,6 +142,11 @@ ollama run qwen3.5:2b --think=false "Reply with OK only"
   ```bash
   ssh -N -L 11434:127.0.0.1:11434 opc@<ORACLE_VM_IP>
   ```
+
+- **Cloud Run via Cloudflare Tunnel (recommandé, aucun port entrant à ouvrir)** :
+  1. Générez une clé secrète (`openssl rand -hex 32`) et protégez `127.0.0.1:11434` via Nginx local (`127.0.0.1:11435`) vérifiant `Authorization: Bearer <CLÉ>`.
+  2. Exposez `http://127.0.0.1:11435` avec `cloudflared tunnel`.
+  3. Enregistrez la clé dans **Google Cloud Secret Manager** (`--set-secrets="OLLAMA_API_KEY=ollama-api-key:latest"`) sans jamais l'écrire dans le dépôt Git.
 
 ### 4. Vérification
 Dans la console Web, ouvrez **Paramètres système → Dispatch AI Copilot Operations Hub** et cliquez sur **Tester la connexion IA**.
@@ -166,7 +208,50 @@ Dispatch 后端采用 **“确定性规则优先 + 本地小模型补充”** �
   ```
   随后在本地 `.env` 中配置 `OLLAMA_BASE_URL=http://127.0.0.1:11434` 即可。
 
-### 5. 验证方法
+### 5. Google Cloud Run 通过 Cloudflare Tunnel 安全连接（推荐）
+
+由于 Go 后端部署在 Google Cloud Run 上，无法直接访问 Oracle 虚拟机内部的 `127.0.0.1:11434`。使用 **Cloudflare Tunnel + 本机 Nginx 密钥鉴权**，既无需开放 Oracle 入站防火墙端口，又能防止公网白嫖：
+
+1. **生成高强度随机密钥**（仅保存在服务端运行环境，切勿写入代码仓库）：
+   ```bash
+   openssl rand -hex 32
+   ```
+2. **在 Oracle VM 上配置仅监听本机的 Nginx 鉴权代理（`127.0.0.1:11435` → `127.0.0.1:11434`）**：
+   ```nginx
+   # /etc/nginx/conf.d/ollama-proxy.conf（位于 Git 仓库外，建议 chmod 600）
+   server {
+       listen 127.0.0.1:11435;
+       location / {
+           if ($http_authorization != "Bearer 替换为你的随机密钥") {
+               return 401;
+           }
+           proxy_pass http://127.0.0.1:11434;
+           proxy_set_header Host 127.0.0.1;
+       }
+   }
+   ```
+3. **在 Oracle VM 上运行 `cloudflared`**：
+   ```bash
+   # 临时测试隧道（重启会变域名）：
+   cloudflared tunnel --url http://127.0.0.1:11435
+
+   # 正式生产：在 Cloudflare 免费创建 Named Tunnel 绑定固定域名指向 http://127.0.0.1:11435
+   ```
+4. **在 Google Cloud Run 中通过 Secret Manager 注入密钥（绝对不进 GitHub）**：
+   ```bash
+   printf '%s' '替换为你的随机密钥' | gcloud secrets create ollama-api-key --data-file=-
+   gcloud run services update dispatch-api \
+     --set-env-vars="OLLAMA_BASE_URL=https://ai.你的域名.com,OLLAMA_MODEL=qwen3.5:2b" \
+     --set-secrets="OLLAMA_API_KEY=ollama-api-key:latest"
+   ```
+
+### 6. 如何确保密钥永远不会泄露到 GitHub？
+- **代码与配置模板零硬编码**：`.env.example`、`cloudbuild.yaml`、部署脚本及 Go/TS 源码中**只写变量名**（`OLLAMA_API_KEY`），绝不写实际密钥值。
+- **Cloud Run 走 Secret Manager / 控制台环境变量**：密钥保存在 GCP Secret Manager 或 Cloud Run 控制台的 **Variables & Secrets** 中，不落盘到仓库。
+- **Oracle VM 配置文件放在仓库外**：Nginx 配置在 `/etc/nginx/conf.d/`（`chmod 600`），与 Git 工作目录完全隔离。
+- **本地开发走 `.gitignore`**：本地 `.env` 已被 `.gitignore`（`**/.env`）自动忽略，不会被 `git add` 提交。
+
+### 7. 验证方法
 1. **Web 控制台一键测试**：进入 **System Settings → Dispatch AI Copilot Operations Hub**，点击 **Test AI Connection** 按钮，即可查看当前引擎、模型名、响应耗时（ms）和返回结果。
 2. **查看 Ollama 实时日志（在虚拟机上）**：
    ```bash
